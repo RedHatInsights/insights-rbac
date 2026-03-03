@@ -809,4 +809,3 @@ class UUIDStringField(UUIDField):
             return super().to_internal_value(data)
 
         self.fail("invalid", value=data)
-        raise AssertionError("unreachable")

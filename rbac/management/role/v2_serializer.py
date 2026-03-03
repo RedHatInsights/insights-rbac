@@ -17,6 +17,7 @@
 """Serializers for RoleV2 API."""
 
 from management.exceptions import RequiredFieldError
+from management.permission.scope_service import Scope
 from management.role.v2_exceptions import (
     InvalidRolePermissionsError,
     PermissionsNotFoundError,
@@ -129,10 +130,14 @@ def _validate_fields_parameter(value: str, default_fields: set) -> set:
     return resolved or default_fields
 
 
+VALID_SCOPE_VALUES = {s.name.lower() for s in Scope}
+
+
 class RoleV2ListSerializer(serializers.Serializer):
     """Input serializer for RoleV2 list query parameters."""
 
     name = serializers.CharField(required=False, allow_blank=True, help_text="Filter by exact role name")
+    scope = serializers.CharField(required=False, allow_blank=True, help_text="Filter by permission scope")
     fields = serializers.CharField(required=False, default="", allow_blank=True, help_text="Control included fields")
 
     def to_internal_value(self, data):
@@ -145,6 +150,17 @@ class RoleV2ListSerializer(serializers.Serializer):
     def validate_name(self, value):
         """Return None for empty values."""
         return value or None
+
+    def validate_scope(self, value):
+        """Validate scope parameter. Returns the Scope enum value or None."""
+        if not value or not value.strip():
+            return None
+        normalized = value.strip().lower()
+        if normalized not in VALID_SCOPE_VALUES:
+            raise serializers.ValidationError(
+                f"Invalid scope '{value}'. Valid values: {', '.join(sorted(VALID_SCOPE_VALUES))}"
+            )
+        return Scope[normalized.upper()]
 
     def validate_fields(self, value):
         """Parse, validate, and resolve fields parameter into a set of field names."""

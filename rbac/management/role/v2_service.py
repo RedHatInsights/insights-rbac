@@ -26,6 +26,7 @@ from management.atomic_transactions import atomic
 from management.exceptions import RequiredFieldError
 from management.permission.exceptions import InvalidPermissionDataError
 from management.permission.model import PermissionValue
+from management.permission.scope_service import permission_ids_for_scope
 from management.permission.service import PermissionService
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
@@ -153,6 +154,11 @@ class RoleV2Service:
         name = params.get("name")
         if name:
             queryset = queryset.filter(name__exact=name)
+
+        scope = params.get("scope")
+        if scope is not None:
+            perm_ids = permission_ids_for_scope(scope)
+            queryset = queryset.filter(permissions__id__in=perm_ids).distinct()
 
         fields = params.get("fields")
         if fields:

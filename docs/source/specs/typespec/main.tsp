@@ -1302,6 +1302,9 @@ namespace Roles {
         @doc("Filter by role name using case sensitive exact match.")
         @query name?: string;
 
+        @doc("Filter roles by permission scope. Only returns roles containing at least one permission at the specified scope level. Valid values: default, root, tenant.")
+        @query scope?: string;
+
         @doc("Control which fields are included in the response to optimize payload size.")
         @query fields?: FieldMask = "id,name,description,last_modified";
 

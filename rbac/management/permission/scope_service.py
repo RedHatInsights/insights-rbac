@@ -22,7 +22,7 @@ from typing import Iterable, Self
 
 from django.conf import settings
 from django.db.models import QuerySet
-from management.models import Role, Workspace
+from management.models import Permission, Role, Workspace
 from management.permission.model import PermissionValue
 from migration_tool.models import V2boundresource
 
@@ -299,3 +299,37 @@ A global ImplicitResourceService configured using Django Settings.
 See ImplicitResourceService.from_settings for details on how this is configured.
 """
 default_implicit_resource_service = ImplicitResourceService.from_settings()
+
+
+# Module-level cache for permission IDs by scope. Built once on first access (production).
+# Permissions are fixed for the lifetime of the process; no invalidation needed.
+_permission_ids_by_scope: dict[Scope, set[int]] | None = None
+
+
+def permission_ids_for_scope(scope: Scope) -> set[int]:
+    """
+    Get Permission IDs classified at the given scope.
+
+    Cached at module level for production (permissions are fixed until service restart).
+    Tests should call clear_permission_ids_cache() when they need fresh data.
+    """
+    global _permission_ids_by_scope
+
+    if _permission_ids_by_scope is None:
+        _permission_ids_by_scope = _build_permission_ids_by_scope()
+    return _permission_ids_by_scope.get(scope, set())
+
+
+def clear_permission_ids_cache() -> None:
+    """Clear the permission IDs cache. Used by tests that need fresh data."""
+    global _permission_ids_by_scope
+    _permission_ids_by_scope = None
+
+
+def _build_permission_ids_by_scope() -> dict[Scope, set[int]]:
+    """Build scope -> permission IDs mapping using scope service from settings."""
+    scope_service = ImplicitResourceService.from_settings()
+    by_scope: dict[Scope, set[int]] = {s: set() for s in Scope}
+    for pk, perm_str in Permission.objects.values_list("id", "permission"):
+        by_scope[scope_service.scope_for_permission(perm_str)].add(pk)
+    return by_scope

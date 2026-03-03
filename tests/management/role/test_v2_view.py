@@ -28,6 +28,7 @@ from rest_framework.test import APIClient
 
 from management import v2_urls
 from management.models import Permission
+from management.permission.scope_service import clear_permission_ids_cache
 from management.role.v2_model import CustomRoleV2, PlatformRoleV2, RoleV2
 from management.utils import PRINCIPAL_CACHE
 
@@ -407,6 +408,7 @@ class RoleV2ViewSetTests(IdentityRequest):
         reload(v2_urls)
         reload(urls)
         clear_url_caches()
+        clear_permission_ids_cache()
 
         super().setUp()
         self.client = APIClient()
@@ -508,6 +510,104 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]), 1)
         self.assertEqual(response.data["data"][0]["name"], "test_role")
+
+    @override_settings(TENANT_SCOPE_PERMISSIONS="rbac:group:read,rbac:group:write")
+    def test_list_roles_with_scope_tenant(self):
+        """Test that scope=tenant returns only roles with tenant-scope permissions."""
+        tenant_perm = Permission.objects.create(permission="rbac:group:read", tenant=self.tenant)
+        default_perm = Permission.objects.create(permission="app:resource:read", tenant=self.tenant)
+
+        tenant_role = RoleV2.objects.create(name="tenant_role", description="Tenant", tenant=self.tenant)
+        tenant_role.permissions.add(tenant_perm)
+
+        default_role = RoleV2.objects.create(name="default_role", description="Default", tenant=self.tenant)
+        default_role.permissions.add(default_perm)
+
+        url = f"{self.url}?scope=tenant"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        returned_names = {r["name"] for r in response.data["data"]}
+        self.assertIn("tenant_role", returned_names)
+        self.assertNotIn("default_role", returned_names)
+        self.assertNotIn("test_role", returned_names)
+
+    @override_settings(TENANT_SCOPE_PERMISSIONS="rbac:group:read,rbac:group:write")
+    def test_list_roles_with_scope_default(self):
+        """Test that scope=default returns only roles with default-scope permissions."""
+        tenant_perm = Permission.objects.create(permission="rbac:group:read", tenant=self.tenant)
+        default_perm = Permission.objects.create(permission="app:resource:read", tenant=self.tenant)
+
+        tenant_role = RoleV2.objects.create(name="tenant_role", description="Tenant", tenant=self.tenant)
+        tenant_role.permissions.add(tenant_perm)
+
+        default_role = RoleV2.objects.create(name="default_role", description="Default", tenant=self.tenant)
+        default_role.permissions.add(default_perm)
+
+        url = f"{self.url}?scope=default"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        returned_names = {r["name"] for r in response.data["data"]}
+        self.assertIn("default_role", returned_names)
+        self.assertIn("test_role", returned_names)
+        self.assertNotIn("tenant_role", returned_names)
+
+    @override_settings(TENANT_SCOPE_PERMISSIONS="rbac:group:read")
+    def test_list_roles_with_scope_tenant_mixed_permissions(self):
+        """Test that a role with both tenant and default permissions appears under scope=tenant."""
+        tenant_perm = Permission.objects.create(permission="rbac:group:read", tenant=self.tenant)
+        default_perm = Permission.objects.create(permission="app:resource:read", tenant=self.tenant)
+
+        mixed_role = RoleV2.objects.create(name="mixed_role", description="Mixed", tenant=self.tenant)
+        mixed_role.permissions.add(tenant_perm, default_perm)
+
+        url = f"{self.url}?scope=tenant"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        returned_names = {r["name"] for r in response.data["data"]}
+        self.assertIn("mixed_role", returned_names)
+
+    def test_list_roles_with_scope_invalid_value(self):
+        """Test that invalid scope returns 400."""
+        url = f"{self.url}?scope=invalid"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("detail", response.data)
+
+    def test_list_roles_with_scope_empty_returns_all(self):
+        """Test that empty scope parameter returns all roles (treated as unset)."""
+        RoleV2.objects.create(name="other_role", description="Other", tenant=self.tenant)
+        url = f"{self.url}?scope="
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 2)
+
+    @override_settings(
+        TENANT_SCOPE_PERMISSIONS="rbac:group:read",
+        ROOT_SCOPE_PERMISSIONS="rbac:workspace:read",
+    )
+    def test_list_roles_with_scope_root(self):
+        """Test that scope=root returns only roles with root-scope permissions."""
+        root_perm = Permission.objects.create(permission="rbac:workspace:read", tenant=self.tenant)
+        tenant_perm = Permission.objects.create(permission="rbac:group:read", tenant=self.tenant)
+
+        root_role = RoleV2.objects.create(name="root_role", description="Root", tenant=self.tenant)
+        root_role.permissions.add(root_perm)
+
+        tenant_role = RoleV2.objects.create(name="tenant_role", description="Tenant", tenant=self.tenant)
+        tenant_role.permissions.add(tenant_perm)
+
+        url = f"{self.url}?scope=root"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        returned_names = {r["name"] for r in response.data["data"]}
+        self.assertIn("root_role", returned_names)
+        self.assertNotIn("tenant_role", returned_names)
 
     def test_list_roles_with_order_by_name(self):
         """Test that order_by parameter returns roles sorted by name."""

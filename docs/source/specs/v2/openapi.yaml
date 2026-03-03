@@ -17,7 +17,8 @@ paths:
           in: query
           required: false
           schema:
-            $ref: '#/components/schemas/Limit'
+            allOf:
+              - $ref: '#/components/schemas/Limit'
             default: 10
           explode: false
         - name: cursor
@@ -39,7 +40,8 @@ paths:
           required: false
           description: Control which fields are included in the response to optimize payload size.
           schema:
-            $ref: '#/components/schemas/FieldMask'
+            allOf:
+              - $ref: '#/components/schemas/FieldMask'
             default: resource(id),role(id),subject(id,type)
           explode: false
         - name: order_by
@@ -47,7 +49,8 @@ paths:
           required: false
           description: Default sort is by the time the role was first created. Prefix with '-' for descending order.
           schema:
-            $ref: '#/components/schemas/OrderBy'
+            allOf:
+              - $ref: '#/components/schemas/OrderBy'
             default: role.id
           explode: false
       responses:
@@ -142,7 +145,8 @@ paths:
           in: query
           required: false
           schema:
-            $ref: '#/components/schemas/Limit'
+            allOf:
+              - $ref: '#/components/schemas/Limit'
             default: 10
           explode: false
         - name: cursor
@@ -193,7 +197,8 @@ paths:
           required: false
           description: Control which fields are included in the response to optimize payload size and improve performance.
           schema:
-            $ref: '#/components/schemas/FieldMask'
+            allOf:
+              - $ref: '#/components/schemas/FieldMask'
             default: subject(group.name),role(name),resource(name,type),last_modified
           explode: false
         - name: order_by
@@ -201,7 +206,8 @@ paths:
           required: false
           description: Sort by specified field(s), prefix with '-' for descending order
           schema:
-            $ref: '#/components/schemas/OrderBy'
+            allOf:
+              - $ref: '#/components/schemas/OrderBy'
             default: subject_name
           explode: false
       responses:
@@ -360,7 +366,8 @@ paths:
           in: query
           required: false
           schema:
-            $ref: '#/components/schemas/FieldMask'
+            allOf:
+              - $ref: '#/components/schemas/FieldMask'
             default: resource(id),subject(id),roles(id),last_modified
           explode: false
       responses:
@@ -467,7 +474,8 @@ paths:
           in: query
           required: false
           schema:
-            $ref: '#/components/schemas/FieldMask'
+            allOf:
+              - $ref: '#/components/schemas/FieldMask'
             default: resource(id),role(id),subject(id,type)
           explode: false
       responses:
@@ -583,7 +591,8 @@ paths:
           in: query
           required: false
           schema:
-            $ref: '#/components/schemas/Limit'
+            allOf:
+              - $ref: '#/components/schemas/Limit'
             default: 10
           explode: false
         - name: cursor
@@ -600,12 +609,20 @@ paths:
           schema:
             type: string
           explode: false
+        - name: scope
+          in: query
+          required: false
+          description: 'Filter roles by permission scope. Only returns roles containing at least one permission at the specified scope level. Valid values: default, root, tenant.'
+          schema:
+            type: string
+          explode: false
         - name: fields
           in: query
           required: false
           description: Control which fields are included in the response to optimize payload size.
           schema:
-            $ref: '#/components/schemas/FieldMask'
+            allOf:
+              - $ref: '#/components/schemas/FieldMask'
             default: id,name,description,last_modified
           explode: false
         - name: order_by
@@ -613,7 +630,8 @@ paths:
           required: false
           description: "Sort by specified field(s), prefix with '-' for descending order. Allowed fields: name, last_modified."
           schema:
-            $ref: '#/components/schemas/OrderBy'
+            allOf:
+              - $ref: '#/components/schemas/OrderBy'
             default: name
           explode: false
       responses:
@@ -832,7 +850,8 @@ paths:
           required: false
           description: Control which fields are included in the response to optimize payload size.
           schema:
-            $ref: '#/components/schemas/FieldMask'
+            allOf:
+              - $ref: '#/components/schemas/FieldMask'
             default: id,name,description,permissions,last_modified
           explode: false
       responses:
@@ -929,7 +948,8 @@ paths:
           required: false
           description: Control which fields are included in the response to optimize payload size.
           schema:
-            $ref: '#/components/schemas/FieldMask'
+            allOf:
+              - $ref: '#/components/schemas/FieldMask'
             default: id,name,description,permissions,last_modified
           explode: false
       responses:
@@ -1121,7 +1141,8 @@ paths:
           in: query
           required: false
           schema:
-            $ref: '#/components/schemas/Limit'
+            allOf:
+              - $ref: '#/components/schemas/Limit'
             default: 10
           explode: false
         - name: offset
@@ -1129,7 +1150,8 @@ paths:
           required: false
           description: Offset for offset-based pagination.
           schema:
-            $ref: '#/components/schemas/Offset'
+            allOf:
+              - $ref: '#/components/schemas/Offset'
             default: 0
           explode: false
         - name: type
@@ -1137,7 +1159,8 @@ paths:
           required: false
           description: Defaults to all when param is not supplied.
           schema:
-            $ref: '#/components/schemas/Workspaces.WorkspaceTypesQueryParam'
+            allOf:
+              - $ref: '#/components/schemas/Workspaces.WorkspaceTypesQueryParam'
             default: all
           explode: false
         - name: name
