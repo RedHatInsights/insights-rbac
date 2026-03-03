@@ -655,14 +655,14 @@ class RoleBindingService:
 
         return result
 
+    SUPPORTED_RESOURCE_TYPES = {"workspace"}
+
     def _validate_resource(self, resource_type: str, resource_id: str) -> None:
         """Validate that the resource exists and belongs to this tenant.
 
-        # TODO: Resource validation is workspace-specific because workspace is
-        # the only resource type with a local table. Role bindings can be
-        # created for any resource type, so this lookup needs to be made
-        # generic as more resource
-        # types are supported.
+        Only resource types listed in ``SUPPORTED_RESOURCE_TYPES`` are
+        accepted. To support a new resource type, add it to the set and
+        add an existence check if the type has a local backing table.
 
         Args:
             resource_type: The type of resource (e.g., ``"workspace"``)
@@ -670,7 +670,7 @@ class RoleBindingService:
 
         Raises:
             RequiredFieldError: If resource_type or resource_id is empty
-            InvalidFieldError: If resource_type is not supported
+            InvalidFieldError: If resource_type is not in SUPPORTED_RESOURCE_TYPES
             NotFoundError: If the resource cannot be found for this tenant
         """
         if not resource_type:
@@ -679,11 +679,16 @@ class RoleBindingService:
         if not resource_id:
             raise RequiredFieldError("resource_id")
 
+        if resource_type not in self.SUPPORTED_RESOURCE_TYPES:
+            raise InvalidFieldError(
+                "resource_type",
+                f"Unsupported resource type: '{resource_type}'. "
+                f"Supported types: {', '.join(sorted(self.SUPPORTED_RESOURCE_TYPES))}",
+            )
+
         if resource_type == "workspace":
             if not Workspace.objects.exists_for_tenant(resource_id, tenant=self.tenant):
                 raise NotFoundError(resource_type, resource_id)
-        else:
-            raise InvalidFieldError("resource_type", f"Unsupported resource type: '{resource_type}'")
 
     def _get_roles(self, role_ids: list[str]) -> list[RoleV2]:
         """Get assignable roles by their UUIDs, validating all exist.
