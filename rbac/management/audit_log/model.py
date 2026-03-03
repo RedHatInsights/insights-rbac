@@ -63,6 +63,18 @@ class AuditLog(TenantAwareModel):
     resource_uuid = models.UUIDField(null=True)
     secondary_resource_uuid = models.UUIDField(null=True)
 
+    class Meta:
+        """Metadata for audit log model."""
+
+        indexes = [
+            # Composite index for common query pattern: tenant + created (for ordering)
+            models.Index(fields=["tenant", "created"]),
+            # Index for filtering by tenant and resource_type
+            models.Index(fields=["tenant", "resource_type"]),
+            # Index for filtering by tenant and action
+            models.Index(fields=["tenant", "action"]),
+        ]
+
     def get_tenant_id(self, request):
         """Retrieve tenant id from request."""
         tenant_object = get_object_or_404(Tenant, org_id=request._user.org_id)
