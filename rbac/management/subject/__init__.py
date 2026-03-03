@@ -29,7 +29,7 @@ from management.subject.queryset import SubjectQuerySet
 __all__ = [
     "Subject",
     "SubjectQuerySet",
-    "SubjectType",
     "SubjectError",
+    "SubjectType",
     "UnsupportedSubjectTypeError",
 ]
