@@ -63,3 +63,22 @@ class StatusViewTest(TestCase):
         url = reverse("v1_api:server-status")
         response = self.client.get(url)
         self.assertEqual(response.status_code, 200)
+
+
+class ReadyViewTest(TestCase):
+    """Tests the ready (readiness probe) view."""
+
+    def test_ready_returns_503_when_platform_default_group_missing(self):
+        """When platform default group does not exist, returns 503."""
+        url = reverse("v1_api:server-ready")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 503)
+
+    def test_ready_returns_200_when_platform_default_group_exists(self):
+        """When platform default group exists (seeding complete), returns 200."""
+        from management.group.definer import seed_group
+
+        seed_group()
+        url = reverse("v1_api:server-ready")
+        response = self.client.get(url)
+        self.assertEqual(response.status_code, 200)

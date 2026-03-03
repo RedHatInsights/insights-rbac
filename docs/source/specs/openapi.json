@@ -581,6 +581,38 @@
         }
       }
     },
+    "/ready/": {
+      "get": {
+        "tags": [
+          "Status"
+        ],
+        "summary": "Readiness probe",
+        "description": "Returns 200 when the service is ready to accept traffic. When MIGRATE_AND_SEED_ON_INIT is False, returns 503 until the worker has completed seeding (roles, groups, permissions). Used by Kubernetes readiness probes.",
+        "operationId": "getReady",
+        "responses": {
+          "200": {
+            "description": "Service is ready to accept traffic",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Ready"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Service is waiting for seeding to complete",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReadyWaiting"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/openapi.json": {
       "get": {
         "tags": [
@@ -4381,6 +4413,22 @@
           "commit": {
             "type": "string",
             "example": "178d2ea"
+          }
+        }
+      },
+      "Ready": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "example": "ready"
+          }
+        }
+      },
+      "ReadyWaiting": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "example": "waiting for seeding"
           }
         }
       },

@@ -23,6 +23,32 @@ from rest_framework.response import Response
 
 from api.status.model import Status
 from api.status.serializer import StatusSerializer
+from management.group.model import Group
+
+
+def _is_seeding_complete():
+    """Check if seeding has been completed (by worker or init container).
+
+    We verify seeding by checking for the platform default group (last step in seeding).
+    """
+    try:
+        return Group.objects.public_tenant_only().filter(platform_default=True).exists()
+    except Exception:
+        return False
+
+
+@api_view(["GET", "HEAD"])
+@permission_classes((permissions.AllowAny,))
+def ready(request):
+    """Readiness probe: returns 200 when service can accept traffic.
+
+    When the service does not run seeding (MIGRATE_AND_SEED_ON_INIT=False),
+    returns 503 until the worker has completed seeding. This prevents the
+    service from receiving traffic before roles/groups/permissions exist.
+    """
+    if _is_seeding_complete():
+        return Response({"status": "ready"}, status=200)
+    return Response({"status": "waiting for seeding"}, status=503)
 
 
 @api_view(["GET", "HEAD"])
