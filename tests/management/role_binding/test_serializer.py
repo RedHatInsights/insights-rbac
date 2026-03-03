@@ -14,14 +14,30 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Test the RoleBindingByGroupSerializer."""
+"""Test role binding serializers."""
 
+import uuid
 from datetime import datetime, timezone
 from unittest.mock import Mock
 
+from django.test import TestCase
+
 from management.models import Group, Permission, Principal, RoleBinding, RoleBindingGroup, RoleV2
-from management.role_binding.serializer import RoleBindingByGroupSerializer, RoleBindingFieldSelection
+from management.role_binding.serializer import (
+    RoleBindingByGroupSerializer,
+    RoleBindingFieldSelection,
+    RoleBindingListInputSerializer,
+    RoleBindingListOutputSerializer,
+    UpdateRoleBindingRequestSerializer,
+    UpdateRoleBindingResponseSerializer,
+)
+from management.role_binding.service import UpdateRoleBindingResult
+from management.subject.model import SubjectType
+from management.utils import FieldSelection
 from tests.identity_request import IdentityRequest
+
+# Sentinel value used to signal that a key should be removed from test data.
+_REMOVE = object()
 
 
 class RoleBindingByGroupSerializerTest(IdentityRequest):
@@ -198,7 +214,7 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         self.group.principals.add(principal2)
         self.group.principalCount = 2
 
-        field_selection = RoleBindingFieldSelection(nested_fields={"subject": {"group.user_count"}})
+        field_selection = RoleBindingFieldSelection.parse("subject(group.user_count)")
         serializer = RoleBindingByGroupSerializer(context={"field_selection": field_selection})
         result = serializer.get_subject(self.group)
 
@@ -606,3 +622,714 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
         self.assertIn("id", resource)
         self.assertNotIn("name", resource)
         self.assertNotIn("type", resource)
+
+
+class RoleBindingListInputSerializerTest(TestCase):
+    """Test the RoleBindingListInputSerializer.
+
+    Validates query parameter parsing for GET /role-bindings/.
+    Uses subTest for parametrized coverage of valid/invalid inputs.
+    """
+
+    # --- role_id ---
+
+    def test_role_id_valid_inputs(self):
+        """Test that valid UUID formats are accepted for role_id."""
+        valid_uuids = [
+            ("standard", "550e8400-e29b-41d4-a716-446655440000"),
+            ("zeros", "00000000-0000-0000-0000-000000000000"),
+            ("generated", str(uuid.uuid4())),
+        ]
+        for label, value in valid_uuids:
+            with self.subTest(label=label):
+                s = RoleBindingListInputSerializer(data={"role_id": value})
+                self.assertTrue(s.is_valid(), s.errors)
+                self.assertEqual(s.validated_data["role_id"], uuid.UUID(value))
+
+    def test_role_id_invalid_inputs(self):
+        """Test that non-UUID values are rejected for role_id."""
+        invalid_values = [
+            ("not-a-uuid", "not-a-uuid"),
+            ("integer", "12345"),
+            ("empty", ""),
+            ("spaces", "   "),
+        ]
+        for label, value in invalid_values:
+            with self.subTest(label=label):
+                s = RoleBindingListInputSerializer(data={"role_id": value})
+                self.assertFalse(s.is_valid())
+                self.assertIn("role_id", s.errors)
+
+    def test_role_id_omitted_is_valid(self):
+        """Test that omitting role_id is valid (required=False)."""
+        s = RoleBindingListInputSerializer(data={})
+        self.assertTrue(s.is_valid(), s.errors)
+        self.assertNotIn("role_id", s.validated_data)
+
+    # --- fields ---
+
+    def test_fields_valid_inputs(self):
+        """Test that valid field selection strings are parsed correctly."""
+        valid_fields = [
+            ("role_name", "role(name)", {"role"}),
+            ("subject_group", "subject(group.name)", {"subject"}),
+            ("resource_type", "resource(type)", {"resource"}),
+            ("combined", "role(name),resource(type)", {"role", "resource"}),
+        ]
+        for label, value, expected_nested_keys in valid_fields:
+            with self.subTest(label=label):
+                s = RoleBindingListInputSerializer(data={"fields": value})
+                self.assertTrue(s.is_valid(), s.errors)
+                fs = s.validated_data["fields"]
+                self.assertIsNotNone(fs)
+                for key in expected_nested_keys:
+                    self.assertTrue(len(fs.get_nested(key)) > 0)
+
+    def test_fields_invalid_inputs(self):
+        """Test that invalid field selection strings are rejected."""
+        invalid_fields = [
+            ("unknown_object", "bogus(nope)"),
+            ("invalid_role_field", "role(nonexistent)"),
+            ("invalid_subject_field", "subject(bad_field)"),
+        ]
+        for label, value in invalid_fields:
+            with self.subTest(label=label):
+                s = RoleBindingListInputSerializer(data={"fields": value})
+                self.assertFalse(s.is_valid())
+                self.assertIn("fields", s.errors)
+
+    def test_fields_omitted_is_valid(self):
+        """Test that omitting fields is valid (required=False)."""
+        s = RoleBindingListInputSerializer(data={})
+        self.assertTrue(s.is_valid(), s.errors)
+        self.assertNotIn("fields", s.validated_data)
+
+    # --- order_by ---
+
+    def test_order_by_valid_inputs(self):
+        """Test that valid order_by values pass through."""
+        valid_values = [
+            ("role_name", "role.name"),
+            ("descending", "-role.name"),
+            ("role_uuid", "role.uuid"),
+        ]
+        for label, value in valid_values:
+            with self.subTest(label=label):
+                s = RoleBindingListInputSerializer(data={"order_by": value})
+                self.assertTrue(s.is_valid(), s.errors)
+                self.assertEqual(s.validated_data["order_by"], value)
+
+    def test_order_by_omitted_is_valid(self):
+        """Test that omitting order_by is valid (required=False)."""
+        s = RoleBindingListInputSerializer(data={})
+        self.assertTrue(s.is_valid(), s.errors)
+        self.assertNotIn("order_by", s.validated_data)
+
+    # --- NUL byte sanitization ---
+
+    def test_nul_bytes_stripped_from_all_string_params(self):
+        """Test that NUL bytes are stripped from all string parameters."""
+        test_cases = [
+            ("fields", "\x00role(name)\x00", "role(name)"),
+            ("order_by", "\x00role.name\x00", "role.name"),
+        ]
+        for label, raw, expected_clean in test_cases:
+            with self.subTest(label=label):
+                s = RoleBindingListInputSerializer(data={label: raw})
+                self.assertTrue(s.is_valid(), s.errors)
+
+    def test_nul_bytes_stripped_from_role_id(self):
+        """Test that NUL bytes in role_id are stripped before UUID validation."""
+        valid_uuid = "550e8400-e29b-41d4-a716-446655440000"
+        s = RoleBindingListInputSerializer(data={"role_id": f"\x00{valid_uuid}\x00"})
+        # NUL stripping happens before UUIDField validation
+        self.assertTrue(s.is_valid(), s.errors)
+
+    # --- Combined ---
+
+    def test_all_params_together(self):
+        """Test that all parameters work together."""
+        s = RoleBindingListInputSerializer(
+            data={
+                "role_id": str(uuid.uuid4()),
+                "fields": "role(name),resource(type)",
+                "order_by": "-role.name",
+            }
+        )
+        self.assertTrue(s.is_valid(), s.errors)
+        self.assertIn("role_id", s.validated_data)
+        self.assertIsNotNone(s.validated_data["fields"])
+        self.assertEqual(s.validated_data["order_by"], "-role.name")
+
+
+class RoleBindingListOutputSerializerTest(IdentityRequest):
+    """Test the RoleBindingListOutputSerializer.
+
+    Tests verify the serializer produces output matching the API spec:
+    - role: {id: UUID, name?: string}
+    - subject: {id?: UUID, type: "group", group?: {name, description, user_count}}
+    - resource: {id: string, type?: string}
+
+    Uses subTest for parametrized field selection coverage.
+    """
+
+    def setUp(self):
+        """Set up test data."""
+        super().setUp()
+
+        self.permission = Permission.objects.create(
+            permission="app:resource:read",
+            tenant=self.tenant,
+        )
+
+        self.role = RoleV2.objects.create(
+            name="test_role",
+            tenant=self.tenant,
+        )
+        self.role.permissions.add(self.permission)
+
+        self.group = Group.objects.create(
+            name="test_group",
+            description="Test group description",
+            tenant=self.tenant,
+        )
+
+        self.principal = Principal.objects.create(
+            username=self.user_data["username"],
+            tenant=self.tenant,
+            type=Principal.Types.USER,
+        )
+        self.group.principals.add(self.principal)
+
+        self.binding = RoleBinding.objects.create(
+            role=self.role,
+            resource_type="workspace",
+            resource_id="ws-12345",
+            tenant=self.tenant,
+        )
+
+        self.binding_group = RoleBindingGroup.objects.create(
+            group=self.group,
+            binding=self.binding,
+        )
+
+    def tearDown(self):
+        """Tear down test data."""
+        RoleBindingGroup.objects.all().delete()
+        RoleBinding.objects.all().delete()
+        self.group.principals.clear()
+        Principal.objects.filter(tenant=self.tenant).delete()
+        Group.objects.filter(tenant=self.tenant).delete()
+        RoleV2.objects.filter(tenant=self.tenant).delete()
+        Permission.objects.filter(tenant=self.tenant).delete()
+        super().tearDown()
+
+    def _serialize(self, obj, field_selection=None):
+        """Serialize a RoleBinding with optional field selection."""
+        context = {"request": Mock(), "field_selection": field_selection}
+        return RoleBindingListOutputSerializer(obj, context=context).data
+
+    # --- Default behavior (no field selection) ---
+
+    def test_default_response_structure(self):
+        """Test that default response has role, subject, resource keys only."""
+        data = self._serialize(self.binding)
+
+        self.assertIn("role", data)
+        self.assertIn("subject", data)
+        self.assertIn("resource", data)
+        self.assertNotIn("last_modified", data)
+        self.assertNotIn("roles", data)
+
+    def test_default_role_returns_id_only(self):
+        """Test that default role contains only id."""
+        data = self._serialize(self.binding)
+
+        self.assertEqual(data["role"], {"id": self.role.uuid})
+
+    def test_default_subject_returns_id_and_type(self):
+        """Test that default subject contains id and type."""
+        data = self._serialize(self.binding)
+
+        self.assertEqual(data["subject"]["id"], self.group.uuid)
+        self.assertEqual(data["subject"]["type"], "group")
+        self.assertNotIn("group", data["subject"])
+
+    def test_default_resource_returns_id_only(self):
+        """Test that default resource contains only id."""
+        data = self._serialize(self.binding)
+
+        self.assertEqual(data["resource"], {"id": "ws-12345"})
+
+    # --- Edge cases ---
+
+    def test_subject_no_group_entries(self):
+        """Test that subject returns type-only when binding has no group entries."""
+        # Delete the binding-group relationship
+        self.binding_group.delete()
+
+        data = self._serialize(self.binding)
+
+        self.assertEqual(data["subject"], {"type": "group"})
+
+    def test_role_is_none(self):
+        """Test that role returns None when binding has no role attribute."""
+        mock_binding = Mock(spec=RoleBinding)
+        mock_binding.role = None
+        mock_binding.group_entries = Mock()
+        mock_binding.group_entries.all.return_value = []
+
+        data = self._serialize(mock_binding)
+
+        self.assertIsNone(data["role"])
+
+    def test_many_serialization(self):
+        """Test serialization of multiple bindings."""
+        role2 = RoleV2.objects.create(name="test_role_2", tenant=self.tenant)
+        binding2 = RoleBinding.objects.create(
+            role=role2,
+            resource_type="workspace",
+            resource_id="ws-99999",
+            tenant=self.tenant,
+        )
+
+        context = {"request": Mock(), "field_selection": None}
+        data = RoleBindingListOutputSerializer([self.binding, binding2], many=True, context=context).data
+
+        self.assertEqual(len(data), 2)
+        role_ids = {item["role"]["id"] for item in data}
+        self.assertIn(self.role.uuid, role_ids)
+        self.assertIn(role2.uuid, role_ids)
+
+        binding2.delete()
+        role2.delete()
+
+    # --- Field selection (parametrized) ---
+
+    def test_field_selection_includes_requested_fields(self):
+        """Test that field selection includes the correct fields in response."""
+        test_cases = [
+            (
+                "role_name",
+                "role(name)",
+                lambda d: ("name" in d["role"] and d["role"]["name"] == "test_role"),
+            ),
+            (
+                "resource_type",
+                "resource(type)",
+                lambda d: ("type" in d["resource"] and d["resource"]["type"] == "workspace"),
+            ),
+            (
+                "subject_id",
+                "subject(id)",
+                lambda d: ("id" in d["subject"]),
+            ),
+            (
+                "subject_group_name",
+                "subject(group.name)",
+                lambda d: (
+                    "group" in d["subject"]
+                    and d["subject"]["group"]["name"] == "test_group"
+                    and "id" not in d["subject"]  # id excluded when not requested
+                ),
+            ),
+            (
+                "subject_group_description",
+                "subject(group.description)",
+                lambda d: (
+                    "group" in d["subject"] and d["subject"]["group"]["description"] == "Test group description"
+                ),
+            ),
+        ]
+        for label, fields_str, check_fn in test_cases:
+            with self.subTest(label=label):
+                fs = RoleBindingFieldSelection.parse(fields_str)
+                data = self._serialize(self.binding, field_selection=fs)
+                self.assertTrue(check_fn(data), f"Check failed for {label}: {data}")
+
+    def test_field_selection_excludes_unrequested_fields(self):
+        """Test that unrequested fields are excluded from response."""
+        test_cases = [
+            ("role_name_only", "role(name)", "resource", lambda d: "type" not in d["resource"]),
+            ("resource_type_only", "resource(type)", "role", lambda d: "name" not in d["role"]),
+        ]
+        for label, fields_str, check_key, check_fn in test_cases:
+            with self.subTest(label=label):
+                fs = RoleBindingFieldSelection.parse(fields_str)
+                data = self._serialize(self.binding, field_selection=fs)
+                self.assertTrue(check_fn(data), f"Exclusion check failed for {label}: {data}")
+
+    def test_combined_field_selection(self):
+        """Test combined field selection across multiple objects."""
+        fs = RoleBindingFieldSelection.parse("role(name),subject(group.name),resource(type)")
+        data = self._serialize(self.binding, field_selection=fs)
+
+        # Role includes id (always) + name
+        self.assertEqual(data["role"]["id"], self.role.uuid)
+        self.assertEqual(data["role"]["name"], "test_role")
+
+        # Subject includes type (always) + group.name, but not id
+        self.assertEqual(data["subject"]["type"], "group")
+        self.assertNotIn("id", data["subject"])
+        self.assertEqual(data["subject"]["group"]["name"], "test_group")
+
+        # Resource includes id (always) + type
+        self.assertEqual(data["resource"]["id"], "ws-12345")
+        self.assertEqual(data["resource"]["type"], "workspace")
+
+
+class UpdateRoleBindingRequestSerializerTests(IdentityRequest):
+    """Tests for UpdateRoleBindingRequestSerializer.
+
+    Organized into parameterized groups:
+    - Happy-path valid inputs
+    - Missing required fields
+    - Invalid input / validation errors
+    - NUL byte sanitization
+    """
+
+    def setUp(self):
+        """Set up test data."""
+        super().setUp()
+
+    def _make_valid_data(self, **overrides):
+        """Build a valid serializer input dict, with optional field overrides.
+
+        Use ``_REMOVE`` sentinel value to omit a key entirely.
+        """
+        data = {
+            "resource_id": "ws-123",
+            "resource_type": "workspace",
+            "subject_id": "550e8400-e29b-41d4-a716-446655440000",
+            "subject_type": "group",
+            "roles": [{"id": "550e8400-e29b-41d4-a716-446655440001"}],
+        }
+        for key, value in overrides.items():
+            if value is _REMOVE:
+                data.pop(key, None)
+            else:
+                data[key] = value
+        return data
+
+    # ── Happy-path tests (parameterized) ─────────────────────────────
+
+    def test_valid_inputs(self):
+        """Test various valid inputs pass validation."""
+        cases = [
+            ("group subject type", {}),
+            ("user subject type", {"subject_type": "user"}),
+            (
+                "multiple roles",
+                {
+                    "roles": [
+                        {"id": "550e8400-e29b-41d4-a716-446655440001"},
+                        {"id": "550e8400-e29b-41d4-a716-446655440002"},
+                    ]
+                },
+            ),
+            ("fields param parsed", {"fields": "subject(group.name)"}),
+            ("fields omitted", {"fields": _REMOVE}),
+            ("fields blank string", {"fields": ""}),
+        ]
+
+        for description, overrides in cases:
+            with self.subTest(case=description):
+                data = self._make_valid_data(**overrides)
+                serializer = UpdateRoleBindingRequestSerializer(data=data)
+                self.assertTrue(serializer.is_valid(), f"{description}: {serializer.errors}")
+
+    def test_fields_param_parsed_into_field_selection(self):
+        """Test that a valid fields param is parsed into a FieldSelection object."""
+        data = self._make_valid_data(fields="subject(group.name)")
+        serializer = UpdateRoleBindingRequestSerializer(data=data)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertIsInstance(serializer.validated_data["fields"], FieldSelection)
+        self.assertIn("group.name", serializer.validated_data["fields"].get_nested("subject"))
+
+    def test_fields_omitted_defaults_to_absent(self):
+        """Test that omitting the fields param keeps it out of validated_data."""
+        data = self._make_valid_data(fields=_REMOVE)
+        serializer = UpdateRoleBindingRequestSerializer(data=data)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertNotIn("fields", serializer.validated_data)
+
+    def test_fields_blank_string_defaults_to_none(self):
+        """Test that a blank fields param is normalized to None."""
+        data = self._make_valid_data(fields="")
+        serializer = UpdateRoleBindingRequestSerializer(data=data)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertIsNone(serializer.validated_data.get("fields"))
+
+    def test_multiple_roles_validated(self):
+        """Test that multiple valid role UUIDs are accepted."""
+        data = self._make_valid_data(
+            roles=[
+                {"id": "550e8400-e29b-41d4-a716-446655440001"},
+                {"id": "550e8400-e29b-41d4-a716-446655440002"},
+            ]
+        )
+        serializer = UpdateRoleBindingRequestSerializer(data=data)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(len(serializer.validated_data["roles"]), 2)
+
+    # ── Missing required fields (parameterized) ──────────────────────
+
+    def test_missing_required_field_returns_error(self):
+        """Test that omitting any single required field fails validation."""
+        required_fields = ["resource_id", "resource_type", "subject_id", "subject_type", "roles"]
+
+        for field in required_fields:
+            with self.subTest(missing_field=field):
+                data = self._make_valid_data(**{field: _REMOVE})
+                serializer = UpdateRoleBindingRequestSerializer(data=data)
+                self.assertFalse(serializer.is_valid())
+                self.assertIn(field, serializer.errors)
+
+    # ── Validation error tests (parameterized) ───────────────────────
+
+    def test_invalid_input_returns_validation_error(self):
+        """Test various invalid inputs are rejected with correct error fields and messages."""
+        cases = [
+            # (description, overrides, error_field, expected_message_substring)
+            (
+                "empty roles list",
+                {"roles": []},
+                "roles",
+                "At least one role is required.",
+            ),
+            (
+                "invalid subject type",
+                {"subject_type": "invalid_type"},
+                "subject_type",
+                "Unsupported subject type: 'invalid_type'",
+            ),
+            (
+                "invalid UUID in roles",
+                {"roles": [{"id": "not-a-uuid"}]},
+                "roles",
+                None,  # DRF UUID message varies; just check field presence
+            ),
+            (
+                "missing id in role item",
+                {"roles": [{}]},
+                "roles",
+                None,
+            ),
+            (
+                "invalid fields param",
+                {"fields": "bogus_field"},
+                "fields",
+                "Invalid field(s):",
+            ),
+        ]
+
+        for description, overrides, error_field, expected_msg in cases:
+            with self.subTest(case=description):
+                data = self._make_valid_data(**overrides)
+                serializer = UpdateRoleBindingRequestSerializer(data=data)
+                self.assertFalse(serializer.is_valid(), f"Expected invalid for: {description}")
+                self.assertIn(error_field, serializer.errors, f"Expected '{error_field}' in errors for: {description}")
+                if expected_msg:
+                    error_messages = str(serializer.errors[error_field])
+                    self.assertIn(expected_msg, error_messages, f"Expected message for: {description}")
+
+    # ── NUL byte sanitization (parameterized) ────────────────────────
+
+    def test_nul_bytes_sanitized_from_string_fields(self):
+        """Test that NUL bytes are stripped from all string fields."""
+        cases = [
+            ("resource_id", "ws-123\x00", "ws-123"),
+            ("resource_type", "work\x00space", "workspace"),
+            (
+                "subject_id",
+                "550e8400-e29b-41d4-a716-446655440000\x00",
+                "550e8400-e29b-41d4-a716-446655440000",
+            ),
+            ("subject_type", "gro\x00up", "group"),
+        ]
+
+        for field_name, nul_value, expected_clean in cases:
+            with self.subTest(field=field_name):
+                data = self._make_valid_data(**{field_name: nul_value})
+                serializer = UpdateRoleBindingRequestSerializer(data=data)
+                self.assertTrue(serializer.is_valid(), f"NUL in {field_name}: {serializer.errors}")
+                self.assertEqual(serializer.validated_data[field_name], expected_clean)
+
+
+class UpdateRoleBindingResponseSerializerTests(IdentityRequest):
+    """Tests for UpdateRoleBindingResponseSerializer field masking.
+
+    Verifies that the response serializer respects field_selection context:
+    - Default (no field_selection): subject has id+type, roles have id only,
+      resource has id only.
+    - With field_selection: only explicitly requested fields appear.
+    """
+
+    def setUp(self):
+        """Set up test data."""
+        super().setUp()
+
+        self.role1 = RoleV2.objects.create(name="role_one", tenant=self.tenant)
+        self.role2 = RoleV2.objects.create(name="role_two", tenant=self.tenant)
+
+        self.group = Group.objects.create(
+            name="test_group",
+            description="A test group",
+            tenant=self.tenant,
+        )
+        self.principal = Principal.objects.create(
+            username="testuser",
+            tenant=self.tenant,
+            type=Principal.Types.USER,
+        )
+        self.group.principals.add(self.principal)
+
+    def tearDown(self):
+        """Tear down test data."""
+        self.group.principals.clear()
+        Principal.objects.filter(tenant=self.tenant).delete()
+        Group.objects.filter(tenant=self.tenant).delete()
+        RoleV2.objects.filter(tenant=self.tenant).delete()
+        super().tearDown()
+
+    def _make_group_result(self, roles=None):
+        """Build an UpdateRoleBindingResult for a group subject."""
+        return UpdateRoleBindingResult(
+            subject_type=SubjectType.GROUP,
+            roles=roles or [self.role1],
+            resource_id="ws-123",
+            resource_type="workspace",
+            subject=self.group,
+            resource_name="My Workspace",
+        )
+
+    def _make_user_result(self, roles=None):
+        """Build an UpdateRoleBindingResult for a user subject."""
+        return UpdateRoleBindingResult(
+            subject_type=SubjectType.USER,
+            roles=roles or [self.role1],
+            resource_id="ws-123",
+            resource_type="workspace",
+            subject=self.principal,
+            resource_name="My Workspace",
+        )
+
+    # ── Default behaviour (no field_selection) ───────────────────────
+
+    def test_default_group_response(self):
+        """Default response for a group subject includes id+type, role id only, resource id only."""
+        result = self._make_group_result()
+        serializer = UpdateRoleBindingResponseSerializer(result)
+        data = serializer.data
+
+        # subject: id + type only
+        self.assertEqual(data["subject"], {"id": self.group.uuid, "type": "group"})
+        # roles: id only
+        self.assertEqual(data["roles"], [{"id": self.role1.uuid}])
+        # resource: id only
+        self.assertEqual(data["resource"], {"id": "ws-123"})
+        # only subject, roles, resource keys
+        self.assertEqual(set(data.keys()), {"subject", "roles", "resource"})
+
+    def test_default_user_response(self):
+        """Default response for a user subject includes id+type+user details."""
+        result = self._make_user_result()
+        serializer = UpdateRoleBindingResponseSerializer(result)
+        data = serializer.data
+
+        self.assertEqual(
+            data["subject"],
+            {"id": self.principal.uuid, "type": "user", "user": {"username": "testuser"}},
+        )
+        self.assertEqual(data["roles"], [{"id": self.role1.uuid}])
+        self.assertEqual(data["resource"], {"id": "ws-123"})
+        self.assertEqual(set(data.keys()), {"subject", "roles", "resource"})
+
+    def test_default_multiple_roles_returns_id_only(self):
+        """Default response with multiple roles returns id for each, no name."""
+        result = self._make_group_result(roles=[self.role1, self.role2])
+        serializer = UpdateRoleBindingResponseSerializer(result)
+        data = serializer.data
+
+        role_ids = {r["id"] for r in data["roles"]}
+        self.assertEqual(role_ids, {self.role1.uuid, self.role2.uuid})
+        for role in data["roles"]:
+            self.assertNotIn("name", role)
+
+    # ── With field_selection ─────────────────────────────────────────
+
+    def test_field_selection_role_name(self):
+        """Requesting role(name) includes name alongside id."""
+        result = self._make_group_result()
+        field_selection = RoleBindingFieldSelection(nested_fields={"role": {"name"}})
+        serializer = UpdateRoleBindingResponseSerializer(result, context={"field_selection": field_selection})
+        data = serializer.data
+
+        self.assertEqual(data["roles"], [{"id": self.role1.uuid, "name": "role_one"}])
+
+    def test_field_selection_resource_name_and_type(self):
+        """Requesting resource(name,type) includes them alongside id."""
+        result = self._make_group_result()
+        field_selection = RoleBindingFieldSelection(nested_fields={"resource": {"name", "type"}})
+        serializer = UpdateRoleBindingResponseSerializer(result, context={"field_selection": field_selection})
+        data = serializer.data
+
+        self.assertEqual(
+            data["resource"],
+            {"id": "ws-123", "name": "My Workspace", "type": "workspace"},
+        )
+
+    def test_field_selection_subject_id(self):
+        """Requesting subject(id) includes id alongside type."""
+        result = self._make_group_result()
+        field_selection = RoleBindingFieldSelection(nested_fields={"subject": {"id"}})
+        serializer = UpdateRoleBindingResponseSerializer(result, context={"field_selection": field_selection})
+        data = serializer.data
+
+        self.assertEqual(data["subject"], {"id": self.group.uuid, "type": "group"})
+
+    def test_field_selection_subject_without_id(self):
+        """When subject(id) is not requested, subject has type only."""
+        result = self._make_group_result()
+        field_selection = RoleBindingFieldSelection(nested_fields={"subject": {"group.name"}})
+        serializer = UpdateRoleBindingResponseSerializer(result, context={"field_selection": field_selection})
+        data = serializer.data
+
+        self.assertEqual(data["subject"], {"type": "group", "group": {"name": "test_group"}})
+        self.assertNotIn("id", data["subject"])
+
+    def test_field_selection_group_details(self):
+        """Requesting subject(group.name,group.description) includes group nested object."""
+        self.group.principalCount = 3
+        result = self._make_group_result()
+        field_selection = RoleBindingFieldSelection(
+            nested_fields={"subject": {"group.name", "group.description", "group.user_count"}}
+        )
+        serializer = UpdateRoleBindingResponseSerializer(result, context={"field_selection": field_selection})
+        data = serializer.data
+
+        self.assertEqual(
+            data["subject"]["group"],
+            {"name": "test_group", "description": "A test group", "user_count": 3},
+        )
+
+    def test_field_selection_user_details(self):
+        """Requesting subject(user.username) on a user subject includes user nested object."""
+        result = self._make_user_result()
+        field_selection = RoleBindingFieldSelection(nested_fields={"subject": {"id", "user.username"}})
+        serializer = UpdateRoleBindingResponseSerializer(result, context={"field_selection": field_selection})
+        data = serializer.data
+
+        self.assertEqual(
+            data["subject"],
+            {"id": self.principal.uuid, "type": "user", "user": {"username": "testuser"}},
+        )
+
+    def test_field_selection_resource_id_only(self):
+        """Requesting resource(id) explicitly still returns only id."""
+        result = self._make_group_result()
+        field_selection = RoleBindingFieldSelection(nested_fields={"resource": {"id"}})
+        serializer = UpdateRoleBindingResponseSerializer(result, context={"field_selection": field_selection})
+        data = serializer.data
+
+        self.assertEqual(data["resource"], {"id": "ws-123"})

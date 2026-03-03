@@ -139,3 +139,14 @@ def cleanup_tenant_orphan_bindings_in_worker(org_id, dry_run=False):
         dict: Results with cleanup counts and migration results
     """
     return cleanup_tenant_orphan_bindings(org_id=org_id, dry_run=dry_run)
+
+
+@shared_task
+def bulk_cleanup_orphan_bindings_in_worker(tenant_limit: int):
+    """
+    Celery task to clean up orphaned relationships.
+
+    Args:
+        tenant_limit (int): maximum number of tenants to process
+    """
+    return call_command("fix_orphan_relations", tenant_limit=tenant_limit)

@@ -81,6 +81,10 @@ class RoleBindingAccessTestMixin:
         Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.ROOT).delete()
         super().tearDown()
 
+    def _get_list_url(self):
+        """Get the list URL."""
+        return reverse("v2_management:role-bindings-list")
+
     def _get_by_subject_url(self):
         """Get the by-subject URL."""
         return reverse("v2_management:role-bindings-by-subject")

@@ -29,6 +29,7 @@ from management.relation_replicator.logging_replicator import stringify_spicedb_
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import ReplicationEvent, ReplicationEventType, PartitionKey
 from management.role.v2_model import RoleV2, SeededRoleV2
+from management.tenant_mapping.model import DefaultAccessType
 from management.tenant_service.v2 import lock_tenant_for_bootstrap, TenantBootstrapLock
 from migration_tool.in_memory_tuples import RelationTuple
 from migration_tool.models import V2boundresource, role_permission_tuple
@@ -304,20 +305,26 @@ def _remove_orphaned_role_bindings(
 
                 # Handle built-in bindings specially.
                 if binding_id in builtin_binding_ids:
-                    # If there is a custom default group: remove only the resource->binding relation.
-                    # If there is not a custom default group, leave the binding untouched.
+                    # If there is a custom default group: remove the resource->binding relation for user bindings.
+                    # If there is not a custom default group, leave all bindings untouched.
                     if bootstrap_lock.custom_default_group is not None:
-                        to_remove.append(
-                            create_relationship(
-                                ("rbac", resource_type),
-                                resource_id,
-                                ("rbac", "role_binding"),
-                                binding_id,
-                                "binding",
-                            )
-                        )
+                        binding_source = bootstrap_lock.tenant_mapping.source_for_role_binding_id(binding_id)
 
-                        builtin_scope_cleaned_count += 1
+                        if binding_source is None:
+                            raise AssertionError("Binding source should be non-None for built-in binding.")
+
+                        if binding_source[0] == DefaultAccessType.USER:
+                            to_remove.append(
+                                create_relationship(
+                                    ("rbac", resource_type),
+                                    resource_id,
+                                    ("rbac", "role_binding"),
+                                    binding_id,
+                                    "binding",
+                                )
+                            )
+
+                            builtin_scope_cleaned_count += 1
                 else:
                     logger.debug(f"Processing binding {binding_id} on {resource_type}:{resource_id}")
 
@@ -369,7 +376,7 @@ def _remove_orphaned_custom_role_relations(
 
             # Paranoia.
             if RoleV2.objects.filter(uuid__in=batch_role_ids).exclude(type=RoleV2.Types.CUSTOM).exists():
-                raise AssertionError(f"Unexpected system role ID in {batch_role_ids}")
+                raise AssertionError(f"Unexpected non-custom role ID in {batch_role_ids}")
 
             roles_by_id: dict[str, RoleV2] = {
                 str(r.uuid): r
@@ -530,7 +537,7 @@ def _remove_orphaned_workspace_parent_relations(
 
     logger.info(
         f"Removing {len(incorrect_relations)} orphaned workspace parent relations "
-        f"for tenant with org_id={tenant.org_id!r})."
+        f"for tenant with org_id={tenant.org_id!r}."
     )
 
     commit_removal(incorrect_relations)
@@ -581,7 +588,7 @@ def _remove_incorrect_workspace_parent_relations(
 
     logger.info(
         f"Removed a total of {removed_count} incorrect workspace parent relations "
-        f"for tenant with org_id={tenant.org_id!r})."
+        f"for tenant with org_id={tenant.org_id!r}."
     )
 
     return removed_count
@@ -623,6 +630,11 @@ def cleanup_tenant_orphaned_relationships(
     ordinary_bindings_altered_count = 0
     builtin_scope_cleaned_count = 0
     custom_roles_altered_count = 0
+
+    # Get all non-custom role IDs.
+    system_role_uuids = set(str(u) for u in Role.objects.filter(system=True).values_list("uuid", flat=True)) | set(
+        str(u) for u in RoleV2.objects.exclude(type=RoleV2.Types.CUSTOM).values_list("uuid", flat=True)
+    )
 
     def commit_removal(relations: Iterable[Relationship | RelationTuple]):
         nonlocal removed_count
@@ -667,9 +679,6 @@ def cleanup_tenant_orphaned_relationships(
         builtin_scope_cleaned_count += result.default_access_bindings_removed_count
         custom_roles_altered_count += result.custom_roles_altered_count
 
-    # Get system role UUIDs (same for V1 and V2)
-    system_role_uuids = set(str(u) for u in Role.objects.filter(system=True).values_list("uuid", flat=True))
-
     tenant_resource_id = tenant.tenant_resource_id()
 
     if tenant_resource_id is None:
@@ -683,7 +692,7 @@ def cleanup_tenant_orphaned_relationships(
     workspace_ids_in_kessel = set(kessel_workspace_data.workspace_ids())
 
     logger.info(
-        f"Discovered {len(workspace_ids_in_kessel)} workspaces in Kessel for tenant with org_id={tenant.org_id!r})."
+        f"Discovered {len(workspace_ids_in_kessel)} workspaces in Kessel for tenant with org_id={tenant.org_id!r}."
     )
 
     do_remove_role_bindings("tenant", tenant_resource_id)
@@ -762,19 +771,18 @@ def cleanup_tenant_orphan_bindings(org_id: str, dry_run: bool = False, *, read_t
 
         migration_result = None
 
-        # If we removed any role binding relations, we need to re-replicate all role bindings for this tenant, since we
-        # don't know the change that was dropped to cause the error.
-        # (We conservatively check whether any relations were removed at all.)
-        if cleanup_result["relations_removed_count"] > 0:
-            if not dry_run:
-                logger.info(f"Running replicate_missing_binding_tuples for tenant with org_id={org_id!r}.")
+        # Conservatively, always re-replicate all role bindings.
+        # (There have been errors with re-replicating in the past, so we always need to re-replicate all bindings in
+        # case we don't remove anything but have incorrectly failed to re-replicate in the past.)
+        if not dry_run:
+            logger.info(f"Running replicate_missing_binding_tuples for tenant with org_id={org_id!r}.")
 
-                rereplicate_result = replicate_missing_binding_tuples(tenant=tenant)
+            rereplicate_result = replicate_missing_binding_tuples(tenant=tenant)
 
-                migration_result = {
-                    "items_checked": rereplicate_result["bindings_checked"],
-                    "items_migrated": rereplicate_result["bindings_fixed"],
-                }
+            migration_result = {
+                "items_checked": rereplicate_result["bindings_checked"],
+                "items_migrated": rereplicate_result["bindings_fixed"],
+            }
 
         result = {
             "cleanup": cleanup_result,
