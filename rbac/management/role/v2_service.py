@@ -203,6 +203,7 @@ class RoleV2Service:
                     remove=tuples_to_remove,
                 )
             )
+            logger.info(
                 "Updated custom role '%s' (uuid=%s) with %d permissions for tenant %s",
                 role.name,
                 role.uuid,
