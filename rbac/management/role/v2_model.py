@@ -182,11 +182,7 @@ class CustomRoleV2(TypeValidatedRoleV2Mixin, RoleV2):
         new_permissions: Iterable[Permission] = (),
         bindings_deleted: Iterable[RoleBinding] = (),
     ) -> tuple[list[RelationTuple], list[RelationTuple]]:
-        """Compute tuples to add and remove for a role create, update, or delete.
-
-        For updates, this performs a full reset by removing ALL old permission tuples
-        and adding ALL new permission tuples. This ensures the replication state matches
-        the database state exactly, avoiding potential inconsistencies.
+        """Compute the delta (tuples to add vs. remove) for a role create, update, or delete.
 
         For deleted bindings, delegates to ``RoleBinding.all_tuples`` to
         collect the full snapshot of tuples to remove.
@@ -203,10 +199,11 @@ class CustomRoleV2(TypeValidatedRoleV2Mixin, RoleV2):
         Returns:
             ``(tuples_to_add, tuples_to_remove)`` ready for replication.
         """
-        # For updates, remove ALL old tuples and add ALL new tuples (full reset)
-        # This is more robust than computing deltas and ensures exact consistency
-        tuples_to_add = [CustomRoleV2._permission_tuple(role, p) for p in new_permissions]
-        tuples_to_remove = [CustomRoleV2._permission_tuple(role, p) for p in old_permissions]
+        old_set = set(old_permissions)
+        new_set = set(new_permissions)
+
+        tuples_to_add = [CustomRoleV2._permission_tuple(role, p) for p in new_set - old_set]
+        tuples_to_remove = [CustomRoleV2._permission_tuple(role, p) for p in old_set - new_set]
 
         for binding in bindings_deleted:
             tuples_to_remove.extend(binding.all_tuples())

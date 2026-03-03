@@ -361,8 +361,8 @@ class RoleV2ServiceTests(IdentityRequest):
             tenant=self.tenant,
         )
 
-        # Clear the tuples from the create operation
-        tuples.clear()
+        # Don't clear - we need the initial state for delta computation to work correctly
+        # The delta will remove {write} and add {cost}, resulting in {read, cost}
         role_uuid = str(role.uuid)
 
         # Update the role to have different permissions (read and cost:reports:read)
@@ -380,9 +380,10 @@ class RoleV2ServiceTests(IdentityRequest):
         )
 
         # Then: Verify the update produced the correct replication events
-        # The replicator should have:
-        # - Removed old tuples (read, write)
-        # - Added new tuples (read, cost:reports:read)
+        # The replicator uses delta computation, so it should have:
+        # - Removed: {write} (only permissions no longer in the role)
+        # - Added: {cost:reports:read} (only new permissions)
+        # - Kept: {read} (unchanged, so not touched by delta)
 
         # The InMemoryTuples tracks the final state after all operations
         # After update, we should have exactly 2 tuples (the new permissions)
