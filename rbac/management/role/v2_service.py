@@ -184,31 +184,25 @@ class RoleV2Service:
 
             # Capture current state before update for outbox replication
             # The permissions are already loaded from prefetch_related above
-            old_tuples = role.as_tuples()
+            old_permissions = list(role.permissions.all())
 
-            # Update role fields
-            role.name = name
-            role.description = description
+            role.update(name, description)
             role.save()
             role.permissions.set(permissions)
 
-            # Capture new state after update for outbox replication
-            # Django's .set() clears the cached queryset, so .as_tuples() will
-            # query fresh permissions from the database
-            new_tuples = role.as_tuples()
+            tuples_to_add, tuples_to_remove = CustomRoleV2.replication_tuples(
+                role, old_permissions=old_permissions, new_permissions=permissions
+            )
 
-            # Replicate the update to Kessel Relations via outbox
             self._replicator.replicate(
                 ReplicationEvent(
                     event_type=ReplicationEventType.UPDATE_CUSTOM_ROLE,
                     info={"role_uuid": str(role.uuid), "org_id": str(tenant.org_id)},
                     partition_key=PartitionKey.byEnvironment(),
-                    remove=old_tuples,
-                    add=new_tuples,
+                    add=tuples_to_add,
+                    remove=tuples_to_remove,
                 )
             )
-
-            logger.info(
                 "Updated custom role '%s' (uuid=%s) with %d permissions for tenant %s",
                 role.name,
                 role.uuid,
