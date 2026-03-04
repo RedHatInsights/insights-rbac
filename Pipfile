@@ -43,7 +43,7 @@ jsonschema = "*"
 pyasn1 = ">=0.6.2"
 unleashclient = "*"
 django-pgtransaction = "*"
-kessel-sdk = {extras = ["auth"], version = "*"}
+kessel-sdk = {extras = ["auth"], version = "==2.2.0"}
 
 [dev-packages]
 sphinx-rtd-theme = "==3.1.0"
