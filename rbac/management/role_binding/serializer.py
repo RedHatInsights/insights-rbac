@@ -572,9 +572,11 @@ class BatchCreateRoleBindingRequestSerializer(serializers.Serializer):
 
     service_class = RoleBindingService
 
+    DEFAULT_FIELDS = "resource(id),role(id),subject(id,type)"
+
     requests = CreateRoleBindingItemSerializer(many=True, min_length=1, max_length=100)
     fields = serializers.CharField(
-        required=False, default="", allow_blank=True, help_text="Control which fields are included"
+        required=False, default=DEFAULT_FIELDS, allow_blank=True, help_text="Control which fields are included"
     )
 
     @property

@@ -112,9 +112,10 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
 
     def perform_batch_create(self, request, *args, **kwargs):
         """Core batch create logic."""
-        serializer = BatchCreateRoleBindingRequestSerializer(
-            data={**request.data, "fields": request.query_params.get("fields", "")}, context={"request": request}
-        )
+        data = {**request.data}
+        if "fields" in request.query_params:
+            data["fields"] = request.query_params["fields"]
+        serializer = BatchCreateRoleBindingRequestSerializer(data=data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         created_bindings = serializer.save()
 

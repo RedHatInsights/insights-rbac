@@ -628,7 +628,7 @@ def v2response_error_from_errors(errors, exc=None, context=None):
     if field_errors:
         response["errors"] = field_errors
 
-    if context and context.get("request") and context.get("request").method in ["PUT", "PATCH", "DELETE"]:
+    if context and context.get("request") and context.get("request").method in ["PUT", "PATCH", "DELETE", "POST"]:
         response["instance"] = context.get("request").path
 
     return response

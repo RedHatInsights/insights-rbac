@@ -132,6 +132,122 @@ paths:
                     format: uri
       tags:
         - Role Bindings
+  /role-bindings/:batchCreate/:
+    post:
+      operationId: RoleBindings_batchCreate
+      summary: Grant access to a resource to a set of subjects with a set of roles
+      description: Grant access to a resource to a set of subjects with a set of roles
+      parameters:
+        - name: fields
+          in: query
+          required: false
+          schema:
+            $ref: '#/components/schemas/FieldMask'
+            default: resource(id),role(id),subject(id,type)
+          explode: false
+      responses:
+        '201':
+          description: Response containing the created role bindings
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleBindings.BatchCreateRoleBindingsResponse'
+              example:
+                role_bindings:
+                  - resource:
+                      id: 550e8400-e29b-41d4-a716-446655440001
+                      type: workspace
+                    subject:
+                      id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                      type: group
+                    role:
+                      id: 550e8400-e29b-41d4-a716-446655440002
+                  - resource:
+                      id: 550e8400-e29b-41d4-a716-446655440001
+                      type: workspace
+                    subject:
+                      id: 3fa85f64-5717-4562-b3fc-2c963f66afa7
+                      type: user
+                    role:
+                      id: 550e8400-e29b-41d4-a716-446655440003
+        '400':
+          description: The server could not understand the request due to invalid syntax.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problems.Problem400'
+        '401':
+          description: Access is unauthorized.
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 401
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
+        '403':
+          description: Access is forbidden.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problems.Problem403'
+        '500':
+          description: Server error
+          content:
+            application/problem+json:
+              schema:
+                type: object
+                properties:
+                  type:
+                    $ref: '#/components/schemas/Problems.ProblemType'
+                  status:
+                    type: number
+                    enum:
+                      - 500
+                  title:
+                    type: string
+                  detail:
+                    type: string
+                  instance:
+                    type: string
+                    format: uri
+      tags:
+        - Role Bindings
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleBindings.BatchCreateRoleBindingsRequest'
+            example:
+              requests:
+                - resource:
+                    id: 550e8400-e29b-41d4-a716-446655440001
+                    type: workspace
+                  subject:
+                    id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
+                    type: group
+                  role:
+                    id: 550e8400-e29b-41d4-a716-446655440002
+                - resource:
+                    id: 550e8400-e29b-41d4-a716-446655440001
+                    type: workspace
+                  subject:
+                    id: 3fa85f64-5717-4562-b3fc-2c963f66afa7
+                    type: user
+                  role:
+                    id: 550e8400-e29b-41d4-a716-446655440003
   /role-bindings/by-subject/:
     get:
       operationId: RoleBindings_listBySubject
@@ -457,122 +573,6 @@ paths:
               roles:
                 - id: 550e8400-e29b-41d4-a716-446655440002
                 - id: 550e8400-e29b-41d4-a716-446655440003
-  /role-bindings:batchCreate:
-    post:
-      operationId: RoleBindings_batchCreate
-      summary: Grant access to a resource to a set of subjects with a set of roles
-      description: Grant access to a resource to a set of subjects with a set of roles
-      parameters:
-        - name: fields
-          in: query
-          required: false
-          schema:
-            $ref: '#/components/schemas/FieldMask'
-            default: resource(id),role(id),subject(id,type)
-          explode: false
-      responses:
-        '201':
-          description: Response containing the created role bindings
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/RoleBindings.BatchCreateRoleBindingsResponse'
-              example:
-                role_bindings:
-                  - resource:
-                      id: 550e8400-e29b-41d4-a716-446655440001
-                      type: workspace
-                    subject:
-                      id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
-                      type: group
-                    role:
-                      id: 550e8400-e29b-41d4-a716-446655440002
-                  - resource:
-                      id: 550e8400-e29b-41d4-a716-446655440001
-                      type: workspace
-                    subject:
-                      id: 3fa85f64-5717-4562-b3fc-2c963f66afa7
-                      type: user
-                    role:
-                      id: 550e8400-e29b-41d4-a716-446655440003
-        '400':
-          description: The server could not understand the request due to invalid syntax.
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problems.Problem400'
-        '401':
-          description: Access is unauthorized.
-          content:
-            application/problem+json:
-              schema:
-                type: object
-                properties:
-                  type:
-                    $ref: '#/components/schemas/Problems.ProblemType'
-                  status:
-                    type: number
-                    enum:
-                      - 401
-                  title:
-                    type: string
-                  detail:
-                    type: string
-                  instance:
-                    type: string
-                    format: uri
-        '403':
-          description: Access is forbidden.
-          content:
-            application/problem+json:
-              schema:
-                $ref: '#/components/schemas/Problems.Problem403'
-        '500':
-          description: Server error
-          content:
-            application/problem+json:
-              schema:
-                type: object
-                properties:
-                  type:
-                    $ref: '#/components/schemas/Problems.ProblemType'
-                  status:
-                    type: number
-                    enum:
-                      - 500
-                  title:
-                    type: string
-                  detail:
-                    type: string
-                  instance:
-                    type: string
-                    format: uri
-      tags:
-        - Role Bindings
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/RoleBindings.BatchCreateRoleBindingsRequest'
-            example:
-              requests:
-                - resource:
-                    id: 550e8400-e29b-41d4-a716-446655440001
-                    type: workspace
-                  subject:
-                    id: 3fa85f64-5717-4562-b3fc-2c963f66afa6
-                    type: group
-                  role:
-                    id: 550e8400-e29b-41d4-a716-446655440002
-                - resource:
-                    id: 550e8400-e29b-41d4-a716-446655440001
-                    type: workspace
-                  subject:
-                    id: 3fa85f64-5717-4562-b3fc-2c963f66afa7
-                    type: user
-                  role:
-                    id: 550e8400-e29b-41d4-a716-446655440003
   /roles/:
     get:
       operationId: Roles_list

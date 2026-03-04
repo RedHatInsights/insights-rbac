@@ -1888,6 +1888,7 @@ class BatchCreateViewTests(IdentityRequest):
             "title": "Not found.",
             "detail": expected_detail,
             "errors": [{"message": expected_detail, "field": "detail"}],
+            "instance": "/api/rbac/v2/role-bindings/:batchCreate/",
         }
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
         self.assertEqual(response.data, expected)
@@ -1907,6 +1908,7 @@ class BatchCreateViewTests(IdentityRequest):
             "title": TITLES[expected_status],
             "detail": expected_detail,
             "errors": [{"message": expected_detail, "field": expected_field}],
+            "instance": "/api/rbac/v2/role-bindings/:batchCreate/",
         }
         self.assertEqual(response.status_code, expected_status)
         self.assertEqual(response.data, expected)
