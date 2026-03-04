@@ -86,6 +86,7 @@ from management.role.relation_api_dual_write_handler import (
 )
 from management.role.serializer import BindingMappingSerializer
 from management.tasks import (
+    bulk_cleanup_orphan_bindings_in_worker,
     clean_invalid_workspace_resource_definitions_in_worker,
     fix_missing_binding_base_tuples_in_worker,
     migrate_binding_scope_in_worker,
@@ -2217,11 +2218,6 @@ def migrate_binding_scope(request):
     """View method for running binding scope migration.
 
     POST /_private/api/utils/migrate_binding_scope/
-    query params:
-        write_relationships: True, False, outbox, logging (default: True)
-            - True/outbox: Create V2 models and replicate to outbox
-            - logging: Create V2 models and log what would be replicated
-            - False: Create V2 models without replication
 
     Migrates all role bindings to the correct scope based on permission scopes.
     Iterates through roles (not binding mappings) and uses dual write handlers.
@@ -2229,17 +2225,12 @@ def migrate_binding_scope(request):
     if request.method != "POST":
         return JsonResponse({"error": "Invalid method, only 'POST' is allowed."}, status=405)
 
-    write_relationships = request.GET.get("write_relationships", "True")
+    logger.info("Running binding scope migration.")
 
-    logger.info(f"Running binding scope migration: write_relationships={write_relationships}")
-
-    migrate_binding_scope_in_worker.delay(write_relationships=write_relationships)
+    migrate_binding_scope_in_worker.delay()
 
     return JsonResponse(
-        {
-            "message": "Binding scope migration is running in a background worker.",
-            "write_relationships": write_relationships,
-        },
+        {"message": "Binding scope migration is running in a background worker."},
         status=202,
     )
 
@@ -2377,6 +2368,31 @@ def cleanup_tenant_orphan_bindings(request, org_id):
         },
         status=202,
     )
+
+
+@require_http_methods(["POST"])
+def bulk_cleanup_orphan_bindings(request):
+    """
+    Clean up orphaned role binding relationships.
+
+    POST /_private/api/utils/bulk_cleanup_orphan_bindings/
+
+    Query params:
+        tenant_limit: maximum number of tenants to process (default 100, for testing)
+
+    Returns:
+        JSON response indicating the task has been queued
+    """
+    tenant_limit = int(request.GET.get("tenant_limit", 100))
+
+    try:
+        bulk_cleanup_orphan_bindings_in_worker.delay(tenant_limit=tenant_limit)
+        return JsonResponse(
+            {"message": "Cleanup enqueued in background worker.", "tenant_limit": tenant_limit}, status=202
+        )
+    except Exception as e:
+        logger.exception(f"Error fixing orphan relations, {tenant_limit=}", exc_info=True)
+        return JsonResponse({"detail": f"Error fixing orphan relations: {str(e)}"}, status=500)
 
 
 @require_http_methods(["POST"])

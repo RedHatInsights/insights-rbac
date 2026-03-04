@@ -16,6 +16,7 @@ along with this program.  If not, see <https://www.gnu.org/licenses/>.
 """
 
 import uuid
+from api.cross_access.model import CrossAccountRequest
 from unittest.mock import patch, Mock
 from django.contrib.auth.models import User as DjangoUser
 from django.test import TestCase, override_settings
@@ -31,7 +32,8 @@ from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.definer import seed_roles
 from management.role.model import Role
-from management.role.v2_model import CustomRoleV2, RoleBinding, SeededRoleV2
+from management.role.v2_model import CustomRoleV2, SeededRoleV2
+from management.role_binding.model import RoleBinding
 from management.tenant_service.v2 import V2TenantBootstrapService
 from migration_tool.in_memory_tuples import (
     InMemoryTuples,
@@ -819,6 +821,124 @@ class SystemRoleBindingMigrationTest(TestCase):
         all_tuples = self.tuples.find_tuples(all_of(resource("rbac", "role_binding", binding_id)))
         # Should have at least the group subject tuple
         self.assertGreater(len(all_tuples), 0, "Should have tuples for the new binding")
+
+
+class CrossAccountRequestMigrationTest(DualWriteTestCase):
+    def setUp(self):
+        super().setUp()
+
+        self.user_id = "car_user_id"
+        self.user = self.fixture.new_principals_in_tenant(
+            [self.user_id], self.fixture.new_tenant("car_source").tenant
+        )[0]
+
+        CrossAccountRequest.objects.all().delete()
+
+    def tearDown(self):
+        with self.subTest(msg="V2 consistency"):
+            assert_v2_roles_consistent(test=self, tuples=None)
+
+        super().tearDown()
+
+    def _do_migrate(self):
+        migrate_all_role_bindings(replicator=InMemoryRelationReplicator(self.tuples), tenant=self.tenant)
+
+    def test_migrate_car(self):
+        """Test that migrating the scope of a binding from a cross-account request works."""
+        system_role = self.given_v1_system_role(name="system role", permissions=["root:resource:verb"])
+
+        def expect_default_count(count: int):
+            self.expect_role_bindings_to_workspace(
+                count,
+                self.default_workspace(),
+                for_v2_roles=[str(system_role.uuid)],
+                for_principals=[self.user_id],
+                for_groups=[],
+            )
+
+        def expect_root_count(count: int):
+            self.expect_role_bindings_to_workspace(
+                count,
+                self.root_workspace(),
+                for_v2_roles=[str(system_role.uuid)],
+                for_principals=[self.user_id],
+                for_groups=[],
+            )
+
+        # Simulate the CAR being created while scope was not respected.
+        with self.settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS=""):
+            self.given_car(self.user_id, [system_role])
+
+        expect_default_count(1)
+        expect_root_count(0)
+
+        with self.settings(ROOT_SCOPE_PERMISSIONS="root:*:*", TENANT_SCOPE_PERMISSIONS=""):
+            self._do_migrate()
+
+        expect_default_count(0)
+        expect_root_count(1)
+
+    def test_migrate_car_with_group(self):
+        """Test that migrating the scope of a binding from both a group and a cross-account request works."""
+        system_role = self.given_v1_system_role(name="system role", permissions=["root:resource:verb"])
+        group, _ = self.given_group(name="a group", users=["p1"])
+
+        def expect_default_count(count: int):
+            self.expect_role_bindings_to_workspace(
+                count,
+                self.default_workspace(),
+                for_v2_roles=[str(system_role.uuid)],
+                for_principals=[self.user_id],
+                for_groups=[str(group.uuid)],
+            )
+
+        def expect_root_count(count: int):
+            self.expect_role_bindings_to_workspace(
+                count,
+                self.root_workspace(),
+                for_v2_roles=[str(system_role.uuid)],
+                for_principals=[self.user_id],
+                for_groups=[str(group.uuid)],
+            )
+
+        with self.settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS=""):
+            self.given_car(self.user_id, [system_role])
+            self.given_roles_assigned_to_group(group, [system_role])
+
+        expect_default_count(1)
+        expect_root_count(0)
+
+        with self.settings(ROOT_SCOPE_PERMISSIONS="root:*:*", TENANT_SCOPE_PERMISSIONS=""):
+            self._do_migrate()
+
+        expect_default_count(0)
+        expect_root_count(1)
+
+    @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="")
+    def test_migrate_expired_car(self):
+        """Test that the migration does not revive expired cross-cacount requests."""
+        system_role = self.given_v1_system_role(name="system role", permissions=["root:resource:verb"])
+
+        def expect_binding_count(count: int):
+            self.expect_role_bindings_to_workspace(
+                count,
+                self.default_workspace(),
+                for_v2_roles=[str(system_role.uuid)],
+                for_principals=[self.user_id],
+                for_groups=[],
+            )
+
+        car = self.given_car(self.user_id, [system_role])
+        expect_binding_count(1)
+
+        car.status = "expired"
+        car.save()
+
+        self.given_car_expired(car)
+        expect_binding_count(0)
+
+        self._do_migrate()
+        expect_binding_count(0)
 
 
 class ComprehensiveBootstrapMigrationTest(DualWriteTestCase):

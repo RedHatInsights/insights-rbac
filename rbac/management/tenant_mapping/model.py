@@ -19,10 +19,11 @@
 import enum
 import logging
 import uuid
-from typing import Callable, ClassVar
+from typing import Callable, ClassVar, Optional
 
 from django.db import models
 from management.permission.scope_service import Scope
+from management.utils import as_uuid
 
 from api.models import Tenant
 
@@ -98,3 +99,29 @@ class TenantMapping(models.Model):
             str(self.tenant_scope_default_role_binding_uuid),
             str(self.tenant_scope_default_admin_role_binding_uuid),
         }
+
+    def source_for_role_binding_id(
+        self, role_binding_id: str | uuid.UUID
+    ) -> Optional[tuple[DefaultAccessType, Scope]]:
+        """Return the DefaultAccessType and Scope corresponding to the provided UUID, or None if there is none."""
+        role_binding_id = as_uuid(role_binding_id)
+
+        if role_binding_id == self.default_role_binding_uuid:
+            return DefaultAccessType.USER, Scope.DEFAULT
+
+        if role_binding_id == self.default_admin_role_binding_uuid:
+            return DefaultAccessType.ADMIN, Scope.DEFAULT
+
+        if role_binding_id == self.root_scope_default_role_binding_uuid:
+            return DefaultAccessType.USER, Scope.ROOT
+
+        if role_binding_id == self.root_scope_default_admin_role_binding_uuid:
+            return DefaultAccessType.ADMIN, Scope.ROOT
+
+        if role_binding_id == self.tenant_scope_default_role_binding_uuid:
+            return DefaultAccessType.USER, Scope.TENANT
+
+        if role_binding_id == self.tenant_scope_default_admin_role_binding_uuid:
+            return DefaultAccessType.ADMIN, Scope.TENANT
+
+        return None
