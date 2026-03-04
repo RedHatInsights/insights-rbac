@@ -80,6 +80,8 @@ class ReplicationEventType(str, Enum):
     DELETE_WORKSPACE = "delete_workspace"
     MOVE_WORKSPACE = "move_workspace"
     CLEANUP_ORPHAN_BINDINGS = "cleanup_orphan_bindings"
+    BATCH_CREATE_ROLE_BINDING = "batch_create_role_binding"
+    UPDATE_ROLE_BINDINGS_FOR_SUBJECT = "update_role_bindings_for_subject"
 
 
 class ReplicationEvent:

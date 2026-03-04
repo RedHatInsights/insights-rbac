@@ -16,13 +16,10 @@
 #
 """Test the RoleV2 models."""
 
-import uuid
-
 from django.core.exceptions import ValidationError
-from django.db import IntegrityError, transaction
+from django.db import transaction
 from rest_framework import serializers
 
-from api.models import Tenant
 from management.models import (
     CustomRoleV2,
     Group,
@@ -34,8 +31,8 @@ from management.models import (
     SeededRoleV2,
 )
 from management.principal.model import Principal
-from management.role.model import Access
-from management.role.v2_model import RoleBindingPrincipal
+from management.relation_replicator.types import ObjectReference, ObjectType, RelationTuple, SubjectReference
+from management.role_binding.model import RoleBindingPrincipal
 from tests.identity_request import IdentityRequest
 
 
@@ -424,485 +421,193 @@ class RoleV2ModelTests(IdentityRequest):
         self.assertEqual(platform_role.type, RoleV2.Types.PLATFORM)
 
 
-class RoleBindingModelTests(IdentityRequest):
-    """Test the RoleBinding models."""
+class RoleV2QuerySetTests(IdentityRequest):
+    """Tests for RoleV2QuerySet."""
 
     def setUp(self):
-        """Set up the RoleBinding model tests."""
+        """Set up roles of each type."""
         super().setUp()
-
-        # Test role
-        self.role = RoleV2.objects.create(name="test_role", tenant=self.tenant)
-
-        self.role.permissions.add(
-            Permission.objects.create(
-                tenant=Tenant.objects.get(tenant_name="public"),
-                permission="app:resource:verb",
-            )
+        self.custom_role = RoleV2.objects.create(name="custom_role", type=RoleV2.Types.CUSTOM, tenant=self.tenant)
+        self.seeded_role = RoleV2.objects.create(name="seeded_role", type=RoleV2.Types.SEEDED, tenant=self.tenant)
+        self.platform_role = RoleV2.objects.create(
+            name="platform_role", type=RoleV2.Types.PLATFORM, tenant=self.tenant
         )
-
-        # Test groups
-        self.group1 = Group.objects.create(name="group1", tenant=self.tenant)
-        self.group2 = Group.objects.create(name="group2", tenant=self.tenant)
-
-        self.principal1: Principal = Principal.objects.create(tenant=self.tenant, username="p1", user_id="p1")
-        self.principal2: Principal = Principal.objects.create(tenant=self.tenant, username="p2", user_id="p2")
 
     def tearDown(self):
-        """Tear down RoleBinding model tests."""
-        RoleBinding.objects.all().delete()
-        RoleBindingGroup.objects.all().delete()
+        """Clean up roles."""
         RoleV2.objects.all().delete()
-        Group.objects.all().delete()
 
-    def test_rolebinding_creation(self):
-        """Test basic RoleBinding creation."""
-        binding = RoleBinding.objects.create(
-            role=self.role,
-            resource_type="workspace",
-            resource_id="ws-12345",
-            tenant=self.tenant,
+    def test_assignable_excludes_platform_roles(self):
+        """assignable() should exclude platform roles."""
+        assignable = RoleV2.objects.assignable()
+        self.assertIn(self.custom_role, assignable)
+        self.assertIn(self.seeded_role, assignable)
+        self.assertNotIn(self.platform_role, assignable)
+
+    def test_assignable_returns_only_custom_and_seeded(self):
+        """assignable() should return exactly the custom and seeded roles."""
+        assignable_ids = set(RoleV2.objects.assignable().values_list("uuid", flat=True))
+        expected_ids = {self.custom_role.uuid, self.seeded_role.uuid}
+        self.assertEqual(assignable_ids, expected_ids)
+
+    def test_assignable_is_chainable(self):
+        """assignable() should be chainable with other queryset methods."""
+        result = RoleV2.objects.assignable().filter(name="custom_role")
+        self.assertEqual(result.count(), 1)
+        self.assertEqual(result.first(), self.custom_role)
+
+    def test_assignable_with_no_platform_roles(self):
+        """assignable() returns all roles when no platform roles exist."""
+        self.platform_role.delete()
+        self.assertEqual(RoleV2.objects.assignable().count(), 2)
+        self.assertEqual(RoleV2.objects.count(), 2)
+
+    def test_assignable_with_only_platform_roles(self):
+        """assignable() returns empty queryset when only platform roles exist."""
+        self.custom_role.delete()
+        self.seeded_role.delete()
+        self.assertEqual(RoleV2.objects.assignable().count(), 0)
+
+
+class CustomRoleV2ReplicationTupleTests(IdentityRequest):
+    """Tests for CustomRoleV2 relation tuple generation methods."""
+
+    def setUp(self):
+        """Set up test data."""
+        super().setUp()
+        self.perm_read = Permission.objects.create(permission="app:resource:read", tenant=self.tenant)
+        self.perm_write = Permission.objects.create(permission="app:resource:write", tenant=self.tenant)
+        self.perm_delete = Permission.objects.create(permission="app:resource:delete", tenant=self.tenant)
+        self.role = CustomRoleV2.objects.create(name="test_role", tenant=self.tenant)
+
+    def tearDown(self):
+        """Tear down."""
+        RoleV2.objects.all().delete()
+        Permission.objects.filter(tenant=self.tenant).delete()
+
+    def _permission_tuple(self, permission: Permission) -> RelationTuple:
+        """Build the expected permission tuple for self.role."""
+        return RelationTuple(
+            resource=ObjectReference(type=ObjectType(namespace="rbac", name="role"), id=str(self.role.uuid)),
+            relation=permission.v2_string(),
+            subject=SubjectReference(
+                subject=ObjectReference(type=ObjectType(namespace="rbac", name="principal"), id="*")
+            ),
         )
 
-        self.assertEqual(binding.role, self.role)
-        self.assertEqual(binding.resource_type, "workspace")
-        self.assertEqual(binding.resource_id, "ws-12345")
-        self.assertEqual(binding.tenant, self.tenant)
-        self.assertTrue(binding.uuid)
+    # ── _permission_tuple ─────────────────────────────────────────────
 
-    def test_rolebinding_unique_constraint(self):
-        """Test unique constraint on (role, resource_type, resource_id)."""
-        resource_type = "workspace"
-        resource_id = "ws-12345"
-        RoleBinding.objects.create(
-            role=self.role,
-            resource_type=resource_type,
-            resource_id=resource_id,
-            tenant=self.tenant,
+    def test_permission_tuple_returns_exact_tuple(self):
+        """_permission_tuple builds rbac/role:<uuid>#<perm>@rbac/principal:*."""
+        self.assertEqual(
+            CustomRoleV2._permission_tuple(self.role, self.perm_read),
+            self._permission_tuple(self.perm_read),
         )
 
-        # Try to create duplicate
-        with self.assertRaises(IntegrityError):
-            with transaction.atomic():
-                RoleBinding.objects.create(
-                    role=self.role,
-                    resource_type=resource_type,
-                    resource_id=resource_id,
-                    tenant=self.tenant,
+    # ── replication_tuples (permission delta) ─────────────────────────
+
+    def test_replication_tuples_computes_permission_diff(self):
+        """replication_tuples returns the exact delta for each role lifecycle operation."""
+        read = self._permission_tuple(self.perm_read)
+        write = self._permission_tuple(self.perm_write)
+        delete = self._permission_tuple(self.perm_delete)
+
+        cases = [
+            (
+                "create",
+                [],
+                [self.perm_read, self.perm_write],
+                {read, write},
+                set(),
+            ),
+            (
+                "noop",
+                [self.perm_read, self.perm_write],
+                [self.perm_read, self.perm_write],
+                set(),
+                set(),
+            ),
+            (
+                "update_swap_permission",
+                [self.perm_read, self.perm_write],
+                [self.perm_write, self.perm_delete],
+                {delete},
+                {read},
+            ),
+            (
+                "delete",
+                [self.perm_read, self.perm_write],
+                [],
+                set(),
+                {read, write},
+            ),
+        ]
+        for label, old, new, expected_add, expected_remove in cases:
+            with self.subTest(label):
+                to_add, to_remove = CustomRoleV2.replication_tuples(
+                    self.role, old_permissions=old, new_permissions=new
                 )
+                self.assertEqual(set(to_add), expected_add)
+                self.assertEqual(set(to_remove), expected_remove)
 
-    def test_rolebinding_different_resources_same_role(self):
-        """Test that same role can be bound to different resources."""
-        binding1 = RoleBinding.objects.create(
-            role=self.role,
-            resource_type="workspace",
-            resource_id="ws-12345",
-            tenant=self.tenant,
-        )
+    # ── replication_tuples (delete with bindings) ─────────────────────
 
-        binding2 = RoleBinding.objects.create(
-            role=self.role,
-            resource_type="workspace",
-            resource_id="ws-67890",
-            tenant=self.tenant,
-        )
+    def test_replication_tuples_delete_includes_binding_and_subject_tuples(self):
+        """Deleting a role removes permission tuples and all associated binding tuples."""
+        group = Group.objects.create(name="g1", tenant=self.tenant)
+        principal = Principal.objects.create(tenant=self.tenant, username="u1", user_id="uid1")
+        principal_resource_id = Principal.user_id_to_principal_resource_id(principal.user_id)
 
-        self.assertNotEqual(binding1.id, binding2.id)
-        self.assertEqual(binding1.role, binding2.role)
-
-    def test_rolebinding_cascade_delete_on_role(self):
-        """Test that deleting a role deletes its bindings."""
         binding = RoleBinding.objects.create(
             role=self.role,
             resource_type="workspace",
-            resource_id="ws-12345",
+            resource_id="ws-1",
             tenant=self.tenant,
         )
+        RoleBindingGroup.objects.create(binding=binding, group=group)
+        RoleBindingPrincipal.objects.create(binding=binding, principal=principal, source="direct")
 
-        binding_id = binding.id
-        self.role.delete()
+        binding = RoleBinding.objects.prefetch_related("group_entries", "principal_entries").get(pk=binding.pk)
+        binding_ref = ObjectReference(type=ObjectType(namespace="rbac", name="role_binding"), id=str(binding.uuid))
 
-        # Binding should be deleted
-        with self.assertRaises(RoleBinding.DoesNotExist):
-            RoleBinding.objects.get(id=binding_id)
-
-    def test_rolebinding_cascade_delete_on_tenant(self):
-        """Test that deleting a tenant deletes its role bindings."""
-        # Create separate tenant with role and binding
-        new_tenant = Tenant.objects.create(
-            tenant_name="test_tenant_delete",
-            org_id="test_org_delete",
+        to_add, to_remove = CustomRoleV2.replication_tuples(
+            self.role,
+            old_permissions=[self.perm_read],
+            bindings_deleted=[binding],
         )
 
-        new_role = RoleV2.objects.create(name="temp_role", tenant=new_tenant)
-        binding = RoleBinding.objects.create(
-            role=new_role,
-            resource_type="workspace",
-            resource_id="ws-temp",
-            tenant=new_tenant,
-        )
-
-        binding_id = binding.id
-        new_tenant.delete()
-
-        # Binding should be deleted
-        with self.assertRaises(RoleBinding.DoesNotExist):
-            RoleBinding.objects.get(id=binding_id)
-
-        # Role should be deleted
-        with self.assertRaises(RoleV2.DoesNotExist):
-            RoleV2.objects.get(id=new_role.id)
-
-    def test_rolebindinggroup_creation(self):
-        """Test basic RoleBindingGroup creation."""
-        binding = RoleBinding.objects.create(
-            role=self.role,
-            resource_type="workspace",
-            resource_id="ws-12345",
-            tenant=self.tenant,
-        )
-
-        binding_group = RoleBindingGroup.objects.create(
-            group=self.group1,
-            binding=binding,
-        )
-
-        self.assertEqual(binding_group.group, self.group1)
-        self.assertEqual(binding_group.binding, binding)
-
-    def test_rolebindinggroup_unique_constraint(self):
-        """Test unique constraint on (group, binding)."""
-        binding = RoleBinding.objects.create(
-            role=self.role,
-            resource_type="workspace",
-            resource_id="ws-12345",
-            tenant=self.tenant,
-        )
-
-        RoleBindingGroup.objects.create(
-            group=self.group1,
-            binding=binding,
-        )
-
-        # Try to create duplicate
-        with self.assertRaises(IntegrityError):
-            with transaction.atomic():
-                RoleBindingGroup.objects.create(
-                    group=self.group1,
-                    binding=binding,
-                )
-
-    def test_rolebindinggroup_different_groups_same_binding(self):
-        """Test that different groups can have same binding."""
-        binding = RoleBinding.objects.create(
-            role=self.role,
-            resource_type="workspace",
-            resource_id="ws-12345",
-            tenant=self.tenant,
-        )
-
-        bg1 = RoleBindingGroup.objects.create(
-            group=self.group1,
-            binding=binding,
-        )
-
-        bg2 = RoleBindingGroup.objects.create(
-            group=self.group2,
-            binding=binding,
-        )
-
-        self.assertNotEqual(bg1.id, bg2.id)
-        self.assertEqual(bg1.binding, bg2.binding)
-
-    def test_rolebindinggroup_cascade_delete_on_binding(self):
-        """Test that deleting a binding deletes its group entries."""
-        binding = RoleBinding.objects.create(
-            role=self.role,
-            resource_type="workspace",
-            resource_id="ws-12345",
-            tenant=self.tenant,
-        )
-
-        bg = RoleBindingGroup.objects.create(
-            group=self.group1,
-            binding=binding,
-        )
-
-        bg_id = bg.id
-        binding.delete()
-
-        # Group entry should be deleted
-        with self.assertRaises(RoleBindingGroup.DoesNotExist):
-            RoleBindingGroup.objects.get(id=bg_id)
-
-    def test_rolebindinggroup_cascade_delete_on_group(self):
-        """Test that deleting a group deletes its binding entries."""
-        binding = RoleBinding.objects.create(
-            role=self.role,
-            resource_type="workspace",
-            resource_id="ws-12345",
-            tenant=self.tenant,
-        )
-
-        bg = RoleBindingGroup.objects.create(
-            group=self.group1,
-            binding=binding,
-        )
-
-        bg_id = bg.id
-        group_id = self.group1.id
-        self.group1.delete()
-
-        with self.assertRaises(Group.DoesNotExist):
-            Group.objects.get(id=group_id)
-
-        # Group entry should be deleted
-        with self.assertRaises(RoleBindingGroup.DoesNotExist):
-            RoleBindingGroup.objects.get(id=bg_id)
-
-    def test_complete_rolebinding_scenario(self):
-        """Test a complete scenario with role binding and groups."""
-        # Create binding
-        binding = RoleBinding.objects.create(
-            role=self.role,
-            resource_type="workspace",
-            resource_id="ws-12345",
-            tenant=self.tenant,
-        )
-
-        # Add groups
-        RoleBindingGroup.objects.create(
-            group=self.group1,
-            binding=binding,
-        )
-        RoleBindingGroup.objects.create(
-            group=self.group2,
-            binding=binding,
-        )
-
-        # Verify relationships
-        self.assertEqual(binding.group_entries.count(), 2)
-
-        # Verify reverse relationships
-        self.assertEqual(self.group1.role_binding_entries.count(), 1)
-        self.assertEqual(self.group2.role_binding_entries.count(), 1)
-
-    def test_rolebinding_related_names(self):
-        """Test related_name attributes from binding classes work correctly."""
-        binding = RoleBinding.objects.create(
-            role=self.role,
-            resource_type="workspace",
-            resource_id="ws-12345",
-            tenant=self.tenant,
-        )
-
-        # Test role.bindings
-        self.assertIn(binding, self.role.bindings.all())
-
-        # Test binding.group_entries
-        bg = RoleBindingGroup.objects.create(
-            group=self.group1,
-            binding=binding,
-        )
-
-        self.assertIn(bg, binding.group_entries.all())
-
-        # Test group.role_binding_entries
-        self.assertIn(bg, self.group1.role_binding_entries.all())
-
-    def test_as_migration_value(self):
-        binding: RoleBinding = RoleBinding.objects.create(
-            role=self.role,
-            resource_type="workspace",
-            resource_id="ws-12345",
-            tenant=self.tenant,
-        )
-
-        binding.group_entries.create(
-            group=self.group1,
-            binding=binding,
-        )
-
-        migration_value = binding.as_migration_value()
-
-        self.assertEqual(str(binding.uuid), migration_value.id)
-        self.assertEqual(("rbac", "workspace"), migration_value.resource.resource_type)
-        self.assertEqual("ws-12345", migration_value.resource.resource_id)
-        self.assertEqual(str(self.role.uuid), migration_value.role.id)
-        self.assertCountEqual(["app_resource_verb"], migration_value.role.permissions)
-        self.assertFalse(migration_value.role.is_system)
-        self.assertCountEqual([str(self.group1.uuid)], migration_value.groups)
-        self.assertEqual({}, migration_value.users)
-
-    def test_as_migration_value_force_groups(self):
-        binding: RoleBinding = RoleBinding.objects.create(
-            role=self.role,
-            resource_type="workspace",
-            resource_id="ws-12345",
-            tenant=self.tenant,
-        )
-
-        group_uuid = uuid.uuid4()
-        migration_value = binding.as_migration_value(force_group_uuids=[str(group_uuid)])
-
-        self.assertEqual(str(binding.uuid), migration_value.id)
-        self.assertEqual(("rbac", "workspace"), migration_value.resource.resource_type)
-        self.assertEqual("ws-12345", migration_value.resource.resource_id)
-        self.assertEqual(str(self.role.uuid), migration_value.role.id)
-        self.assertCountEqual(["app_resource_verb"], migration_value.role.permissions)
-        self.assertFalse(migration_value.role.is_system)
-        self.assertCountEqual([str(group_uuid)], migration_value.groups)
-        self.assertEqual({}, migration_value.users)
-
-    def test_update_groups(self):
-        binding: RoleBinding = RoleBinding.objects.create(
-            role=self.role,
-            resource_type="workspace",
-            resource_id="ws-12345",
-            tenant=self.tenant,
-        )
-
-        binding.update_groups([self.group1])
-        self.assertCountEqual([self.group1], binding.bound_groups())
-
-        binding.update_groups([self.group2])
-        self.assertCountEqual([self.group2], binding.bound_groups())
-
-        binding.update_groups([self.group1, self.group2])
-        self.assertCountEqual([self.group1, self.group2], binding.bound_groups())
-
-        binding.update_groups([])
-        self.assertCountEqual([], binding.bound_groups())
-
-    def test_update_groups_by_uuid(self):
-        binding: RoleBinding = RoleBinding.objects.create(
-            role=self.role,
-            resource_type="workspace",
-            resource_id="ws-12345",
-            tenant=self.tenant,
-        )
-
-        binding.update_groups_by_uuid([self.group1.uuid])
-        self.assertCountEqual([self.group1], binding.bound_groups())
-
-        binding.update_groups_by_uuid([self.group2.uuid])
-        self.assertCountEqual([self.group2], binding.bound_groups())
-
-        binding.update_groups_by_uuid([self.group1.uuid, self.group2.uuid])
-        self.assertCountEqual([self.group1, self.group2], binding.bound_groups())
-
-        binding.update_groups_by_uuid([])
-        self.assertCountEqual([], binding.bound_groups())
-
-    def test_update_groups_by_uuid_invalid(self):
-        binding: RoleBinding = RoleBinding.objects.create(
-            role=self.role,
-            resource_type="workspace",
-            resource_id="ws-12345",
-            tenant=self.tenant,
-        )
-
-        binding.update_groups_by_uuid([self.group1.uuid, self.group2.uuid])
-        self.assertCountEqual([self.group1, self.group2], binding.bound_groups())
-
-        with self.assertRaises(ValueError):
-            # Attempt to pass a non-existent group UUID.
-            binding.update_groups_by_uuid([self.group1.uuid, uuid.uuid4()])
-
-        # The set of groups should not change after a failed attempt to set the groups.
-        self.assertCountEqual([self.group1, self.group2], binding.bound_groups())
-
-    def test_update_principals(self):
-        binding: RoleBinding = RoleBinding.objects.create(
-            role=self.role,
-            resource_type="workspace",
-            resource_id="ws-12345",
-            tenant=self.tenant,
-        )
-
-        pair1 = ("car/1", self.principal1)
-        pair2 = ("car/2", self.principal2)
-
-        binding.update_principals([pair1])
-        self.assertCountEqual([self.principal1], binding.bound_principals())
-
-        binding.update_principals([pair2])
-        self.assertCountEqual([self.principal2], binding.bound_principals())
-
-        binding.update_principals([pair1, pair2])
-        self.assertCountEqual([self.principal1, self.principal2], binding.bound_principals())
-
-        binding.update_principals([])
-        self.assertCountEqual([], binding.bound_principals())
-
-        # Multiple principals from the same source should work.
-        binding.update_principals([("car", self.principal1), ("car", self.principal2)])
-        self.assertCountEqual([self.principal1, self.principal2], binding.bound_principals())
-
-        # Multiple sources of the same principal should work.
-        binding.update_principals([("car/1", self.principal1), ("car/2", self.principal1)])
-        self.assertCountEqual([self.principal1], binding.bound_principals())
-        self.assertEqual(binding.principal_entries.all().count(), 2)
-
-    def test_update_principals_by_user_id(self):
-        binding: RoleBinding = RoleBinding.objects.create(
-            role=self.role,
-            resource_type="workspace",
-            resource_id="ws-12345",
-            tenant=self.tenant,
-        )
-
-        pair1: tuple[str, str] = ("car/1", self.principal1.user_id)
-        pair2: tuple[str, str] = ("car/2", self.principal2.user_id)
-
-        binding.update_principals_by_user_id([pair1])
-        self.assertCountEqual([self.principal1], binding.bound_principals())
-
-        binding.update_principals_by_user_id([pair2])
-        self.assertCountEqual([self.principal2], binding.bound_principals())
-
-        binding.update_principals_by_user_id([pair1, pair2])
-        self.assertCountEqual([self.principal1, self.principal2], binding.bound_principals())
-
-        binding.update_principals_by_user_id([])
-        self.assertCountEqual([], binding.bound_principals())
-
-        # Multiple principals from the same source should work.
-        binding.update_principals_by_user_id([("car", self.principal1.user_id), ("car", self.principal2.user_id)])
-        self.assertCountEqual([self.principal1, self.principal2], binding.bound_principals())
-
-        # Multiple sources of the same principal should work.
-        binding.update_principals_by_user_id([("car/1", self.principal1.user_id), ("car/2", self.principal1.user_id)])
-        self.assertCountEqual([self.principal1], binding.bound_principals())
-        self.assertEqual(binding.principal_entries.all().count(), 2)
-
-    def test_update_principals_by_user_id_nonexistent(self):
-        binding: RoleBinding = RoleBinding.objects.create(
-            role=self.role,
-            resource_type="workspace",
-            resource_id="ws-12345",
-            tenant=self.tenant,
-        )
-
-        binding.update_principals([("car/1", self.principal1)])
-
-        with self.assertRaisesRegex(ValueError, ".*test_nonexistent.*"):
-            binding.update_principals_by_user_id([("car", "test_nonexistent")])
-
-        # The existing principals should be unchanged.
-        self.assertCountEqual([self.principal1], binding.bound_principals())
-
-    def test_principal_no_source(self):
-        binding: RoleBinding = RoleBinding.objects.create(
-            role=self.role,
-            resource_type="workspace",
-            resource_id="ws-12345",
-            tenant=self.tenant,
-        )
-
-        with self.assertRaises(IntegrityError):
-            with transaction.atomic():
-                RoleBindingPrincipal.objects.create(
-                    binding=binding,
-                    principal=self.principal1,
-                )
+        expected_remove = {
+            self._permission_tuple(self.perm_read),
+            RelationTuple(
+                resource=binding_ref,
+                relation="role",
+                subject=SubjectReference(
+                    subject=ObjectReference(type=ObjectType(namespace="rbac", name="role"), id=str(self.role.uuid))
+                ),
+            ),
+            RelationTuple(
+                resource=ObjectReference(type=ObjectType(namespace="rbac", name="workspace"), id="ws-1"),
+                relation="binding",
+                subject=SubjectReference(subject=binding_ref),
+            ),
+            RelationTuple(
+                resource=binding_ref,
+                relation="subject",
+                subject=SubjectReference(
+                    subject=ObjectReference(type=ObjectType(namespace="rbac", name="group"), id=str(group.uuid)),
+                    relation="member",
+                ),
+            ),
+            RelationTuple(
+                resource=binding_ref,
+                relation="subject",
+                subject=SubjectReference(
+                    subject=ObjectReference(
+                        type=ObjectType(namespace="rbac", name="principal"), id=principal_resource_id
+                    )
+                ),
+            ),
+        }
+
+        self.assertEqual(set(to_add), set())
+        self.assertEqual(set(to_remove), expected_remove)
