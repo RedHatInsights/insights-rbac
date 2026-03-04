@@ -287,20 +287,20 @@ class RoleV2Service:
             .prefetch_related("role", "group_entries", "principal_entries")
             .iterator(chunk_size=1000)
         ):
-            relations_to_remove.extend(role_binding.binding_tuples())
-
-            relations_to_remove.extend(
-                role_binding.subject_tuple(p) for p in set(e.principal for e in role_binding.principal_entries.all())
-            )
-
-            relations_to_remove.extend(
-                role_binding.subject_tuple(g) for g in set(e.group for e in role_binding.group_entries.all())
-            )
-
+            relations_to_remove.extend(role_binding.all_tuples())
             binding_pks_to_remove.append(role_binding.pk)
 
         for role in roles_to_remove:
-            relations_to_remove.extend(role.as_tuples())
+            to_add, to_remove = CustomRoleV2.replication_tuples(
+                role=role,
+                old_permissions=list(role.permissions.all()),
+                new_permissions=[],
+            )
+
+            if len(to_add) != 0:
+                raise AssertionError("Relations should not be added while deleting roles.")
+
+            relations_to_remove.extend(to_remove)
 
         self._replicator.replicate(
             ReplicationEvent(
