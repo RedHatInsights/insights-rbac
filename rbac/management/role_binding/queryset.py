@@ -17,13 +17,15 @@
 """QuerySet for RoleBinding lookups."""
 
 from django.db.models import Count, F, QuerySet
+from management.subject import SubjectType
 
 
 class RoleBindingQuerySet(QuerySet):
     """Custom QuerySet for RoleBinding with domain-aware query methods."""
 
-    def for_tenant(self, tenant, role_id=None, resource_id=None, resource_type=None,
-                   subject_type=None, subject_id=None):
+    def for_tenant(
+        self, tenant, role_id=None, resource_id=None, resource_type=None, subject_type=None, subject_id=None
+    ):
         """Return role bindings for a tenant with related data eagerly loaded.
 
         Args:
@@ -45,7 +47,7 @@ class RoleBindingQuerySet(QuerySet):
             qs = qs.filter(role__uuid=role_id)
         if resource_id and resource_type:
             qs = qs.filter(resource_id=resource_id, resource_type=resource_type)
-        if subject_type and subject_type != "group":
+        if subject_type and subject_type != SubjectType.GROUP:
             return qs.none()
         if subject_id:
             qs = qs.filter(group_entries__group__uuid=subject_id)

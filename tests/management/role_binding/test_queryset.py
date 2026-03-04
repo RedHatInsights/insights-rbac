@@ -144,9 +144,7 @@ class RoleBindingQuerySetTest(IdentityRequest):
         ]
         for label, res_id, res_type, expected_count, expected_set in cases:
             with self.subTest(label=label):
-                qs = RoleBinding.objects.for_tenant(
-                    tenant=self.tenant, resource_id=res_id, resource_type=res_type
-                )
+                qs = RoleBinding.objects.for_tenant(tenant=self.tenant, resource_id=res_id, resource_type=res_type)
                 self.assertEqual(qs.count(), expected_count)
                 self.assertEqual(set(qs), expected_set)
 
