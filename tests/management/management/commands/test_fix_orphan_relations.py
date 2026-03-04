@@ -70,6 +70,25 @@ class TestRemoveOrphanRelations(DualWriteTestCase):
         # See RHCLOUD-44659.
         migrate_all_role_bindings(replicator=NoopReplicator(), tenant=self.tenant)
 
+        # Check that a binding for the role still exists, but that it is not the one that exists in the database.
+
+        self.expect_1_role_binding_to_workspace(
+            self.default_workspace(), for_v2_roles=[str(role.uuid)], for_groups=[str(g.uuid)]
+        )
+
+        binding = BindingMapping.objects.filter(role=role).get()
+
+        self.assertEqual(
+            0,
+            self.tuples.count_tuples(
+                all_of(
+                    resource("rbac", "workspace", self.default_workspace()),
+                    subject("rbac", "role_binding", binding.mappings["id"]),
+                    relation("binding"),
+                )
+            ),
+        )
+
         # Relations should now be inconsistent.
         with self.assertRaises(AssertionError):
             self._expect_v2_consistent()
@@ -79,6 +98,23 @@ class TestRemoveOrphanRelations(DualWriteTestCase):
 
         # After running the command, relations should now be consistent.
         self._expect_v2_consistent()
+
+        # There should still be one role binding for the role, but now it should be the one that exists in the database.
+
+        self.assertEqual(
+            1,
+            self.tuples.count_tuples(
+                all_of(
+                    resource("rbac", "workspace", self.default_workspace()),
+                    subject("rbac", "role_binding", binding.mappings["id"]),
+                    relation("binding"),
+                )
+            ),
+        )
+
+        self.expect_1_role_binding_to_workspace(
+            self.default_workspace(), for_v2_roles=[str(role.uuid)], for_groups=[str(g.uuid)]
+        )
 
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     def test_custom_default_group_access(self, replicate):
