@@ -9,7 +9,9 @@ from management.group.platform import GlobalPolicyIdService
 from management.permission.scope_service import Scope
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.role.definer import seed_roles
+from management.role.model import BindingMapping
 from management.role.platform import platform_v2_role_uuid_for
+from management.role_binding.service import RoleBindingService, CreateBindingRequest
 from management.tenant_mapping.model import TenantMapping, DefaultAccessType
 from management.tenant_service import V2TenantBootstrapService
 from migration_tool.in_memory_tuples import InMemoryRelationReplicator, all_of, resource, relation, subject
@@ -26,6 +28,7 @@ from tests.v2_util import assert_v2_roles_consistent, make_read_tuples_mock
     V2_BOOTSTRAP_TENANT=True,
     REPLICATION_TO_RELATION_ENABLED=True,
 )
+@override_settings(ATOMIC_RETRY_DISABLED=True)
 class TestRemoveOrphanRelations(DualWriteTestCase):
 
     def _do_fix_orphans(self, args: Optional[list[str]] = None):
@@ -206,3 +209,39 @@ class TestRemoveOrphanRelations(DualWriteTestCase):
 
         # We should successfully be back where we started (with the orphan binding removed).
         self.assertEqual(set(self.tuples), initial_tuples)
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_preserve_v2(self, replicate):
+        replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
+
+        system_role = self.given_v1_system_role("system role", ["rbac:*:*"])
+        group, _ = self.given_group("group", ["p1"])
+
+        service = RoleBindingService(tenant=self.tenant, replicator=InMemoryRelationReplicator(self.tuples))
+
+        service.batch_create(
+            [
+                CreateBindingRequest(
+                    role_id=str(system_role.uuid),
+                    resource_type="workspace",
+                    resource_id=self.default_workspace(),
+                    subject_type="group",
+                    subject_id=str(group.uuid),
+                )
+            ]
+        )
+
+        # Check that the role binding we just created exists.
+        self.expect_1_role_binding_to_workspace(
+            self.default_workspace(), for_v2_roles=[str(system_role.uuid)], for_groups=[str(group.uuid)]
+        )
+
+        # Using the V2 interface should not have created a BindingMapping.
+        self.assertEqual(BindingMapping.objects.count(), 0)
+
+        self._do_fix_orphans()
+
+        # We should not have removed the role binding, despite there not being a BindingMapping for it.
+        self.expect_1_role_binding_to_workspace(
+            self.default_workspace(), for_v2_roles=[str(system_role.uuid)], for_groups=[str(group.uuid)]
+        )
