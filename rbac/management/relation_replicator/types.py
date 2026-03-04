@@ -28,7 +28,7 @@ def _validate_required_str(field: str, value: object):
     if value is None:
         raise TypeError(f"{field} is required, but was None.")
     if not isinstance(value, str):
-        raise TypeError(f"{field} must be a string, but got {type(value).__name__}.")
+        raise TypeError(f"{field} must be a string, but got {type(value).__name__}: {value!r}.")
     if value == "":
         raise ValueError(f"{field} cannot be empty.")
 
@@ -38,7 +38,7 @@ def _validate_optional_str(field: str, value: object):
     if value is None:
         return
     if not isinstance(value, str):
-        raise TypeError(f"{field} must be a string or None, but got {type(value).__name__}.")
+        raise TypeError(f"{field} must be a string or None, but got {type(value).__name__}: {value!r}.")
     if value == "":
         raise ValueError(f"{field} cannot be empty (for an absent value, use None).")
 
