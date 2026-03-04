@@ -73,7 +73,7 @@ model Role {
     permissions_count?: int32;
     @doc("Timestamp of when the role was last modified")
     last_modified?: offsetDateTime;
-    @doc("Organization ID that owns this role. Custom roles have org_id set to the tenant's org_id; seeded and platform roles may have null org_id.")
+    @doc("ID of the organization that owns this role. Will not be populated if roles belong to the Public Tenant.")
     org_id?: string;
 }
 
