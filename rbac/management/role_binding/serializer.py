@@ -576,7 +576,7 @@ class BatchCreateRoleBindingRequestSerializer(serializers.Serializer):
 
     requests = CreateRoleBindingItemSerializer(many=True, min_length=1, max_length=100)
     fields = serializers.CharField(
-        required=False, default=DEFAULT_FIELDS, allow_blank=True, help_text="Control which fields are included"
+        required=False, default="", allow_blank=True, help_text="Control which fields are included"
     )
 
     @property
@@ -587,7 +587,7 @@ class BatchCreateRoleBindingRequestSerializer(serializers.Serializer):
     def validate_fields(self, value):
         """Parse and validate the fields query parameter for response field masking."""
         if not value:
-            return None
+            return RoleBindingFieldSelection.parse(self.DEFAULT_FIELDS)
         try:
             return RoleBindingFieldSelection.parse(value)
         except FieldSelectionValidationError as e:
@@ -759,12 +759,16 @@ class UpdateRoleBindingRequestSerializer(RoleBindingInputSerializerMixin, serial
     sanitization (``to_internal_value``) and ``validate_fields``.
     """
 
+    DEFAULT_FIELDS = "resource(id),subject(id),roles(id)"
+
     # Query parameters
     resource_id = serializers.CharField(required=True, help_text="Resource ID to update bindings for")
     resource_type = serializers.CharField(required=True, help_text="Resource type (e.g., 'workspace')")
     subject_id = serializers.CharField(required=True, help_text="Subject ID (UUID)")
     subject_type = serializers.CharField(required=True, help_text="Subject type (e.g., 'group')")
-    fields = serializers.CharField(required=False, allow_blank=True, help_text="Control which fields are included")
+    fields = serializers.CharField(
+        required=False, default="", allow_blank=True, help_text="Control which fields are included"
+    )
 
     # Request body
     roles = RoleIdSerializer(many=True, required=True, help_text="Roles to assign")
@@ -772,7 +776,7 @@ class UpdateRoleBindingRequestSerializer(RoleBindingInputSerializerMixin, serial
     def validate_fields(self, value):
         """Parse and validate fields parameter using by-subject selection."""
         if not value:
-            return None
+            return RoleBindingBySubjectFieldSelection.parse(self.DEFAULT_FIELDS)
         try:
             return RoleBindingBySubjectFieldSelection.parse(value)
         except FieldSelectionValidationError as e:

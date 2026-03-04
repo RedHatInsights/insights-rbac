@@ -2227,7 +2227,7 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
         actual["roles"] = sorted(actual["roles"], key=lambda r: str(r["id"]))
         expected_roles = sorted([{"id": self.role1.uuid}, {"id": self.role2.uuid}], key=lambda r: str(r["id"]))
         expected = {
-            "subject": {"id": self.group.uuid, "type": SubjectType.GROUP},
+            "subject": {"id": self.group.uuid},
             "roles": expected_roles,
             "resource": {"id": str(self.workspace.id)},
         }
@@ -2251,11 +2251,7 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         expected = {
-            "subject": {
-                "id": self.principal.uuid,
-                "type": SubjectType.USER,
-                "user": {"username": self.principal.username},
-            },
+            "subject": {"id": self.principal.uuid},
             "roles": [{"id": self.role1.uuid}],
             "resource": {"id": str(self.workspace.id)},
         }
@@ -2291,7 +2287,7 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
 
         # Should only have role2 (role1 was replaced)
         expected = {
-            "subject": {"id": self.group.uuid, "type": SubjectType.GROUP},
+            "subject": {"id": self.group.uuid},
             "roles": [{"id": self.role2.uuid}],
             "resource": {"id": str(self.workspace.id)},
         }
@@ -2576,7 +2572,7 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
 
         # Only one binding should be created despite the duplicate
         expected = {
-            "subject": {"id": self.group.uuid, "type": SubjectType.GROUP},
+            "subject": {"id": self.group.uuid},
             "roles": [{"id": self.role1.uuid}],
             "resource": {"id": str(self.workspace.id)},
         }

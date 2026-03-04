@@ -1259,19 +1259,27 @@ class UpdateRoleBindingRequestSerializerTests(IdentityRequest):
         self.assertIsInstance(serializer.validated_data["fields"], FieldSelection)
         self.assertIn("group.name", serializer.validated_data["fields"].get_nested("subject"))
 
-    def test_fields_omitted_defaults_to_absent(self):
-        """Test that omitting the fields param keeps it out of validated_data."""
+    def test_fields_omitted_defaults_to_default_selection(self):
+        """Test that omitting the fields param applies the default field selection."""
         data = self._make_valid_data(fields=_REMOVE)
         serializer = UpdateRoleBindingRequestSerializer(data=data)
         self.assertTrue(serializer.is_valid(), serializer.errors)
-        self.assertNotIn("fields", serializer.validated_data)
+        field_selection = serializer.validated_data["fields"]
+        self.assertIsInstance(field_selection, FieldSelection)
+        self.assertIn("id", field_selection.get_nested("resource"))
+        self.assertIn("id", field_selection.get_nested("subject"))
+        self.assertIn("id", field_selection.get_nested("roles"))
 
-    def test_fields_blank_string_defaults_to_none(self):
-        """Test that a blank fields param is normalized to None."""
+    def test_fields_blank_string_defaults_to_default_selection(self):
+        """Test that a blank fields param applies the default field selection."""
         data = self._make_valid_data(fields="")
         serializer = UpdateRoleBindingRequestSerializer(data=data)
         self.assertTrue(serializer.is_valid(), serializer.errors)
-        self.assertIsNone(serializer.validated_data.get("fields"))
+        field_selection = serializer.validated_data["fields"]
+        self.assertIsInstance(field_selection, FieldSelection)
+        self.assertIn("id", field_selection.get_nested("resource"))
+        self.assertIn("id", field_selection.get_nested("subject"))
+        self.assertIn("id", field_selection.get_nested("roles"))
 
     def test_multiple_roles_validated(self):
         """Test that multiple valid role UUIDs are accepted."""
