@@ -78,10 +78,25 @@ class RoleBindingListInputSerializer(RoleBindingInputSerializerMixin, serializer
     """
 
     role_id = serializers.UUIDField(required=False, help_text="Filter by role ID")
+    resource_id = serializers.CharField(required=False, help_text="Filter by resource ID")
+    resource_type = serializers.CharField(required=False, help_text="Filter by resource type")
+    subject_type = serializers.CharField(required=False, help_text="Filter by subject type")
+    subject_id = serializers.UUIDField(required=False, help_text="Filter by subject ID")
     fields = serializers.CharField(required=False, help_text="Control which fields are included")
     # Validated but not acted on yet; default ordering is by role creation time (UUIDv7).
     # Custom ordering support will be added in a follow-on PR.
     order_by = serializers.CharField(required=False, help_text="Sort by specified field(s)")
+
+    def validate(self, attrs):
+        """Enforce that resource_id and resource_type must be provided together."""
+        has_id = "resource_id" in attrs
+        has_type = "resource_type" in attrs
+        if has_id != has_type:
+            missing = "resource_type" if has_id else "resource_id"
+            raise serializers.ValidationError(
+                f"resource_id and resource_type must be provided together; missing {missing}."
+            )
+        return attrs
 
 
 class RoleBindingInputSerializer(serializers.Serializer):

@@ -538,6 +538,110 @@ class RoleBindingListViewSetTest(IdentityRequest):
                     f"Field selection check failed for {label}: {item}",
                 )
 
+    # --- Resource filtering ---
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_filter_by_resource(self, mock_permission):
+        """Test filtering by resource_id and resource_type."""
+        url = self._get_list_url()
+        resource_id = str(self.workspace.id)
+
+        cases = [
+            ("matching_resource", f"resource_id={resource_id}&resource_type=workspace", 15),
+            ("non_matching_id", "resource_id=nonexistent&resource_type=workspace", 0),
+            ("non_matching_type", f"resource_id={resource_id}&resource_type=other", 0),
+        ]
+        for label, query, expected_count in cases:
+            with self.subTest(label=label):
+                response = self.client.get(f"{url}?{query}&limit=100", **self.headers)
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                self.assertEqual(len(response.data["data"]), expected_count)
+
+    # --- Subject filtering ---
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_filter_by_subject_id(self, mock_permission):
+        """Test filtering by subject_id (group UUID)."""
+        url = self._get_list_url()
+        target_group = self.groups[0]
+
+        cases = [
+            ("matching_group", str(target_group.uuid), 1),
+            ("non_matching_group", str(uuid.uuid4()), 0),
+        ]
+        for label, subject_id, expected_count in cases:
+            with self.subTest(label=label):
+                response = self.client.get(f"{url}?subject_id={subject_id}&limit=100", **self.headers)
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                self.assertEqual(len(response.data["data"]), expected_count)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_filter_by_subject_type(self, mock_permission):
+        """Test filtering by subject_type."""
+        url = self._get_list_url()
+
+        cases = [
+            ("group_returns_results", "group", 15),
+            ("unsupported_returns_empty", "user", 0),
+        ]
+        for label, subject_type, expected_count in cases:
+            with self.subTest(label=label):
+                response = self.client.get(f"{url}?subject_type={subject_type}&limit=100", **self.headers)
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                self.assertEqual(len(response.data["data"]), expected_count)
+
+    # --- Combined filters ---
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_combined_filters(self, mock_permission):
+        """Test combining role_id, resource, and subject filters."""
+        url = self._get_list_url()
+        target_role = self.roles[0]
+        target_group = self.groups[0]
+        resource_id = str(self.workspace.id)
+
+        cases = [
+            (
+                "role_and_resource",
+                f"role_id={target_role.uuid}&resource_id={resource_id}&resource_type=workspace",
+                1,
+            ),
+            (
+                "role_and_subject",
+                f"role_id={target_role.uuid}&subject_id={target_group.uuid}",
+                1,
+            ),
+            (
+                "all_filters_match",
+                f"role_id={target_role.uuid}&resource_id={resource_id}&resource_type=workspace"
+                f"&subject_type=group&subject_id={target_group.uuid}",
+                1,
+            ),
+            (
+                "all_filters_no_match",
+                f"role_id={target_role.uuid}&resource_id=nonexistent&resource_type=workspace"
+                f"&subject_type=group&subject_id={target_group.uuid}",
+                0,
+            ),
+        ]
+        for label, query, expected_count in cases:
+            with self.subTest(label=label):
+                response = self.client.get(f"{url}?{query}&limit=100", **self.headers)
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                self.assertEqual(len(response.data["data"]), expected_count)
+
     # --- Problem RFC format on errors ---
 
     @patch(
@@ -555,6 +659,9 @@ class RoleBindingListViewSetTest(IdentityRequest):
             ("group_order_by", f"{url}?order_by=group.name", "order_by"),
             ("unknown_fields_object", f"{url}?fields=bogus(nope)", "fields"),
             ("invalid_role_field", f"{url}?fields=role(nonexistent)", "fields"),
+            ("resource_id_without_type", f"{url}?resource_id=res-1", "non_field_errors"),
+            ("resource_type_without_id", f"{url}?resource_type=workspace", "non_field_errors"),
+            ("invalid_subject_id", f"{url}?subject_id=not-a-uuid", "subject_id"),
         ]
         for label, request_url, expected_field in error_cases:
             with self.subTest(label=label):
@@ -598,6 +705,24 @@ class RoleBindingListViewSetTest(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         item = response.data["data"][0]
         self.assertIn("name", item["role"])
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_strips_nul_bytes_from_resource_and_subject_params(self, mock_permission):
+        """Test that NUL bytes are stripped from resource and subject parameters."""
+        url = self._get_list_url()
+        resource_id = str(self.workspace.id)
+        target_group = self.groups[0]
+
+        response = self.client.get(
+            f"{url}?resource_id=\x00{resource_id}\x00&resource_type=\x00workspace\x00"
+            f"&subject_type=\x00group\x00&subject_id=\x00{target_group.uuid}\x00&limit=100",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
 
 
 @override_settings(V2_APIS_ENABLED=True)

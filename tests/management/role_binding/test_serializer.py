@@ -728,6 +728,95 @@ class RoleBindingListInputSerializerTest(TestCase):
         self.assertTrue(s.is_valid(), s.errors)
         self.assertNotIn("order_by", s.validated_data)
 
+    # --- resource_id / resource_type (paired) ---
+
+    def test_resource_filters_valid_paired(self):
+        """Test that resource_id and resource_type are accepted when both provided."""
+        cases = [
+            ("workspace", "res-1", "workspace"),
+            ("custom_type", "my-resource-id", "custom"),
+        ]
+        for label, res_id, res_type in cases:
+            with self.subTest(label=label):
+                s = RoleBindingListInputSerializer(data={"resource_id": res_id, "resource_type": res_type})
+                self.assertTrue(s.is_valid(), s.errors)
+                self.assertEqual(s.validated_data["resource_id"], res_id)
+                self.assertEqual(s.validated_data["resource_type"], res_type)
+
+    def test_resource_id_without_resource_type_is_invalid(self):
+        """Test that resource_id without resource_type is rejected."""
+        s = RoleBindingListInputSerializer(data={"resource_id": "res-1"})
+        self.assertFalse(s.is_valid())
+        self.assertIn("non_field_errors", s.errors)
+
+    def test_resource_type_without_resource_id_is_invalid(self):
+        """Test that resource_type without resource_id is rejected."""
+        s = RoleBindingListInputSerializer(data={"resource_type": "workspace"})
+        self.assertFalse(s.is_valid())
+        self.assertIn("non_field_errors", s.errors)
+
+    def test_resource_filters_omitted_is_valid(self):
+        """Test that omitting both resource_id and resource_type is valid."""
+        s = RoleBindingListInputSerializer(data={})
+        self.assertTrue(s.is_valid(), s.errors)
+        self.assertNotIn("resource_id", s.validated_data)
+        self.assertNotIn("resource_type", s.validated_data)
+
+    # --- subject_type ---
+
+    def test_subject_type_valid_inputs(self):
+        """Test that valid subject_type values are accepted."""
+        cases = [
+            ("group", "group"),
+            ("user", "user"),
+        ]
+        for label, value in cases:
+            with self.subTest(label=label):
+                s = RoleBindingListInputSerializer(data={"subject_type": value})
+                self.assertTrue(s.is_valid(), s.errors)
+                self.assertEqual(s.validated_data["subject_type"], value)
+
+    def test_subject_type_omitted_is_valid(self):
+        """Test that omitting subject_type is valid (required=False)."""
+        s = RoleBindingListInputSerializer(data={})
+        self.assertTrue(s.is_valid(), s.errors)
+        self.assertNotIn("subject_type", s.validated_data)
+
+    # --- subject_id ---
+
+    def test_subject_id_valid_inputs(self):
+        """Test that valid UUID formats are accepted for subject_id."""
+        valid_uuids = [
+            ("standard", "550e8400-e29b-41d4-a716-446655440000"),
+            ("zeros", "00000000-0000-0000-0000-000000000000"),
+            ("generated", str(uuid.uuid4())),
+        ]
+        for label, value in valid_uuids:
+            with self.subTest(label=label):
+                s = RoleBindingListInputSerializer(data={"subject_id": value})
+                self.assertTrue(s.is_valid(), s.errors)
+                self.assertEqual(s.validated_data["subject_id"], uuid.UUID(value))
+
+    def test_subject_id_invalid_inputs(self):
+        """Test that non-UUID values are rejected for subject_id."""
+        invalid_values = [
+            ("not-a-uuid", "not-a-uuid"),
+            ("integer", "12345"),
+            ("empty", ""),
+            ("spaces", "   "),
+        ]
+        for label, value in invalid_values:
+            with self.subTest(label=label):
+                s = RoleBindingListInputSerializer(data={"subject_id": value})
+                self.assertFalse(s.is_valid())
+                self.assertIn("subject_id", s.errors)
+
+    def test_subject_id_omitted_is_valid(self):
+        """Test that omitting subject_id is valid (required=False)."""
+        s = RoleBindingListInputSerializer(data={})
+        self.assertTrue(s.is_valid(), s.errors)
+        self.assertNotIn("subject_id", s.validated_data)
+
     # --- NUL byte sanitization ---
 
     def test_nul_bytes_stripped_from_all_string_params(self):
@@ -735,17 +824,30 @@ class RoleBindingListInputSerializerTest(TestCase):
         test_cases = [
             ("fields", "\x00role(name)\x00", "role(name)"),
             ("order_by", "\x00role.name\x00", "role.name"),
+            ("resource_id", "\x00res-1\x00", "res-1"),
+            ("resource_type", "\x00workspace\x00", "workspace"),
+            ("subject_type", "\x00group\x00", "group"),
         ]
         for label, raw, expected_clean in test_cases:
             with self.subTest(label=label):
-                s = RoleBindingListInputSerializer(data={label: raw})
+                data = {label: raw}
+                if label == "resource_id":
+                    data["resource_type"] = "workspace"
+                elif label == "resource_type":
+                    data["resource_id"] = "res-1"
+                s = RoleBindingListInputSerializer(data=data)
                 self.assertTrue(s.is_valid(), s.errors)
 
     def test_nul_bytes_stripped_from_role_id(self):
         """Test that NUL bytes in role_id are stripped before UUID validation."""
         valid_uuid = "550e8400-e29b-41d4-a716-446655440000"
         s = RoleBindingListInputSerializer(data={"role_id": f"\x00{valid_uuid}\x00"})
-        # NUL stripping happens before UUIDField validation
+        self.assertTrue(s.is_valid(), s.errors)
+
+    def test_nul_bytes_stripped_from_subject_id(self):
+        """Test that NUL bytes in subject_id are stripped before UUID validation."""
+        valid_uuid = "550e8400-e29b-41d4-a716-446655440000"
+        s = RoleBindingListInputSerializer(data={"subject_id": f"\x00{valid_uuid}\x00"})
         self.assertTrue(s.is_valid(), s.errors)
 
     # --- Combined ---
@@ -755,12 +857,20 @@ class RoleBindingListInputSerializerTest(TestCase):
         s = RoleBindingListInputSerializer(
             data={
                 "role_id": str(uuid.uuid4()),
+                "resource_id": "res-1",
+                "resource_type": "workspace",
+                "subject_type": "group",
+                "subject_id": str(uuid.uuid4()),
                 "fields": "role(name),resource(type)",
                 "order_by": "-role.name",
             }
         )
         self.assertTrue(s.is_valid(), s.errors)
         self.assertIn("role_id", s.validated_data)
+        self.assertIn("resource_id", s.validated_data)
+        self.assertIn("resource_type", s.validated_data)
+        self.assertIn("subject_type", s.validated_data)
+        self.assertIn("subject_id", s.validated_data)
         self.assertIsNotNone(s.validated_data["fields"])
         self.assertEqual(s.validated_data["order_by"], "-role.name")
 

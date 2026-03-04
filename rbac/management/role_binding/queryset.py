@@ -22,12 +22,18 @@ from django.db.models import Count, F, QuerySet
 class RoleBindingQuerySet(QuerySet):
     """Custom QuerySet for RoleBinding with domain-aware query methods."""
 
-    def for_tenant(self, tenant, role_id=None):
+    def for_tenant(self, tenant, role_id=None, resource_id=None, resource_type=None,
+                   subject_type=None, subject_id=None):
         """Return role bindings for a tenant with related data eagerly loaded.
 
         Args:
             tenant: The tenant to filter by.
             role_id: Optional role UUID to filter by.
+            resource_id: Optional resource ID to filter by (must pair with resource_type).
+            resource_type: Optional resource type to filter by (must pair with resource_id).
+            subject_type: Optional subject type filter. Only 'group' is supported;
+                unsupported types return an empty queryset.
+            subject_id: Optional subject (group) UUID to filter by.
         """
         qs = (
             self.filter(tenant=tenant)
@@ -37,6 +43,12 @@ class RoleBindingQuerySet(QuerySet):
         )
         if role_id:
             qs = qs.filter(role__uuid=role_id)
+        if resource_id and resource_type:
+            qs = qs.filter(resource_id=resource_id, resource_type=resource_type)
+        if subject_type and subject_type != "group":
+            return qs.none()
+        if subject_id:
+            qs = qs.filter(group_entries__group__uuid=subject_id)
         return qs
 
     def for_resource(self, resource_type, resource_id, tenant):
