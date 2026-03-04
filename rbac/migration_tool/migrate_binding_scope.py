@@ -140,7 +140,7 @@ def _migrate_car_bindings(car: CrossAccountRequest, replicator: RelationReplicat
     dual_write_handler.generate_relations_to_add_roles(roles)
     dual_write_handler.replicate()
 
-    logger.info(f"Processed {bindings_cleaned} binding/relation removals for CAR {car.id}")
+    logger.info(f"Processed {bindings_cleaned} binding/relation removals for CAR {str(car.request_id)}")
     return bindings_cleaned
 
 
