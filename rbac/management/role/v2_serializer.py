@@ -97,9 +97,7 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
 
     def get_org_id(self, obj):
         """Return org_id from the role's tenant."""
-        request = self.context.get("request")
-        tenant = request.tenant if request else obj.tenant
-        org_id = tenant.org_id
+        org_id = obj.tenant.org_id
         return str(org_id) if org_id is not None else None
 
 
