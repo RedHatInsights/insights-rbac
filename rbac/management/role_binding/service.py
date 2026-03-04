@@ -67,6 +67,18 @@ class UpdateRoleBindingResult:
 
 logger = logging.getLogger(__name__)
 
+
+@dataclass
+class CreateBindingRequest:
+    """Typed input for a single role binding creation."""
+
+    role_id: str
+    resource_type: str
+    resource_id: str
+    subject_type: str
+    subject_id: str
+
+
 # Lazily instantiate the JWT helpers once so all requests reuse the same objects.
 _jwt_cache = JWTCache()
 _jwt_provider = JWTProvider()
@@ -155,6 +167,87 @@ class RoleBindingService:
             "resource_name": self.get_resource_name(resource_id, resource_type),
             "field_selection": params.get("fields"),
         }
+
+    @atomic
+    def batch_create(self, requests: list[CreateBindingRequest]) -> list[dict]:
+        """Create multiple role bindings."""
+        roles = self._get_roles(list({req.role_id for req in requests}))
+        roles_by_uuid = {str(r.uuid): r for r in roles}
+        roles_by_id = {r.id: r for r in roles}
+
+        subjects_by_uuid = self._resolve_subjects(requests)
+
+        for resource_type, resource_id in {(r.resource_type, r.resource_id) for r in requests}:
+            self._validate_resource(resource_type, resource_id)
+
+        access_groups = self._group_by_subject_resource(requests, roles_by_uuid)
+        all_tuples_to_add: list[RelationTuple] = []
+
+        for key, role_ids in access_groups.items():
+            subject_type, subject_id, resource_type, resource_id = key
+            subject = subjects_by_uuid[subject_id]
+
+            created, linked = self._add_access(subject, resource_type, resource_id, roles_by_id, role_ids)
+            tuples_add, _ = RoleBinding.replication_tuples(
+                subject=subject, bindings_created=created, subject_linked_to=linked
+            )
+            all_tuples_to_add.extend(tuples_add)
+
+        self._replicate_tuples(all_tuples_to_add, [], ReplicationEventType.BATCH_CREATE_ROLE_BINDING)
+
+        resource_names = self._compute_resource_names(requests)
+        result = [
+            {
+                "role": roles_by_uuid[req.role_id],
+                "subject_type": req.subject_type,
+                "subject": subjects_by_uuid[req.subject_id],
+                "resource_type": req.resource_type,
+                "resource_id": req.resource_id,
+                "resource_name": resource_names[(req.resource_type, req.resource_id)],
+            }
+            for req in requests
+        ]
+
+        logger.info("Created %d role binding(s) for tenant %s", len(result), self.tenant.org_id)
+        return result
+
+    def _resolve_subjects(self, requests: list[CreateBindingRequest]) -> dict[str, Group | Principal]:
+        """Batch-resolve all subjects, raising NotFoundError for any missing."""
+        group_uuids = {r.subject_id for r in requests if r.subject_type == SubjectType.GROUP}
+        user_uuids = {r.subject_id for r in requests if r.subject_type == SubjectType.USER}
+
+        groups_by_uuid = Subject.objects.groups(group_uuids)
+        missing = group_uuids - set(groups_by_uuid.keys())
+        if missing:
+            raise NotFoundError(SubjectType.GROUP, ", ".join(missing))
+
+        principals_by_uuid = Subject.objects.users(user_uuids)
+        missing = user_uuids - set(principals_by_uuid.keys())
+        if missing:
+            raise NotFoundError(SubjectType.USER, ", ".join(missing))
+
+        return {**groups_by_uuid, **principals_by_uuid}
+
+    @staticmethod
+    def _group_by_subject_resource(
+        requests: list[CreateBindingRequest],
+        roles_by_uuid: dict[str, RoleV2],
+    ) -> dict[tuple, set[int]]:
+        """Group requests into (subject_type, subject_id, resource_type, resource_id) -> role PKs."""
+        groups: dict[tuple, set[int]] = {}
+        for req in requests:
+            key = (req.subject_type, req.subject_id, req.resource_type, req.resource_id)
+            groups.setdefault(key, set()).add(roles_by_uuid[req.role_id].id)
+        return groups
+
+    def _compute_resource_names(self, requests: list[CreateBindingRequest]) -> dict[tuple[str, str], str | None]:
+        """Resolve display names for each unique resource."""
+        result: dict[tuple[str, str], str | None] = {}
+        for req in requests:
+            key = (req.resource_type, req.resource_id)
+            if key not in result:
+                result[key] = self.get_resource_name(req.resource_id, req.resource_type)
+        return result
 
     def _build_base_queryset(
         self, resource_id: str, resource_type: str, binding_uuids: Optional[Sequence[str]] = None
@@ -658,11 +751,11 @@ class RoleBindingService:
     def _validate_resource(self, resource_type: str, resource_id: str) -> None:
         """Validate that the resource exists and belongs to this tenant.
 
-        # TODO: Resource validation is workspace-specific because workspace is
-        # the only resource type with a local table. Role bindings can be
-        # created for any resource type, so this lookup needs to be made
-        # generic as more resource
-        # types are supported.
+        Only resource types with a local table (currently workspace) are
+        checked for existence.  All other types are accepted as is because
+        there is no local record to validate against.
+
+        TODO: check in inventory API for existence of the resource.
 
         Args:
             resource_type: The type of resource (e.g., ``"workspace"``)
@@ -670,7 +763,6 @@ class RoleBindingService:
 
         Raises:
             RequiredFieldError: If resource_type or resource_id is empty
-            InvalidFieldError: If resource_type is not supported
             NotFoundError: If the resource cannot be found for this tenant
         """
         if not resource_type:
@@ -682,8 +774,6 @@ class RoleBindingService:
         if resource_type == "workspace":
             if not Workspace.objects.exists_for_tenant(resource_id, tenant=self.tenant):
                 raise NotFoundError(resource_type, resource_id)
-        else:
-            raise InvalidFieldError("resource_type", f"Unsupported resource type: '{resource_type}'")
 
     def _get_roles(self, role_ids: list[str]) -> list[RoleV2]:
         """Get assignable roles by their UUIDs, validating all exist.

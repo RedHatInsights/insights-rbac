@@ -23,7 +23,6 @@ from django.core.management import call_command
 from internal.migrations.remove_orphan_relations import cleanup_tenant_orphan_bindings
 from internal.utils import (
     clean_invalid_workspace_resource_definitions,
-    get_replicator,
     replicate_missing_binding_tuples,
 )
 from management.health.healthcheck import redis_health
@@ -84,18 +83,9 @@ def migrate_data_in_worker(kwargs):
 
 
 @shared_task
-def migrate_binding_scope_in_worker(write_relationships: str = "True"):
-    """
-    Celery task to migrate role binding scopes.
-
-    Args:
-        write_relationships: How to handle replication.
-            - "True" or "outbox": Create V2 models and replicate to outbox (default)
-            - "logging": Create V2 models and log what would be replicated
-            - "False": Create V2 models without replication
-    """
-    replicator = get_replicator(write_relationships)
-    return migrate_all_role_bindings(replicator=replicator)
+def migrate_binding_scope_in_worker():
+    """Celery task to migrate role binding scopes."""
+    return migrate_all_role_bindings()
 
 
 @shared_task
