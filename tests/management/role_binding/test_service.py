@@ -16,17 +16,32 @@
 #
 """Tests for the RoleBindingService and Serializer."""
 
+import concurrent.futures
+import uuid
+from unittest.mock import patch
+
 from django.test import TestCase, override_settings
+from management.principal.model import Principal as PrincipalModel
+from management.relation_replicator.outbox_replicator import OutboxReplicator
+from management.relation_replicator.relation_replicator import RelationReplicator, ReplicationEventType
+from migration_tool.in_memory_tuples import (
+    InMemoryRelationReplicator,
+    InMemoryTuples,
+    all_of,
+    relation,
+    resource,
+    subject,
+)
 
 from management.models import Group, Permission, Principal, Workspace
-from management.role.v2_model import RoleV2
+from management.role.v2_model import PlatformRoleV2, RoleV2, SeededRoleV2
 from management.role.v2_service import RoleV2Service
+from management.exceptions import InvalidFieldError, NotFoundError
 from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
 from management.role_binding.serializer import RoleBindingByGroupSerializer, RoleBindingFieldSelection
-from management.role_binding.service import RoleBindingService
-from management.relation_replicator.relation_replicator import RelationReplicator
-from management.utils import FieldSelectionValidationError
+from management.role_binding.service import CreateBindingRequest, RoleBindingService
 from management.tenant_mapping.model import TenantMapping
+from management.utils import FieldSelectionValidationError
 from tests.identity_request import IdentityRequest
 
 
@@ -116,12 +131,6 @@ class FieldSelectionTests(TestCase):
         result = RoleBindingFieldSelection.parse(None)
         self.assertIsNone(result)
 
-    def test_parse_root_level_field(self):
-        """Test parsing a root level field."""
-        result = RoleBindingFieldSelection.parse("last_modified")
-        self.assertIsNotNone(result)
-        self.assertIn("last_modified", result.root_fields)
-
     def test_parse_subject_fields(self):
         """Test parsing subject fields."""
         result = RoleBindingFieldSelection.parse("subject(group.name,group.description)")
@@ -151,12 +160,13 @@ class FieldSelectionTests(TestCase):
         self.assertIn("name", result.get_nested("role"))
         self.assertIn("type", result.get_nested("resource"))
 
-    def test_parse_mixed_root_and_object_fields(self):
-        """Test parsing mixed root and object fields."""
-        result = RoleBindingFieldSelection.parse("last_modified,subject(group.name)")
+    def test_parse_mixed_nested_object_fields(self):
+        """Test parsing multiple nested object fields together."""
+        result = RoleBindingFieldSelection.parse("subject(group.name),resource(name,type)")
         self.assertIsNotNone(result)
-        self.assertIn("last_modified", result.root_fields)
         self.assertIn("group.name", result.get_nested("subject"))
+        self.assertIn("name", result.get_nested("resource"))
+        self.assertIn("type", result.get_nested("resource"))
 
     def test_parse_handles_whitespace(self):
         """Test that parsing handles whitespace correctly."""
@@ -645,13 +655,9 @@ class RoleBindingSerializerTests(IdentityRequest):
         - subject (id, type)
         - roles (id only)
         - resource (id only)
-        - no last_modified
         """
         serializer = RoleBindingByGroupSerializer(self.annotated_group, context=self.context)
         data = serializer.data
-
-        # Check top-level fields - no last_modified by default
-        self.assertNotIn("last_modified", data)
         self.assertIn("subject", data)
         self.assertIn("roles", data)
         self.assertIn("resource", data)
@@ -760,31 +766,9 @@ class RoleBindingSerializerTests(IdentityRequest):
         self.assertIn("type", resource)
         self.assertNotIn("name", resource)
 
-    def test_field_selection_excludes_last_modified_when_not_requested(self):
-        """Test that last_modified is excluded when not in field selection."""
-        field_selection = RoleBindingFieldSelection.parse("subject(group.name)")
-        context = {**self.context, "field_selection": field_selection}
-
-        serializer = RoleBindingByGroupSerializer(self.annotated_group, context=context)
-        data = serializer.data
-
-        self.assertNotIn("last_modified", data)
-
-    def test_field_selection_includes_last_modified_when_requested(self):
-        """Test that last_modified is included when in field selection."""
-        field_selection = RoleBindingFieldSelection.parse("last_modified,subject(group.name)")
-        context = {**self.context, "field_selection": field_selection}
-
-        serializer = RoleBindingByGroupSerializer(self.annotated_group, context=context)
-        data = serializer.data
-
-        self.assertIn("last_modified", data)
-
     def test_combined_field_selection(self):
         """Test combined field selection across multiple objects."""
-        field_selection = RoleBindingFieldSelection.parse(
-            "subject(group.name),role(name),resource(name,type),last_modified"
-        )
+        field_selection = RoleBindingFieldSelection.parse("subject(group.name),role(name),resource(name,type)")
         context = {**self.context, "field_selection": field_selection}
 
         serializer = RoleBindingByGroupSerializer(self.annotated_group, context=context)
@@ -801,8 +785,774 @@ class RoleBindingSerializerTests(IdentityRequest):
         self.assertIn("name", data["resource"])
         self.assertIn("type", data["resource"])
 
-        # Check last_modified
-        self.assertIn("last_modified", data)
+
+@override_settings(ATOMIC_RETRY_DISABLED=True)
+class BatchCreateRoleBindingTests(IdentityRequest):
+    """Tests for RoleBindingService.batch_create method."""
+
+    def setUp(self):
+        """Set up test data using services."""
+        super().setUp()
+
+        self.root_workspace = Workspace.objects.create(
+            name=Workspace.SpecialNames.ROOT,
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        self.default_workspace = Workspace.objects.create(
+            name=Workspace.SpecialNames.DEFAULT,
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            parent=self.root_workspace,
+        )
+        self.workspace = Workspace.objects.create(
+            name="Test Workspace",
+            description="Test workspace description",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.default_workspace,
+        )
+
+        self.permission1 = Permission.objects.create(permission="app:resource:read", tenant=self.tenant)
+        self.permission2 = Permission.objects.create(permission="app:resource:write", tenant=self.tenant)
+
+        self.role_service = RoleV2Service()
+        self.role1 = self.role_service.create(
+            name="role1",
+            description="Test role 1",
+            permission_data=[{"application": "app", "resource_type": "resource", "operation": "read"}],
+            tenant=self.tenant,
+        )
+        self.role2 = self.role_service.create(
+            name="role2",
+            description="Test role 2",
+            permission_data=[{"application": "app", "resource_type": "resource", "operation": "write"}],
+            tenant=self.tenant,
+        )
+
+        self.group = Group.objects.create(
+            name="test_group",
+            description="Test group description",
+            tenant=self.tenant,
+        )
+        self.principal = Principal.objects.create(
+            username="testuser",
+            tenant=self.tenant,
+            user_id="testuser",
+            type=Principal.Types.USER,
+        )
+
+        self.service = RoleBindingService(tenant=self.tenant)
+
+    def tearDown(self):
+        """Tear down test data."""
+        RoleBindingPrincipal.objects.all().delete()
+        RoleBindingGroup.objects.all().delete()
+        RoleBinding.objects.all().delete()
+        Principal.objects.filter(tenant=self.tenant).delete()
+        Group.objects.filter(tenant=self.tenant).delete()
+        RoleV2.objects.filter(tenant=self.tenant).delete()
+        Permission.objects.filter(tenant=self.tenant).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.STANDARD).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.DEFAULT).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.ROOT).delete()
+        super().tearDown()
+
+    def _make_request(self, role, subject_type, subject_id, resource_id=None):
+        """Build a CreateBindingRequest for the workspace."""
+        return CreateBindingRequest(
+            role_id=str(role.uuid),
+            resource_type="workspace",
+            resource_id=resource_id or str(self.workspace.id),
+            subject_type=subject_type,
+            subject_id=str(subject_id),
+        )
+
+    def test_batch_create_for_group(self):
+        """Create a single binding with a group subject."""
+        results = self.service.batch_create(
+            [
+                self._make_request(self.role1, "group", self.group.uuid),
+            ]
+        )
+
+        self.assertEqual(len(results), 1)
+        result = results[0]
+        self.assertEqual(result["role"], self.role1)
+        self.assertEqual(result["subject"], self.group)
+        self.assertEqual(result["subject_type"], "group")
+        self.assertEqual(result["resource_type"], "workspace")
+        self.assertEqual(result["resource_id"], str(self.workspace.id))
+        self.assertEqual(result["resource_name"], "Test Workspace")
+
+    def test_batch_create_for_principal(self):
+        """Create a single binding with a user subject."""
+        results = self.service.batch_create(
+            [
+                self._make_request(self.role1, "user", self.principal.uuid),
+            ]
+        )
+
+        self.assertEqual(len(results), 1)
+        result = results[0]
+        self.assertEqual(result["role"], self.role1)
+        self.assertEqual(result["subject"], self.principal)
+        self.assertEqual(result["subject_type"], "user")
+        self.assertEqual(result["resource_type"], "workspace")
+        self.assertEqual(result["resource_id"], str(self.workspace.id))
+        self.assertEqual(result["resource_name"], "Test Workspace")
+
+    def test_batch_create_multiple_bindings(self):
+        """Create two bindings in one call with different roles and subject types."""
+        results = self.service.batch_create(
+            [
+                self._make_request(self.role1, "group", self.group.uuid),
+                self._make_request(self.role2, "user", self.principal.uuid),
+            ]
+        )
+
+        self.assertEqual(len(results), 2)
+
+        self.assertEqual(results[0]["role"], self.role1)
+        self.assertEqual(results[0]["subject"], self.group)
+        self.assertEqual(results[0]["subject_type"], "group")
+
+        self.assertEqual(results[1]["role"], self.role2)
+        self.assertEqual(results[1]["subject"], self.principal)
+        self.assertEqual(results[1]["subject_type"], "user")
+
+    def test_batch_create_raises_roles_not_found(self):
+        """Pass a non-existent role UUID."""
+        fake_role_id = str(uuid.uuid4())
+        with self.assertRaises(InvalidFieldError) as ctx:
+            self.service.batch_create(
+                [
+                    CreateBindingRequest(
+                        role_id=fake_role_id,
+                        resource_type="workspace",
+                        resource_id=str(self.workspace.id),
+                        subject_type="group",
+                        subject_id=str(self.group.uuid),
+                    ),
+                ]
+            )
+
+        self.assertEqual(ctx.exception.field, "roles")
+        self.assertIn(fake_role_id, str(ctx.exception))
+
+    def test_batch_create_raises_subjects_not_found_group(self):
+        """Pass a non-existent group UUID."""
+        fake_group_id = str(uuid.uuid4())
+        with self.assertRaises(NotFoundError) as ctx:
+            self.service.batch_create(
+                [
+                    self._make_request(self.role1, "group", fake_group_id),
+                ]
+            )
+
+        self.assertEqual(ctx.exception.resource_type, "group")
+        self.assertIn(fake_group_id, str(ctx.exception))
+
+    def test_batch_create_raises_subjects_not_found_user(self):
+        """Pass a non-existent principal UUID."""
+        fake_user_id = str(uuid.uuid4())
+        with self.assertRaises(NotFoundError) as ctx:
+            self.service.batch_create(
+                [
+                    self._make_request(self.role1, "user", fake_user_id),
+                ]
+            )
+
+        self.assertEqual(ctx.exception.resource_type, "user")
+        self.assertIn(fake_user_id, str(ctx.exception))
+
+    def test_batch_create_idempotent_same_subject(self):
+        """Granting the same role to the same subject twice is idempotent."""
+        self.service.batch_create(
+            [
+                self._make_request(self.role1, "group", self.group.uuid),
+            ]
+        )
+        self.service.batch_create(
+            [
+                self._make_request(self.role1, "group", self.group.uuid),
+            ]
+        )
+
+        binding = RoleBinding.objects.get(
+            role=self.role1,
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            tenant=self.tenant,
+        )
+        self.assertEqual(RoleBindingGroup.objects.filter(binding=binding, group=self.group).count(), 1)
+
+    def test_batch_create_shared_binding_group_and_user(self):
+        """Same role+resource reuses one RoleBinding with both subjects linked."""
+        self.service.batch_create(
+            [
+                self._make_request(self.role1, "group", self.group.uuid),
+                self._make_request(self.role1, "user", self.principal.uuid),
+            ]
+        )
+
+        bindings = RoleBinding.objects.filter(
+            role=self.role1,
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            tenant=self.tenant,
+        )
+        self.assertEqual(bindings.count(), 1)
+
+        binding = bindings.first()
+        self.assertTrue(RoleBindingGroup.objects.filter(binding=binding, group=self.group).exists())
+        self.assertTrue(RoleBindingPrincipal.objects.filter(binding=binding, principal=self.principal).exists())
+
+    def test_batch_create_reuses_existing_binding(self):
+        """A binding from a prior batch is reused when adding a new subject."""
+        self.service.batch_create(
+            [
+                self._make_request(self.role1, "group", self.group.uuid),
+            ]
+        )
+        binding_id_before = RoleBinding.objects.get(
+            role=self.role1,
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+        ).id
+
+        self.service.batch_create(
+            [
+                self._make_request(self.role1, "user", self.principal.uuid),
+            ]
+        )
+
+        binding = RoleBinding.objects.get(
+            role=self.role1,
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+        )
+        self.assertEqual(binding.id, binding_id_before)
+        self.assertTrue(RoleBindingGroup.objects.filter(binding=binding, group=self.group).exists())
+        self.assertTrue(RoleBindingPrincipal.objects.filter(binding=binding, principal=self.principal).exists())
+
+    def test_batch_create_rejects_platform_roles(self):
+        """Platform roles are excluded by the assignable filter and reported as not found."""
+        seeded = SeededRoleV2.objects.create(name="seeded_child", tenant=self.tenant)
+        platform = PlatformRoleV2.objects.create(name="platform_role", tenant=self.tenant)
+        platform.children.add(seeded)
+
+        with self.assertRaises(InvalidFieldError) as ctx:
+            self.service.batch_create(
+                [
+                    self._make_request(platform, "group", self.group.uuid),
+                ]
+            )
+
+        self.assertEqual(ctx.exception.field, "roles")
+        self.assertIn(str(platform.uuid), str(ctx.exception))
+
+    def test_batch_create_fails_fast_when_one_role_missing(self):
+        """Batch with valid role1 and non-existent role2 fails before any DB writes."""
+        fake_role_id = str(uuid.uuid4())
+        with self.assertRaises(InvalidFieldError) as ctx:
+            self.service.batch_create(
+                [
+                    self._make_request(self.role1, "group", self.group.uuid),
+                    CreateBindingRequest(
+                        role_id=fake_role_id,
+                        resource_type="workspace",
+                        resource_id=str(self.workspace.id),
+                        subject_type="group",
+                        subject_id=str(self.group.uuid),
+                    ),
+                ]
+            )
+
+        self.assertEqual(ctx.exception.field, "roles")
+        self.assertIn(fake_role_id, str(ctx.exception))
+        self.assertFalse(
+            RoleBinding.objects.filter(
+                role=self.role1, resource_id=str(self.workspace.id), resource_type="workspace"
+            ).exists()
+        )
+
+    def test_batch_create_fails_fast_when_one_subject_missing(self):
+        """Batch with valid group and non-existent group fails before any DB writes."""
+        fake_group_id = str(uuid.uuid4())
+        with self.assertRaises(NotFoundError) as ctx:
+            self.service.batch_create(
+                [
+                    self._make_request(self.role1, "group", self.group.uuid),
+                    self._make_request(self.role2, "group", fake_group_id),
+                ]
+            )
+
+        self.assertEqual(ctx.exception.resource_type, "group")
+        self.assertIn(fake_group_id, str(ctx.exception))
+        self.assertFalse(
+            RoleBinding.objects.filter(resource_id=str(self.workspace.id), resource_type="workspace").exists()
+        )
+
+    def test_batch_create_rejects_user_without_user_id(self):
+        """A principal without user_id is rejected."""
+        unsynced = Principal.objects.create(
+            username="unsynced_user",
+            tenant=self.tenant,
+            user_id=None,
+            type=Principal.Types.USER,
+        )
+        with self.assertRaises(InvalidFieldError):
+            self.service.batch_create([self._make_request(self.role1, "user", unsynced.uuid)])
+
+    def test_batch_create_shared_binding_two_groups(self):
+        """Same role+resource with two different groups shares one RoleBinding."""
+        group2 = Group.objects.create(name="group2", tenant=self.tenant)
+
+        self.service.batch_create(
+            [
+                self._make_request(self.role1, "group", self.group.uuid),
+                self._make_request(self.role1, "group", group2.uuid),
+            ]
+        )
+
+        bindings = RoleBinding.objects.filter(
+            role=self.role1, resource_type="workspace", resource_id=str(self.workspace.id)
+        )
+        self.assertEqual(bindings.count(), 1)
+
+        binding = bindings.first()
+        self.assertTrue(RoleBindingGroup.objects.filter(binding=binding, group=self.group).exists())
+        self.assertTrue(RoleBindingGroup.objects.filter(binding=binding, group=group2).exists())
+
+    def test_batch_create_cross_resource_isolation(self):
+        """Bindings on different resources are independent."""
+        ws2 = Workspace.objects.create(
+            name="Other Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.default_workspace,
+        )
+
+        self.service.batch_create(
+            [
+                self._make_request(self.role1, "group", self.group.uuid, resource_id=str(self.workspace.id)),
+                self._make_request(self.role1, "group", self.group.uuid, resource_id=str(ws2.id)),
+            ]
+        )
+
+        ws1_bindings = RoleBinding.objects.filter(resource_id=str(self.workspace.id), resource_type="workspace")
+        ws2_bindings = RoleBinding.objects.filter(resource_id=str(ws2.id), resource_type="workspace")
+
+        self.assertEqual(ws1_bindings.count(), 1)
+        self.assertEqual(ws2_bindings.count(), 1)
+        self.assertNotEqual(ws1_bindings.first().id, ws2_bindings.first().id)
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    @patch.object(OutboxReplicator, "replicate")
+    def test_batch_create_replicates_to_kessel(self, mock_replicate):
+        """Test that batch_create accurately fires a replication event."""
+        self.service = RoleBindingService(tenant=self.tenant)
+        self.service.batch_create(
+            [
+                self._make_request(self.role1, "group", self.group.uuid),
+            ]
+        )
+
+        mock_replicate.assert_called_once()
+        event = mock_replicate.call_args[0][0]
+
+        self.assertEqual(event.event_type, ReplicationEventType.BATCH_CREATE_ROLE_BINDING)
+        self.assertEqual(event.event_info["org_id"], str(self.tenant.org_id))
+        self.assertGreaterEqual(len(event.add), 1)
+
+    def test_batch_create_max_items_limit(self):
+        """Test creating 100 bindings at once handles max bounds successfully."""
+        users = [
+            Principal.objects.create(
+                username=f"testuser_{i}",
+                tenant=self.tenant,
+                user_id=f"testuser_{i}",
+                type=Principal.Types.USER,
+            )
+            for i in range(100)
+        ]
+
+        requests = [self._make_request(self.role1, "user", user.uuid) for user in users]
+
+        results = self.service.batch_create(requests)
+        self.assertEqual(len(results), 100)
+
+        bindings = RoleBinding.objects.filter(
+            role=self.role1, resource_type="workspace", resource_id=str(self.workspace.id)
+        )
+        self.assertEqual(bindings.count(), 1)
+        self.assertEqual(RoleBindingPrincipal.objects.filter(binding=bindings.first()).count(), 100)
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    def test_replication_tuples_for_new_group_binding(self):
+        """New group binding emits role, resource, and subject tuples."""
+        store = InMemoryTuples()
+        service = RoleBindingService(tenant=self.tenant, replicator=InMemoryRelationReplicator(store))
+
+        service.batch_create([self._make_request(self.role1, "group", self.group.uuid)])
+
+        self.assertEqual(len(store), 3)
+
+        binding = RoleBinding.objects.get(role=self.role1, resource_id=str(self.workspace.id))
+        binding_uuid = str(binding.uuid)
+
+        role_tuples = store.find_tuples(
+            all_of(
+                resource("rbac", "role_binding", binding_uuid),
+                relation("role"),
+                subject("rbac", "role", self.role1.uuid),
+            )
+        )
+        self.assertEqual(len(role_tuples), 1)
+
+        resource_tuples = store.find_tuples(
+            all_of(
+                resource("rbac", "workspace", str(self.workspace.id)),
+                relation("binding"),
+                subject("rbac", "role_binding", binding_uuid),
+            )
+        )
+        self.assertEqual(len(resource_tuples), 1)
+
+        subject_tuples = store.find_tuples(
+            all_of(
+                resource("rbac", "role_binding", binding_uuid),
+                relation("subject"),
+                subject("rbac", "group", self.group.uuid, relation="member"),
+            )
+        )
+        self.assertEqual(len(subject_tuples), 1)
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    def test_replication_tuples_for_new_user_binding(self):
+        """New user binding emits role, resource, and principal subject tuples."""
+        store = InMemoryTuples()
+        service = RoleBindingService(tenant=self.tenant, replicator=InMemoryRelationReplicator(store))
+
+        service.batch_create([self._make_request(self.role1, "user", self.principal.uuid)])
+
+        self.assertEqual(len(store), 3)
+
+        binding = RoleBinding.objects.get(role=self.role1, resource_id=str(self.workspace.id))
+        binding_uuid = str(binding.uuid)
+        principal_resource_id = PrincipalModel.user_id_to_principal_resource_id(self.principal.user_id)
+
+        subject_tuples = store.find_tuples(
+            all_of(
+                resource("rbac", "role_binding", binding_uuid),
+                relation("subject"),
+                subject("rbac", "principal", principal_resource_id),
+            )
+        )
+        self.assertEqual(len(subject_tuples), 1)
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    def test_replication_skips_binding_tuples_for_reused_binding(self):
+        """Adding a subject to an existing binding only emits the subject tuple."""
+        store = InMemoryTuples()
+        service = RoleBindingService(tenant=self.tenant, replicator=InMemoryRelationReplicator(store))
+
+        service.batch_create([self._make_request(self.role1, "group", self.group.uuid)])
+        self.assertEqual(len(store), 3)
+
+        group2 = Group.objects.create(name="group2", tenant=self.tenant)
+        store_second = InMemoryTuples()
+        service_second = RoleBindingService(tenant=self.tenant, replicator=InMemoryRelationReplicator(store_second))
+
+        service_second.batch_create([self._make_request(self.role1, "group", group2.uuid)])
+
+        self.assertEqual(len(store_second), 1, "Reused binding should only emit the new subject tuple")
+
+        binding = RoleBinding.objects.get(role=self.role1, resource_id=str(self.workspace.id))
+        subject_tuples = store_second.find_tuples(
+            all_of(
+                resource("rbac", "role_binding", str(binding.uuid)),
+                relation("subject"),
+                subject("rbac", "group", group2.uuid, relation="member"),
+            )
+        )
+        self.assertEqual(len(subject_tuples), 1)
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=False)
+    def test_replication_disabled_uses_noop(self):
+        """With replication disabled, no tuples are written."""
+        store = InMemoryTuples()
+        service = RoleBindingService(tenant=self.tenant, replicator=InMemoryRelationReplicator(store))
+
+        service.batch_create([self._make_request(self.role1, "group", self.group.uuid)])
+
+        self.assertEqual(len(store), 0)
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    def test_replication_multiple_subjects_same_binding(self):
+        """Two subjects on the same role+resource emit 2 binding + 2 subject tuples."""
+        store = InMemoryTuples()
+        service = RoleBindingService(tenant=self.tenant, replicator=InMemoryRelationReplicator(store))
+
+        service.batch_create(
+            [
+                self._make_request(self.role1, "group", self.group.uuid),
+                self._make_request(self.role1, "user", self.principal.uuid),
+            ]
+        )
+
+        self.assertEqual(len(store), 4, "Expected 2 binding-level + 2 subject tuples")
+
+        binding = RoleBinding.objects.get(role=self.role1, resource_id=str(self.workspace.id))
+        binding_uuid = str(binding.uuid)
+
+        role_tuples = store.find_tuples(all_of(resource("rbac", "role_binding", binding_uuid), relation("role")))
+        self.assertEqual(len(role_tuples), 1)
+
+        resource_tuples = store.find_tuples(
+            all_of(resource("rbac", "workspace", str(self.workspace.id)), relation("binding"))
+        )
+        self.assertEqual(len(resource_tuples), 1)
+
+        group_subject = store.find_tuples(
+            all_of(
+                resource("rbac", "role_binding", binding_uuid),
+                relation("subject"),
+                subject("rbac", "group", self.group.uuid, relation="member"),
+            )
+        )
+        self.assertEqual(len(group_subject), 1)
+
+        principal_resource_id = PrincipalModel.user_id_to_principal_resource_id(self.principal.user_id)
+        user_subject = store.find_tuples(
+            all_of(
+                resource("rbac", "role_binding", binding_uuid),
+                relation("subject"),
+                subject("rbac", "principal", principal_resource_id),
+            )
+        )
+        self.assertEqual(len(user_subject), 1)
+
+    def test_batch_create_same_subject_different_roles(self):
+        """Same resource+subject with two different roles creates two bindings."""
+        results = self.service.batch_create(
+            [
+                self._make_request(self.role1, "group", self.group.uuid),
+                self._make_request(self.role2, "group", self.group.uuid),
+            ]
+        )
+
+        self.assertEqual(len(results), 2)
+
+        bindings = RoleBinding.objects.filter(
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            tenant=self.tenant,
+        )
+        self.assertEqual(bindings.count(), 2)
+
+        roles = set(bindings.values_list("role_id", flat=True))
+        self.assertEqual(roles, {self.role1.id, self.role2.id})
+
+        for binding in bindings:
+            self.assertTrue(RoleBindingGroup.objects.filter(binding=binding, group=self.group).exists())
+
+    def test_batch_create_different_resources(self):
+        """Bindings on different resources in a single batch are independent."""
+        ws2 = Workspace.objects.create(
+            name="Second Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.default_workspace,
+        )
+
+        results = self.service.batch_create(
+            [
+                self._make_request(self.role1, "group", self.group.uuid, resource_id=str(self.workspace.id)),
+                self._make_request(self.role1, "group", self.group.uuid, resource_id=str(ws2.id)),
+            ]
+        )
+
+        self.assertEqual(len(results), 2)
+
+        ws1_bindings = RoleBinding.objects.filter(resource_id=str(self.workspace.id), resource_type="workspace")
+        ws2_bindings = RoleBinding.objects.filter(resource_id=str(ws2.id), resource_type="workspace")
+        self.assertEqual(ws1_bindings.count(), 1)
+        self.assertEqual(ws2_bindings.count(), 1)
+        self.assertNotEqual(ws1_bindings.first().id, ws2_bindings.first().id)
+
+    def test_batch_create_partial_overlap(self):
+        """Existing binding is a no-op while new binding in the same batch is created."""
+        self.service.batch_create([self._make_request(self.role1, "group", self.group.uuid)])
+        binding_before = RoleBinding.objects.get(
+            role=self.role1, resource_type="workspace", resource_id=str(self.workspace.id)
+        )
+
+        self.service.batch_create(
+            [
+                self._make_request(self.role1, "group", self.group.uuid),
+                self._make_request(self.role2, "group", self.group.uuid),
+            ]
+        )
+
+        binding_role1 = RoleBinding.objects.get(
+            role=self.role1, resource_type="workspace", resource_id=str(self.workspace.id)
+        )
+        self.assertEqual(binding_role1.id, binding_before.id)
+
+        self.assertTrue(
+            RoleBinding.objects.filter(
+                role=self.role2, resource_type="workspace", resource_id=str(self.workspace.id)
+            ).exists()
+        )
+
+    def test_batch_create_additive_only(self):
+        """Creating a new binding does not remove existing bindings for the same subject."""
+        self.service.batch_create([self._make_request(self.role1, "group", self.group.uuid)])
+
+        self.service.batch_create([self._make_request(self.role2, "group", self.group.uuid)])
+
+        self.assertTrue(
+            RoleBinding.objects.filter(
+                role=self.role1, resource_type="workspace", resource_id=str(self.workspace.id)
+            ).exists(),
+            "Pre-existing role1 binding must not be removed",
+        )
+        self.assertTrue(
+            RoleBinding.objects.filter(
+                role=self.role2, resource_type="workspace", resource_id=str(self.workspace.id)
+            ).exists(),
+        )
+
+    def test_batch_create_duplicate_triples_deduplicated(self):
+        """Identical triples within a single batch produce only one binding."""
+        results = self.service.batch_create(
+            [
+                self._make_request(self.role1, "group", self.group.uuid),
+                self._make_request(self.role1, "group", self.group.uuid),
+            ]
+        )
+
+        self.assertEqual(len(results), 2, "Results mirror input length")
+
+        bindings = RoleBinding.objects.filter(
+            role=self.role1, resource_type="workspace", resource_id=str(self.workspace.id)
+        )
+        self.assertEqual(bindings.count(), 1)
+        self.assertEqual(RoleBindingGroup.objects.filter(binding=bindings.first(), group=self.group).count(), 1)
+
+    def test_batch_create_nonexistent_resource_raises_error(self):
+        """A fake workspace UUID is rejected by resource validation."""
+        fake_ws_id = str(uuid.uuid4())
+        with self.assertRaises(NotFoundError) as ctx:
+            self.service.batch_create(
+                [
+                    CreateBindingRequest(
+                        role_id=str(self.role1.uuid),
+                        resource_type="workspace",
+                        resource_id=fake_ws_id,
+                        subject_type="group",
+                        subject_id=str(self.group.uuid),
+                    ),
+                ]
+            )
+
+        self.assertEqual(ctx.exception.resource_type, "workspace")
+        self.assertIn(fake_ws_id, str(ctx.exception))
+
+        self.assertFalse(RoleBinding.objects.filter(resource_id=fake_ws_id).exists())
+
+    def test_batch_create_non_workspace_resource(self):
+        """Bindings can be created for resource types without a local table."""
+        app_id = str(uuid.uuid4())
+        results = self.service.batch_create(
+            [
+                CreateBindingRequest(
+                    role_id=str(self.role1.uuid),
+                    resource_type="application",
+                    resource_id=app_id,
+                    subject_type="group",
+                    subject_id=str(self.group.uuid),
+                ),
+            ]
+        )
+
+        self.assertEqual(len(results), 1)
+        result = results[0]
+        self.assertEqual(result["resource_type"], "application")
+        self.assertEqual(result["resource_id"], app_id)
+        self.assertIsNone(result["resource_name"])
+
+        binding = RoleBinding.objects.get(resource_type="application", resource_id=app_id)
+        self.assertEqual(binding.role, self.role1)
+        self.assertTrue(RoleBindingGroup.objects.filter(binding=binding, group=self.group).exists())
+
+    def test_batch_create_mixed_resource_types(self):
+        """A batch with workspace and non-workspace resources succeeds for both."""
+        app_id = str(uuid.uuid4())
+        results = self.service.batch_create(
+            [
+                self._make_request(self.role1, "group", self.group.uuid),
+                CreateBindingRequest(
+                    role_id=str(self.role2.uuid),
+                    resource_type="application",
+                    resource_id=app_id,
+                    subject_type="group",
+                    subject_id=str(self.group.uuid),
+                ),
+            ]
+        )
+
+        self.assertEqual(len(results), 2)
+
+        ws_binding = RoleBinding.objects.get(
+            resource_type="workspace", resource_id=str(self.workspace.id), role=self.role1
+        )
+        self.assertTrue(RoleBindingGroup.objects.filter(binding=ws_binding, group=self.group).exists())
+
+        app_binding = RoleBinding.objects.get(resource_type="application", resource_id=app_id, role=self.role2)
+        self.assertTrue(RoleBindingGroup.objects.filter(binding=app_binding, group=self.group).exists())
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    def test_batch_create_non_workspace_resource_replicates(self):
+        """Replication tuples use the correct resource type for non-workspace resources."""
+        store = InMemoryTuples()
+        service = RoleBindingService(tenant=self.tenant, replicator=InMemoryRelationReplicator(store))
+
+        app_id = str(uuid.uuid4())
+        service.batch_create(
+            [
+                CreateBindingRequest(
+                    role_id=str(self.role1.uuid),
+                    resource_type="application",
+                    resource_id=app_id,
+                    subject_type="group",
+                    subject_id=str(self.group.uuid),
+                ),
+            ]
+        )
+
+        binding = RoleBinding.objects.get(resource_type="application", resource_id=app_id)
+        binding_uuid = str(binding.uuid)
+
+        resource_tuples = store.find_tuples(
+            all_of(
+                resource("rbac", "application", app_id),
+                relation("binding"),
+                subject("rbac", "role_binding", binding_uuid),
+            )
+        )
+        self.assertEqual(len(resource_tuples), 1)
+
+        role_tuples = store.find_tuples(
+            all_of(
+                resource("rbac", "role_binding", binding_uuid),
+                relation("role"),
+                subject("rbac", "role", self.role1.uuid),
+            )
+        )
+        self.assertEqual(len(role_tuples), 1)
 
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)
