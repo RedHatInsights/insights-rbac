@@ -32,8 +32,9 @@ from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.definer import seed_roles
 from management.role.model import Role, ResourceDefinition
+from management.role.v2_model import RoleV2
 from management.role.v2_service import RoleV2Service
-from management.role_binding.model import RoleBinding
+from management.role_binding.model import RoleBinding, RoleBindingGroup
 from management.role_binding.service import RoleBindingService, CreateBindingRequest
 from migration_tool.in_memory_tuples import (
     InMemoryTuples,
@@ -44,8 +45,13 @@ from migration_tool.in_memory_tuples import (
     subject,
 )
 from api.models import Tenant
-from internal.utils import replicate_missing_binding_tuples, clean_invalid_workspace_resource_definitions
-from rbac.settings import ROOT_SCOPE_PERMISSIONS
+from internal.utils import (
+    replicate_missing_binding_tuples,
+    clean_invalid_workspace_resource_definitions,
+    remove_unassigned_system_binding_mappings,
+)
+from migration_tool.models import V2role, V2rolebinding
+from tests.management.role.test_dual_write import DualWriteTestCase
 from tests.v2_util import seed_v2_role_from_v1
 
 
@@ -598,3 +604,110 @@ class ReplicateMissingBindingTuplesTest(TestCase):
         self.assertEqual(rd.attributeFilter["value"], [None])
         self.assertNotIn(fake_ws_id_1, rd.attributeFilter["value"])
         self.assertNotIn(fake_ws_id_2, rd.attributeFilter["value"])
+
+
+@override_settings(ATOMIC_RETRY_DISABLED=True)
+class RemoveOrphanBindingMappingsTest(DualWriteTestCase):
+    def _create_empty_binding_mapping(self) -> tuple[Role, BindingMapping]:
+        role = self.given_v1_system_role(name="system role", permissions=["rbac:*:*"])
+
+        # There's no intended way to create a BindingMapping for a system role with no subjects, so we have to do it
+        # manually.
+        binding = BindingMapping.for_role_binding(
+            V2rolebinding(
+                id=str(uuid.uuid4()),
+                role=V2role.for_system_role(str(role.uuid)),
+                resource=self.default_workspace_resource(),
+                groups=[],
+                users={},
+            ),
+            role,
+        )
+
+        for tuple in binding.as_tuples():
+            self.tuples.add(tuple)
+
+        binding.save()
+
+        return role, binding
+
+    def _do_remove_empty(self):
+        remove_unassigned_system_binding_mappings(InMemoryRelationReplicator(self.tuples))
+
+    @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="")
+    def test_remove_simple(self):
+        system_role, system_binding = self._create_empty_binding_mapping()
+
+        for tuple in system_binding.as_tuples():
+            self.assertIn(tuple, self.tuples)
+
+        custom_role = self.given_v1_role(name="custom role", default=["rbac:*:*"])
+
+        self.assertEqual(BindingMapping.objects.filter(role=custom_role).count(), 1)
+        self.assertEqual(RoleBinding.objects.filter(role__v1_source=custom_role).count(), 1)
+
+        self._do_remove_empty()
+
+        self.assertFalse(BindingMapping.objects.filter(pk=system_binding.pk).exists())
+
+        for tuple in system_binding.as_tuples():
+            self.assertNotIn(tuple, self.tuples)
+
+        self.assertEqual(BindingMapping.objects.filter(role=custom_role).count(), 1)
+        self.assertEqual(RoleBinding.objects.filter(role__v1_source=custom_role).count(), 1)
+
+    def test_remove_with_role_binding(self):
+        role, binding_mapping = self._create_empty_binding_mapping()
+
+        role_binding = RoleBinding.objects.create(
+            tenant=self.tenant,
+            uuid=binding_mapping.mappings["id"],
+            role=RoleV2.objects.filter(uuid=role.uuid).get(),
+        )
+
+        for tuple in binding_mapping.as_tuples():
+            self.assertIn(tuple, self.tuples)
+
+        self._do_remove_empty()
+
+        for tuple in binding_mapping.as_tuples():
+            self.assertNotIn(tuple, self.tuples)
+
+        self.assertFalse(BindingMapping.objects.filter(pk=binding_mapping.pk).exists())
+        self.assertFalse(RoleBinding.objects.filter(pk=role_binding.pk).exists())
+
+    def test_preserve_assigned_role_binding(self):
+        role = self.given_v1_system_role("system role", ["rbac:*:*"])
+        group, _ = self.given_group("group", ["p1"])
+
+        self.given_roles_assigned_to_group(group, [role])
+
+        tuples_before = set(self.tuples)
+        self.assertEqual(BindingMapping.objects.filter(role=role).count(), 1)
+        self.assertEqual(RoleBinding.objects.filter(role__v1_source=role).count(), 1)
+
+        self._do_remove_empty()
+
+        self.assertEqual(set(self.tuples), tuples_before)
+        self.assertEqual(BindingMapping.objects.filter(role=role).count(), 1)
+        self.assertEqual(RoleBinding.objects.filter(role__v1_source=role).count(), 1)
+
+    def test_fail_on_inconsistent_subjects(self):
+        role, binding_mapping = self._create_empty_binding_mapping()
+
+        role_binding = RoleBinding.objects.create(
+            tenant=self.tenant,
+            uuid=binding_mapping.mappings["id"],
+            role=RoleV2.objects.filter(uuid=role.uuid).get(),
+        )
+
+        group, _ = self.given_group("group", ["p1"])
+        RoleBindingGroup.objects.create(binding=role_binding, group=group)
+
+        tuples_before = set(self.tuples)
+
+        # The migration should fail if it finds an unassigned BindingMapping but an assigned RoleBinding.
+        with self.assertRaises(AssertionError):
+            self._do_remove_empty()
+
+        self.assertEqual(set(self.tuples), tuples_before)
