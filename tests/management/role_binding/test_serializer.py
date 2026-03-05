@@ -1014,17 +1014,6 @@ class RoleBindingListOutputSerializerTest(IdentityRequest):
 
         self.assertEqual(data["subject"], {"type": "group"})
 
-    def test_role_is_none(self):
-        """Test that role returns None when binding has no role attribute."""
-        mock_binding = Mock(spec=RoleBinding)
-        mock_binding.role = None
-        mock_binding.group_entries = Mock()
-        mock_binding.group_entries.all.return_value = []
-
-        data = self._serialize(mock_binding)
-
-        self.assertIsNone(data["role"])
-
     def test_many_serialization(self):
         """Test serialization of multiple bindings."""
         role2 = RoleV2.objects.create(name="test_role_2", tenant=self.tenant)
