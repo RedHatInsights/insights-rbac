@@ -18,15 +18,12 @@
 
 import logging
 from dataclasses import dataclass
-from typing import Iterable, Optional, Sequence
+from typing import Optional, Sequence
 
+from django.conf import settings
 from django.db import transaction
 from django.db.models import Count, Max, Prefetch, Q, QuerySet
-from google.protobuf import json_format
-from internal.jwt_utils import JWTManager, JWTProvider
-from kessel.relations.v1beta1 import common_pb2, lookup_pb2, lookup_pb2_grpc
 from management.atomic_transactions import atomic
-from management.cache import JWTCache
 from management.exceptions import InvalidFieldError, NotFoundError, RequiredFieldError
 from management.group.model import Group
 from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
@@ -76,12 +73,6 @@ class CreateBindingRequest:
     resource_id: str
     subject_type: str
     subject_id: str
-
-
-# Lazily instantiate the JWT helpers once so all requests reuse the same objects.
-_jwt_cache = JWTCache()
-_jwt_provider = JWTProvider()
-_jwt_manager = JWTManager(_jwt_provider, _jwt_cache)
 
 
 class RoleBindingService:
