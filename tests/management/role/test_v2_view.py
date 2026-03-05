@@ -35,7 +35,7 @@ from rbac import urls
 from tests.identity_request import IdentityRequest
 
 
-@override_settings(V2_APIS_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
+@override_settings(V2_APIS_ENABLED=True, V2_EDIT_API_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
 class RoleV2RetrieveViewTest(IdentityRequest):
     """Test the RoleV2ViewSet retrieve endpoint."""
 
@@ -397,7 +397,7 @@ class RoleV2RetrieveViewTest(IdentityRequest):
         self.assertEqual(set(create_permissions), set(retrieve_permissions))
 
 
-@override_settings(V2_APIS_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
+@override_settings(V2_APIS_ENABLED=True, V2_EDIT_API_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
 class RoleV2ViewSetTests(IdentityRequest):
     """Test the RoleV2ViewSet."""
 
