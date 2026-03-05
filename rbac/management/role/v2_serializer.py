@@ -134,6 +134,9 @@ class RoleV2ListSerializer(serializers.Serializer):
     """Input serializer for RoleV2 list query parameters."""
 
     name = serializers.CharField(required=False, allow_blank=True, help_text="Filter by exact role name")
+    resource_type = serializers.CharField(
+        required=True, help_text="Filter roles by the resource type they are scoped to"
+    )
     fields = serializers.CharField(required=False, default="", allow_blank=True, help_text="Control included fields")
 
     def to_internal_value(self, data):

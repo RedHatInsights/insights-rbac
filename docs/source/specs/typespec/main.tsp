@@ -1302,6 +1302,9 @@ namespace Roles {
         @doc("Filter by role name using case sensitive exact match.")
         @query name?: string;
 
+        @doc("Filter roles by the resource type they are scoped to (e.g. 'tenant', 'workspace').")
+        @query resource_type: string;
+
         @doc("Control which fields are included in the response to optimize payload size.")
         @query fields?: FieldMask = "id,name,description,last_modified";
 

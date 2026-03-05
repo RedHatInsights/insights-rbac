@@ -23,7 +23,12 @@ from typing import Tuple
 
 from api.models import Tenant
 from management.models import Permission, Role
-from management.permission.scope_service import ImplicitResourceService, Scope
+from management.permission.scope_service import (
+    ImplicitResourceService,
+    Scope,
+    resource_type_for_scope,
+    scopes_for_resource_type,
+)
 from .test_model import INVALID_PERMISSIONS_V1
 
 DEFAULT_APPS = [
@@ -592,3 +597,25 @@ class RoleTests(TestCase):
         )
 
         self._assert_role_scope(Scope.ROOT)
+
+
+class ResourceTypeMappingTest(TestCase):
+    """Tests for resource_type_for_scope and scopes_for_resource_type helpers."""
+
+    def test_resource_type_for_tenant_scope(self):
+        self.assertEqual(resource_type_for_scope(Scope.TENANT), "tenant")
+
+    def test_resource_type_for_root_scope(self):
+        self.assertEqual(resource_type_for_scope(Scope.ROOT), "workspace")
+
+    def test_resource_type_for_default_scope(self):
+        self.assertEqual(resource_type_for_scope(Scope.DEFAULT), "workspace")
+
+    def test_scopes_for_tenant_resource_type(self):
+        self.assertEqual(scopes_for_resource_type("tenant"), {Scope.TENANT})
+
+    def test_scopes_for_workspace_resource_type(self):
+        self.assertEqual(scopes_for_resource_type("workspace"), {Scope.ROOT, Scope.DEFAULT})
+
+    def test_scopes_for_unknown_resource_type(self):
+        self.assertEqual(scopes_for_resource_type("unknown"), set())

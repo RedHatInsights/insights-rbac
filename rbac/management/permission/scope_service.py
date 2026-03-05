@@ -267,6 +267,10 @@ class ImplicitResourceService:
         # TODO: this may need to eventually take into account resource definitions for custom roles.
         return self.highest_scope_for_permissions(a.permission.permission for a in role.access.all())
 
+    def scope_for_v2_role(self, role) -> Scope:
+        """Return the implicit scope for a V2 role based on its permissions."""
+        return self.highest_scope_for_permissions(p.permission for p in role.permissions.all())
+
     def v2_bound_resource_for_permission(
         self,
         permissions: Iterable[str],
@@ -291,6 +295,24 @@ class ImplicitResourceService:
             return V2boundresource(resource_type=("rbac", "workspace"), resource_id=default_workspace_id)
         else:
             raise AssertionError(f"Unexpected scope: {scope}")
+
+
+SCOPE_RESOURCE_TYPE: dict[Scope, str] = {
+    Scope.TENANT: "tenant",
+    Scope.ROOT: "workspace",
+    Scope.DEFAULT: "workspace",
+}
+"""Maps each Scope to the resource_type string it binds to."""
+
+
+def resource_type_for_scope(scope: Scope) -> str:
+    """Return the resource_type string a given scope binds to."""
+    return SCOPE_RESOURCE_TYPE[scope]
+
+
+def scopes_for_resource_type(resource_type: str) -> set[Scope]:
+    """Return all Scope values that map to the given resource_type."""
+    return {scope for scope, rt in SCOPE_RESOURCE_TYPE.items() if rt == resource_type}
 
 
 """
