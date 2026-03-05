@@ -16,13 +16,25 @@
 #
 """Test the internal utils module."""
 
+import datetime
+import uuid
 from unittest.mock import patch
 from django.test import TestCase, override_settings
+
+from api.cross_access.model import CrossAccountRequest
+from api.cross_access.relation_api_dual_write_cross_access_handler import RelationApiDualWriteCrossAccessHandler
 from management.group.model import Group
+from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
 from management.models import BindingMapping, Workspace, Access, Permission
 from management.policy.model import Policy
 from management.principal.model import Principal
+from management.relation_replicator.noop_replicator import NoopReplicator
+from management.relation_replicator.relation_replicator import ReplicationEventType
+from management.role.definer import seed_roles
 from management.role.model import Role, ResourceDefinition
+from management.role.v2_service import RoleV2Service
+from management.role_binding.model import RoleBinding
+from management.role_binding.service import RoleBindingService, CreateBindingRequest
 from migration_tool.in_memory_tuples import (
     InMemoryTuples,
     InMemoryRelationReplicator,
@@ -33,8 +45,11 @@ from migration_tool.in_memory_tuples import (
 )
 from api.models import Tenant
 from internal.utils import replicate_missing_binding_tuples, clean_invalid_workspace_resource_definitions
+from rbac.settings import ROOT_SCOPE_PERMISSIONS
+from tests.v2_util import seed_v2_role_from_v1
 
 
+@override_settings(ATOMIC_RETRY_DISABLED=True)
 class ReplicateMissingBindingTuplesTest(TestCase):
     """Test the replicate_missing_binding_tuples function."""
 
@@ -58,7 +73,7 @@ class ReplicateMissingBindingTuplesTest(TestCase):
 
         self.tuples = InMemoryTuples()
 
-    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True, ROOT_SCOPE_PERMISSIONS="test:resource:read")
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     def test_replicate_missing_binding_tuples_for_specific_bindings(self, mock_replicate):
         """Test that function replicates all tuples for specific binding IDs."""
@@ -71,31 +86,42 @@ class ReplicateMissingBindingTuplesTest(TestCase):
         perm = Permission.objects.create(permission="test:resource:read", tenant=self.public_tenant)
         Access.objects.create(role=role, permission=perm, tenant=self.public_tenant)
 
+        seed_v2_role_from_v1(role)
+
         # Create a group
         group = Group.objects.create(name="Test Group", tenant=self.tenant)
         principal = Principal.objects.create(username="some_user", user_id="some_user", tenant=self.tenant)
 
         # Create binding WITHOUT replication (missing base tuples)
-        binding = BindingMapping.objects.create(
-            role=role,
-            mappings={
-                "id": "test-binding-utils",
-                "groups": [str(group.uuid)],
-                "users": {"car/1": principal.user_id, "car/2": principal.user_id},
-                "role": {"id": str(role.uuid), "is_system": True, "permissions": []},
-            },
-            resource_type_namespace="rbac",
-            resource_type_name="workspace",
-            resource_id=str(self.root_ws.id),
-        )
+        RelationApiDualWriteGroupHandler(
+            group=group, event_type=ReplicationEventType.ASSIGN_ROLE, replicator=NoopReplicator()
+        ).generate_relations_reset_roles([role])
 
+        def create_car():
+            car = CrossAccountRequest.objects.create(
+                target_org=self.tenant.org_id, user_id=principal.user_id, end_date=datetime.date(9999, 1, 1)
+            )
+
+            car.roles.set([role])
+
+            RelationApiDualWriteCrossAccessHandler(
+                cross_account_request=car,
+                replicator=NoopReplicator(),
+                event_type=ReplicationEventType.APPROVE_CROSS_ACCOUNT_REQUEST,
+            ).generate_relations_to_add_roles([role])
+
+        # Test with multiple assignments of the same user.
+        create_car()
+        create_car()
+
+        binding = BindingMapping.objects.get(role=role)
         binding_id = binding.mappings["id"]
 
         # Verify initial state: NO tuples exist
         self.assertEqual(len(self.tuples), 0, "Should have NO tuples before fix")
 
         # Call the function
-        results = replicate_missing_binding_tuples(binding_ids=[binding.id])
+        results = replicate_missing_binding_tuples(binding_uuids=[binding.mappings["id"]])
 
         # Verify results
         self.assertEqual(results["bindings_checked"], 1)
@@ -153,33 +179,117 @@ class ReplicateMissingBindingTuplesTest(TestCase):
         role = Role.objects.create(name="Test Role Idempotent", system=True, tenant=self.public_tenant)
         perm = Permission.objects.create(permission="test:idempotent:read", tenant=self.public_tenant)
         Access.objects.create(role=role, permission=perm, tenant=self.public_tenant)
+        seed_v2_role_from_v1(role)
+
+        group = Group.objects.create(name="a group", tenant=self.tenant)
 
         # Create binding
-        binding = BindingMapping.objects.create(
-            role=role,
-            mappings={
-                "id": "test-binding-idempotent",
-                "groups": [],
-                "users": {},
-                "role": {"id": str(role.uuid), "is_system": True, "permissions": []},
-            },
-            resource_type_namespace="rbac",
-            resource_type_name="workspace",
-            resource_id=str(self.root_ws.id),
-        )
+        RelationApiDualWriteGroupHandler(
+            group=group, event_type=ReplicationEventType.ASSIGN_ROLE, replicator=NoopReplicator()
+        ).generate_relations_reset_roles([role])
+
+        binding = BindingMapping.objects.get(role=role)
+
+        self.assertEqual(len(self.tuples), 0)
 
         # Run once
-        results1 = replicate_missing_binding_tuples(binding_ids=[binding.id])
+        results1 = replicate_missing_binding_tuples(binding_uuids=[binding.mappings["id"]])
         self.assertEqual(results1["bindings_fixed"], 1)
-        tuples_after_first = len(self.tuples)
+        after_first = set(self.tuples)
 
         # Run again - should be idempotent (duplicates handled by Kessel)
-        results2 = replicate_missing_binding_tuples(binding_ids=[binding.id])
+        results2 = replicate_missing_binding_tuples(binding_uuids=[binding.mappings["id"]])
         self.assertEqual(results2["bindings_fixed"], 1)
+        after_second = set(self.tuples)
+
+        self.assertEqual(after_first, after_second)
 
         # Tuples are added again but that's OK (Kessel handles duplicates)
         # The important thing is no error occurs
         self.assertGreater(len(self.tuples), 0, "Should have tuples after running twice")
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_replicate_v2_binding(self, mock_replicate):
+        seed_roles()
+
+        mock_replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
+
+        role_service = RoleV2Service(replicator=NoopReplicator())
+        binding_service = RoleBindingService(replicator=NoopReplicator(), tenant=self.tenant)
+
+        group = Group.objects.create(name="a group", tenant=self.tenant)
+
+        role = role_service.create(
+            name="a role",
+            description="a description",
+            permission_data=[{"application": "rbac", "resource_type": "*", "verb": "*"}],
+            tenant=self.tenant,
+        )
+
+        binding_service.batch_create(
+            [
+                CreateBindingRequest(
+                    role_id=str(role.uuid),
+                    resource_type="workspace",
+                    resource_id=str(self.default_ws.id),
+                    subject_type="group",
+                    subject_id=str(group.uuid),
+                )
+            ]
+        )
+
+        binding = RoleBinding.objects.get(role=role)
+        binding_id = str(binding.uuid)
+
+        self.assertEqual(len(self.tuples), 0)
+
+        replicate_missing_binding_tuples()
+
+        self.assertEqual(len(self.tuples), 4)
+
+        self.assertEqual(
+            1,
+            self.tuples.count_tuples(
+                all_of(
+                    resource("rbac", "workspace", str(self.default_ws.id)),
+                    relation("binding"),
+                    subject("rbac", "role_binding", binding_id),
+                )
+            ),
+        )
+
+        self.assertEqual(
+            1,
+            self.tuples.count_tuples(
+                all_of(
+                    resource("rbac", "role_binding", binding_id),
+                    relation("role"),
+                    subject("rbac", "role", str(role.uuid)),
+                )
+            ),
+        )
+
+        self.assertEqual(
+            1,
+            self.tuples.count_tuples(
+                all_of(
+                    resource("rbac", "role", str(role.uuid)),
+                    relation("rbac_all_all"),
+                    subject("rbac", "principal", "*"),
+                )
+            ),
+        )
+
+        self.assertEqual(
+            1,
+            self.tuples.count_tuples(
+                all_of(
+                    resource("rbac", "role_binding", binding_id),
+                    relation("subject"),
+                    subject("rbac", "group", str(group.uuid), "member"),
+                )
+            ),
+        )
 
     @override_settings(REPLICATION_TO_RELATION_ENABLED=False)
     def test_clean_invalid_workspace_resource_definitions_handles_both_operations(self):

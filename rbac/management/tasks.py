@@ -89,17 +89,17 @@ def migrate_binding_scope_in_worker():
 
 
 @shared_task
-def fix_missing_binding_base_tuples_in_worker(binding_ids=None):
+def fix_missing_binding_base_tuples_in_worker(binding_uuids=None):
     """
     Celery task to fix missing base tuples for bindings.
 
     Args:
-        binding_ids (list[int], optional): List of binding IDs to fix. If None, fixes all bindings.
+        binding_uuids (list[str], optional): List of binding UUIDs to fix. If None, fixes all bindings.
 
     Returns:
         dict: Results with bindings_checked, bindings_fixed, and tuples_added count.
     """
-    return replicate_missing_binding_tuples(binding_ids=binding_ids)
+    return replicate_missing_binding_tuples(binding_uuids=binding_uuids)
 
 
 @shared_task

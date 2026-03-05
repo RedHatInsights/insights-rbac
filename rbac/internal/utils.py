@@ -32,6 +32,7 @@ from django.db.models import Q
 from django.urls import resolve
 from internal.schemas import INVENTORY_INPUT_SCHEMAS, RELATION_INPUT_SCHEMAS
 from jsonschema import validate
+from management.atomic_transactions import atomic_block
 from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
 from management.models import BindingMapping, Role, Workspace
 from management.permission.scope_service import TenantScopeResources
@@ -46,6 +47,8 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEventType,
 )
 from management.relation_replicator.relations_api_replicator import RelationsApiReplicator
+from management.role.v2_model import CustomRoleV2, RoleV2
+from management.role_binding.model import RoleBinding
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
 from management.tenant_service.relations import default_role_binding_tuples
 from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspaceHandler
@@ -434,41 +437,46 @@ def rebuild_tenant_workspace_relations(
     }
 
 
-def replicate_missing_binding_tuples(tenant: Optional[Tenant] = None, binding_ids: Optional[list[int]] = None) -> dict:
+def replicate_missing_binding_tuples(
+    tenant: Optional[Tenant] = None, binding_uuids: Optional[list[str]] = None
+) -> dict:
     """
     Replicate all tuples for specified bindings to fix missing relationships in Kessel.
 
     This fixes bindings created before REPLICATION_TO_RELATION_ENABLED=True that are missing
     base tuples (t_role and t_binding) in Kessel.
 
+    At most one of tenant and binding_uuids can be non-None; if both are None, all bindings are re-replicated.
+
     Args:
-        binding_ids (list[int], optional): List of binding IDs to fix. If None, fixes ALL bindings.
+        tenant (Tenant, optional): The tenant for which to fix bindings.
+        binding_uuids (list[str], optional): List of binding UUIDs to fix.
 
     Returns:
         dict: Results with bindings_checked, bindings_fixed, and tuples_added count.
     """
     logger = logging.getLogger(__name__)
 
-    if (tenant is not None) and (binding_ids is not None):
-        raise ValueError("At most one of a Tenant and a list of binding IDs must be provided.")
+    if (tenant is not None) and (binding_uuids is not None):
+        raise ValueError("At most one of a Tenant and a list of binding UUIDs must be provided.")
 
     # Get bindings to fix
-    if binding_ids is not None:
-        bindings_query = BindingMapping.objects.filter(id__in=binding_ids)
-        logger.info(f"Fixing {len(binding_ids)} specific bindings: {binding_ids}")
+    if binding_uuids is not None:
+        bindings_query = RoleBinding.objects.filter(uuid__in=binding_uuids)
+        logger.info(f"Fixing {len(binding_uuids)} specific bindings: {binding_uuids}")
     elif tenant is not None:
         # We do not need to lock anything here. We assume that replication is currently working correctly, so any
         # workspaces created after this instant will be correctly replicated.
         workspace_ids_to_fix = set(Workspace.objects.filter(tenant=tenant).values_list("id", flat=True))
 
-        bindings_query = BindingMapping.objects.filter(
-            Q(resource_type_namespace="rbac", resource_type_name="workspace", resource_id__in=workspace_ids_to_fix)
-            | Q(resource_type_namespace="rbac", resource_type_name="tenant", resource_id=tenant.tenant_resource_id())
+        bindings_query = RoleBinding.objects.filter(
+            Q(resource_type="workspace", resource_id__in=workspace_ids_to_fix)
+            | Q(resource_type="tenant", resource_id=tenant.tenant_resource_id())
         )
 
         logger.info(f"Fixing {bindings_query.count()} bindings from tenant pk={tenant.pk!r}, org_id={tenant.org_id!r}")
     else:
-        bindings_query = BindingMapping.objects.all()
+        bindings_query = RoleBinding.objects.all()
         logger.warning(f"Fixing ALL bindings ({bindings_query.count()} total) - this may take a while")
 
     bindings_checked = 0
@@ -476,32 +484,80 @@ def replicate_missing_binding_tuples(tenant: Optional[Tenant] = None, binding_id
     total_tuples = 0
 
     # Process each binding in a separate transaction with locking
-    for raw_binding in bindings_query.prefetch_related("role").iterator(chunk_size=2000):
-        with transaction.atomic():
-            # Custom roles must be locked, since other code that updates them locks only the role (and not the binding).
-            if not raw_binding.role.system:
-                locked_role = Role.objects.select_for_update().filter(pk=raw_binding.role.pk).first()
+    for raw_binding in bindings_query.iterator(chunk_size=2000):
+        if tenant is not None:
+            if raw_binding.tenant_id != tenant.id:
+                raise AssertionError(
+                    f"Unexpected tenant for binding with UUID {str(raw_binding.uuid)}: got {raw_binding.tenant_id}, "
+                    f"but expected {tenant.id}"
+                )
 
-                if locked_role is None:
+        # We must use SERIALIZABLE here because we are potentially interacting with concurrent V2 writers (which all
+        # use SERIALIZABLE rather than explicit locking).
+        #
+        # Unfortunately, we must *also* use select_for_update() here because we are potentially interacting with
+        # concurrent V1 writers (which all use SELECT FOR UPDATE rather than SERIALIZABLE).
+        with atomic_block():
+            # Lock the BindingMapping (if any) first to avoid deadlock (since this is what the V1 code does).
+            binding_mapping = (
+                BindingMapping.objects.select_for_update().filter(mappings__id=str(raw_binding.uuid)).first()
+            )
+
+            # If there is a BindingMapping, we must also lock its role if the role is custom (since some code
+            # modifies BindingMappings without locking them).
+            if (binding_mapping is not None) and (not binding_mapping.role.system):
+                locked_v1_role = Role.objects.select_for_update().filter(id=binding_mapping.role_id).first()
+
+                if locked_v1_role is None:
                     logger.warning(
-                        f"Role vanished before its binding could be fixed: binding pk={raw_binding.pk!r}, "
+                        f"V1 role vanished before its binding could be fixed: binding pk={raw_binding.pk!r}, "
                         f"role pk={raw_binding.role.pk!r}"
                     )
 
                     continue
 
-            # Lock the binding to prevent concurrent modifications
-            binding = BindingMapping.objects.select_for_update().filter(pk=raw_binding.pk).first()
+            role_binding = (
+                RoleBinding.objects.filter(pk=raw_binding.pk)
+                .select_related("role")
+                .prefetch_related("group_entries", "principal_entries")
+                .select_for_update(of=["self"])
+                .first()
+            )
 
-            if binding is None:
+            if role_binding is None:
+                if binding_mapping is not None:
+                    raise AssertionError(
+                        f"A RoleBinding must exist if a BindingMapping does, but this was not the "
+                        f"case for UUID {binding_mapping.mappings['id']}"
+                    )
+
                 logger.warning(f"Binding vanished before it could be fixed: pk={raw_binding.pk!r}")
                 continue
+
+            v1_role_id = binding_mapping.role_id if binding_mapping is not None else None
+
+            if (role_binding.role.type == RoleV2.Types.CUSTOM) and (role_binding.role.v1_source_id != v1_role_id):
+                raise AssertionError(
+                    f"Mismatch between custom V2 role's v1_source and BindingMapping's role. "
+                    f"{role_binding.role.v1_source_id=}, {v1_role_id=}"
+                )
 
             bindings_checked += 1
 
             # Get ALL tuples for this binding (t_role, t_binding, and all subject tuples)
             # Kessel/SpiceDB handles duplicates gracefully, so it's safe to replicate existing tuples
-            all_tuples = binding.as_tuples()
+            all_tuples = role_binding.all_tuples()
+
+            # Ensure that we additionally re-replicate the relevant role (if it's a custom role).
+            if role_binding.role.type == RoleV2.Types.CUSTOM:
+                to_add, to_remove = CustomRoleV2.replication_tuples(
+                    role=role_binding.role, new_permissions=list(role_binding.role.permissions.all())
+                )
+
+                if len(to_remove) > 0:
+                    raise AssertionError(f"Should not have relations to remove, but got: {to_remove}")
+
+                all_tuples.extend(to_add)
 
             # Replicate ALL tuples - any that already exist will be handled as duplicates
             replicator = OutboxReplicator()
@@ -509,9 +565,9 @@ def replicate_missing_binding_tuples(tenant: Optional[Tenant] = None, binding_id
                 ReplicationEvent(
                     event_type=ReplicationEventType.REMIGRATE_ROLE_BINDING,
                     info={
-                        "binding_id": binding.id,
-                        "role_uuid": str(binding.role.uuid),
-                        "org_id": str(binding.role.tenant.org_id),
+                        "binding_uuid": str(role_binding.uuid),
+                        "role_uuid": str(role_binding.role.uuid),
+                        "org_id": str(role_binding.tenant.org_id),
                         "fix": "missing_binding_tuples",
                     },
                     partition_key=PartitionKey.byEnvironment(),
