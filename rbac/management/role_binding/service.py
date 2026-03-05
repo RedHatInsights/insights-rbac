@@ -110,10 +110,11 @@ class RoleBindingService:
         # When exclude_sources is "indirect" (default), we only want direct bindings
         binding_uuids = None
         exclude_direct = exclude_sources == "direct"
-        if exclude_direct:
+        include_inherited = exclude_sources in ("direct", "none")
+
+        if include_inherited:
             binding_uuids = self._lookup_binding_uuids_via_relations(resource_type, resource_id)
 
-        # Build base queryset for the specified resource
         queryset = self._build_base_queryset(resource_id, resource_type, binding_uuids, exclude_direct=exclude_direct)
 
         # Apply subject filters
@@ -259,18 +260,20 @@ class RoleBindingService:
         Returns:
             Annotated QuerySet of Group objects
         """
-        # Build filter for bindings based on exclude_direct flag
-        if exclude_direct and binding_uuids is not None:
+        if exclude_direct and binding_uuids is None:
+            # Relations API failed — cannot determine inherited bindings, return empty
+            return Group.objects.none()
+        elif exclude_direct and binding_uuids is not None:
             # Only inherited bindings by UUID (exclude direct)
             binding_filter = Q(role_binding_entries__binding__uuid__in=binding_uuids)
         elif binding_uuids is not None:
-            # Include both direct bindings and inherited bindings by UUID
+            # Both direct and inherited bindings (exclude_sources=none)
             binding_filter = Q(
                 role_binding_entries__binding__resource_type=resource_type,
                 role_binding_entries__binding__resource_id=resource_id,
             ) | Q(role_binding_entries__binding__uuid__in=binding_uuids)
         else:
-            # Only direct bindings for the specified resource
+            # Only direct bindings (exclude_sources=indirect, the default)
             binding_filter = Q(
                 role_binding_entries__binding__resource_type=resource_type,
                 role_binding_entries__binding__resource_id=resource_id,
