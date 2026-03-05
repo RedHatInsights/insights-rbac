@@ -84,7 +84,6 @@ _jwt_provider = JWTProvider()
 _jwt_manager = JWTManager(_jwt_provider, _jwt_cache)
 
 
-
 class RoleBindingService:
     """Service for role binding queries and operations."""
 
