@@ -33,6 +33,7 @@ from management.utils import FieldSelection, FieldSelectionValidationError
 from rest_framework import serializers
 
 _SUBJECT_TYPE_GROUP = "group"
+_SUBJECT_TYPE_USER = "user"
 _GROUP_FIELD_PREFIX = "group."
 
 
@@ -489,7 +490,7 @@ class RoleBindingListOutputSerializer(RoleBindingOutputSerializerMixin, serializ
     def get_subject(self, obj: RoleBinding):
         """Extract subject information from the RoleBinding.
 
-        Gets subject from prefetched group_entries (populated by service layer).
+        Checks group_entries first, then principal_entries.
 
         Default (no fields param): Returns only id and type.
         With fields param: Only type is always included. Other fields
@@ -497,17 +498,28 @@ class RoleBindingListOutputSerializer(RoleBindingOutputSerializerMixin, serializ
         """
         field_selection = self._get_field_selection()
 
-        # Get the first group from prefetched group_entries
+        # Try group subject first
         group_entries = getattr(obj, "group_entries", None)
-        if group_entries is None:
-            return {"type": "group"}
+        if group_entries is not None:
+            first_entry = group_entries.all()[:1]
+            if first_entry:
+                group = first_entry[0].group
+                return self._build_subject_data(group, field_selection)
 
-        first_entry = group_entries.all()[:1]
-        if not first_entry:
-            return {"type": "group"}
+        # Try principal subject
+        principal_entries = getattr(obj, "principal_entries", None)
+        if principal_entries is not None:
+            first_entry = principal_entries.all()[:1]
+            if first_entry:
+                principal = first_entry[0].principal
+                if field_selection is None:
+                    return {"id": principal.uuid, "type": _SUBJECT_TYPE_USER}
+                subject = {"type": _SUBJECT_TYPE_USER}
+                if "id" in field_selection.get_nested("subject"):
+                    subject["id"] = principal.uuid
+                return subject
 
-        group = first_entry[0].group
-        return self._build_subject_data(group, field_selection)
+        return {"type": _SUBJECT_TYPE_GROUP}
 
     def get_role(self, obj: RoleBinding):
         """Extract role information from the RoleBinding.

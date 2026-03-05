@@ -593,15 +593,37 @@ class RoleBindingListViewSetTest(IdentityRequest):
         """Test filtering by subject_type."""
         url = self._get_list_url()
 
-        cases = [
-            ("group_returns_results", "group", 15),
-            ("unsupported_returns_empty", "user", 0),
-        ]
-        for label, subject_type, expected_count in cases:
-            with self.subTest(label=label):
-                response = self.client.get(f"{url}?subject_type={subject_type}&limit=100", **self.headers)
-                self.assertEqual(response.status_code, status.HTTP_200_OK)
-                self.assertEqual(len(response.data["data"]), expected_count)
+        # Create a principal-bound role binding
+        from management.role_binding.model import RoleBindingPrincipal
+
+        user_principal = Principal.objects.create(username="filter_user", tenant=self.tenant, user_id="filter-uid")
+        user_role = RoleV2.objects.create(name="user_role", tenant=self.tenant)
+        user_role.permissions.add(self.permission)
+        user_binding = RoleBinding.objects.create(
+            role=user_role, resource_type="workspace", resource_id=str(self.workspace.id), tenant=self.tenant
+        )
+        RoleBindingPrincipal.objects.create(principal=user_principal, binding=user_binding, source="default")
+
+        try:
+            cases = [
+                ("group_returns_group_bindings", "group", 15),
+                ("user_returns_user_bindings", "user", 1),
+                ("unknown_returns_empty", "unknown", 0),
+            ]
+            for label, subject_type, expected_count in cases:
+                with self.subTest(label=label):
+                    response = self.client.get(f"{url}?subject_type={subject_type}&limit=100", **self.headers)
+                    self.assertEqual(response.status_code, status.HTTP_200_OK)
+                    self.assertEqual(len(response.data["data"]), expected_count)
+
+            # Verify user binding response has correct subject type
+            response = self.client.get(f"{url}?subject_type=user&limit=100", **self.headers)
+            self.assertEqual(response.data["data"][0]["subject"]["type"], "user")
+        finally:
+            RoleBindingPrincipal.objects.filter(binding=user_binding).delete()
+            user_binding.delete()
+            user_role.delete()
+            user_principal.delete()
 
     # --- Combined filters ---
 
