@@ -118,6 +118,12 @@ scalar Offset extends int64;
  */
 scalar OrderBy extends string;
 
+@doc("Resource type for role binding operations. 'workspace' for workspace-scoped bindings (resource_id is workspace UUID). 'tenant' for tenant-scoped bindings (resource_id is tenant resource ID in format {domain}/{org_id}, e.g. redhat/12345).")
+enum ResourceType {
+    workspace,
+    tenant,
+}
+
 // Default pagination values
 const DefaultLimit: Limit = 10;
 const DefaultOffset: Offset = 0;
@@ -879,7 +885,7 @@ namespace RoleBindings {
             limit: 10,
             cursor: "cD0yMDI1LTA4LTE1KzE0JTNBMDQlM0E0MS42ODM3NTIlMkIwMCUzQTAw",
             resource_id: "550e8400-e29b-41d4-a716-446655440001",
-            resource_type: "workspace"
+            resource_type: ResourceType.workspace
         },
         returnType: #{
             _: 200,
@@ -922,7 +928,7 @@ namespace RoleBindings {
             limit: 10,
             parent_role_bindings: true,
             resource_id: "550e8400-e29b-41d4-a716-446655440001",
-            resource_type: "workspace"
+            resource_type: ResourceType.workspace
         },
         returnType: #{
             _: 200,
@@ -971,12 +977,12 @@ namespace RoleBindings {
         @doc("Cursor for cursor-based pagination.")
         @query cursor?: Cursor;
 
-        @doc("Filter by resource ID")
+        @doc("Filter by resource ID. For workspace: UUID. For tenant: tenant resource ID (format: {domain}/{org_id}).")
         @example("550e8400-e29b-41d4-a716-446655440001")
         @query resource_id: string;
         @doc("Filter by resource type")
-        @example("workspace")
-        @query resource_type: string;
+        @example(ResourceType.workspace)
+        @query resource_type: ResourceType;
         @doc("Filter by subject type")
         @example("group")
         @query subject_type?: string;
@@ -1058,7 +1064,7 @@ namespace RoleBindings {
     @opExample(#{
         parameters: #{
             resource_id: "550e8400-e29b-41d4-a716-446655440001",
-            resource_type: "workspace",
+            resource_type: ResourceType.workspace,
             subject_id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
             subject_type: "group",
             body: #{
@@ -1080,13 +1086,13 @@ namespace RoleBindings {
         }
     })
     @put op update(
-        @doc("Identify the resource ID for the set of role bindings to replace")
+        @doc("Identify the resource ID for the set of role bindings to replace. For workspace: UUID. For tenant: tenant resource ID (format: {domain}/{org_id}).")
         @example("550e8400-e29b-41d4-a716-446655440001")
         @query resource_id: string;
 
         @doc("Identify the resource type for the set of role bindings to replace")
-        @example("workspace")
-        @query resource_type: string;
+        @example(ResourceType.workspace)
+        @query resource_type: ResourceType;
 
         @doc("Identify the subject ID for the set of role bindings to replace")
         @example("550e8400-e29b-41d4-a716-446655440004")

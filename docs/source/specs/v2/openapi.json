@@ -292,7 +292,7 @@
             "name": "resource_id",
             "in": "query",
             "required": true,
-            "description": "Filter by resource ID",
+            "description": "Filter by resource ID. For workspace: UUID. For tenant: tenant resource ID (format: {domain}/{org_id}).",
             "schema": {
               "type": "string"
             },
@@ -304,7 +304,7 @@
             "required": true,
             "description": "Filter by resource type",
             "schema": {
-              "type": "string"
+              "$ref": "#/components/schemas/ResourceType"
             },
             "explode": false
           },
@@ -565,7 +565,7 @@
             "name": "resource_id",
             "in": "query",
             "required": true,
-            "description": "Identify the resource ID for the set of role bindings to replace",
+            "description": "Identify the resource ID for the set of role bindings to replace. For workspace: UUID. For tenant: tenant resource ID (format: {domain}/{org_id}).",
             "schema": {
               "type": "string"
             },
@@ -577,7 +577,7 @@
             "required": true,
             "description": "Identify the resource type for the set of role bindings to replace",
             "schema": {
-              "type": "string"
+              "$ref": "#/components/schemas/ResourceType"
             },
             "explode": false
           },
@@ -3174,6 +3174,14 @@
             }
           }
         ]
+      },
+      "ResourceType": {
+        "type": "string",
+        "enum": [
+          "workspace",
+          "tenant"
+        ],
+        "description": "Resource type for role binding operations. 'workspace' for workspace-scoped bindings (resource_id is workspace UUID). 'tenant' for tenant-scoped bindings (resource_id is tenant resource ID in format {domain}/{org_id}, e.g. redhat/12345)."
       },
       "Role": {
         "type": "object",
