@@ -79,7 +79,7 @@ class RoleBindingListInputSerializer(RoleBindingInputSerializerMixin, serializer
     """
 
     role_id = serializers.UUIDField(required=False, help_text="Filter by role ID")
-    resource_id = serializers.CharField(required=False, help_text="Filter by resource ID")
+    resource_id = serializers.UUIDField(required=False, help_text="Filter by resource ID")
     resource_type = serializers.CharField(required=False, help_text="Filter by resource type")
     subject_type = serializers.CharField(required=False, help_text="Filter by subject type")
     subject_id = serializers.UUIDField(required=False, help_text="Filter by subject ID")
