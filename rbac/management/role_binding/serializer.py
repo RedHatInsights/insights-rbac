@@ -101,8 +101,11 @@ class RoleBindingInputSerializer(serializers.Serializer):
     subject_id = serializers.CharField(required=False, allow_blank=True, help_text="Filter by subject ID (UUID)")
     fields = serializers.CharField(required=False, allow_blank=True, help_text="Control which fields are included")
     order_by = serializers.CharField(required=False, allow_blank=True, help_text="Sort by specified field(s)")
-    parent_role_bindings = serializers.BooleanField(
-        required=False, allow_null=True, help_text="Include role bindings inherited from parent resources"
+    exclude_sources = serializers.ChoiceField(
+        choices=["direct", "indirect"],
+        required=False,
+        default="indirect",
+        help_text="Exclude bindings by source type: 'indirect' (default) excludes inherited, 'direct' excludes direct",
     )
 
     def to_internal_value(self, data):
@@ -130,9 +133,9 @@ class RoleBindingInputSerializer(serializers.Serializer):
         """Return None for empty values."""
         return value or None
 
-    def validate_parent_role_bindings(self, value):
-        """Return None for empty values."""
-        return value or None
+    def validate_exclude_sources(self, value):
+        """Return default for empty values."""
+        return value or "indirect"
 
     def validate_subject_id(self, value):
         """Return None for empty values."""
