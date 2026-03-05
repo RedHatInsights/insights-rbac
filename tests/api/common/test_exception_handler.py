@@ -16,13 +16,15 @@
 #
 """Test the API exception handler module."""
 
+import uuid
+
 from django.db import IntegrityError
 from django.test import TestCase
 from management.authorization.invalid_token import InvalidTokenError
 from management.authorization.missing_authorization import MissingAuthorizationError
 from management.authorization.unable_meet_prerequisites import UnableMeetPrerequisitesError
 from management.exceptions import InvalidFieldError, NotFoundError, RequiredFieldError
-from management.role.v2_exceptions import RoleNotFoundError
+from management.role.v2_exceptions import RolesNotFoundError
 from rest_framework import status
 from rest_framework.exceptions import ValidationError as DRFValidationError
 from rest_framework.views import Response
@@ -557,16 +559,17 @@ class V2ExceptionHandlerTests(TestCase):
             },
         )
 
-    # ── Branch: RoleNotFoundError ─────────────────────────────────────
+    # ── Branch: RolesNotFoundError ─────────────────────────────────────
 
     def test_role_not_found_error_returns_404_problem_details(self):
-        """Test that RoleNotFoundError produces a 404 Problem Details response."""
-        exc = RoleNotFoundError(uuid="aaa-bbb-ccc")
+        """Test that RolesNotFoundError produces a 404 Problem Details response."""
+        role_uuid = str(uuid.uuid4())
+        exc = RolesNotFoundError([role_uuid])
         context = self._mock_v2_context()
 
         response = custom_exception_handler_v2(exc, context)
 
-        detail = "Role with UUID 'aaa-bbb-ccc' not found."
+        detail = f"Role with UUID '{role_uuid}' not found."
         self.assertEqual(response.status_code, 404)
         self.assertEqual(response.content_type, "application/problem+json")
         self.assertEqual(
