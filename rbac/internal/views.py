@@ -86,6 +86,7 @@ from management.role.relation_api_dual_write_handler import (
 )
 from management.role.serializer import BindingMappingSerializer
 from management.tasks import (
+    bulk_cleanup_orphan_bindings_in_worker,
     clean_invalid_workspace_resource_definitions_in_worker,
     fix_missing_binding_base_tuples_in_worker,
     migrate_binding_scope_in_worker,
@@ -1783,6 +1784,66 @@ def check_relation(request):
         )
 
 
+def lookup_subjects(request):
+    """POST to retrieve subjects that have a relationship with a given resource."""
+    # Parse JSON data from the POST request body
+    req_data = load_request_body(request)
+
+    if not validate_relations_input("lookup_subjects", req_data):
+        return JsonResponse({"detail": "Invalid request body provided in request to lookup_subjects."}, status=500)
+
+    # Request parameters for subject lookup on relations api from post request
+    resource_type_name = req_data["resource"]["type"]["name"]
+    resource_type_namespace = req_data["resource"]["type"]["namespace"]
+    resource_id = req_data["resource"]["id"]
+    subject_type_name = req_data["subject_type"]["name"]
+    subject_type_namespace = req_data["subject_type"]["namespace"]
+    relation = req_data["relation"]
+    subject_relation = req_data.get("subject_relation") or None
+    token = jwt_manager.get_jwt_from_redis()
+
+    try:
+        with create_client_channel(settings.RELATION_API_SERVER) as channel:
+            stub = lookup_pb2_grpc.KesselLookupServiceStub(channel)
+
+            request_data = lookup_pb2.LookupSubjectsRequest(
+                resource=common_pb2.ObjectReference(
+                    type=common_pb2.ObjectType(
+                        name=resource_type_name,
+                        namespace=resource_type_namespace,
+                    ),
+                    id=resource_id,
+                ),
+                relation=relation,
+                subject_type=common_pb2.ObjectType(
+                    name=subject_type_name,
+                    namespace=subject_type_namespace,
+                ),
+                subject_relation=subject_relation,
+            )
+
+        # Pass JWT token in metadata
+        metadata = [("authorization", f"Bearer {token}")]
+        responses = stub.LookupSubjects(request_data, metadata=metadata)
+
+        if responses:
+            response_data = []
+            for r in responses:
+                response_to_dict = json_format.MessageToDict(r)
+                response_data.append(response_to_dict)
+            json_response = {"subjects": response_data}
+            return JsonResponse(json_response, status=200)
+        return JsonResponse("No subjects found", status=204, safe=False)
+    except RpcError as e:
+        logger.error(f"gRPC error: {str(e)}")
+        return JsonResponse({"detail": "Error occurred in gRPC call", "error": str(e)}, status=400)
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
+        return JsonResponse(
+            {"detail": "Error occurred in call to lookup subjects endpoint", "error": str(e)}, status=500
+        )
+
+
 def group_assignments(request, group_uuid):
     """Calculate and check if group-principals are correct on relations api."""
     group = get_object_or_404(Group, uuid=group_uuid)
@@ -2217,11 +2278,6 @@ def migrate_binding_scope(request):
     """View method for running binding scope migration.
 
     POST /_private/api/utils/migrate_binding_scope/
-    query params:
-        write_relationships: True, False, outbox, logging (default: True)
-            - True/outbox: Create V2 models and replicate to outbox
-            - logging: Create V2 models and log what would be replicated
-            - False: Create V2 models without replication
 
     Migrates all role bindings to the correct scope based on permission scopes.
     Iterates through roles (not binding mappings) and uses dual write handlers.
@@ -2229,17 +2285,12 @@ def migrate_binding_scope(request):
     if request.method != "POST":
         return JsonResponse({"error": "Invalid method, only 'POST' is allowed."}, status=405)
 
-    write_relationships = request.GET.get("write_relationships", "True")
+    logger.info("Running binding scope migration.")
 
-    logger.info(f"Running binding scope migration: write_relationships={write_relationships}")
-
-    migrate_binding_scope_in_worker.delay(write_relationships=write_relationships)
+    migrate_binding_scope_in_worker.delay()
 
     return JsonResponse(
-        {
-            "message": "Binding scope migration is running in a background worker.",
-            "write_relationships": write_relationships,
-        },
+        {"message": "Binding scope migration is running in a background worker."},
         status=202,
     )
 
@@ -2377,6 +2428,31 @@ def cleanup_tenant_orphan_bindings(request, org_id):
         },
         status=202,
     )
+
+
+@require_http_methods(["POST"])
+def bulk_cleanup_orphan_bindings(request):
+    """
+    Clean up orphaned role binding relationships.
+
+    POST /_private/api/utils/bulk_cleanup_orphan_bindings/
+
+    Query params:
+        tenant_limit: maximum number of tenants to process (default 100, for testing)
+
+    Returns:
+        JSON response indicating the task has been queued
+    """
+    tenant_limit = int(request.GET.get("tenant_limit", 100))
+
+    try:
+        bulk_cleanup_orphan_bindings_in_worker.delay(tenant_limit=tenant_limit)
+        return JsonResponse(
+            {"message": "Cleanup enqueued in background worker.", "tenant_limit": tenant_limit}, status=202
+        )
+    except Exception as e:
+        logger.exception(f"Error fixing orphan relations, {tenant_limit=}", exc_info=True)
+        return JsonResponse({"detail": f"Error fixing orphan relations: {str(e)}"}, status=500)
 
 
 @require_http_methods(["POST"])

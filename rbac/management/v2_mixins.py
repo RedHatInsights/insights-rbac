@@ -93,3 +93,13 @@ class AtomicOperationsMixin:
             if response:
                 return response
             raise
+
+    def batch_create(self, request, *args, **kwargs):
+        """Batch create with atomic transaction and concurrency handling."""
+        try:
+            return self._run_atomic(self.perform_batch_create, request, *args, **kwargs)
+        except OperationalError as e:
+            response = self._handle_concurrency_error(e, "batch_create")
+            if response:
+                return response
+            raise

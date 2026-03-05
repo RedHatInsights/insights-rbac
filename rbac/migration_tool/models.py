@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from typing import Iterable, Optional, Tuple
 
 from management.principal.model import Principal
-from management.relation_replicator.types import RelationTuple
+from management.relation_replicator.types import ObjectReference, ObjectType, RelationTuple
 from management.workspace.model import Workspace
 from migration_tool.utils import create_relationship
 
@@ -64,6 +64,23 @@ class V2boundresource:
 
     resource_type: Tuple[str, str]
     resource_id: str
+
+    def __post_init__(self):
+        """Check that the object's state is valid."""
+        if not isinstance(self.resource_type, tuple):
+            raise TypeError(f"resource_type must be a tuple, but got: {self.resource_type!r}")
+
+        if len(self.resource_type) != 2:
+            raise ValueError(f"resource_type should have length two, but got: {self.resource_type!r}")
+
+        # TODO: eventually migrate uses of V2boundreference to ObjectReference.
+        # For now, we just ensure that any V2boundresource values are compatible with it.
+        try:
+            ObjectReference(
+                ObjectType(namespace=self.resource_type[0], name=self.resource_type[1]), id=self.resource_id
+            )
+        except Exception as e:
+            raise Exception("Error while checking compatibility with ObjectReference") from e
 
     @classmethod
     def for_workspace_id(cls, workspace_id: str | uuid.UUID) -> "V2boundresource":
@@ -184,11 +201,14 @@ class V2rolebinding:
         for perm in self.role.permissions:
             tuples.append(role_permission_tuple(role_id=self.role.id, permission=perm))
 
+        # We cannot duplicate relationships within a single batch, so we ensure that each subject relationship is
+        # added only once.
+
         for group in set(self.groups):
             # These might be duplicate but it is OK, spiceDB will handle duplication through touch
             tuples.append(role_binding_group_subject_tuple(self.id, group))
 
-        for user in self.users.values():
+        for user in set(self.users.values()):
             tuples.append(role_binding_user_subject_tuple(self.id, user))
 
         tuples.append(

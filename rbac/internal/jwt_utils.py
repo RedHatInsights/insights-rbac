@@ -76,6 +76,9 @@ class JWTProvider:
         data = res.read()
         json_data = json.loads(data)
 
+        if "access_token" not in json_data:
+            raise Exception(f"Unexpected response when retrieving JWT (status={res.status}): {json_data}")
+
         token = json_data["access_token"]
         return token
 
@@ -148,5 +151,5 @@ class JWTManager:
             return token
 
         except Exception as e:
-            logger.error(f"error occurred when trying to retrieve JWT token. {e}")
+            logger.error(f"Error occurred when trying to retrieve JWT token: {e}", exc_info=True)
             return None
