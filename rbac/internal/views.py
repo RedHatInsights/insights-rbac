@@ -2341,30 +2341,30 @@ def fix_missing_binding_base_tuples(request):
     POST /_private/api/utils/fix_missing_binding_base_tuples/?binding_ids=1,2,3
 
     Query params:
-        binding_ids (optional): Comma-separated list of binding IDs to fix. If not provided, fixes ALL.
+        binding_uuids (optional): Comma-separated list of binding UUIDs to fix. If not provided, fixes ALL.
 
     Triggers a background worker to replicate all tuples for the specified bindings.
     Kessel/SpiceDB handles duplicate tuples gracefully.
 
     Returns 202 Accepted with a message that the worker is running.
     """
-    binding_ids_param = request.GET.get("binding_ids", "")
+    binding_uuids_param = request.GET.get("binding_uuids", "")
 
     logger.info("Fixing missing binding base tuples")
 
     # Parse binding IDs if provided
-    binding_ids = None
-    if binding_ids_param:
-        binding_ids = [int(id.strip()) for id in binding_ids_param.split(",")]
-        logger.info(f"Will fix {len(binding_ids)} specific bindings: {binding_ids}")
+    binding_uuids = None
+    if binding_uuids_param:
+        binding_uuids = [id.strip() for id in binding_uuids_param.split(",")]
+        logger.info(f"Will fix {len(binding_uuids)} specific bindings: {binding_uuids}")
 
     # Trigger the background worker
-    fix_missing_binding_base_tuples_in_worker.delay(binding_ids=binding_ids)
+    fix_missing_binding_base_tuples_in_worker.delay(binding_uuids=binding_uuids)
 
     return JsonResponse(
         {
             "message": "Fix missing binding base tuples is running in a background worker.",
-            "binding_ids": binding_ids if binding_ids else "all",
+            "binding_uuids": binding_uuids if binding_uuids else "all",
         },
         status=202,
     )

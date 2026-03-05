@@ -40,6 +40,7 @@ from api.models import User, Tenant
 from api.utils import reset_imported_tenants
 from management.audit_log.model import AuditLog
 from management.cache import TenantCache
+from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
 from management.models import BindingMapping, Group, Permission, Policy, Role, Workspace
 from management.principal.model import Principal
 from management.relation_replicator.noop_replicator import NoopReplicator
@@ -75,6 +76,7 @@ from kessel.inventory.v1beta2.check_request_pb2 import CheckRequest
 from tests.identity_request import IdentityRequest
 from tests.management.role.test_dual_write import RbacFixture
 from tests.rbac.test_middleware import EnvironmentVarGuard
+from tests.v2_util import seed_v2_role_from_v1
 
 
 class BaseInternalViewsetTests(IdentityRequest):
@@ -2723,6 +2725,7 @@ class InternalViewsetUserLookupTests(BaseInternalViewsetTests):
         self.assertEqual(resp_groups[0]["name"], "test_group_platform_default")
 
 
+@override_settings(ATOMIC_RETRY_DISABLED=True)
 class FixMissingBindingBaseTuplesTests(BaseInternalViewsetTests):
     """Test the fix_missing_binding_base_tuples internal API endpoint."""
 
@@ -2732,7 +2735,7 @@ class FixMissingBindingBaseTuplesTests(BaseInternalViewsetTests):
         self.url = "/_private/api/utils/fix_missing_binding_base_tuples/"
         self._tuples = InMemoryTuples()
 
-    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True, ROOT_SCOPE_PERMISSIONS="test:resource:read")
     @patch("management.tasks.fix_missing_binding_base_tuples_in_worker.delay")
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     def test_fix_missing_base_tuples(self, mock_replicate, mock_worker):
@@ -2758,27 +2761,19 @@ class FixMissingBindingBaseTuplesTests(BaseInternalViewsetTests):
         )
         Access.objects.create(role=role, permission=perm, tenant=self.public_tenant)
 
-        # Get or create workspace hierarchy
-        root_ws, _ = Workspace.objects.get_or_create(
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-            defaults={"name": "Root Workspace for Fix Test"},
-        )
+        seed_v2_role_from_v1(role)
+
+        # Bootstrap the tenant to create workspace hierarchy (without replicating, since we don't need the tuples).
+        V2TenantBootstrapService(replicator=NoopReplicator()).bootstrap_tenant(self.tenant)
 
         # Create binding WITHOUT replication (simulating pre-V2 state - missing base tuples)
-        binding = BindingMapping.objects.create(
-            role=role,
-            mappings={
-                "id": "test-binding-no-base-tuples",
-                "groups": [str(self.group.uuid)],
-                "users": {},
-                "role": {"id": str(role.uuid), "is_system": True, "permissions": []},
-            },
-            resource_type_namespace="rbac",
-            resource_type_name="workspace",
-            resource_id=str(root_ws.id),
-        )
+        RelationApiDualWriteGroupHandler(
+            group=self.group, event_type=ReplicationEventType.ASSIGN_ROLE, replicator=NoopReplicator()
+        ).generate_relations_reset_roles([role])
 
+        root_ws = Workspace.objects.root(tenant=self.tenant)
+
+        binding = BindingMapping.objects.get(role=role)
         binding_id = binding.mappings["id"]
 
         # BEFORE FIX: Verify NO tuples exist (simulating missing Kessel relationships)
@@ -2790,17 +2785,17 @@ class FixMissingBindingBaseTuplesTests(BaseInternalViewsetTests):
         mock_worker.side_effect = lambda **kwargs: fix_missing_binding_base_tuples_in_worker(**kwargs)
 
         # CALL THE FIX API
-        response = self.client.post(f"{self.url}?binding_ids={binding.id}", **self.request.META)
+        response = self.client.post(f"{self.url}?binding_uuids={binding_id}", **self.request.META)
         self.assertEqual(response.status_code, 202)  # Now returns 202 (Accepted) since it's async
 
         data = response.json()
         self.assertIn("message", data)
-        self.assertEqual(data["binding_ids"], [binding.id])
+        self.assertEqual(data["binding_uuids"], [binding_id])
 
         # Verify worker was called
-        mock_worker.assert_called_once_with(binding_ids=[binding.id])
+        mock_worker.assert_called_once_with(binding_uuids=[binding_id])
 
-        # AFTER FIX: Verify ALL tuples now exist (API replicates all tuples via binding.as_tuples())
+        # AFTER FIX: Verify ALL tuples now exist.
 
         # Verify t_role tuple was created
         t_role_after = self._tuples.find_tuples(
