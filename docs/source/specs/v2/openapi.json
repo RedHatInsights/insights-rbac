@@ -332,10 +332,10 @@
             "name": "exclude_sources",
             "in": "query",
             "required": false,
-            "description": "Exclude bindings by source type: 'indirect' (default) excludes inherited, 'direct' excludes direct",
+            "description": "Exclude bindings by source type: 'indirect' (default) excludes inherited, 'direct' excludes direct, 'none' shows all",
             "schema": {
               "type": "string",
-              "enum": ["direct", "indirect"],
+              "enum": ["direct", "indirect", "none"],
               "default": "indirect"
             },
             "explode": false

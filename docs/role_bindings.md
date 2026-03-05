@@ -768,7 +768,7 @@ GET /api/rbac/v2/role_bindings/by_subject/
 | `subject_id` | Filter by specific subject | group UUID |
 | `fields` | Dynamic field selection | `subject(group.name),role(name)` |
 | `order_by` | Sort order | `role_name`, `-modified` |
-| `exclude_sources` | Exclude bindings by source type | `direct`, `indirect` (default) |
+| `exclude_sources` | Exclude bindings by source type | `direct`, `indirect` (default), `none` |
 
 ### Field Selection Syntax
 

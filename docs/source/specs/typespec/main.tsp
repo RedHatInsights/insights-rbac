@@ -860,11 +860,13 @@ namespace RoleBindings {
             name: "Child Workspace",
             type: "workspace"
         },
-        sources: #[#{
-            id: "550e8400-e29b-41d4-a716-446655440001",
-            name: "Parent Workspace",
-            type: "workspace"
-        }]
+        sources: #[
+            #{
+                id: "550e8400-e29b-41d4-a716-446655440001",
+                name: "Parent Workspace",
+                type: "workspace"
+            }
+        ]
     })
     model RoleBindingBySubject {
         @doc("Timestamp of last modification")
@@ -964,11 +966,13 @@ namespace RoleBindings {
                         name: "Child Workspace",
                         type: "workspace"
                     },
-                    sources: #[#{
-                        id: "550e8400-e29b-41d4-a716-446655440001",
-                        name: "Parent Workspace",
-                        type: "workspace"
-                    }]
+                    sources: #[
+                        #{
+                            id: "550e8400-e29b-41d4-a716-446655440001",
+                            name: "Parent Workspace",
+                            type: "workspace"
+                        }
+                    ]
                 }
             ]
         }
@@ -992,8 +996,8 @@ namespace RoleBindings {
         @example("550e8400-e29b-41d4-a716-446655440004")
         @query subject_id?: string;
 
-        @doc("Exclude bindings by source type: 'indirect' (default) excludes inherited, 'direct' excludes direct")
-        @query exclude_sources?: "direct" | "indirect" = "indirect";
+        @doc("Exclude bindings by source type: 'indirect' (default) excludes inherited, 'direct' excludes direct, 'none' shows all")
+        @query exclude_sources?: "direct" | "indirect" | "none" = "indirect";
 
         @doc("Control which fields are included in the response to optimize payload size and improve performance.")
         @example("subject(group.name,group.user_count),role(name),resource(name,type),last_modified")
