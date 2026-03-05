@@ -22,11 +22,11 @@ from management.role.v2_exceptions import (
     PermissionsNotFoundError,
     RoleAlreadyExistsError,
     RoleDatabaseError,
-    RoleNotFoundError,
+    RolesNotFoundError,
 )
 from management.role.v2_model import RoleV2
 from management.role.v2_service import RoleV2Service
-from management.utils import FieldSelection, FieldSelectionValidationError
+from management.utils import FieldSelection, FieldSelectionValidationError, UUIDStringField
 from rest_framework import serializers
 
 # Centralized mapping from domain exceptions to API error fields
@@ -216,7 +216,7 @@ class RoleV2RequestSerializer(serializers.ModelSerializer):
                 permission_data=permission_data,
                 tenant=tenant,
             )
-        except RoleNotFoundError as e:
+        except RolesNotFoundError as e:
             from rest_framework.exceptions import NotFound
 
             raise NotFound(str(e))
@@ -225,3 +225,9 @@ class RoleV2RequestSerializer(serializers.ModelSerializer):
         except tuple(ERROR_MAPPING.keys()) as e:
             field = ERROR_MAPPING[type(e)]
             raise serializers.ValidationError({field: str(e)})
+
+
+class RoleV2BulkDeleteRequestSerializer(serializers.Serializer):
+    """Serializer for requests to delete multiple roles."""
+
+    ids = serializers.ListField(child=UUIDStringField())

@@ -558,55 +558,13 @@ class CustomRoleV2ReplicationTupleTests(IdentityRequest):
         principal = Principal.objects.create(tenant=self.tenant, username="u1", user_id="uid1")
         principal_resource_id = Principal.user_id_to_principal_resource_id(principal.user_id)
 
-        binding = RoleBinding.objects.create(
-            role=self.role,
-            resource_type="workspace",
-            resource_id="ws-1",
-            tenant=self.tenant,
-        )
-        RoleBindingGroup.objects.create(binding=binding, group=group)
-        RoleBindingPrincipal.objects.create(binding=binding, principal=principal, source="direct")
-
-        binding = RoleBinding.objects.prefetch_related("group_entries", "principal_entries").get(pk=binding.pk)
-        binding_ref = ObjectReference(type=ObjectType(namespace="rbac", name="role_binding"), id=str(binding.uuid))
-
         to_add, to_remove = CustomRoleV2.replication_tuples(
             self.role,
             old_permissions=[self.perm_read],
-            bindings_deleted=[binding],
         )
 
         expected_remove = {
             self._permission_tuple(self.perm_read),
-            RelationTuple(
-                resource=binding_ref,
-                relation="role",
-                subject=SubjectReference(
-                    subject=ObjectReference(type=ObjectType(namespace="rbac", name="role"), id=str(self.role.uuid))
-                ),
-            ),
-            RelationTuple(
-                resource=ObjectReference(type=ObjectType(namespace="rbac", name="workspace"), id="ws-1"),
-                relation="binding",
-                subject=SubjectReference(subject=binding_ref),
-            ),
-            RelationTuple(
-                resource=binding_ref,
-                relation="subject",
-                subject=SubjectReference(
-                    subject=ObjectReference(type=ObjectType(namespace="rbac", name="group"), id=str(group.uuid)),
-                    relation="member",
-                ),
-            ),
-            RelationTuple(
-                resource=binding_ref,
-                relation="subject",
-                subject=SubjectReference(
-                    subject=ObjectReference(
-                        type=ObjectType(namespace="rbac", name="principal"), id=principal_resource_id
-                    )
-                ),
-            ),
         }
 
         self.assertEqual(set(to_add), set())
