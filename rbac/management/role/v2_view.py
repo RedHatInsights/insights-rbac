@@ -16,18 +16,21 @@
 #
 """View for RoleV2 management."""
 
+from management.atomic_transactions import atomic
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions import RoleAccessPermission
+from management.role.v2_exceptions import CustomRoleRequiredError, RolesNotFoundError
 from management.role.v2_model import RoleV2
 from management.role.v2_serializer import (
     RoleFieldSelection,
+    RoleV2BulkDeleteRequestSerializer,
     RoleV2ListSerializer,
     RoleV2RequestSerializer,
     RoleV2ResponseSerializer,
     _validate_fields_parameter,
 )
 from management.role.v2_service import RoleV2Service
-from management.utils import FieldSelectionValidationError
+from management.utils import FieldSelectionValidationError, v2response_error_from_errors
 from management.v2_mixins import AtomicOperationsMixin
 from rest_framework import status
 from rest_framework.response import Response
@@ -76,6 +79,8 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         """Return appropriate serializer based on action."""
         if self.action in ("create", "update"):
             return RoleV2RequestSerializer
+        if self.action == "bulk_destroy":
+            return RoleV2BulkDeleteRequestSerializer
         return RoleV2ResponseSerializer
 
     def _parse_fields_param(self, fields_str: str | None) -> set[str]:
@@ -158,3 +163,33 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
             role, context={"input_permissions": input_permissions, "fields": fields}
         )
         return Response(response_serializer.data, status=status.HTTP_200_OK)
+
+    @atomic
+    def bulk_destroy(self, request, *args, **kwargs):
+        """Delete multiple roles atomically."""
+        service = RoleV2Service(tenant=request.tenant)
+
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        ids = set(serializer.validated_data["ids"])
+
+        try:
+            service.bulk_delete(ids, from_tenant=self.request.tenant)
+        except RolesNotFoundError as e:
+            return Response(
+                v2response_error_from_errors(
+                    errors=[{"detail": str(e), "status": status.HTTP_404_NOT_FOUND, "source": "ids"}], exc=e
+                ),
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        except CustomRoleRequiredError as e:
+            # This should be impossible. We constrain deletions to be from the user's tenant. Non-custom roles should
+            # only exist in the public tenant, and there shouldn't be any users in the public tenant. Thus,
+            # we will never find any non-custom roles to try to delete.
+            return Response(
+                {"title": "An internal error occurred.", "detail": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+
+        return Response(status=status.HTTP_204_NO_CONTENT)

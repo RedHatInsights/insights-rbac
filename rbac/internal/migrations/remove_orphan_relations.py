@@ -20,15 +20,19 @@ import logging
 from collections.abc import Callable, Iterable
 from typing import Protocol
 
+import pgtransaction
+
 from api.models import Tenant
 from django.db import transaction
 from internal.utils import replicate_missing_binding_tuples, iterate_tuples_from_kessel
+from management.atomic_transactions import atomic_block
 from management.role.model import BindingMapping
 from management.models import Role, Workspace
 from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import ReplicationEvent, ReplicationEventType, PartitionKey
 from management.role.v2_model import RoleV2, SeededRoleV2
+from management.role_binding.model import RoleBinding
 from management.tenant_mapping.model import DefaultAccessType
 from management.tenant_service.v2 import lock_tenant_for_bootstrap, TenantBootstrapLock
 from migration_tool.in_memory_tuples import RelationTuple
@@ -275,7 +279,12 @@ def _remove_orphaned_role_bindings(
             for b in binding_ids
         }
 
-        with transaction.atomic():
+        # We must use SERIALIZABLE here because we are potentially interacting with concurrent V2 writers (which all
+        # use SERIALIZABLE rather than explicit locking).
+        #
+        # Unfortunately, we must *also* use select_for_update() here because we are potentially interacting with
+        # concurrent V1 writers (which all use SELECT FOR UPDATE rather than SERIALIZABLE).
+        with atomic_block():
             to_remove: list[RelationTuple | Relationship] = []
 
             bootstrap_lock: TenantBootstrapLock = lock_tenant_for_bootstrap(tenant)
@@ -283,25 +292,39 @@ def _remove_orphaned_role_bindings(
 
             # This will lock both the bindings and custom roles.
             # See https://docs.djangoproject.com/en/5.2/ref/models/querysets/#select-for-update
-            custom_bindings: list[BindingMapping] = list(
+            custom_binding_mappings: list[BindingMapping] = list(
                 BindingMapping.objects.filter(mappings__id__in=binding_ids, role__system=False)
                 .select_related("role")
                 .select_for_update()
             )
 
             # Only lock the bindings themselves here, not the associated system roles.
-            system_bindings: list[BindingMapping] = list(
+            system_binding_mappings: list[BindingMapping] = list(
                 BindingMapping.objects.filter(mappings__id__in=binding_ids, role__system=True)
                 .select_related("role")
                 .select_for_update(of=["self"])
             )
 
-            bindings_by_id: dict[str, BindingMapping] = {
-                b.mappings["id"]: b for b in [*custom_bindings, *system_bindings]
+            binding_mappings_by_id: dict[str, BindingMapping] = {
+                b.mappings["id"]: b for b in [*custom_binding_mappings, *system_binding_mappings]
             }
 
+            role_bindings: list[RoleBinding] = list(
+                RoleBinding.objects.filter(uuid__in=binding_ids)
+                .prefetch_related("group_entries", "principal_entries")
+                .select_for_update(of=["self"])
+            )
+
+            role_bindings_by_id: dict[str, RoleBinding] = {str(b.uuid): b for b in role_bindings}
+
             for binding_id in binding_ids:
-                binding = bindings_by_id.get(binding_id)
+                binding_mapping = binding_mappings_by_id.get(binding_id)
+                role_binding = role_bindings_by_id.get(binding_id)
+
+                if (binding_mapping is not None) and (role_binding is None):
+                    raise AssertionError(
+                        f"RoleBinding should exist if BindingMapping does, but it does not for binding {binding_id}"
+                    )
 
                 # Handle built-in bindings specially.
                 if binding_id in builtin_binding_ids:
@@ -332,9 +355,7 @@ def _remove_orphaned_role_bindings(
                     actual_relations: set[RelationTuple] = lookup_result.relations()
 
                     expected_relations: set[RelationTuple] = (
-                        {_as_relation_tuple(r) for r in binding.get_role_binding().as_tuples()}
-                        if binding is not None
-                        else set()
+                        set(role_binding.all_tuples()) if role_binding is not None else set()
                     )
 
                     orphan_relations = actual_relations - expected_relations

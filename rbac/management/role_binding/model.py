@@ -122,8 +122,8 @@ class RoleBinding(TenantAwareModel):
         tuples = self.binding_tuples()
         for entry in self.group_entries.all():
             tuples.append(self._group_subject_tuple(entry.group))
-        for entry in self.principal_entries.all():
-            tuples.append(self._user_subject_tuple(entry.principal))
+        for principal in set(e.principal for e in self.principal_entries.all()):
+            tuples.append(self._user_subject_tuple(principal))
         return tuples
 
     def subject_tuple(self, subject: "Group | Principal") -> RelationTuple:
