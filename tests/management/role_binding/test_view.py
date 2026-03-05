@@ -553,6 +553,10 @@ class RoleBindingListViewSetTest(IdentityRequest):
             ("matching_resource", f"resource_id={resource_id}&resource_type=workspace", 15),
             ("non_matching_id", "resource_id=nonexistent&resource_type=workspace", 0),
             ("non_matching_type", f"resource_id={resource_id}&resource_type=other", 0),
+            ("resource_type_only", "resource_type=workspace", 15),
+            ("resource_type_only_no_match", "resource_type=other", 0),
+            ("resource_id_only", f"resource_id={resource_id}", 15),
+            ("resource_id_only_no_match", "resource_id=nonexistent", 0),
         ]
         for label, query, expected_count in cases:
             with self.subTest(label=label):
@@ -659,8 +663,6 @@ class RoleBindingListViewSetTest(IdentityRequest):
             ("group_order_by", f"{url}?order_by=group.name", "order_by"),
             ("unknown_fields_object", f"{url}?fields=bogus(nope)", "fields"),
             ("invalid_role_field", f"{url}?fields=role(nonexistent)", "fields"),
-            ("resource_id_without_type", f"{url}?resource_id=res-1", "non_field_errors"),
-            ("resource_type_without_id", f"{url}?resource_type=workspace", "non_field_errors"),
             ("invalid_subject_id", f"{url}?subject_id=not-a-uuid", "subject_id"),
         ]
         for label, request_url, expected_field in error_cases:

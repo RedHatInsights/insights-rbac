@@ -31,8 +31,8 @@ class RoleBindingQuerySet(QuerySet):
         Args:
             tenant: The tenant to filter by.
             role_id: Optional role UUID to filter by.
-            resource_id: Optional resource ID to filter by (must pair with resource_type).
-            resource_type: Optional resource type to filter by (must pair with resource_id).
+            resource_id: Optional resource ID to filter by.
+            resource_type: Optional resource type to filter by.
             subject_type: Optional subject type filter. Only 'group' is supported;
                 unsupported types return an empty queryset.
             subject_id: Optional subject (group) UUID to filter by.
@@ -45,8 +45,10 @@ class RoleBindingQuerySet(QuerySet):
         )
         if role_id:
             qs = qs.filter(role__uuid=role_id)
-        if resource_id and resource_type:
-            qs = qs.filter(resource_id=resource_id, resource_type=resource_type)
+        if resource_id:
+            qs = qs.filter(resource_id=resource_id)
+        if resource_type:
+            qs = qs.filter(resource_type=resource_type)
         if subject_type and subject_type != SubjectType.GROUP:
             return qs.none()
         if subject_id:

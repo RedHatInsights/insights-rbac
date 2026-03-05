@@ -728,39 +728,53 @@ class RoleBindingListInputSerializerTest(TestCase):
         self.assertTrue(s.is_valid(), s.errors)
         self.assertNotIn("order_by", s.validated_data)
 
-    # --- resource_id / resource_type (paired) ---
+    # --- resource_id ---
 
-    def test_resource_filters_valid_paired(self):
-        """Test that resource_id and resource_type are accepted when both provided."""
+    def test_resource_id_valid_inputs(self):
+        """Test that valid resource_id values are accepted."""
         cases = [
-            ("workspace", "res-1", "workspace"),
-            ("custom_type", "my-resource-id", "custom"),
+            ("simple", "res-1"),
+            ("uuid", "550e8400-e29b-41d4-a716-446655440000"),
+            ("custom", "my-resource-id"),
         ]
-        for label, res_id, res_type in cases:
+        for label, value in cases:
             with self.subTest(label=label):
-                s = RoleBindingListInputSerializer(data={"resource_id": res_id, "resource_type": res_type})
+                s = RoleBindingListInputSerializer(data={"resource_id": value})
                 self.assertTrue(s.is_valid(), s.errors)
-                self.assertEqual(s.validated_data["resource_id"], res_id)
-                self.assertEqual(s.validated_data["resource_type"], res_type)
+                self.assertEqual(s.validated_data["resource_id"], value)
 
-    def test_resource_id_without_resource_type_is_invalid(self):
-        """Test that resource_id without resource_type is rejected."""
-        s = RoleBindingListInputSerializer(data={"resource_id": "res-1"})
-        self.assertFalse(s.is_valid())
-        self.assertIn("non_field_errors", s.errors)
-
-    def test_resource_type_without_resource_id_is_invalid(self):
-        """Test that resource_type without resource_id is rejected."""
-        s = RoleBindingListInputSerializer(data={"resource_type": "workspace"})
-        self.assertFalse(s.is_valid())
-        self.assertIn("non_field_errors", s.errors)
-
-    def test_resource_filters_omitted_is_valid(self):
-        """Test that omitting both resource_id and resource_type is valid."""
+    def test_resource_id_omitted_is_valid(self):
+        """Test that omitting resource_id is valid (required=False)."""
         s = RoleBindingListInputSerializer(data={})
         self.assertTrue(s.is_valid(), s.errors)
         self.assertNotIn("resource_id", s.validated_data)
+
+    # --- resource_type ---
+
+    def test_resource_type_valid_inputs(self):
+        """Test that valid resource_type values are accepted."""
+        cases = [
+            ("workspace", "workspace"),
+            ("custom", "custom_type"),
+        ]
+        for label, value in cases:
+            with self.subTest(label=label):
+                s = RoleBindingListInputSerializer(data={"resource_type": value})
+                self.assertTrue(s.is_valid(), s.errors)
+                self.assertEqual(s.validated_data["resource_type"], value)
+
+    def test_resource_type_omitted_is_valid(self):
+        """Test that omitting resource_type is valid (required=False)."""
+        s = RoleBindingListInputSerializer(data={})
+        self.assertTrue(s.is_valid(), s.errors)
         self.assertNotIn("resource_type", s.validated_data)
+
+    def test_resource_id_and_type_together(self):
+        """Test that resource_id and resource_type work together."""
+        s = RoleBindingListInputSerializer(data={"resource_id": "res-1", "resource_type": "workspace"})
+        self.assertTrue(s.is_valid(), s.errors)
+        self.assertEqual(s.validated_data["resource_id"], "res-1")
+        self.assertEqual(s.validated_data["resource_type"], "workspace")
 
     # --- subject_type ---
 

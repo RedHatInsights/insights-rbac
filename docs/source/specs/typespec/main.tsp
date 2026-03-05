@@ -1203,11 +1203,11 @@ namespace RoleBindings {
         @example("550e8400-e29b-41d4-a716-446655440002")
         @query role_id?: string;
 
-        @doc("Filter by resource ID (must be used together with resource_type)")
+        @doc("Filter by resource ID")
         @example("550e8400-e29b-41d4-a716-446655440001")
         @query resource_id?: string;
 
-        @doc("Filter by resource type (must be used together with resource_id)")
+        @doc("Filter by resource type")
         @example("workspace")
         @query resource_type?: string;
 

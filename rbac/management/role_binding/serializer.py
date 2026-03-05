@@ -87,17 +87,6 @@ class RoleBindingListInputSerializer(RoleBindingInputSerializerMixin, serializer
     # Custom ordering support will be added in a follow-on PR.
     order_by = serializers.CharField(required=False, help_text="Sort by specified field(s)")
 
-    def validate(self, attrs):
-        """Enforce that resource_id and resource_type must be provided together."""
-        has_id = "resource_id" in attrs
-        has_type = "resource_type" in attrs
-        if has_id != has_type:
-            missing = "resource_type" if has_id else "resource_id"
-            raise serializers.ValidationError(
-                f"resource_id and resource_type must be provided together; missing {missing}."
-            )
-        return attrs
-
 
 class RoleBindingInputSerializer(serializers.Serializer):
     """Input serializer for role binding query parameters.

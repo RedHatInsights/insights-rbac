@@ -134,12 +134,16 @@ class RoleBindingQuerySetTest(IdentityRequest):
     # --- resource_id / resource_type filtering ---
 
     def test_resource_filtering(self):
-        """Test that resource_id + resource_type filters correctly."""
+        """Test that resource_id and resource_type filter independently."""
         cases = [
-            ("match_res_1", "res-1", "workspace", 1, {self.binding_a}),
-            ("match_res_2", "res-2", "workspace", 1, {self.binding_b}),
-            ("no_match_id", "nonexistent", "workspace", 0, set()),
-            ("no_match_type", "res-1", "other_type", 0, set()),
+            ("both_match", "res-1", "workspace", 1, {self.binding_a}),
+            ("both_match_2", "res-2", "workspace", 1, {self.binding_b}),
+            ("both_no_match_id", "nonexistent", "workspace", 0, set()),
+            ("both_no_match_type", "res-1", "other_type", 0, set()),
+            ("id_only", "res-1", None, 1, {self.binding_a}),
+            ("id_only_no_match", "nonexistent", None, 0, set()),
+            ("type_only", None, "workspace", 2, {self.binding_a, self.binding_b}),
+            ("type_only_no_match", None, "other_type", 0, set()),
             ("none_returns_all", None, None, 2, {self.binding_a, self.binding_b}),
         ]
         for label, res_id, res_type, expected_count, expected_set in cases:

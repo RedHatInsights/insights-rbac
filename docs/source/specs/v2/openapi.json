@@ -56,7 +56,7 @@
             "name": "resource_id",
             "in": "query",
             "required": false,
-            "description": "Filter by resource ID (must be used together with resource_type)",
+            "description": "Filter by resource ID",
             "schema": {
               "type": "string"
             },
@@ -66,7 +66,7 @@
             "name": "resource_type",
             "in": "query",
             "required": false,
-            "description": "Filter by resource type (must be used together with resource_id)",
+            "description": "Filter by resource type",
             "schema": {
               "type": "string"
             },
