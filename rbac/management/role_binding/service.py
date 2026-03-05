@@ -106,8 +106,6 @@ class RoleBindingService:
         # Ensure default bindings exist (lazy creation)
         self._ensure_default_bindings_exist()
 
-        # When exclude_sources is "direct", we only want inherited bindings
-        # When exclude_sources is "indirect" (default), we only want direct bindings
         binding_uuids = None
         exclude_direct = exclude_sources == "direct"
         include_inherited = exclude_sources in ("direct", "none")
