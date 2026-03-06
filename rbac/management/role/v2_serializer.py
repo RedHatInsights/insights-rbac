@@ -168,7 +168,7 @@ class RoleV2RequestSerializer(serializers.ModelSerializer):
 
     id = serializers.UUIDField(source="uuid", read_only=True)
     name = serializers.CharField()
-    description = serializers.CharField()
+    description = serializers.CharField(required=False, allow_blank=True, default="")
     permissions = PermissionSerializer(many=True, write_only=True)
 
     class Meta:

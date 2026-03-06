@@ -27,11 +27,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "allOf": [
-                {
-                  "$ref": "#/components/schemas/Limit"
-                }
-              ],
+              "$ref": "#/components/schemas/Limit",
               "default": 10
             },
             "explode": false
@@ -102,11 +98,7 @@
             "required": false,
             "description": "Control which fields are included in the response to optimize payload size.",
             "schema": {
-              "allOf": [
-                {
-                  "$ref": "#/components/schemas/FieldMask"
-                }
-              ],
+              "$ref": "#/components/schemas/FieldMask",
               "default": "resource(id),role(id),subject(id,type)"
             },
             "explode": false
@@ -117,11 +109,7 @@
             "required": false,
             "description": "Default sort is by the time the role was first created. Prefix with '-' for descending order.",
             "schema": {
-              "allOf": [
-                {
-                  "$ref": "#/components/schemas/OrderBy"
-                }
-              ],
+              "$ref": "#/components/schemas/OrderBy",
               "default": "role.id"
             },
             "explode": false
@@ -269,11 +257,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "allOf": [
-                {
-                  "$ref": "#/components/schemas/Limit"
-                }
-              ],
+              "$ref": "#/components/schemas/Limit",
               "default": 10
             },
             "explode": false
@@ -345,11 +329,7 @@
             "required": false,
             "description": "Control which fields are included in the response to optimize payload size and improve performance.",
             "schema": {
-              "allOf": [
-                {
-                  "$ref": "#/components/schemas/FieldMask"
-                }
-              ],
+              "$ref": "#/components/schemas/FieldMask",
               "default": "subject(group.name),role(name),resource(name,type),last_modified"
             },
             "explode": false
@@ -360,11 +340,7 @@
             "required": false,
             "description": "Sort by specified field(s), prefix with '-' for descending order",
             "schema": {
-              "allOf": [
-                {
-                  "$ref": "#/components/schemas/OrderBy"
-                }
-              ],
+              "$ref": "#/components/schemas/OrderBy",
               "default": "subject_name"
             },
             "explode": false
@@ -606,11 +582,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "allOf": [
-                {
-                  "$ref": "#/components/schemas/FieldMask"
-                }
-              ],
+              "$ref": "#/components/schemas/FieldMask",
               "default": "resource(id),subject(id),roles(id),last_modified"
             },
             "explode": false
@@ -782,11 +754,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "allOf": [
-                {
-                  "$ref": "#/components/schemas/FieldMask"
-                }
-              ],
+              "$ref": "#/components/schemas/FieldMask",
               "default": "resource(id),role(id),subject(id,type)"
             },
             "explode": false
@@ -972,11 +940,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "allOf": [
-                {
-                  "$ref": "#/components/schemas/Limit"
-                }
-              ],
+              "$ref": "#/components/schemas/Limit",
               "default": 10
             },
             "explode": false
@@ -1007,11 +971,7 @@
             "required": false,
             "description": "Control which fields are included in the response to optimize payload size.",
             "schema": {
-              "allOf": [
-                {
-                  "$ref": "#/components/schemas/FieldMask"
-                }
-              ],
+              "$ref": "#/components/schemas/FieldMask",
               "default": "id,name,description,last_modified"
             },
             "explode": false
@@ -1022,11 +982,7 @@
             "required": false,
             "description": "Sort by specified field(s), prefix with '-' for descending order. Allowed fields: name, last_modified.",
             "schema": {
-              "allOf": [
-                {
-                  "$ref": "#/components/schemas/OrderBy"
-                }
-              ],
+              "$ref": "#/components/schemas/OrderBy",
               "default": "name"
             },
             "explode": false
@@ -1356,11 +1312,7 @@
             "required": false,
             "description": "Control which fields are included in the response to optimize payload size.",
             "schema": {
-              "allOf": [
-                {
-                  "$ref": "#/components/schemas/FieldMask"
-                }
-              ],
+              "$ref": "#/components/schemas/FieldMask",
               "default": "id,name,description,permissions,last_modified"
             },
             "explode": false
@@ -1511,11 +1463,7 @@
             "required": false,
             "description": "Control which fields are included in the response to optimize payload size.",
             "schema": {
-              "allOf": [
-                {
-                  "$ref": "#/components/schemas/FieldMask"
-                }
-              ],
+              "$ref": "#/components/schemas/FieldMask",
               "default": "id,name,description,permissions,last_modified"
             },
             "explode": false
@@ -1818,11 +1766,7 @@
             "in": "query",
             "required": false,
             "schema": {
-              "allOf": [
-                {
-                  "$ref": "#/components/schemas/Limit"
-                }
-              ],
+              "$ref": "#/components/schemas/Limit",
               "default": 10
             },
             "explode": false
@@ -1833,11 +1777,7 @@
             "required": false,
             "description": "Offset for offset-based pagination.",
             "schema": {
-              "allOf": [
-                {
-                  "$ref": "#/components/schemas/Offset"
-                }
-              ],
+              "$ref": "#/components/schemas/Offset",
               "default": 0
             },
             "explode": false
@@ -1848,11 +1788,7 @@
             "required": false,
             "description": "Defaults to all when param is not supplied.",
             "schema": {
-              "allOf": [
-                {
-                  "$ref": "#/components/schemas/Workspaces.WorkspaceTypesQueryParam"
-                }
-              ],
+              "$ref": "#/components/schemas/Workspaces.WorkspaceTypesQueryParam",
               "default": "all"
             },
             "explode": false
@@ -3731,7 +3667,6 @@
         "type": "object",
         "required": [
           "name",
-          "description",
           "permissions"
         ],
         "properties": {
