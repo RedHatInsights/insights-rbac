@@ -22,7 +22,7 @@ from typing import Optional, Sequence
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Count, Max, Prefetch, Q, QuerySet
+from django.db.models import Count, Max, Prefetch, Q, QuerySet, TextChoices
 from management.atomic_transactions import atomic
 from management.exceptions import InvalidFieldError, NotFoundError, RequiredFieldError
 from management.group.model import Group
@@ -47,6 +47,14 @@ from management.tenant_mapping.model import DefaultAccessType, TenantMapping
 from management.workspace.model import Workspace
 
 from api.models import Tenant
+
+
+class ExcludeSources(TextChoices):
+    """Enum for exclude_sources query parameter values."""
+
+    DIRECT = "direct", "Exclude direct bindings"
+    INDIRECT = "indirect", "Exclude inherited bindings"
+    NONE = "none", "Show all bindings"
 
 
 @dataclass
@@ -101,14 +109,14 @@ class RoleBindingService:
         """
         resource_id = params["resource_id"]
         resource_type = params["resource_type"]
-        exclude_sources = params.get("exclude_sources", "none")
+        exclude_sources = params.get("exclude_sources", ExcludeSources.NONE)
 
         # Ensure default bindings exist (lazy creation)
         self._ensure_default_bindings_exist()
 
         binding_uuids = None
-        exclude_direct = exclude_sources == "direct"
-        include_inherited = exclude_sources in ("direct", "none")
+        exclude_direct = exclude_sources == ExcludeSources.DIRECT
+        include_inherited = exclude_sources in (ExcludeSources.DIRECT, ExcludeSources.NONE)
 
         if include_inherited:
             binding_uuids = self._lookup_binding_uuids_via_relations(resource_type, resource_id)
