@@ -55,10 +55,11 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
     permissions_count = serializers.SerializerMethodField()
     permissions = serializers.SerializerMethodField()
     last_modified = serializers.DateTimeField(source="modified", read_only=True)
+    org_id = serializers.SerializerMethodField()
 
     class Meta:
         model = RoleV2
-        fields = ("id", "name", "description", "permissions_count", "permissions", "last_modified")
+        fields = ("id", "name", "description", "permissions_count", "permissions", "last_modified", "org_id")
 
     def __init__(self, *args, **kwargs):
         """Initialize with dynamic field selection from context."""
@@ -93,6 +94,11 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
         if count is not None:
             return count
         return len(obj.permissions.all())
+
+    def get_org_id(self, obj):
+        """Return org_id from the role's tenant."""
+        org_id = obj.tenant.org_id
+        return str(org_id) if org_id is not None else None
 
 
 class RoleFieldSelection(FieldSelection):

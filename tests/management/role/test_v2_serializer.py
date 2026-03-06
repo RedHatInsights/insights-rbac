@@ -174,7 +174,7 @@ class RoleV2SerializerFieldSelectionTests(IdentityRequest):
         data = serializer.data
 
         # Should return exactly the default fields
-        expected_fields = {"id", "name", "description", "last_modified"}
+        expected_fields = {"id", "name", "description", "last_modified", "org_id"}
         self.assertEqual(set(data.keys()), expected_fields)
 
         self.assertEqual(data["name"], "test_role")
@@ -303,7 +303,7 @@ class RoleV2SerializerFieldSelectionTests(IdentityRequest):
         serializer = RoleV2ResponseSerializer(role)
         data = serializer.data
 
-        expected = {"id", "name", "description", "permissions_count", "permissions", "last_modified"}
+        expected = {"id", "name", "description", "permissions_count", "permissions", "last_modified", "org_id"}
         self.assertEqual(set(data.keys()), expected)
 
 

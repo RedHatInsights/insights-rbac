@@ -23,7 +23,7 @@ from typing import Iterable, Optional
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError
-from django.db.models import Count, QuerySet
+from django.db.models import QuerySet
 from management.atomic_transactions import atomic
 from management.exceptions import RequiredFieldError
 from management.permission.exceptions import InvalidPermissionDataError
@@ -64,8 +64,8 @@ class RoleV2Service:
     to HTTP-level errors by the view layer.
     """
 
-    DEFAULT_LIST_FIELDS = {"id", "name", "description", "last_modified"}
-    DEFAULT_RETRIEVE_FIELDS = {"id", "name", "description", "permissions", "last_modified"}
+    DEFAULT_LIST_FIELDS = {"id", "name", "description", "last_modified", "org_id"}
+    DEFAULT_RETRIEVE_FIELDS = {"id", "name", "description", "permissions", "last_modified", "org_id"}
 
     def __init__(
         self,
@@ -234,18 +234,11 @@ class RoleV2Service:
 
     def list(self, params: dict) -> QuerySet:
         """Get a list of roles for the tenant, including seeded roles from the public tenant."""
-        queryset = RoleV2.objects.for_tenant(self.tenant).exclude(type=RoleV2.Types.PLATFORM)
+        queryset = RoleV2.objects.for_tenant(self.tenant, fields=params.get("fields"))
 
         name = params.get("name")
         if name:
-            queryset = queryset.filter(name__exact=name)
-
-        fields = params.get("fields")
-        if fields:
-            if "permissions_count" in fields:
-                queryset = queryset.annotate(permissions_count_annotation=Count("permissions", distinct=True))
-            if "permissions" in fields:
-                queryset = queryset.prefetch_related("permissions")
+            queryset = queryset.named(name)
 
         return queryset
 

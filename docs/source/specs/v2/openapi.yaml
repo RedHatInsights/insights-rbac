@@ -2112,6 +2112,10 @@ components:
           type: string
           format: date-time
           description: Timestamp of when the role was last modified
+        org_id:
+          type: string
+          description: ID of the organization that owns this role. Will not be populated if roles belong to the Public Tenant.
+          readOnly: true
       example:
         id: 550e8400-e29b-41d4-a716-446655440002
         name: Workspace Admin
@@ -2125,6 +2129,7 @@ components:
             operation: write
         permissions_count: 2
         last_modified: '2024-08-04T12:00:00Z'
+        org_id: '100001'
     RoleBindings.BaseSubject:
       type: object
       required:

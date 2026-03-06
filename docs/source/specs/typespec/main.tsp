@@ -73,6 +73,8 @@ model Role {
     permissions_count?: int32;
     @doc("Timestamp of when the role was last modified")
     last_modified?: offsetDateTime;
+    @doc("ID of the organization that owns this role. Will not be populated if roles belong to the Public Tenant.")
+    org_id?: string;
 }
 
 /**
@@ -1246,7 +1248,7 @@ namespace Roles {
     /**
      * Default fields returned for role detail operations (get/create/update)
      */
-    const DefaultRoleFieldMask: FieldMask = "id,name,description,permissions,last_modified";
+    const DefaultRoleFieldMask: FieldMask = "id,name,description,permissions,last_modified,org_id";
 
     @doc("Role data for create and update operations")
     @example(#{
@@ -1329,7 +1331,7 @@ namespace Roles {
         @query name?: string;
 
         @doc("Control which fields are included in the response to optimize payload size.")
-        @query fields?: FieldMask = "id,name,description,last_modified";
+        @query fields?: FieldMask = "id,name,description,last_modified,org_id";
 
         @doc("Sort by specified field(s), prefix with '-' for descending order. Allowed fields: name, last_modified.")
         @query order_by?: OrderBy = "name";
@@ -1373,6 +1375,7 @@ namespace Roles {
         **Examples:**
         - `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)
         - `?fields=permissions_count,last_modified` - Include only count and timestamp
+        - `?fields=id,name,org_id` - Include org_id (org_id is included by default)
         """)
         @example("id,name,permissions_count")
         @query fields?: string = DefaultRoleFieldMask;
