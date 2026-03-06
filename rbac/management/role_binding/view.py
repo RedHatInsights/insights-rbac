@@ -85,6 +85,10 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
 
         Optional query parameters:
             - role_id: Filter by role ID (UUID)
+            - resource_id: Filter by resource ID (must be used with resource_type)
+            - resource_type: Filter by resource type (must be used with resource_id)
+            - subject_type: Filter by subject type (e.g., 'group')
+            - subject_id: Filter by subject ID (UUID)
             - fields: Control which fields are included in the response
             - order_by: Sort by specified field(s), prefix with '-' for descending
         """
@@ -93,7 +97,14 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         input_serializer.is_valid(raise_exception=True)
         validated_params = input_serializer.validated_data
 
-        queryset = RoleBinding.objects.for_tenant(tenant=request.tenant, role_id=validated_params.get("role_id"))
+        queryset = RoleBinding.objects.for_tenant(
+            tenant=request.tenant,
+            role_id=validated_params.get("role_id"),
+            resource_id=validated_params.get("resource_id"),
+            resource_type=validated_params.get("resource_type"),
+            subject_type=validated_params.get("subject_type"),
+            subject_id=validated_params.get("subject_id"),
+        )
 
         # Build context for output serializer
         context = {
