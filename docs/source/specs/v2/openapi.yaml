@@ -35,6 +35,34 @@ paths:
           schema:
             type: string
           explode: false
+        - name: resource_id
+          in: query
+          required: false
+          description: Filter by resource ID
+          schema:
+            type: string
+          explode: false
+        - name: resource_type
+          in: query
+          required: false
+          description: Filter by resource type
+          schema:
+            type: string
+          explode: false
+        - name: subject_type
+          in: query
+          required: false
+          description: Filter by subject type (e.g., 'group')
+          schema:
+            type: string
+          explode: false
+        - name: subject_id
+          in: query
+          required: false
+          description: Filter by subject ID
+          schema:
+            type: string
+          explode: false
         - name: fields
           in: query
           required: false

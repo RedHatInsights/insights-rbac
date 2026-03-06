@@ -21,7 +21,8 @@ import uuid
 from api.models import Tenant
 from management.group.model import Group
 from management.role.v2_model import RoleV2
-from management.role_binding.model import RoleBinding, RoleBindingGroup
+from management.models import Principal
+from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
 from tests.identity_request import IdentityRequest
 
 
@@ -130,6 +131,161 @@ class RoleBindingQuerySetTest(IdentityRequest):
             with self.subTest(label=label):
                 with self.assertNumQueries(0):
                     access_fn(binding)
+
+    # --- resource_id / resource_type filtering ---
+
+    def test_resource_filtering(self):
+        """Test that resource_id and resource_type filter independently."""
+        cases = [
+            ("both_match", "res-1", "workspace", 1, {self.binding_a}),
+            ("both_match_2", "res-2", "workspace", 1, {self.binding_b}),
+            ("both_no_match_id", "nonexistent", "workspace", 0, set()),
+            ("both_no_match_type", "res-1", "other_type", 0, set()),
+            ("id_only", "res-1", None, 1, {self.binding_a}),
+            ("id_only_no_match", "nonexistent", None, 0, set()),
+            ("type_only", None, "workspace", 2, {self.binding_a, self.binding_b}),
+            ("type_only_no_match", None, "other_type", 0, set()),
+            ("none_returns_all", None, None, 2, {self.binding_a, self.binding_b}),
+        ]
+        for label, res_id, res_type, expected_count, expected_set in cases:
+            with self.subTest(label=label):
+                qs = RoleBinding.objects.for_tenant(tenant=self.tenant, resource_id=res_id, resource_type=res_type)
+                self.assertEqual(qs.count(), expected_count)
+                self.assertEqual(set(qs), expected_set)
+
+    # --- subject_id filtering ---
+
+    def test_subject_id_filtering(self):
+        """Test that subject_id filters bindings by group UUID."""
+        other_group = Group.objects.create(name="other_group", tenant=self.tenant)
+        role_c = RoleV2.objects.create(name="role_c", tenant=self.tenant)
+        binding_c = RoleBinding.objects.create(
+            role=role_c, resource_type="workspace", resource_id="res-3", tenant=self.tenant
+        )
+        RoleBindingGroup.objects.create(group=other_group, binding=binding_c)
+
+        cases = [
+            ("match_self_group", self.group.uuid, 2, {self.binding_a, self.binding_b}),
+            ("match_other_group", other_group.uuid, 1, {binding_c}),
+            ("no_match", uuid.uuid4(), 0, set()),
+            ("none_returns_all", None, 3, {self.binding_a, self.binding_b, binding_c}),
+        ]
+        try:
+            for label, subject_id, expected_count, expected_set in cases:
+                with self.subTest(label=label):
+                    qs = RoleBinding.objects.for_tenant(tenant=self.tenant, subject_id=subject_id)
+                    self.assertEqual(qs.count(), expected_count)
+                    self.assertEqual(set(qs), expected_set)
+        finally:
+            RoleBindingGroup.objects.filter(binding=binding_c).delete()
+            binding_c.delete()
+            role_c.delete()
+            other_group.delete()
+
+    # --- subject_type filtering ---
+
+    def test_subject_type_filtering(self):
+        """Test that subject_type filters correctly for group, user, and unknown types."""
+        principal = Principal.objects.create(username="test_user", tenant=self.tenant, user_id="user-123")
+        role_c = RoleV2.objects.create(name="role_c", tenant=self.tenant)
+        binding_c = RoleBinding.objects.create(
+            role=role_c, resource_type="workspace", resource_id="res-3", tenant=self.tenant
+        )
+        RoleBindingPrincipal.objects.create(principal=principal, binding=binding_c, source="default")
+
+        try:
+            cases = [
+                ("group_returns_group_bindings", "group", 2),
+                ("user_returns_user_bindings", "user", 1),
+                ("unknown_returns_empty", "unknown", 0),
+                ("none_returns_all", None, 3),
+            ]
+            for label, subject_type, expected_count in cases:
+                with self.subTest(label=label):
+                    qs = RoleBinding.objects.for_tenant(tenant=self.tenant, subject_type=subject_type)
+                    self.assertEqual(qs.count(), expected_count)
+        finally:
+            RoleBindingPrincipal.objects.filter(binding=binding_c).delete()
+            binding_c.delete()
+            role_c.delete()
+            principal.delete()
+
+    def test_subject_type_user_with_subject_id(self):
+        """Test filtering by subject_type=user and subject_id (principal UUID)."""
+        principal = Principal.objects.create(username="test_user", tenant=self.tenant, user_id="user-456")
+        role_c = RoleV2.objects.create(name="role_c", tenant=self.tenant)
+        binding_c = RoleBinding.objects.create(
+            role=role_c, resource_type="workspace", resource_id="res-3", tenant=self.tenant
+        )
+        RoleBindingPrincipal.objects.create(principal=principal, binding=binding_c, source="default")
+
+        try:
+            cases = [
+                ("match", principal.uuid, 1, {binding_c}),
+                ("no_match", uuid.uuid4(), 0, set()),
+            ]
+            for label, sid, expected_count, expected_set in cases:
+                with self.subTest(label=label):
+                    qs = RoleBinding.objects.for_tenant(tenant=self.tenant, subject_type="user", subject_id=sid)
+                    self.assertEqual(qs.count(), expected_count)
+                    self.assertEqual(set(qs), expected_set)
+        finally:
+            RoleBindingPrincipal.objects.filter(binding=binding_c).delete()
+            binding_c.delete()
+            role_c.delete()
+            principal.delete()
+
+    def test_subject_id_without_type_searches_both(self):
+        """Test that subject_id without subject_type searches groups and principals."""
+        principal = Principal.objects.create(username="test_user", tenant=self.tenant, user_id="user-789")
+        role_c = RoleV2.objects.create(name="role_c", tenant=self.tenant)
+        binding_c = RoleBinding.objects.create(
+            role=role_c, resource_type="workspace", resource_id="res-3", tenant=self.tenant
+        )
+        RoleBindingPrincipal.objects.create(principal=principal, binding=binding_c, source="default")
+
+        try:
+            # subject_id matching a group
+            qs = RoleBinding.objects.for_tenant(tenant=self.tenant, subject_id=self.group.uuid)
+            self.assertEqual(qs.count(), 2)
+
+            # subject_id matching a principal
+            qs = RoleBinding.objects.for_tenant(tenant=self.tenant, subject_id=principal.uuid)
+            self.assertEqual(qs.count(), 1)
+            self.assertEqual(set(qs), {binding_c})
+        finally:
+            RoleBindingPrincipal.objects.filter(binding=binding_c).delete()
+            binding_c.delete()
+            role_c.delete()
+            principal.delete()
+
+    # --- Combined filters ---
+
+    def test_combined_role_and_resource_filter(self):
+        """Test role_id + resource filters together."""
+        qs = RoleBinding.objects.for_tenant(
+            tenant=self.tenant, role_id=self.role_a.uuid, resource_id="res-1", resource_type="workspace"
+        )
+        self.assertEqual(set(qs), {self.binding_a})
+
+    def test_combined_role_and_resource_no_match(self):
+        """Test that combining filters that don't intersect returns empty."""
+        qs = RoleBinding.objects.for_tenant(
+            tenant=self.tenant, role_id=self.role_a.uuid, resource_id="res-2", resource_type="workspace"
+        )
+        self.assertEqual(qs.count(), 0)
+
+    def test_combined_all_filters(self):
+        """Test all filters together (role_id + resource + subject)."""
+        qs = RoleBinding.objects.for_tenant(
+            tenant=self.tenant,
+            role_id=self.role_a.uuid,
+            resource_id="res-1",
+            resource_type="workspace",
+            subject_type="group",
+            subject_id=self.group.uuid,
+        )
+        self.assertEqual(set(qs), {self.binding_a})
 
     # --- Annotation ---
 
