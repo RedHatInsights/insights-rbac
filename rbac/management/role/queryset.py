@@ -17,6 +17,7 @@
 """QuerySet for RoleV2 lookups."""
 
 from django.db import models
+from django.db.models import Q
 
 
 class RoleV2QuerySet(models.QuerySet):
@@ -32,3 +33,14 @@ class RoleV2QuerySet(models.QuerySet):
         from management.role.v2_model import RoleV2
 
         return self.exclude(type=RoleV2.Types.PLATFORM)
+
+    def for_tenant(self, tenant):
+        """Return roles visible to the given tenant.
+
+        Includes the tenant's own roles and roles from the public tenant
+        (e.g. seeded roles). Does not filter by role type — callers are
+        responsible for excluding platform roles where needed.
+        """
+        from api.models import Tenant
+
+        return self.filter(Q(tenant=tenant) | Q(tenant__tenant_name=Tenant.PUBLIC_TENANT_NAME))

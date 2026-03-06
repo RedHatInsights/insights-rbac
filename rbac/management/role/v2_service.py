@@ -233,8 +233,8 @@ class RoleV2Service:
             raise RoleDatabaseError()
 
     def list(self, params: dict) -> QuerySet:
-        """Get a list of roles for the tenant."""
-        queryset = RoleV2.objects.filter(tenant=self.tenant).exclude(type=RoleV2.Types.PLATFORM)
+        """Get a list of roles for the tenant, including seeded roles from the public tenant."""
+        queryset = RoleV2.objects.for_tenant(self.tenant).exclude(type=RoleV2.Types.PLATFORM)
 
         name = params.get("name")
         if name:
