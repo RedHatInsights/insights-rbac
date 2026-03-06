@@ -694,7 +694,7 @@ namespace Workspaces {
 @tag("Role Bindings")
 @doc("Operations about role bindings")
 namespace RoleBindings {
-    const DefaultRoleBindingBySubjectFieldMask: FieldMask = "resource(id),subject(id),roles(id),last_modified";
+    const DefaultRoleBindingBySubjectFieldMask: FieldMask = "resource(id),subject(id),roles(id)";
 
 
     @discriminator("type")
@@ -986,8 +986,8 @@ namespace RoleBindings {
         @query parent_role_bindings?: boolean = false;
 
         @doc("Control which fields are included in the response to optimize payload size and improve performance.")
-        @example("subject(group.name,group.user_count),role(name),resource(name,type),last_modified")
-        @query fields?: FieldMask = "subject(group.name),role(name),resource(name,type),last_modified";
+        @example("subject(group.name,group.user_count),roles(name),resource(name,type),last_modified")
+        @query fields?: FieldMask = "subject(group.name),roles(name),resource(name,type),last_modified";
         @doc("Sort by specified field(s), prefix with '-' for descending order")
         @example("subject_name,-subject_type")
         @query order_by?: OrderBy = "subject_name";
@@ -995,7 +995,7 @@ namespace RoleBindings {
 
     @doc("Grant access to a resource to a set of subjects with a set of roles")
     @summary("Grant access to a resource to a set of subjects with a set of roles")
-    @route(":batchCreate")
+    @route("/:batchCreate/")
     @opExample(#{
         parameters: #{
             body: #{
