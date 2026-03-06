@@ -297,7 +297,7 @@ namespace Workspaces {
     model CreateWorkspaceRequest extends BasicWorkspace{
         //if parent_id is not stated within the request for standard workspaces, it is automatically populated from default workspace.
         @doc("Parent ID of Workspace A")
-        parent_id?: UUID = "Parent ID of Workspace A";
+        parent_id?: UUID;
     }
     @example(#{
         _: 201,
@@ -357,7 +357,7 @@ namespace Workspaces {
         @doc("Description of Workspace A")
         description: string = "Description of Workspace A";
         @doc("Must match current parent_id value. Not updatable directly on the workspace.")
-        parent_id: UUID = "Parent ID of Workspace A";
+        parent_id: UUID;
     }
     @example(#{
         name: "Alpha Workspace - closed",
@@ -406,7 +406,7 @@ namespace Workspaces {
     @example(#{ parent_id: "c1f729e2-3e2b-4f9e-b247-a4b568393e11" })
     model MoveWorkspaceRequest {
       @doc("The UUID of the new parent workspace.")
-      parent_id: UUID = "Parent ID of target workspace";
+      parent_id: UUID;
     }
     @example(#{
         _: 200,
@@ -415,8 +415,10 @@ namespace Workspaces {
     })
     model MoveWorkspaceResponse{
         @statusCode _: 200;
-        @key id: UUID = "Workspace ID of moved workspace";
-        parent_id: UUID = "New parent ID of moved workspace";
+        @doc("Workspace ID of moved workspace")
+        @key id: UUID;
+        @doc("New parent ID of moved workspace")
+        parent_id: UUID;
     }
 
     model Pagination {
