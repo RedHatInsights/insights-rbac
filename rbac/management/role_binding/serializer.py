@@ -27,7 +27,7 @@ from management.models import Group
 from management.role.v2_model import RoleV2
 from management.role.v2_serializer import RoleIdSerializer
 from management.role_binding.model import RoleBinding
-from management.role_binding.service import CreateBindingRequest, RoleBindingService
+from management.role_binding.service import CreateBindingRequest, ExcludeSources, RoleBindingService
 from management.subject import SubjectType
 from management.utils import FieldSelection, FieldSelectionValidationError
 from rest_framework import serializers
@@ -102,9 +102,9 @@ class RoleBindingInputSerializer(serializers.Serializer):
     fields = serializers.CharField(required=False, allow_blank=True, help_text="Control which fields are included")
     order_by = serializers.CharField(required=False, allow_blank=True, help_text="Sort by specified field(s)")
     exclude_sources = serializers.ChoiceField(
-        choices=["direct", "indirect", "none"],
+        choices=ExcludeSources.values,
         required=False,
-        default="none",
+        default=ExcludeSources.NONE,
         help_text="Exclude bindings: 'none' (default) shows all, 'indirect' hides inherited, 'direct' hides direct",
     )
 
