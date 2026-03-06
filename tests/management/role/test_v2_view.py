@@ -37,6 +37,7 @@ from management.tenant_service import V2TenantBootstrapService
 from management.utils import PRINCIPAL_CACHE, as_uuid
 
 from rbac import urls
+from api.models import Tenant
 from tests.identity_request import IdentityRequest
 
 
@@ -746,6 +747,57 @@ class RoleV2ViewSetTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["data"], [])
+
+    # ==========================================================================
+    # Tests for seeded roles visibility (public tenant)
+    # ==========================================================================
+
+    def test_list_roles_includes_seeded_roles_from_public_tenant(self):
+        """Test that seeded roles from the public tenant are included in list responses.
+
+        Seeded roles belong to the public tenant but should be visible to all tenants.
+        This is the same pattern as v1 roles.
+        """
+        public_tenant, _ = Tenant.objects.get_or_create(tenant_name="public")
+        SeededRoleV2.objects.create(name="Seeded Role 1", description="A seeded role", tenant=public_tenant)
+        SeededRoleV2.objects.create(name="Seeded Role 2", description="Another seeded role", tenant=public_tenant)
+
+        response = self.client.get(self.url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        returned_names = {r["name"] for r in response.data["data"]}
+        # Should see the custom role from self.tenant AND seeded roles from public tenant
+        self.assertIn("test_role", returned_names)
+        self.assertIn("Seeded Role 1", returned_names)
+        self.assertIn("Seeded Role 2", returned_names)
+
+    def test_list_roles_excludes_platform_roles_from_public_tenant(self):
+        """Test that platform roles from public tenant are still excluded."""
+        public_tenant, _ = Tenant.objects.get_or_create(tenant_name="public")
+        SeededRoleV2.objects.create(name="Visible Seeded", description="Should appear", tenant=public_tenant)
+        RoleV2.objects.create(
+            name="Hidden Platform", description="Should not appear", type=RoleV2.Types.PLATFORM, tenant=public_tenant
+        )
+
+        response = self.client.get(self.url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        returned_names = {r["name"] for r in response.data["data"]}
+        self.assertIn("Visible Seeded", returned_names)
+        self.assertNotIn("Hidden Platform", returned_names)
+
+    def test_retrieve_seeded_role_from_public_tenant(self):
+        """Test that a seeded role from the public tenant can be retrieved by UUID."""
+        public_tenant, _ = Tenant.objects.get_or_create(tenant_name="public")
+        seeded_role = SeededRoleV2.objects.create(
+            name="Retrievable Seeded", description="Should be retrievable", tenant=public_tenant
+        )
+
+        detail_url = reverse("v2_management:roles-detail", kwargs={"uuid": seeded_role.uuid})
+        response = self.client.get(detail_url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["name"], "Retrievable Seeded")
 
     # ==========================================================================
     # Tests for POST /api/v2/roles/ (create)

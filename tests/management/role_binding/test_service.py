@@ -388,6 +388,32 @@ class RoleBindingServiceTests(IdentityRequest):
 
         self.assertEqual(queryset.count(), 0)
 
+    def test_get_role_bindings_by_subject_for_tenant(self):
+        """Test that get_role_bindings_by_subject works with resource_type=tenant."""
+        tenant_resource_id = self.tenant.tenant_resource_id()
+        tenant_binding = RoleBinding.objects.create(
+            role=self.role,
+            resource_type="tenant",
+            resource_id=tenant_resource_id,
+            tenant=self.tenant,
+        )
+        RoleBindingGroup.objects.create(
+            group=self.group,
+            binding=tenant_binding,
+        )
+
+        params = {
+            "resource_id": tenant_resource_id,
+            "resource_type": "tenant",
+        }
+        queryset = self.service.get_role_bindings_by_subject(params)
+
+        self.assertEqual(queryset.count(), 1)
+        self.assertEqual(queryset.first().name, "test_group")
+
+        RoleBindingGroup.objects.filter(binding=tenant_binding).delete()
+        tenant_binding.delete()
+
     def test_get_resource_name_for_workspace(self):
         """Test getting resource name for workspace."""
         name = self.service.get_resource_name(str(self.workspace.id), "workspace")
@@ -401,6 +427,17 @@ class RoleBindingServiceTests(IdentityRequest):
     def test_get_resource_name_for_unknown_type(self):
         """Test getting resource name for unknown resource type."""
         name = self.service.get_resource_name("some-id", "unknown_type")
+        self.assertIsNone(name)
+
+    def test_get_resource_name_for_tenant(self):
+        """Test getting resource name for tenant."""
+        tenant_resource_id = self.tenant.tenant_resource_id()
+        name = self.service.get_resource_name(tenant_resource_id, "tenant")
+        self.assertEqual(name, self.tenant.tenant_name)
+
+    def test_get_resource_name_for_tenant_mismatch_returns_none(self):
+        """Test getting resource name for tenant with mismatched resource_id returns None."""
+        name = self.service.get_resource_name("localhost/other-org-12345", "tenant")
         self.assertIsNone(name)
 
     def test_build_context(self):
@@ -1918,6 +1955,19 @@ class UpdateRoleBindingsForSubjectTests(_ReplicationAssertionsMixin, IdentityReq
                     },
                     "workspace",
                     fake_workspace_id,
+                ),
+                # Tenant resource_id does not match tenant
+                (
+                    "invalid_tenant_resource",
+                    {
+                        "resource_type": "tenant",
+                        "resource_id": "localhost/other-org-12345",
+                        "subject_type": "group",
+                        "subject_id": str(self.group.uuid),
+                        "role_ids": [str(self.role1.uuid)],
+                    },
+                    "tenant",
+                    "localhost/other-org-12345",
                 ),
             ]
 

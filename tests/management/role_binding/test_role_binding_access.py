@@ -274,6 +274,42 @@ class RoleBindingAccessIntegrationTests(RoleBindingAccessTestMixin, TransactionI
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
+    @patch("management.permissions.workspace_inventory_access.inventory_client")
+    def test_access_granted_for_tenant_resource_type_when_inventory_returns_allowed(self, mock_inventory_client):
+        """Test that access is granted for resource_type=tenant when Inventory API returns ALLOWED_TRUE."""
+        self._setup_kessel_mock(mock_inventory_client, allowed_pb2.Allowed.ALLOWED_TRUE)
+
+        tenant_resource_id = self.tenant.tenant_resource_id()
+        request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+        headers = request_context["request"].META
+
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource_id={tenant_resource_id}&resource_type=tenant",
+            **headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    @patch("management.permissions.workspace_inventory_access.inventory_client")
+    def test_access_denied_for_tenant_when_resource_id_mismatch(self, mock_inventory_client):
+        """Test that access is denied when resource_type=tenant but resource_id does not match user's tenant."""
+        self._setup_kessel_mock(mock_inventory_client, allowed_pb2.Allowed.ALLOWED_TRUE)
+
+        # Use a resource_id that doesn't match the request's tenant (e.g., another org's tenant)
+        other_tenant_resource_id = "localhost/other-org-12345"
+        request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+        headers = request_context["request"].META
+
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource_id={other_tenant_resource_id}&resource_type=tenant",
+            **headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        mock_inventory_client.assert_not_called()
+
 
 @override_settings(V2_APIS_ENABLED=True)
 class RoleBindingSystemUserPermissionTests(RoleBindingAccessTestMixin, TransactionIdentityRequest):
@@ -492,6 +528,61 @@ class RoleBindingKesselPermissionTests(RoleBindingAccessTestMixin, TransactionId
         self.assertFalse(result)
         mock_get_principal_id.assert_not_called()
         mock_checker_class.assert_not_called()
+
+    @patch("management.permissions.role_binding_access.get_kessel_principal_id")
+    @patch("management.permissions.role_binding_access.WorkspaceInventoryAccessChecker")
+    def test_kessel_permission_allows_tenant_resource_type(self, mock_checker_class, mock_get_principal_id):
+        """Kessel permission should allow and check tenant resource type."""
+        permission = RoleBindingKesselAccessPermission()
+
+        mock_get_principal_id.return_value = "localhost/test-user-123"
+
+        mock_checker = MagicMock()
+        mock_checker.check_resource_access.return_value = True
+        mock_checker_class.return_value = mock_checker
+
+        tenant_resource_id = self.tenant.tenant_resource_id()
+        mock_request = Mock()
+        mock_request.user.system = False
+        mock_request.user.admin = False
+        mock_request.query_params = {
+            "resource_id": tenant_resource_id,
+            "resource_type": "tenant",
+        }
+        mock_request.tenant = self.tenant
+
+        mock_view = Mock()
+
+        result = permission.has_permission(mock_request, mock_view)
+
+        self.assertTrue(result)
+        mock_checker.check_resource_access.assert_called_once()
+        call_kwargs = mock_checker.check_resource_access.call_args[1]
+        self.assertEqual(call_kwargs["relation"], "role_binding_view")
+        self.assertEqual(call_kwargs["resource_id"], tenant_resource_id)
+        self.assertEqual(call_kwargs["resource_type"], "tenant")
+        self.assertEqual(call_kwargs["principal_id"], mock_get_principal_id.return_value)
+
+    @patch("management.permissions.role_binding_access.get_kessel_principal_id")
+    def test_kessel_permission_denies_tenant_when_resource_id_mismatch(self, mock_get_principal_id):
+        """Kessel permission should deny when resource_type=tenant but resource_id does not match."""
+        permission = RoleBindingKesselAccessPermission()
+
+        mock_request = Mock()
+        mock_request.user.system = False
+        mock_request.user.admin = False
+        mock_request.query_params = {
+            "resource_id": "localhost/other-org-12345",
+            "resource_type": "tenant",
+        }
+        mock_request.tenant = self.tenant
+
+        mock_view = Mock()
+
+        result = permission.has_permission(mock_request, mock_view)
+
+        self.assertFalse(result)
+        mock_get_principal_id.assert_not_called()
 
     @patch("management.permissions.role_binding_access.get_kessel_principal_id")
     @patch("management.permissions.role_binding_access.WorkspaceInventoryAccessChecker")

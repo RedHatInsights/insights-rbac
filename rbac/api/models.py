@@ -41,6 +41,8 @@ class TenantModifiedQuerySet(models.QuerySet):
 class Tenant(models.Model):
     """The model used to create a tenant schema."""
 
+    PUBLIC_TENANT_NAME = "public"
+
     _public_tenant = None
 
     ready = models.BooleanField(default=False)
@@ -58,7 +60,7 @@ class Tenant(models.Model):
     def _get_public_tenant(cls):
         """Get or set public tenant."""
         if cls._public_tenant is None:
-            cls._public_tenant = Tenant.objects.get(tenant_name="public")
+            cls._public_tenant = Tenant.objects.get(tenant_name=cls.PUBLIC_TENANT_NAME)
         return cls._public_tenant
 
     @staticmethod

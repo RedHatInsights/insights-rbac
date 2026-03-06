@@ -59,8 +59,8 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
     DEFAULT_CREATE_UPDATE_FIELDS = {"id", "name", "description", "permissions", "last_modified"}
 
     def get_queryset(self):
-        """Get queryset with optimizations, excluding platform roles only for non-read actions."""
-        base_qs = RoleV2.objects.filter(tenant=self.request.tenant).prefetch_related("permissions")
+        """Return roles visible to the requesting tenant, restricting writes to custom roles."""
+        base_qs = RoleV2.objects.for_tenant(self.request.tenant).prefetch_related("permissions")
 
         if self.action in ("list", "retrieve"):
             return base_qs

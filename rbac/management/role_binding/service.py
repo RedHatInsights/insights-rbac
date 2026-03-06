@@ -124,7 +124,7 @@ class RoleBindingService:
 
         Args:
             resource_id: The resource identifier
-            resource_type: The type of resource (e.g., 'workspace')
+            resource_type: The type of resource (e.g., 'workspace', 'tenant')
 
         Returns:
             Resource name or None if not found
@@ -136,6 +136,8 @@ class RoleBindingService:
             except Workspace.DoesNotExist:
                 logger.warning(f"Workspace {resource_id} not found for tenant {self.tenant}")
                 return None
+        if resource_type == "tenant" and resource_id == self.tenant.tenant_resource_id():
+            return self.tenant.tenant_name
         return None
 
     def build_context(self, params: dict) -> dict:
@@ -690,6 +692,11 @@ class RoleBindingService:
 
         if resource_type == "workspace":
             if not Workspace.objects.exists_for_tenant(resource_id, tenant=self.tenant):
+                raise NotFoundError(resource_type, resource_id)
+
+        if resource_type == "tenant":
+            expected_resource_id = self.tenant.tenant_resource_id()
+            if expected_resource_id is None or resource_id != expected_resource_id:
                 raise NotFoundError(resource_type, resource_id)
 
     def _get_roles(self, role_ids: list[str]) -> list[RoleV2]:
