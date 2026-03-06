@@ -20,6 +20,13 @@ enum Versions{
     v2,
 }
 
+@doc("Exclude bindings by source type: 'none' (default) shows all, 'indirect' excludes inherited, 'direct' excludes direct")
+enum ExcludeSources {
+    direct,
+    indirect,
+    none,
+}
+
 model Timestamps {
     @doc("2019-01-21T17:32:28Z")
     created: offsetDateTime;
@@ -996,8 +1003,7 @@ namespace RoleBindings {
         @example("550e8400-e29b-41d4-a716-446655440004")
         @query subject_id?: string;
 
-        @doc("Exclude bindings by source type: 'none' (default) shows all, 'indirect' excludes inherited, 'direct' excludes direct")
-        @query exclude_sources?: "direct" | "indirect" | "none" = "none";
+        @query exclude_sources?: ExcludeSources = ExcludeSources.none;
 
         @doc("Control which fields are included in the response to optimize payload size and improve performance.")
         @example("subject(group.name,group.user_count),role(name),resource(name,type),last_modified")
