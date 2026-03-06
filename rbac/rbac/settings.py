@@ -316,6 +316,7 @@ if CW_AWS_ACCESS_KEY_ID:
 CORS_ORIGIN_ALLOW_ALL = True
 
 CORS_ALLOW_HEADERS = default_headers + ("x-rh-identity", "HTTP_X_RH_IDENTITY")
+CORS_EXPOSE_HEADERS = list(globals().get("CORS_EXPOSE_HEADERS", [])) + ["Mcp-Session-Id"]
 
 APPEND_SLASH = False
 
