@@ -1483,8 +1483,8 @@ class RoleBindingViewSetTest(IdentityRequest):
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
     )
-    def test_by_subject_without_exclude_sources_returns_direct_only(self, mock_permission):
-        """Test that omitting exclude_sources returns only direct bindings (default is 'indirect')."""
+    def test_by_subject_without_exclude_sources_defaults_to_none(self, mock_permission):
+        """Test that omitting exclude_sources defaults to 'none' (shows all, falls back to direct without Relations API)."""
         url = self._get_by_subject_url()
         response = self.client.get(
             f"{url}?resource_id={self.workspace.id}&resource_type=workspace&limit=100",

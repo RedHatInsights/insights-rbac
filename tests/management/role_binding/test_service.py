@@ -504,7 +504,7 @@ class RoleBindingServiceTests(IdentityRequest):
         self.assertEqual(group.name, "test_group")
 
     def test_get_role_bindings_by_subject_with_exclude_sources_default(self):
-        """Test that exclude_sources defaults to 'indirect', returning only direct bindings."""
+        """Test that exclude_sources defaults to 'none' (falls back to direct without Relations API)."""
         params = {
             "resource_id": str(self.workspace.id),
             "resource_type": "workspace",
@@ -634,7 +634,7 @@ class RoleBindingServiceTests(IdentityRequest):
         self.assertEqual(group.name, "test_group")
 
     def test_get_role_bindings_by_subject_with_exclude_sources_default(self):
-        """Test that exclude_sources defaults to indirect, returning only direct bindings."""
+        """Test that exclude_sources defaults to 'none' (falls back to direct without Relations API)."""
         params = {
             "resource_id": str(self.workspace.id),
             "resource_type": "workspace",

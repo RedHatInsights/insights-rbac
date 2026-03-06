@@ -101,7 +101,7 @@ class RoleBindingService:
         """
         resource_id = params["resource_id"]
         resource_type = params["resource_type"]
-        exclude_sources = params.get("exclude_sources", "indirect")
+        exclude_sources = params.get("exclude_sources", "none")
 
         # Ensure default bindings exist (lazy creation)
         self._ensure_default_bindings_exist()
@@ -273,7 +273,7 @@ class RoleBindingService:
                 role_binding_entries__binding__resource_id=resource_id,
             ) | Q(role_binding_entries__binding__uuid__in=binding_uuids)
         else:
-            # Only direct bindings (exclude_sources=indirect, the default)
+            # Only direct bindings (exclude_sources=indirect)
             binding_filter = Q(
                 role_binding_entries__binding__resource_type=resource_type,
                 role_binding_entries__binding__resource_id=resource_id,

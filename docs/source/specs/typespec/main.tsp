@@ -996,8 +996,8 @@ namespace RoleBindings {
         @example("550e8400-e29b-41d4-a716-446655440004")
         @query subject_id?: string;
 
-        @doc("Exclude bindings by source type: 'indirect' (default) excludes inherited, 'direct' excludes direct, 'none' shows all")
-        @query exclude_sources?: "direct" | "indirect" | "none" = "indirect";
+        @doc("Exclude bindings by source type: 'none' (default) shows all, 'indirect' excludes inherited, 'direct' excludes direct")
+        @query exclude_sources?: "direct" | "indirect" | "none" = "none";
 
         @doc("Control which fields are included in the response to optimize payload size and improve performance.")
         @example("subject(group.name,group.user_count),role(name),resource(name,type),last_modified")
