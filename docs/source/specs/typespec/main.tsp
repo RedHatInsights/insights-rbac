@@ -1203,6 +1203,22 @@ namespace RoleBindings {
         @example("550e8400-e29b-41d4-a716-446655440002")
         @query role_id?: string;
 
+        @doc("Filter by resource ID")
+        @example("550e8400-e29b-41d4-a716-446655440001")
+        @query resource_id?: string;
+
+        @doc("Filter by resource type")
+        @example("workspace")
+        @query resource_type?: string;
+
+        @doc("Filter by subject type (e.g., 'group')")
+        @example("group")
+        @query subject_type?: string;
+
+        @doc("Filter by subject ID")
+        @example("3fa85f64-5717-4562-b3fc-2c963f66afa6")
+        @query subject_id?: string;
+
         @doc("Control which fields are included in the response to optimize payload size.")
         @query fields?: FieldMask = "resource(id),role(id),subject(id,type)";
 
