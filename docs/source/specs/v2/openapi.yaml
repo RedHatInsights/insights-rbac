@@ -183,14 +183,14 @@ paths:
         - name: exclude_sources
           in: query
           required: false
-          description: "Exclude bindings by source type: 'indirect' (default) excludes inherited, 'direct' excludes direct, 'none' shows all"
+          description: "Exclude bindings by source type: 'none' (default) shows all, 'indirect' excludes inherited, 'direct' excludes direct"
           schema:
             type: string
             enum:
               - direct
               - indirect
               - none
-            default: indirect
+            default: none
           explode: false
         - name: fields
           in: query

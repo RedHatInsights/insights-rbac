@@ -99,8 +99,8 @@ class RoleBindingInputSerializer(serializers.Serializer):
     exclude_sources = serializers.ChoiceField(
         choices=["direct", "indirect", "none"],
         required=False,
-        default="indirect",
-        help_text="Exclude bindings: 'indirect' (default) hides inherited, 'direct' hides direct, 'none' shows all",
+        default="none",
+        help_text="Exclude bindings: 'none' (default) shows all, 'indirect' hides inherited, 'direct' hides direct",
     )
 
     def to_internal_value(self, data):
