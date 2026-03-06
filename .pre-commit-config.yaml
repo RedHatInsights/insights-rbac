@@ -30,4 +30,4 @@ repos:
     hooks:
     -   id: openapi-spec-validator
         files: ^(docs/source/specs/|rbac/internal/specs/).*\.(yaml|yml|json)$
-        exclude: package(-lock)?\.json$
+        exclude: (package(-lock)?\.json|tspconfig\.yaml)$
