@@ -25,3 +25,8 @@ repos:
   hooks:
     - id: django-upgrade
       args: [--target-version, "5.2"]
+-   repo: https://github.com/python-openapi/openapi-spec-validator
+    rev: 0.8.4
+    hooks:
+    -   id: openapi-spec-validator
+        files: ^(docs/source/specs/|rbac/internal/specs/).*\.(yaml|yml|json)$
