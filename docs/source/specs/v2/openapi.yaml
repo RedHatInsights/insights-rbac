@@ -17,7 +17,8 @@ paths:
           in: query
           required: false
           schema:
-            $ref: '#/components/schemas/Limit'
+            allOf:
+              - $ref: '#/components/schemas/Limit'
             default: 10
           explode: false
         - name: cursor
@@ -67,7 +68,8 @@ paths:
           required: false
           description: Control which fields are included in the response to optimize payload size.
           schema:
-            $ref: '#/components/schemas/FieldMask'
+            allOf:
+              - $ref: '#/components/schemas/FieldMask'
             default: resource(id),role(id),subject(id,type)
           explode: false
         - name: order_by
@@ -75,7 +77,8 @@ paths:
           required: false
           description: Default sort is by the time the role was first created. Prefix with '-' for descending order.
           schema:
-            $ref: '#/components/schemas/OrderBy'
+            allOf:
+              - $ref: '#/components/schemas/OrderBy'
             default: role.id
           explode: false
       responses:
@@ -170,7 +173,8 @@ paths:
           in: query
           required: false
           schema:
-            $ref: '#/components/schemas/Limit'
+            allOf:
+              - $ref: '#/components/schemas/Limit'
             default: 10
           explode: false
         - name: cursor
@@ -221,7 +225,8 @@ paths:
           required: false
           description: Control which fields are included in the response to optimize payload size and improve performance.
           schema:
-            $ref: '#/components/schemas/FieldMask'
+            allOf:
+              - $ref: '#/components/schemas/FieldMask'
             default: subject(group.name),role(name),resource(name,type),last_modified
           explode: false
         - name: order_by
@@ -229,7 +234,8 @@ paths:
           required: false
           description: Sort by specified field(s), prefix with '-' for descending order
           schema:
-            $ref: '#/components/schemas/OrderBy'
+            allOf:
+              - $ref: '#/components/schemas/OrderBy'
             default: subject_name
           explode: false
       responses:
@@ -388,7 +394,8 @@ paths:
           in: query
           required: false
           schema:
-            $ref: '#/components/schemas/FieldMask'
+            allOf:
+              - $ref: '#/components/schemas/FieldMask'
             default: resource(id),subject(id),roles(id),last_modified
           explode: false
       responses:
@@ -495,7 +502,8 @@ paths:
           in: query
           required: false
           schema:
-            $ref: '#/components/schemas/FieldMask'
+            allOf:
+              - $ref: '#/components/schemas/FieldMask'
             default: resource(id),role(id),subject(id,type)
           explode: false
       responses:
@@ -611,7 +619,8 @@ paths:
           in: query
           required: false
           schema:
-            $ref: '#/components/schemas/Limit'
+            allOf:
+              - $ref: '#/components/schemas/Limit'
             default: 10
           explode: false
         - name: cursor
@@ -633,7 +642,8 @@ paths:
           required: false
           description: Control which fields are included in the response to optimize payload size.
           schema:
-            $ref: '#/components/schemas/FieldMask'
+            allOf:
+              - $ref: '#/components/schemas/FieldMask'
             default: id,name,description,last_modified
           explode: false
         - name: order_by
@@ -641,7 +651,8 @@ paths:
           required: false
           description: "Sort by specified field(s), prefix with '-' for descending order. Allowed fields: name, last_modified."
           schema:
-            $ref: '#/components/schemas/OrderBy'
+            allOf:
+              - $ref: '#/components/schemas/OrderBy'
             default: name
           explode: false
       responses:
@@ -860,7 +871,8 @@ paths:
           required: false
           description: Control which fields are included in the response to optimize payload size.
           schema:
-            $ref: '#/components/schemas/FieldMask'
+            allOf:
+              - $ref: '#/components/schemas/FieldMask'
             default: id,name,description,permissions,last_modified
           explode: false
       responses:
@@ -957,7 +969,8 @@ paths:
           required: false
           description: Control which fields are included in the response to optimize payload size.
           schema:
-            $ref: '#/components/schemas/FieldMask'
+            allOf:
+              - $ref: '#/components/schemas/FieldMask'
             default: id,name,description,permissions,last_modified
           explode: false
       responses:
@@ -1149,7 +1162,8 @@ paths:
           in: query
           required: false
           schema:
-            $ref: '#/components/schemas/Limit'
+            allOf:
+              - $ref: '#/components/schemas/Limit'
             default: 10
           explode: false
         - name: offset
@@ -1157,7 +1171,8 @@ paths:
           required: false
           description: Offset for offset-based pagination.
           schema:
-            $ref: '#/components/schemas/Offset'
+            allOf:
+              - $ref: '#/components/schemas/Offset'
             default: 0
           explode: false
         - name: type
@@ -1165,7 +1180,8 @@ paths:
           required: false
           description: Defaults to all when param is not supplied.
           schema:
-            $ref: '#/components/schemas/Workspaces.WorkspaceTypesQueryParam'
+            allOf:
+              - $ref: '#/components/schemas/Workspaces.WorkspaceTypesQueryParam'
             default: all
           explode: false
         - name: name
@@ -2468,7 +2484,6 @@ components:
           allOf:
             - $ref: '#/components/schemas/UUID'
           description: Parent ID of Workspace A
-          default: Parent ID of Workspace A
       allOf:
         - $ref: '#/components/schemas/Workspaces.BasicWorkspace'
       example:
@@ -2497,7 +2512,6 @@ components:
           allOf:
             - $ref: '#/components/schemas/UUID'
           description: The UUID of the new parent workspace.
-          default: Parent ID of target workspace
       example:
         parent_id: c1f729e2-3e2b-4f9e-b247-a4b568393e11
     Workspaces.MoveWorkspaceResponse:
@@ -2509,11 +2523,11 @@ components:
         id:
           allOf:
             - $ref: '#/components/schemas/UUID'
-          default: Workspace ID of moved workspace
+          description: Workspace ID of moved workspace
         parent_id:
           allOf:
             - $ref: '#/components/schemas/UUID'
-          default: New parent ID of moved workspace
+          description: New parent ID of moved workspace
       example:
         _: 200
         id: e4277742-b91c-43f1-a185-b827e8574345
@@ -2615,7 +2629,6 @@ components:
           allOf:
             - $ref: '#/components/schemas/UUID'
           description: Must match current parent_id value. Not updatable directly on the workspace.
-          default: Parent ID of Workspace A
       example:
         parent_id: c1f729e2-3e2b-4f9e-b247-a4b568393e11
         name: Alpha Workspace
