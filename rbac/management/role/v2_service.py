@@ -80,20 +80,13 @@ class RoleV2Service:
         else:
             self._replicator = NoopReplicator()
 
-    def _validate_and_resolve_permissions(self, description: str, permission_data: list[dict]) -> list:
+    def _validate_and_resolve_permissions(self, permission_data: list[dict]) -> list:
         """
-        Validate description and permissions, resolve permission objects.
+        Validate permissions and resolve permission objects.
 
         Returns list of Permission objects.
         Raises domain exceptions for validation failures.
         """
-        # TODO: Move this validation to RoleV2 model once a migration is created
-        # to change description from TextField(null=True, blank=True) to
-        # TextField(null=False, blank=False). Currently enforced here because
-        # the API requires description but the model doesn't yet.
-        if not description or not description.strip():
-            raise RequiredFieldError("description")
-
         if not permission_data:
             raise RequiredFieldError("permissions")
 
@@ -119,7 +112,7 @@ class RoleV2Service:
         tenant: Tenant,
     ) -> CustomRoleV2:
         """Create a new custom role with the given attributes."""
-        permissions = self._validate_and_resolve_permissions(description, permission_data)
+        permissions = self._validate_and_resolve_permissions(permission_data)
 
         try:
             role = CustomRoleV2(
@@ -173,7 +166,7 @@ class RoleV2Service:
         tenant: Tenant,
     ) -> CustomRoleV2:
         """Update an existing custom role with the given attributes."""
-        permissions = self._validate_and_resolve_permissions(description, permission_data)
+        permissions = self._validate_and_resolve_permissions(permission_data)
 
         try:
             # Lock the role for update to prevent concurrent modifications

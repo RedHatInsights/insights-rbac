@@ -3735,7 +3735,6 @@
         "type": "object",
         "required": [
           "name",
-          "description",
           "permissions"
         ],
         "properties": {
