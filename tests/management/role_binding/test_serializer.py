@@ -52,7 +52,7 @@ class RoleBindingByGroupSerializerTest(IdentityRequest):
     - roles: [{id: UUID, name: string}]
     - resource: {id, name, type}
 
-    Note: inherited_from field is defined in spec but not yet implemented.
+    Note: sources field is defined in spec but not yet implemented.
     """
 
     def setUp(self):

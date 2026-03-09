@@ -27,7 +27,7 @@ from management.models import Group
 from management.role.v2_model import RoleV2
 from management.role.v2_serializer import RoleIdSerializer
 from management.role_binding.model import RoleBinding
-from management.role_binding.service import CreateBindingRequest, RoleBindingService
+from management.role_binding.service import CreateBindingRequest, ExcludeSources, RoleBindingService
 from management.subject import SubjectType
 from management.utils import FieldSelection, FieldSelectionValidationError
 from rest_framework import serializers
@@ -101,8 +101,11 @@ class RoleBindingInputSerializer(serializers.Serializer):
     subject_id = serializers.CharField(required=False, allow_blank=True, help_text="Filter by subject ID (UUID)")
     fields = serializers.CharField(required=False, allow_blank=True, help_text="Control which fields are included")
     order_by = serializers.CharField(required=False, allow_blank=True, help_text="Sort by specified field(s)")
-    parent_role_bindings = serializers.BooleanField(
-        required=False, allow_null=True, help_text="Include role bindings inherited from parent resources"
+    exclude_sources = serializers.ChoiceField(
+        choices=ExcludeSources.values,
+        required=False,
+        default=ExcludeSources.NONE,
+        help_text="Exclude bindings: 'none' (default) shows all, 'indirect' hides inherited, 'direct' hides direct",
     )
 
     def to_internal_value(self, data):
@@ -127,10 +130,6 @@ class RoleBindingInputSerializer(serializers.Serializer):
         return value
 
     def validate_subject_type(self, value):
-        """Return None for empty values."""
-        return value or None
-
-    def validate_parent_role_bindings(self, value):
         """Return None for empty values."""
         return value or None
 
