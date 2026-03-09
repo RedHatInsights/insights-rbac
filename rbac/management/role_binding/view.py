@@ -18,6 +18,7 @@
 
 import logging
 
+from django.db import OperationalError
 from management.base_viewsets import BaseV2ViewSet
 from management.group.model import Group
 from management.permissions.role_binding_access import (
@@ -116,12 +117,17 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         serializer = self.get_serializer(page, many=True, context=context)
         return self.get_paginated_response(serializer.data)
 
-    @action(detail=False, methods=["post"], url_path=":batchCreate")
     def batch_create(self, request, *args, **kwargs):
         """Grant access to a resource to a set of subjects with a set of roles."""
-        return super().batch_create(request, *args, **kwargs)
+        try:
+            return self._run_atomic(self._perform_batch_create, request, *args, **kwargs)
+        except OperationalError as e:
+            response = self._handle_concurrency_error(e, "batch_create")
+            if response:
+                return response
+            raise
 
-    def perform_batch_create(self, request, *args, **kwargs):
+    def _perform_batch_create(self, request, *args, **kwargs):
         """Core batch create logic."""
         data = {**request.data, "fields": request.query_params.get("fields", "")}
         serializer = BatchCreateRoleBindingRequestSerializer(data=data, context={"request": request})

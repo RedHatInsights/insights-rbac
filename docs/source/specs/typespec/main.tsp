@@ -1015,7 +1015,7 @@ namespace RoleBindings {
 
     @doc("Grant access to a resource to a set of subjects with a set of roles")
     @summary("Grant access to a resource to a set of subjects with a set of roles")
-    @route("/:batchCreate/")
+    @route(":batchCreate")
     @opExample(#{
         parameters: #{
             body: #{
@@ -1088,7 +1088,6 @@ namespace RoleBindings {
         },
         returnType: #{
             _: 200,
-            last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
             subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group", group: #{ name: "Engineering Team", user_count: 25 } },
             roles: #[
                 #{ id: "550e8400-e29b-41d4-a716-446655440002", name: "Workspace Admin" },
