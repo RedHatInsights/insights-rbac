@@ -356,7 +356,7 @@ objects:
           timeoutSeconds: 3
         readinessProbe:
           httpGet:
-            path: /api/rbac/v1/status/
+            path: /api/rbac/v1/ready/
             port: 8000
             scheme: HTTP
           initialDelaySeconds: 60
