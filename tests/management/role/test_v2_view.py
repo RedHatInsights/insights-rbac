@@ -116,18 +116,12 @@ class RoleV2RetrieveViewTest(IdentityRequest):
         permission_strings = {f"{p['application']}:{p['resource_type']}:{p['operation']}" for p in data["permissions"]}
         self.assertEqual(permission_strings, {"inventory:hosts:read", "inventory:hosts:write"})
 
-    def test_retrieve_platform_role_success(self):
-        """Test retrieving a platform role."""
+    def test_retrieve_platform_role_returns_404(self):
+        """Test that retrieving a platform role returns 404 (platform roles are not exposed)."""
         url = self._get_role_url(self.platform_role.uuid)
         response = self.client.get(url, **self.headers)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        data = response.json()
-
-        self.assertEqual(data["id"], str(self.platform_role.uuid))
-        self.assertEqual(data["name"], "Test Platform Role")
-        self.assertEqual(len(data["permissions"]), 1)
-        self.assertEqual(data["permissions"][0]["application"], "cost")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_retrieve_role_not_found(self):
         """Test retrieving a non-existent role."""

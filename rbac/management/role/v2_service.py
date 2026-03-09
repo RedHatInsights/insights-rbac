@@ -227,7 +227,10 @@ class RoleV2Service:
 
     def list(self, params: dict) -> QuerySet:
         """Get a list of roles for the tenant, including seeded roles from the public tenant."""
-        queryset = RoleV2.objects.for_tenant(self.tenant, fields=params.get("fields"))
+        fields = params.get("fields")
+        queryset = RoleV2.objects.for_tenant(self.tenant).assignable()
+        if fields:
+            queryset = queryset.with_fields(fields)
 
         name = params.get("name")
         if name:

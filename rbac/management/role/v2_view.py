@@ -59,15 +59,12 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
     DEFAULT_CREATE_UPDATE_FIELDS = {"id", "name", "description", "permissions", "last_modified"}
 
     def get_queryset(self):
-        """Return roles visible to the requesting tenant with field-driven eager loading.
-
-        Restricts writes to custom roles.
-        """
+        """Return assignable roles for the requesting tenant. Restricts writes to custom roles."""
         if self.action == "retrieve":
             fields = RoleV2Service.DEFAULT_RETRIEVE_FIELDS
         else:
             fields = self.DEFAULT_CREATE_UPDATE_FIELDS
-        base_qs = RoleV2.objects.for_tenant(self.request.tenant, fields=fields)
+        base_qs = RoleV2.objects.for_tenant(self.request.tenant).assignable().with_fields(fields)
 
         if self.action in ("list", "retrieve"):
             return base_qs

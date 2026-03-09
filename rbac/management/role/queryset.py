@@ -34,25 +34,20 @@ class RoleV2QuerySet(models.QuerySet):
 
         return self.exclude(type=RoleV2.Types.PLATFORM)
 
-    def for_tenant(self, tenant, fields=None):
-        """Return assignable roles visible to the given tenant with field-driven eager loading.
-
-        Includes the tenant's own roles and roles from the public tenant
-        (e.g. seeded roles). Excludes platform roles. When fields is provided,
-        drives select_related, prefetch_related, and annotations so the
-        serializer never triggers lazy loads.
-
-        Args:
-            tenant: The tenant to filter by.
-            fields: Optional set of response field names; drives select_related,
-                    prefetch_related, and annotations so the serializer never
-                    triggers lazy loads.
-        """
+    def for_tenant(self, tenant):
+        """Return roles scoped to the given tenant, including seeded roles from the public tenant."""
         from api.models import Tenant
 
-        qs = self.filter(Q(tenant=tenant) | Q(tenant__tenant_name=Tenant.PUBLIC_TENANT_NAME)).assignable()
-        if not fields:
-            return qs
+        return self.filter(Q(tenant=tenant) | Q(tenant__tenant_name=Tenant.PUBLIC_TENANT_NAME))
+
+    def with_fields(self, fields):
+        """Apply field-driven eager loading so the serializer never triggers lazy loads.
+
+        Args:
+            fields: Set of response field names that drive select_related,
+                    prefetch_related, and annotations.
+        """
+        qs = self
         if "org_id" in fields:
             qs = qs.select_related("tenant")
         if "permissions_count" in fields:
