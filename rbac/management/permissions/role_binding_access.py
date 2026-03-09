@@ -95,7 +95,7 @@ class RoleBindingKesselAccessPermission(permissions.BasePermission):
     VIEW_RELATION = "view"
 
     # Allowlist of valid resource types for role binding access checks
-    ALLOWED_RESOURCE_TYPES = {"workspace"}
+    ALLOWED_RESOURCE_TYPES = {"workspace", "tenant"}
 
     def _get_relation(self) -> str:
         """Get the relation to check based on feature flag."""
@@ -126,6 +126,21 @@ class RoleBindingKesselAccessPermission(permissions.BasePermission):
         if resource_type not in self.ALLOWED_RESOURCE_TYPES:
             logger.debug("Denied access for unknown resource_type: %s", resource_type)
             return False
+
+        # For tenant resources, ensure the user can only query their own tenant
+        if resource_type == "tenant":
+            tenant = getattr(request, "tenant", None)
+            if tenant is None:
+                logger.debug("Denied access for tenant resource: no tenant on request")
+                return False
+            expected_resource_id = tenant.tenant_resource_id()
+            if expected_resource_id is None or resource_id != expected_resource_id:
+                logger.debug(
+                    "Denied access for tenant resource: resource_id %s does not match tenant %s",
+                    resource_id,
+                    expected_resource_id,
+                )
+                return False
 
         # Get principal_id for Kessel API check using the reusable utility
         principal_id = get_kessel_principal_id(request)

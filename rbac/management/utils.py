@@ -505,6 +505,18 @@ def is_valid_uuid(value):
         return False
 
 
+def clean_query_param(value, param_name):
+    """Clean a query parameter: return None if empty/whitespace, raise 400 if NUL character present."""
+    if value is None:
+        return None
+    if not value.strip():
+        return None
+    if "\x00" in value:
+        message = f"The '{param_name}' query parameter contains invalid characters."
+        raise serializers.ValidationError({param_name: message})
+    return value
+
+
 def validate_uuid(uuid, key="UUID Validation"):
     """Verify UUID provided is valid."""
     try:

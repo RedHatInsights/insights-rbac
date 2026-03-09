@@ -34,6 +34,34 @@ paths:
           schema:
             type: string
           explode: false
+        - name: resource_id
+          in: query
+          required: false
+          description: Filter by resource ID
+          schema:
+            type: string
+          explode: false
+        - name: resource_type
+          in: query
+          required: false
+          description: Filter by resource type
+          schema:
+            type: string
+          explode: false
+        - name: subject_type
+          in: query
+          required: false
+          description: Filter by subject type (e.g., 'group')
+          schema:
+            type: string
+          explode: false
+        - name: subject_id
+          in: query
+          required: false
+          description: Filter by subject ID
+          schema:
+            type: string
+          explode: false
         - name: fields
           in: query
           required: false
@@ -271,7 +299,7 @@ paths:
         - name: resource_id
           in: query
           required: true
-          description: Filter by resource ID
+          description: 'Filter by resource ID. For workspace: UUID. For tenant: tenant resource ID (format: {domain}/{org_id}).'
           schema:
             type: string
           explode: false
@@ -280,7 +308,7 @@ paths:
           required: true
           description: Filter by resource type
           schema:
-            type: string
+            $ref: '#/components/schemas/ResourceType'
           explode: false
         - name: subject_type
           in: query
@@ -296,13 +324,12 @@ paths:
           schema:
             type: string
           explode: false
-        - name: parent_role_bindings
+        - name: exclude_sources
           in: query
           required: false
-          description: Include role bindings inherited from parent resources
           schema:
-            type: boolean
-            default: false
+            $ref: '#/components/schemas/ExcludeSources'
+            default: none
           explode: false
         - name: fields
           in: query
@@ -346,7 +373,7 @@ paths:
                     meta:
                       limit: 10
                     links:
-                      next: http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?limit=10&parent_role_bindings=true&cursor=xyz
+                      next: http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?limit=10&exclude_sources=direct&cursor=xyz
                       previous: null
                     data:
                       - last_modified: '2024-08-04T12:00:00Z'
@@ -364,10 +391,10 @@ paths:
                           id: 550e8400-e29b-41d4-a716-446655440003
                           name: Child Workspace
                           type: workspace
-                        inherited_from:
-                          id: 550e8400-e29b-41d4-a716-446655440001
-                          name: Parent Workspace
-                          type: workspace
+                        sources:
+                          - id: 550e8400-e29b-41d4-a716-446655440001
+                            name: Parent Workspace
+                            type: workspace
                 example1:
                   value:
                     meta:
@@ -447,7 +474,7 @@ paths:
         - name: resource_id
           in: query
           required: true
-          description: Identify the resource ID for the set of role bindings to replace
+          description: 'Identify the resource ID for the set of role bindings to replace. For workspace: UUID. For tenant: tenant resource ID (format: {domain}/{org_id}).'
           schema:
             type: string
           explode: false
@@ -456,7 +483,7 @@ paths:
           required: true
           description: Identify the resource type for the set of role bindings to replace
           schema:
-            type: string
+            $ref: '#/components/schemas/ResourceType'
           explode: false
         - name: subject_id
           in: query
@@ -1147,6 +1174,13 @@ paths:
           schema:
             type: string
           explode: false
+        - name: parent_id
+          in: query
+          required: false
+          description: Filter workspaces by parent workspace UUID. Returns only direct children of the specified workspace. Useful for lazy-loading a nested tree structure.
+          schema:
+            $ref: '#/components/schemas/UUID'
+          explode: false
         - name: ids
           in: query
           required: false
@@ -1804,6 +1838,13 @@ components:
           description: Limit of returned objects. Use -1 to return all objects.
           example: 10
           default: 10
+    ExcludeSources:
+      type: string
+      enum:
+        - direct
+        - indirect
+        - none
+      description: "Exclude bindings by source type: 'none' (default) shows all, 'indirect' excludes inherited, 'direct' excludes direct"
     FieldMask:
       type: string
       description: |-
@@ -2029,6 +2070,12 @@ components:
             instance:
               type: string
               format: uri
+    ResourceType:
+      type: string
+      enum:
+        - workspace
+        - tenant
+      description: Resource type for role binding operations. 'workspace' for workspace-scoped bindings (resource_id is workspace UUID). 'tenant' for tenant-scoped bindings (resource_id is tenant resource ID in format {domain}/{org_id}, e.g. redhat/12345).
     Role:
       type: object
       properties:
@@ -2282,10 +2329,11 @@ components:
           allOf:
             - $ref: '#/components/schemas/RoleBindings.Resource'
           description: Resource the roles apply to
-        inherited_from:
-          allOf:
-            - $ref: '#/components/schemas/RoleBindings.Resource'
-          description: Resource from which this role binding is inherited (only present when parent_role_bindings=true)
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/RoleBindings.Resource'
+          description: Resources from which this role binding is sourced (direct or inherited)
       example:
         last_modified: '2024-08-04T12:00:00Z'
         subject:
@@ -2302,10 +2350,10 @@ components:
           id: 550e8400-e29b-41d4-a716-446655440003
           name: Child Workspace
           type: workspace
-        inherited_from:
-          id: 550e8400-e29b-41d4-a716-446655440001
-          name: Parent Workspace
-          type: workspace
+        sources:
+          - id: 550e8400-e29b-41d4-a716-446655440001
+            name: Parent Workspace
+            type: workspace
     RoleBindings.UpdateRoleBindingsRequest:
       type: object
       required:
@@ -2440,7 +2488,6 @@ components:
           allOf:
             - $ref: '#/components/schemas/UUID'
           description: Parent ID of Workspace A
-          default: Parent ID of Workspace A
       allOf:
         - $ref: '#/components/schemas/Workspaces.BasicWorkspace'
       example:
@@ -2469,7 +2516,6 @@ components:
           allOf:
             - $ref: '#/components/schemas/UUID'
           description: The UUID of the new parent workspace.
-          default: Parent ID of target workspace
       example:
         parent_id: c1f729e2-3e2b-4f9e-b247-a4b568393e11
     Workspaces.MoveWorkspaceResponse:
@@ -2481,11 +2527,11 @@ components:
         id:
           allOf:
             - $ref: '#/components/schemas/UUID'
-          default: Workspace ID of moved workspace
+          description: Workspace ID of moved workspace
         parent_id:
           allOf:
             - $ref: '#/components/schemas/UUID'
-          default: New parent ID of moved workspace
+          description: New parent ID of moved workspace
       example:
         _: 200
         id: e4277742-b91c-43f1-a185-b827e8574345
@@ -2587,7 +2633,6 @@ components:
           allOf:
             - $ref: '#/components/schemas/UUID'
           description: Must match current parent_id value. Not updatable directly on the workspace.
-          default: Parent ID of Workspace A
       example:
         parent_id: c1f729e2-3e2b-4f9e-b247-a4b568393e11
         name: Alpha Workspace
