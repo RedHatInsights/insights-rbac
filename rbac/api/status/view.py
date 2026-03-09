@@ -64,6 +64,10 @@ def ready(request):
     When MIGRATE_AND_SEED_ON_INIT is True, the service runs its own seeding in the init
     container, so we return 200 immediately without a DB check. When False, the worker
     runs seeding and we check for the platform default group before returning 200.
+
+    Note: This endpoint is intentionally not added to the OpenAPI spec to avoid
+    impacting client generation (e.g., generated clients should not include
+    infrastructure endpoints like readiness probes).
     """
     migrate_and_seed = ENVIRONMENT.bool("MIGRATE_AND_SEED_ON_INIT", default=True)
     if migrate_and_seed or _is_seeding_complete():
