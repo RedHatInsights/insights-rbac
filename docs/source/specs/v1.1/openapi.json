@@ -1,9 +1,9 @@
 {
   "openapi": "3.0.0",
   "info": {
-    "description": "**DEPRECATED**: This version (1.0.0) of the API is deprecated. Please use version 1.1.0 instead. The API for Role Based Access Control.",
-    "version": "1.0.0",
-    "title": "Role Based Access Control (DEPRECATED - Use v1.1)",
+    "description": "The API for Role Based Access Control.",
+    "version": "1.1.0",
+    "title": "Role Based Access Control",
     "license": {
       "name": "AGPL-3.0",
       "url": "https://opensource.org/licenses/AGPL-3.0"
@@ -61,79 +61,13 @@
           },
           {
             "in": "query",
-            "name": "principal_username",
-            "required": false,
-            "description": "Parameter for filtering audit logs by principal username. Supports partial and exact matching via name_match parameter.",
-            "schema": {
-              "type": "string"
-            }
-          },
-          {
-            "in": "query",
-            "name": "resource_type",
-            "required": false,
-            "description": "Parameter for filtering audit logs by resource type. Multiple values can be provided.",
-            "schema": {
-              "type": "array",
-              "items": {
-                "type": "string",
-                "enum": [
-                  "group",
-                  "role",
-                  "user",
-                  "permission"
-                ]
-              }
-            }
-          },
-          {
-            "in": "query",
-            "name": "action",
-            "required": false,
-            "description": "Parameter for filtering audit logs by action. Multiple values can be provided.",
-            "schema": {
-              "type": "array",
-              "items": {
-                "type": "string",
-                "enum": [
-                  "delete",
-                  "add",
-                  "edit",
-                  "create",
-                  "remove"
-                ]
-              }
-            }
-          },
-          {
-            "in": "query",
-            "name": "name_match",
-            "required": false,
-            "description": "Parameter for specifying the matching type for principal_username filter. Default is partial.",
-            "schema": {
-              "type": "string",
-              "enum": [
-                "partial",
-                "exact"
-              ]
-            }
-          },
-          {
-            "in": "query",
             "name": "order_by",
             "required": false,
-            "description": "Parameter for ordering audit logs. Prefix with '-' for descending order. Default is '-created'.",
+            "description": "Parameter for ordering resource by database id so that latest actions appear first",
             "schema": {
               "type": "string",
               "enum": [
-                "created",
-                "-created",
-                "principal_username",
-                "-principal_username",
-                "resource_type",
-                "-resource_type",
-                "action",
-                "-action"
+                "id"
               ]
             }
           }
@@ -848,12 +782,12 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
-                    {
-                      "$ref": "#/components/schemas/PrincipalPagination"
-                    },
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/ServiceAccountPagination"
+                    },
+                    {
+                      "$ref": "#/components/schemas/PrincipalPagination"
                     },
                     {
                       "$ref": "#/components/schemas/AllPrincipalsPagination"
@@ -1494,7 +1428,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "oneOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/PrincipalPagination"
                     },
@@ -3078,6 +3012,16 @@
             "type": "integer",
             "format": "int64",
             "example": 30
+          },
+          "limit": {
+            "type": "integer",
+            "format": "int64",
+            "example": 10
+          },
+          "offset": {
+            "type": "integer",
+            "format": "int64",
+            "example": 0
           }
         }
       },
@@ -3189,7 +3133,7 @@
             "type": "boolean"
           },
           "external_source_id": {
-            "oneOf": [
+            "anyOf": [
               {
                 "type": "string"
               },
@@ -3198,6 +3142,11 @@
               }
             ],
             "example": "1"
+          },
+          "org_id": {
+            "type": "string",
+            "example": "12345",
+            "nullable": true
           }
         }
       },
@@ -3247,7 +3196,7 @@
               "data": {
                 "type": "array",
                 "items": {
-                  "oneOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/Principal"
                     },
@@ -3380,13 +3329,20 @@
                   "serviceAccounts": {
                     "type": "array",
                     "items": {
-                      "$ref": "#/components/schemas/ServiceAccount"
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/ServiceAccount"
+                        },
+                        {
+                          "$ref": "#/components/schemas/PrincipalMinimal"
+                        }
+                      ]
                     }
                   },
                   "users": {
                     "type": "array",
                     "items": {
-                      "oneOf": [
+                      "anyOf": [
                         {
                           "$ref": "#/components/schemas/Principal"
                         },
@@ -3397,7 +3353,7 @@
                     }
                   }
                 },
-                "oneOf": [
+                "anyOf": [
                   {
                     "required": [
                       "serviceAccounts"
@@ -3627,7 +3583,7 @@
         ]
       },
       "CrossAccountRequestDetail": {
-        "oneOf": [
+        "anyOf": [
           {
             "$ref": "#/components/schemas/CrossAccountRequestDetailByAccount"
           },
@@ -3690,7 +3646,7 @@
               "data": {
                 "type": "array",
                 "items": {
-                  "oneOf": [
+                  "anyOf": [
                     {
                       "$ref": "#/components/schemas/CrossAccountRequestByAccount"
                     },
@@ -3797,18 +3753,7 @@
           },
           {
             "type": "object",
-            "required": [
-              "user_available",
-              "first_name",
-              "last_name",
-              "email"
-            ],
             "properties": {
-              "user_available": {
-                "type": "boolean",
-                "enum": [true],
-                "example": true
-              },
               "first_name": {
                 "type": "string",
                 "example": "Jane"
@@ -3832,19 +3777,10 @@
           },
           {
             "type": "object",
-            "required": [
-              "user_id",
-              "user_available"
-            ],
             "properties": {
               "user_id": {
                 "type": "string",
                 "example": "1234"
-              },
-              "user_available": {
-                "type": "boolean",
-                "enum": [false],
-                "example": false
               }
             }
           }
@@ -3957,21 +3893,21 @@
         ]
       },
       "ResourceDefinitionFilter": {
-          "oneOf": [
-              {
-                "$ref": "#/components/schemas/ResourceDefinitionFilterOperationEqual"
-              },
-              {
-                "$ref": "#/components/schemas/ResourceDefinitionFilterOperationIn"
-              }
-          ]
-     },
+        "anyOf": [
+          {
+            "$ref": "#/components/schemas/ResourceDefinitionFilterOperationEqual"
+          },
+          {
+            "$ref": "#/components/schemas/ResourceDefinitionFilterOperationIn"
+          }
+        ]
+      },
       "ResourceDefinitionFilterOperationEqual": {
         "type": "object",
         "required": [
-            "key",
-            "operation",
-            "value"
+          "key",
+          "operation",
+          "value"
         ],
         "properties": {
           "key": {
@@ -3994,9 +3930,9 @@
       "ResourceDefinitionFilterOperationIn": {
         "type": "object",
         "required": [
-            "key",
-            "operation",
-            "value"
+          "key",
+          "operation",
+          "value"
         ],
         "properties": {
           "key": {
@@ -4015,7 +3951,11 @@
               "type": "string",
               "nullable": true
             },
-            "example": ["value1", null, "value2"]
+            "example": [
+              "value1",
+              null,
+              "value2"
+            ]
           }
         }
       },
