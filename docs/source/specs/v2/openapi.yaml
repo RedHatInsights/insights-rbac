@@ -2419,7 +2419,6 @@ components:
       type: object
       required:
         - name
-        - description
         - permissions
       properties:
         name:
