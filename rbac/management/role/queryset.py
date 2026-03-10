@@ -16,8 +16,16 @@
 #
 """QuerySet for RoleV2 lookups."""
 
+import re
+
 from django.db import models
 from django.db.models import Count, Q
+
+
+def _glob_to_regex(pattern: str) -> str:
+    """Convert a glob pattern with '*' wildcards to a case-sensitive regex."""
+    parts = pattern.split("*")
+    return "^" + ".*".join(re.escape(p) for p in parts) + "$"
 
 
 class RoleV2QuerySet(models.QuerySet):
@@ -57,5 +65,7 @@ class RoleV2QuerySet(models.QuerySet):
         return qs
 
     def named(self, name):
-        """Filter to roles matching an exact name."""
+        """Filter to roles matching a name, with '*' glob support."""
+        if "*" in name:
+            return self.filter(name__regex=_glob_to_regex(name))
         return self.filter(name__exact=name)

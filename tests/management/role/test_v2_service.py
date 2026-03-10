@@ -647,6 +647,47 @@ class RoleV2ServiceListTests(IdentityRequest):
 
         self.assertEqual(queryset.count(), 0)
 
+    def test_list_filters_by_name_wildcard_prefix(self):
+        """Test that name=role_o* matches names starting with 'role_o'."""
+        queryset = self.service.list({"name": "role_o*"})
+
+        self.assertEqual(queryset.count(), 1)
+        self.assertEqual(queryset.first().name, "role_one")
+
+    def test_list_filters_by_name_wildcard_suffix(self):
+        """Test that name=*two matches names ending with 'two'."""
+        queryset = self.service.list({"name": "*two"})
+
+        self.assertEqual(queryset.count(), 1)
+        self.assertEqual(queryset.first().name, "role_two")
+
+    def test_list_filters_by_name_wildcard_contains(self):
+        """Test that name=*ole_* matches names containing 'ole_'."""
+        queryset = self.service.list({"name": "*ole_*"})
+
+        self.assertEqual(queryset.count(), 2)
+        names = set(queryset.values_list("name", flat=True))
+        self.assertEqual(names, {"role_one", "role_two"})
+
+    def test_list_filters_by_name_wildcard_complex(self):
+        """Test that a multi-wildcard pattern like r*_on* matches correctly."""
+        queryset = self.service.list({"name": "r*_on*"})
+
+        self.assertEqual(queryset.count(), 1)
+        self.assertEqual(queryset.first().name, "role_one")
+
+    def test_list_name_exact_match_unchanged(self):
+        """Test that name without wildcard still requires exact match."""
+        queryset = self.service.list({"name": "role"})
+
+        self.assertEqual(queryset.count(), 0)
+
+    def test_list_filters_by_name_wildcard_no_match(self):
+        """Test that a wildcard pattern matching nothing returns empty."""
+        queryset = self.service.list({"name": "zzz*"})
+
+        self.assertEqual(queryset.count(), 0)
+
     def test_list_without_name_returns_all(self):
         """Test that omitting the name param returns all roles for the tenant."""
         RoleV2.objects.create(name="role_other", description="Other role", tenant=self.tenant)
