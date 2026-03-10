@@ -127,8 +127,12 @@ class RoleBindingKesselAccessPermission(permissions.BasePermission):
             logger.debug("Denied access for unknown resource_type: %s", resource_type)
             return False
 
-        # For tenant resources, ensure the user can only query their own tenant
+        # For tenant resources, only org admins are allowed (no Kessel check)
         if resource_type == "tenant":
+            is_org_admin = getattr(request.user, "admin", False)
+            if not is_org_admin:
+                logger.debug("Denied access for tenant resource: only org admins allowed")
+                return False
             tenant = getattr(request, "tenant", None)
             if tenant is None:
                 logger.debug("Denied access for tenant resource: no tenant on request")
@@ -141,6 +145,7 @@ class RoleBindingKesselAccessPermission(permissions.BasePermission):
                     expected_resource_id,
                 )
                 return False
+            return True
 
         # Get principal_id for Kessel API check using the reusable utility
         principal_id = get_kessel_principal_id(request)

@@ -116,37 +116,37 @@ class RoleV2ServiceTests(IdentityRequest):
         self.assertIn(self.permission2, role.permissions.all())
         self.assertIn(self.permission3, role.permissions.all())
 
-    def test_create_role_with_empty_description_raises_error(self):
-        """Test that creating a role with empty description raises RequiredFieldError."""
+    def test_create_role_with_empty_description_succeeds(self):
+        """Test that creating a role with empty description succeeds."""
         permission_data = [
             {"application": "inventory", "resource_type": "hosts", "operation": "read"},
         ]
 
-        with self.assertRaises(RequiredFieldError) as context:
-            self.service.create(
-                name="No Description Role",
-                description="",
-                permission_data=permission_data,
-                tenant=self.tenant,
-            )
+        role = self.service.create(
+            name="No Description Role",
+            description="",
+            permission_data=permission_data,
+            tenant=self.tenant,
+        )
 
-        self.assertEqual(context.exception.field_name, "description")
+        self.assertEqual(role.description, "")
+        self.assertEqual(role.permissions.count(), 1)
 
-    def test_create_role_with_whitespace_only_description_raises_error(self):
-        """Test that whitespace-only description raises RequiredFieldError."""
+    def test_create_role_with_whitespace_only_description_succeeds(self):
+        """Test that creating a role with whitespace-only description succeeds."""
         permission_data = [
             {"application": "inventory", "resource_type": "hosts", "operation": "read"},
         ]
 
-        with self.assertRaises(RequiredFieldError) as context:
-            self.service.create(
-                name="Whitespace Description Role",
-                description="   ",
-                permission_data=permission_data,
-                tenant=self.tenant,
-            )
+        role = self.service.create(
+            name="Whitespace Description Role",
+            description="   ",
+            permission_data=permission_data,
+            tenant=self.tenant,
+        )
 
-        self.assertEqual(context.exception.field_name, "description")
+        self.assertEqual(role.description, "   ")
+        self.assertEqual(role.permissions.count(), 1)
 
     def test_create_role_with_empty_permissions_raises_error(self):
         """Test that creating a role with empty permissions raises RequiredFieldError."""
@@ -302,8 +302,8 @@ class RoleV2ServiceTests(IdentityRequest):
         )
         self.assertEqual(len(write_tuples), 1, "Expected 1 write permission tuple")
 
-    def test_update_role_with_empty_description_raises_error(self):
-        """Test that updating a role with empty description raises RequiredFieldError."""
+    def test_update_role_with_empty_description_succeeds(self):
+        """Test that updating a role with empty description succeeds."""
         permission_data = [
             {"application": "inventory", "resource_type": "hosts", "operation": "read"},
         ]
@@ -315,16 +315,15 @@ class RoleV2ServiceTests(IdentityRequest):
             tenant=self.tenant,
         )
 
-        with self.assertRaises(RequiredFieldError) as context:
-            self.service.update(
-                role_uuid=str(role.uuid),
-                name="Test Role",
-                description="",
-                permission_data=permission_data,
-                tenant=self.tenant,
-            )
+        updated_role = self.service.update(
+            role_uuid=str(role.uuid),
+            name="Test Role",
+            description="",
+            permission_data=permission_data,
+            tenant=self.tenant,
+        )
 
-        self.assertEqual(context.exception.field_name, "description")
+        self.assertEqual(updated_role.description, "")
 
     def test_update_role_with_empty_permissions_raises_error(self):
         """Test that updating a role with empty permissions raises RequiredFieldError."""

@@ -20,6 +20,13 @@ enum Versions{
     v2,
 }
 
+@doc("Exclude bindings by source type: 'none' (default) shows all, 'indirect' excludes inherited, 'direct' excludes direct")
+enum ExcludeSources {
+    direct,
+    indirect,
+    none,
+}
+
 model Timestamps {
     @doc("2019-01-21T17:32:28Z")
     created: offsetDateTime;
@@ -860,11 +867,13 @@ namespace RoleBindings {
             name: "Child Workspace",
             type: "workspace"
         },
-        inherited_from: #{
-            id: "550e8400-e29b-41d4-a716-446655440001",
-            name: "Parent Workspace",
-            type: "workspace"
-        }
+        sources: #[
+            #{
+                id: "550e8400-e29b-41d4-a716-446655440001",
+                name: "Parent Workspace",
+                type: "workspace"
+            }
+        ]
     })
     model RoleBindingBySubject {
         @doc("Timestamp of last modification")
@@ -875,8 +884,8 @@ namespace RoleBindings {
         roles?: KesselRBAC.Role[];
         @doc("Resource the roles apply to")
         resource?: Resource;
-        @doc("Resource from which this role binding is inherited (only present when parent_role_bindings=true)")
-        inherited_from?: Resource;
+        @doc("Resources from which this role binding is sourced (direct or inherited)")
+        sources?: Resource[];
     }
 
     @doc("List role bindings grouped by subject")
@@ -928,7 +937,7 @@ namespace RoleBindings {
     @opExample(#{
         parameters: #{
             limit: 10,
-            parent_role_bindings: true,
+            exclude_sources: "direct",
             resource_id: "550e8400-e29b-41d4-a716-446655440001",
             resource_type: ResourceType.workspace
         },
@@ -938,7 +947,7 @@ namespace RoleBindings {
                 limit: 10
             },
             links: #{
-                next: "http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?limit=10&parent_role_bindings=true&cursor=xyz",
+                next: "http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?limit=10&exclude_sources=direct&cursor=xyz",
                 previous: null
             },
             data: #[
@@ -964,11 +973,13 @@ namespace RoleBindings {
                         name: "Child Workspace",
                         type: "workspace"
                     },
-                    inherited_from: #{
-                        id: "550e8400-e29b-41d4-a716-446655440001",
-                        name: "Parent Workspace",
-                        type: "workspace"
-                    }
+                    sources: #[
+                        #{
+                            id: "550e8400-e29b-41d4-a716-446655440001",
+                            name: "Parent Workspace",
+                            type: "workspace"
+                        }
+                    ]
                 }
             ]
         }
@@ -992,8 +1003,7 @@ namespace RoleBindings {
         @example("550e8400-e29b-41d4-a716-446655440004")
         @query subject_id?: string;
 
-        @doc("Include role bindings inherited from parent resources")
-        @query parent_role_bindings?: boolean = false;
+        @query exclude_sources?: ExcludeSources = ExcludeSources.none;
 
         @doc("Control which fields are included in the response to optimize payload size and improve performance.")
         @example("subject(group.name,group.user_count),role(name),resource(name,type),last_modified")
@@ -1261,7 +1271,7 @@ namespace Roles {
         @doc("A human readable name for the role. Must be unique within a tenant.")
         name: string;
         @doc("A description of the role to help clarify its purpose. Does not need to be unique.")
-        description: string;
+        description?: string;
         @doc("List of permissions to assign to this role")
         permissions: Permission[];
     }

@@ -995,8 +995,22 @@ class RoleV2ViewSetTests(IdentityRequest):
 
         error_fields = {e.get("field") for e in response.data["errors"]}
         self.assertIn("name", error_fields)
-        self.assertIn("description", error_fields)
         self.assertIn("permissions", error_fields)
+        self.assertNotIn("description", error_fields)
+
+    def test_create_role_without_description_succeeds(self):
+        """Test that creating a role without description returns 201 with empty description."""
+        data = {
+            "name": "No Description Role",
+            "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
+        }
+
+        response = self.client.post(self.url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["name"], "No Description Role")
+        self.assertEqual(response.data["description"], "")
+        self.assertIn("id", response.data)
 
     def test_create_role_returns_response_format(self):
         """Test that create returns proper response format with all fields."""
@@ -1202,8 +1216,8 @@ class RoleV2ViewSetTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_update_role_missing_description_returns_400(self):
-        """Test that updating a role without description returns 400."""
+    def test_update_role_missing_description_succeeds(self):
+        """Test that updating a role without description succeeds with empty description."""
         role = CustomRoleV2.objects.create(
             name="Test Role",
             description="Test description",
@@ -1218,9 +1232,9 @@ class RoleV2ViewSetTests(IdentityRequest):
 
         response = self.client.put(update_url, data, format="json")
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("errors", response.data)
-        self.assertTrue(any(e.get("field") == "description" for e in response.data["errors"]))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["name"], "Test Role")
+        self.assertEqual(response.data["description"], "")
 
     def test_update_role_returns_response_format(self):
         """Test that update returns proper response format with all fields."""
