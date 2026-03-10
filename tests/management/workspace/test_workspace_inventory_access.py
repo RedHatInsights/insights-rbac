@@ -625,6 +625,13 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         mock_response.allowed = allowed_pb2.Allowed.ALLOWED_TRUE
         mock_stub.CheckForUpdate.return_value = mock_response
 
+        # Mock StreamedListObjects to return the default workspace (user has create permission)
+        # This is needed because the permission class uses a list-style check to verify
+        # the user has create capability when the parent_id is invalid/non-existent.
+        mock_list_response = MagicMock(object=MagicMock(resource_id=str(self.default_workspace.id)))
+        mock_list_response.pagination = None
+        mock_stub.StreamedListObjects.side_effect = lambda *args, **kwargs: iter([mock_list_response])
+
         with patch(
             "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
             return_value=mock_stub,
