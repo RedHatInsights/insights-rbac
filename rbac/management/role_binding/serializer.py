@@ -27,12 +27,13 @@ from management.models import Group
 from management.role.v2_model import RoleV2
 from management.role.v2_serializer import RoleIdSerializer
 from management.role_binding.model import RoleBinding
-from management.role_binding.service import CreateBindingRequest, RoleBindingService
+from management.role_binding.service import CreateBindingRequest, ExcludeSources, RoleBindingService
 from management.subject import SubjectType
 from management.utils import FieldSelection, FieldSelectionValidationError
 from rest_framework import serializers
 
 _SUBJECT_TYPE_GROUP = "group"
+_SUBJECT_TYPE_USER = "user"
 _GROUP_FIELD_PREFIX = "group."
 
 
@@ -78,6 +79,10 @@ class RoleBindingListInputSerializer(RoleBindingInputSerializerMixin, serializer
     """
 
     role_id = serializers.UUIDField(required=False, help_text="Filter by role ID")
+    resource_id = serializers.UUIDField(required=False, help_text="Filter by resource ID")
+    resource_type = serializers.CharField(required=False, help_text="Filter by resource type")
+    subject_type = serializers.CharField(required=False, help_text="Filter by subject type")
+    subject_id = serializers.UUIDField(required=False, help_text="Filter by subject ID")
     fields = serializers.CharField(required=False, help_text="Control which fields are included")
     # Validated but not acted on yet; default ordering is by role creation time (UUIDv7).
     # Custom ordering support will be added in a follow-on PR.
@@ -96,8 +101,11 @@ class RoleBindingInputSerializer(serializers.Serializer):
     subject_id = serializers.CharField(required=False, allow_blank=True, help_text="Filter by subject ID (UUID)")
     fields = serializers.CharField(required=False, allow_blank=True, help_text="Control which fields are included")
     order_by = serializers.CharField(required=False, allow_blank=True, help_text="Sort by specified field(s)")
-    parent_role_bindings = serializers.BooleanField(
-        required=False, allow_null=True, help_text="Include role bindings inherited from parent resources"
+    exclude_sources = serializers.ChoiceField(
+        choices=ExcludeSources.values,
+        required=False,
+        default=ExcludeSources.NONE,
+        help_text="Exclude bindings: 'none' (default) shows all, 'indirect' hides inherited, 'direct' hides direct",
     )
 
     def to_internal_value(self, data):
@@ -122,10 +130,6 @@ class RoleBindingInputSerializer(serializers.Serializer):
         return value
 
     def validate_subject_type(self, value):
-        """Return None for empty values."""
-        return value or None
-
-    def validate_parent_role_bindings(self, value):
         """Return None for empty values."""
         return value or None
 
@@ -485,7 +489,7 @@ class RoleBindingListOutputSerializer(RoleBindingOutputSerializerMixin, serializ
     def get_subject(self, obj: RoleBinding):
         """Extract subject information from the RoleBinding.
 
-        Gets subject from prefetched group_entries (populated by service layer).
+        Checks group_entries first, then principal_entries.
 
         Default (no fields param): Returns only id and type.
         With fields param: Only type is always included. Other fields
@@ -493,17 +497,28 @@ class RoleBindingListOutputSerializer(RoleBindingOutputSerializerMixin, serializ
         """
         field_selection = self._get_field_selection()
 
-        # Get the first group from prefetched group_entries
+        # Try group subject first
         group_entries = getattr(obj, "group_entries", None)
-        if group_entries is None:
-            return {"type": "group"}
+        if group_entries is not None:
+            first_entry = group_entries.all()[:1]
+            if first_entry:
+                group = first_entry[0].group
+                return self._build_subject_data(group, field_selection)
 
-        first_entry = group_entries.all()[:1]
-        if not first_entry:
-            return {"type": "group"}
+        # Try principal subject
+        principal_entries = getattr(obj, "principal_entries", None)
+        if principal_entries is not None:
+            first_entry = principal_entries.all()[:1]
+            if first_entry:
+                principal = first_entry[0].principal
+                if field_selection is None:
+                    return {"id": principal.uuid, "type": _SUBJECT_TYPE_USER}
+                subject = {"type": _SUBJECT_TYPE_USER}
+                if "id" in field_selection.get_nested("subject"):
+                    subject["id"] = principal.uuid
+                return subject
 
-        group = first_entry[0].group
-        return self._build_subject_data(group, field_selection)
+        return {"type": _SUBJECT_TYPE_GROUP}
 
     def get_role(self, obj: RoleBinding):
         """Extract role information from the RoleBinding.

@@ -44,3 +44,11 @@ def atomic(func):
                 return func(*args, **kwargs)
 
     return wrapper
+
+
+def atomic_block():
+    """Return a context manager that can be used to turn a block into a SERIALIZABLE transaction."""
+    if is_atomic_disabled():
+        return transaction.atomic()
+
+    return pgtransaction.atomic(isolation_level=ISOLATION_LEVEL)

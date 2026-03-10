@@ -21,9 +21,24 @@ from management.views import (
     RoleBindingViewSet,
     WorkspaceViewSet,
 )
-from rest_framework.routers import DefaultRouter
+from rest_framework.routers import DefaultRouter, Route
 
-ROUTER = DefaultRouter()
+
+class V2Router(DefaultRouter):
+    """Router for V2 view sets."""
+
+    routes = DefaultRouter.routes + [
+        Route(
+            url=r"^{prefix}:batchDelete{trailing_slash}$",
+            mapping={"post": "bulk_destroy"},
+            name="{basename}-bulk-destroy",
+            detail=False,
+            initkwargs={"suffix": "BulkDestroy"},
+        ),
+    ]
+
+
+ROUTER = V2Router()
 ROUTER.register(r"workspaces", WorkspaceViewSet, basename="workspace")
 ROUTER.register(r"role-bindings", RoleBindingViewSet, basename="role-bindings")
 ROUTER.register(r"roles", RoleV2ViewSet, basename="roles")

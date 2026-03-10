@@ -29,7 +29,6 @@ from management.models import Permission, Role
 from management.rbac_fields import AutoDateTimeField
 from management.relation_replicator.types import ObjectReference, ObjectType, RelationTuple, SubjectReference
 from management.role.queryset import RoleV2QuerySet
-from management.role_binding.model import RoleBinding
 from migration_tool.models import V2role
 from rest_framework import serializers
 from uuid_utils.compat import uuid7
@@ -180,12 +179,8 @@ class CustomRoleV2(TypeValidatedRoleV2Mixin, RoleV2):
         role: "CustomRoleV2",
         old_permissions: Iterable[Permission] = (),
         new_permissions: Iterable[Permission] = (),
-        bindings_deleted: Iterable[RoleBinding] = (),
     ) -> tuple[list[RelationTuple], list[RelationTuple]]:
         """Compute the delta (tuples to add vs. remove) for a role create, update, or delete.
-
-        For deleted bindings, delegates to ``RoleBinding.all_tuples`` to
-        collect the full snapshot of tuples to remove.
 
         Pure data transformation -- no DB writes.
 
@@ -193,8 +188,6 @@ class CustomRoleV2(TypeValidatedRoleV2Mixin, RoleV2):
             role: The role being created, updated, or deleted.
             old_permissions: Permissions before mutation (empty for create).
             new_permissions: Permissions after mutation (empty for delete).
-            bindings_deleted: RoleBindings being removed (delete only).
-                Must have ``group_entries`` and ``principal_entries`` prefetched.
 
         Returns:
             ``(tuples_to_add, tuples_to_remove)`` ready for replication.
@@ -204,9 +197,6 @@ class CustomRoleV2(TypeValidatedRoleV2Mixin, RoleV2):
 
         tuples_to_add = [CustomRoleV2._permission_tuple(role, p) for p in new_set - old_set]
         tuples_to_remove = [CustomRoleV2._permission_tuple(role, p) for p in old_set - new_set]
-
-        for binding in bindings_deleted:
-            tuples_to_remove.extend(binding.all_tuples())
 
         return tuples_to_add, tuples_to_remove
 

@@ -538,6 +538,136 @@ class RoleBindingListViewSetTest(IdentityRequest):
                     f"Field selection check failed for {label}: {item}",
                 )
 
+    # --- Resource filtering ---
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_filter_by_resource(self, mock_permission):
+        """Test filtering by resource_id and resource_type."""
+        url = self._get_list_url()
+        resource_id = str(self.workspace.id)
+
+        cases = [
+            ("matching_resource", f"resource_id={resource_id}&resource_type=workspace", 15),
+            ("non_matching_id", f"resource_id={uuid.uuid4()}&resource_type=workspace", 0),
+            ("non_matching_type", f"resource_id={resource_id}&resource_type=other", 0),
+            ("resource_type_only", "resource_type=workspace", 15),
+            ("resource_type_only_no_match", "resource_type=other", 0),
+            ("resource_id_only", f"resource_id={resource_id}", 15),
+            ("resource_id_only_no_match", f"resource_id={uuid.uuid4()}", 0),
+        ]
+        for label, query, expected_count in cases:
+            with self.subTest(label=label):
+                response = self.client.get(f"{url}?{query}&limit=100", **self.headers)
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                self.assertEqual(len(response.data["data"]), expected_count)
+
+    # --- Subject filtering ---
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_filter_by_subject_id(self, mock_permission):
+        """Test filtering by subject_id (group UUID)."""
+        url = self._get_list_url()
+        target_group = self.groups[0]
+
+        cases = [
+            ("matching_group", str(target_group.uuid), 1),
+            ("non_matching_group", str(uuid.uuid4()), 0),
+        ]
+        for label, subject_id, expected_count in cases:
+            with self.subTest(label=label):
+                response = self.client.get(f"{url}?subject_id={subject_id}&limit=100", **self.headers)
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                self.assertEqual(len(response.data["data"]), expected_count)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_filter_by_subject_type(self, mock_permission):
+        """Test filtering by subject_type."""
+        url = self._get_list_url()
+
+        # Create a principal-bound role binding
+        from management.role_binding.model import RoleBindingPrincipal
+
+        user_principal = Principal.objects.create(username="filter_user", tenant=self.tenant, user_id="filter-uid")
+        user_role = RoleV2.objects.create(name="user_role", tenant=self.tenant)
+        user_role.permissions.add(self.permission)
+        user_binding = RoleBinding.objects.create(
+            role=user_role, resource_type="workspace", resource_id=str(self.workspace.id), tenant=self.tenant
+        )
+        RoleBindingPrincipal.objects.create(principal=user_principal, binding=user_binding, source="default")
+
+        try:
+            cases = [
+                ("group_returns_group_bindings", "group", 15),
+                ("user_returns_user_bindings", "user", 1),
+                ("unknown_returns_empty", "unknown", 0),
+            ]
+            for label, subject_type, expected_count in cases:
+                with self.subTest(label=label):
+                    response = self.client.get(f"{url}?subject_type={subject_type}&limit=100", **self.headers)
+                    self.assertEqual(response.status_code, status.HTTP_200_OK)
+                    self.assertEqual(len(response.data["data"]), expected_count)
+
+            # Verify user binding response has correct subject type
+            response = self.client.get(f"{url}?subject_type=user&limit=100", **self.headers)
+            self.assertEqual(response.data["data"][0]["subject"]["type"], "user")
+        finally:
+            RoleBindingPrincipal.objects.filter(binding=user_binding).delete()
+            user_binding.delete()
+            user_role.delete()
+            user_principal.delete()
+
+    # --- Combined filters ---
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_combined_filters(self, mock_permission):
+        """Test combining role_id, resource, and subject filters."""
+        url = self._get_list_url()
+        target_role = self.roles[0]
+        target_group = self.groups[0]
+        resource_id = str(self.workspace.id)
+
+        cases = [
+            (
+                "role_and_resource",
+                f"role_id={target_role.uuid}&resource_id={resource_id}&resource_type=workspace",
+                1,
+            ),
+            (
+                "role_and_subject",
+                f"role_id={target_role.uuid}&subject_id={target_group.uuid}",
+                1,
+            ),
+            (
+                "all_filters_match",
+                f"role_id={target_role.uuid}&resource_id={resource_id}&resource_type=workspace"
+                f"&subject_type=group&subject_id={target_group.uuid}",
+                1,
+            ),
+            (
+                "all_filters_no_match",
+                f"role_id={target_role.uuid}&resource_id={uuid.uuid4()}&resource_type=workspace"
+                f"&subject_type=group&subject_id={target_group.uuid}",
+                0,
+            ),
+        ]
+        for label, query, expected_count in cases:
+            with self.subTest(label=label):
+                response = self.client.get(f"{url}?{query}&limit=100", **self.headers)
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                self.assertEqual(len(response.data["data"]), expected_count)
+
     # --- Problem RFC format on errors ---
 
     @patch(
@@ -555,6 +685,8 @@ class RoleBindingListViewSetTest(IdentityRequest):
             ("group_order_by", f"{url}?order_by=group.name", "order_by"),
             ("unknown_fields_object", f"{url}?fields=bogus(nope)", "fields"),
             ("invalid_role_field", f"{url}?fields=role(nonexistent)", "fields"),
+            ("invalid_resource_id", f"{url}?resource_id=not-a-uuid", "resource_id"),
+            ("invalid_subject_id", f"{url}?subject_id=not-a-uuid", "subject_id"),
         ]
         for label, request_url, expected_field in error_cases:
             with self.subTest(label=label):
@@ -598,6 +730,24 @@ class RoleBindingListViewSetTest(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         item = response.data["data"][0]
         self.assertIn("name", item["role"])
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_strips_nul_bytes_from_resource_and_subject_params(self, mock_permission):
+        """Test that NUL bytes are stripped from resource and subject parameters."""
+        url = self._get_list_url()
+        resource_id = str(self.workspace.id)
+        target_group = self.groups[0]
+
+        response = self.client.get(
+            f"{url}?resource_id=\x00{resource_id}\x00&resource_type=\x00workspace\x00"
+            f"&subject_type=\x00group\x00&subject_id=\x00{target_group.uuid}\x00&limit=100",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
 
 
 @override_settings(V2_APIS_ENABLED=True)
@@ -1311,17 +1461,17 @@ class RoleBindingViewSetTest(IdentityRequest):
         created_times = [role_created_map[str(item["roles"][0]["id"])] for item in data if item["roles"]]
         self.assertEqual(created_times, sorted(created_times))
 
-    # Parent role bindings tests
+    # Exclude sources tests
 
     @patch(
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
     )
-    def test_by_subject_parent_role_bindings_false_returns_direct_only(self, mock_permission):
-        """Test that parent_role_bindings=false returns only direct bindings."""
+    def test_by_subject_exclude_sources_indirect_returns_direct_only(self, mock_permission):
+        """Test that exclude_sources=indirect returns only direct bindings."""
         url = self._get_by_subject_url()
         response = self.client.get(
-            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&parent_role_bindings=false&limit=100",
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&exclude_sources=indirect&limit=100",
             **self.headers,
         )
 
@@ -1333,8 +1483,8 @@ class RoleBindingViewSetTest(IdentityRequest):
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
     )
-    def test_by_subject_without_parent_role_bindings_returns_direct_only(self, mock_permission):
-        """Test that omitting parent_role_bindings returns only direct bindings (default)."""
+    def test_by_subject_without_exclude_sources_defaults_to_none(self, mock_permission):
+        """Test that omitting exclude_sources defaults to 'none' (shows all, falls back to direct without Relations API)."""
         url = self._get_by_subject_url()
         response = self.client.get(
             f"{url}?resource_id={self.workspace.id}&resource_type=workspace&limit=100",
@@ -1350,27 +1500,27 @@ class RoleBindingViewSetTest(IdentityRequest):
         return_value=True,
     )
     @patch("management.role_binding.util.relations_api_client.settings")
-    def test_by_subject_parent_role_bindings_true_without_relations_server(self, mock_settings, mock_permission):
-        """Test that parent_role_bindings=true without RELATION_API_SERVER falls back to direct only."""
+    def test_by_subject_exclude_sources_direct_without_relations_server(self, mock_settings, mock_permission):
+        """Test that exclude_sources=direct without RELATION_API_SERVER returns empty."""
         mock_settings.RELATION_API_SERVER = None
 
         url = self._get_by_subject_url()
         response = self.client.get(
-            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&parent_role_bindings=true&limit=100",
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&exclude_sources=direct&limit=100",
             **self.headers,
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        # Should still return direct bindings when Relations API is not configured
-        self.assertEqual(len(response.data["data"]), 15)
+        # Cannot determine inherited bindings without Relations API, return empty
+        self.assertEqual(len(response.data["data"]), 0)
 
     @patch(
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
     )
     @patch("management.role_binding.service.RoleBindingService._lookup_binding_uuids_via_relations")
-    def test_by_subject_parent_role_bindings_true_includes_inherited(self, mock_lookup, mock_permission):
-        """Test that parent_role_bindings=true includes inherited bindings from Relations API."""
+    def test_by_subject_exclude_sources_direct_shows_inherited_only(self, mock_lookup, mock_permission):
+        """Test that exclude_sources=direct shows only inherited bindings from Relations API."""
         # Create a binding on parent workspace
         parent_role = RoleV2.objects.create(
             name="parent_role",
@@ -1396,13 +1546,13 @@ class RoleBindingViewSetTest(IdentityRequest):
 
         url = self._get_by_subject_url()
         response = self.client.get(
-            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&parent_role_bindings=true&limit=100",
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&exclude_sources=direct&limit=100",
             **self.headers,
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        # Should include 15 direct bindings + 1 inherited binding
-        self.assertEqual(len(response.data["data"]), 16)
+        # Should include only the 1 inherited binding (direct are excluded)
+        self.assertEqual(len(response.data["data"]), 1)
 
         # Verify parent_group is in the response
         subject_ids = [item["subject"]["id"] for item in response.data["data"]]
@@ -1419,62 +1569,119 @@ class RoleBindingViewSetTest(IdentityRequest):
         return_value=True,
     )
     @patch("management.role_binding.service.RoleBindingService._lookup_binding_uuids_via_relations")
-    def test_by_subject_parent_role_bindings_true_with_empty_inherited(self, mock_lookup, mock_permission):
-        """Test that parent_role_bindings=true with no inherited bindings returns direct only."""
+    def test_by_subject_exclude_sources_direct_with_empty_inherited(self, mock_lookup, mock_permission):
+        """Test that exclude_sources=direct with no inherited bindings returns empty."""
         # Mock Relations API to return empty list
         mock_lookup.return_value = []
 
         url = self._get_by_subject_url()
         response = self.client.get(
-            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&parent_role_bindings=true&limit=100",
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&exclude_sources=direct&limit=100",
             **self.headers,
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        # Should return only direct bindings
-        self.assertEqual(len(response.data["data"]), 15)
+        # Should return no bindings (no inherited, direct excluded)
+        self.assertEqual(len(response.data["data"]), 0)
 
     @patch(
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
     )
     @patch("management.role_binding.service.RoleBindingService._lookup_binding_uuids_via_relations")
-    def test_by_subject_parent_role_bindings_true_with_relations_error(self, mock_lookup, mock_permission):
-        """Test that parent_role_bindings=true gracefully handles Relations API errors."""
+    def test_by_subject_exclude_sources_direct_with_relations_error(self, mock_lookup, mock_permission):
+        """Test that exclude_sources=direct returns empty when Relations API errors."""
         # Mock Relations API to return None (error case)
         mock_lookup.return_value = None
 
         url = self._get_by_subject_url()
         response = self.client.get(
-            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&parent_role_bindings=true&limit=100",
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&exclude_sources=direct&limit=100",
             **self.headers,
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        # Should fall back to direct bindings only
-        self.assertEqual(len(response.data["data"]), 15)
+        # Cannot determine inherited bindings, return empty
+        self.assertEqual(len(response.data["data"]), 0)
 
     @patch(
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
     )
-    def test_by_subject_parent_role_bindings_accepts_boolean_string(self, mock_permission):
-        """Test that parent_role_bindings accepts 'true' and 'false' strings."""
+    def test_by_subject_exclude_sources_accepts_valid_values(self, mock_permission):
+        """Test that exclude_sources accepts 'direct', 'indirect', and 'none' values."""
         url = self._get_by_subject_url()
 
-        # Test with 'true' string
-        response = self.client.get(
-            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&parent_role_bindings=true",
-            **self.headers,
-        )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for value in ("indirect", "direct", "none"):
+            response = self.client.get(
+                f"{url}?resource_id={self.workspace.id}&resource_type=workspace&exclude_sources={value}",
+                **self.headers,
+            )
+            self.assertEqual(response.status_code, status.HTTP_200_OK, f"exclude_sources={value} should be accepted")
 
-        # Test with 'false' string
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    @patch("management.role_binding.service.RoleBindingService._lookup_binding_uuids_via_relations")
+    def test_by_subject_exclude_sources_none_includes_both(self, mock_lookup, mock_permission):
+        """Test that exclude_sources=none includes both direct and inherited bindings."""
+        # Create a binding on parent workspace
+        parent_role = RoleV2.objects.create(
+            name="parent_role",
+            tenant=self.tenant,
+        )
+        parent_group = Group.objects.create(
+            name="parent_group",
+            tenant=self.tenant,
+        )
+        parent_binding = RoleBinding.objects.create(
+            role=parent_role,
+            resource_type="workspace",
+            resource_id=str(self.default_workspace.id),
+            tenant=self.tenant,
+        )
+        RoleBindingGroup.objects.create(
+            group=parent_group,
+            binding=parent_binding,
+        )
+
+        # Mock Relations API to return the parent binding UUID
+        mock_lookup.return_value = [str(parent_binding.uuid)]
+
+        url = self._get_by_subject_url()
         response = self.client.get(
-            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&parent_role_bindings=false",
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&exclude_sources=none&limit=100",
             **self.headers,
         )
+
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should include 15 direct bindings + 1 inherited binding
+        self.assertEqual(len(response.data["data"]), 16)
+
+        # Verify parent_group is in the response
+        subject_ids = [str(item["subject"]["id"]) for item in response.data["data"]]
+        self.assertIn(str(parent_group.uuid), subject_ids)
+
+        # Cleanup
+        RoleBindingGroup.objects.filter(binding=parent_binding).delete()
+        parent_binding.delete()
+        parent_group.delete()
+        parent_role.delete()
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_by_subject_exclude_sources_rejects_invalid_value(self, mock_permission):
+        """Test that exclude_sources rejects invalid values."""
+        url = self._get_by_subject_url()
+
+        response = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&exclude_sources=invalid",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 
 @override_settings(V2_APIS_ENABLED=True)

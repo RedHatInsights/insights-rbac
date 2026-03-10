@@ -46,6 +46,7 @@ from tests.management.role.test_dual_write import DualWriteTestCase
 from tests.v2_util import assert_v2_roles_consistent, make_read_tuples_mock
 
 
+@override_settings(ATOMIC_RETRY_DISABLED=True)
 class CleanupOrphanBindingsTest(DualWriteTestCase):
     """Tests for the cleanup_tenant_orphan_bindings endpoint."""
 
@@ -884,6 +885,7 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         self.assertSetEqual(set(self.tuples), initial_tuples, "No relations should have been affected.")
 
 
+@override_settings(ATOMIC_RETRY_DISABLED=True)
 class RebuildTenantWorkspaceRelationsTest(DualWriteTestCase):
     """Tests for the rebuild_tenant_workspace_relations endpoint."""
 

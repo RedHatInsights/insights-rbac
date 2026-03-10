@@ -17,7 +17,8 @@ paths:
           in: query
           required: false
           schema:
-            $ref: '#/components/schemas/Limit'
+            allOf:
+              - $ref: '#/components/schemas/Limit'
             default: 10
           explode: false
         - name: cursor
@@ -34,12 +35,41 @@ paths:
           schema:
             type: string
           explode: false
+        - name: resource_id
+          in: query
+          required: false
+          description: Filter by resource ID
+          schema:
+            type: string
+          explode: false
+        - name: resource_type
+          in: query
+          required: false
+          description: Filter by resource type
+          schema:
+            type: string
+          explode: false
+        - name: subject_type
+          in: query
+          required: false
+          description: Filter by subject type (e.g., 'group')
+          schema:
+            type: string
+          explode: false
+        - name: subject_id
+          in: query
+          required: false
+          description: Filter by subject ID
+          schema:
+            type: string
+          explode: false
         - name: fields
           in: query
           required: false
           description: Control which fields are included in the response to optimize payload size.
           schema:
-            $ref: '#/components/schemas/FieldMask'
+            allOf:
+              - $ref: '#/components/schemas/FieldMask'
             default: resource(id),role(id),subject(id,type)
           explode: false
         - name: order_by
@@ -47,7 +77,8 @@ paths:
           required: false
           description: Default sort is by the time the role was first created. Prefix with '-' for descending order.
           schema:
-            $ref: '#/components/schemas/OrderBy'
+            allOf:
+              - $ref: '#/components/schemas/OrderBy'
             default: role.id
           explode: false
       responses:
@@ -142,7 +173,8 @@ paths:
           in: query
           required: false
           schema:
-            $ref: '#/components/schemas/Limit'
+            allOf:
+              - $ref: '#/components/schemas/Limit'
             default: 10
           explode: false
         - name: cursor
@@ -155,7 +187,7 @@ paths:
         - name: resource_id
           in: query
           required: true
-          description: Filter by resource ID
+          description: 'Filter by resource ID. For workspace: UUID. For tenant: tenant resource ID (format: {domain}/{org_id}).'
           schema:
             type: string
           explode: false
@@ -164,7 +196,7 @@ paths:
           required: true
           description: Filter by resource type
           schema:
-            type: string
+            $ref: '#/components/schemas/ResourceType'
           explode: false
         - name: subject_type
           in: query
@@ -180,20 +212,25 @@ paths:
           schema:
             type: string
           explode: false
-        - name: parent_role_bindings
+        - name: exclude_sources
           in: query
           required: false
-          description: Include role bindings inherited from parent resources
+          description: "Exclude bindings by source type: 'none' (default) shows all, 'indirect' excludes inherited, 'direct' excludes direct"
           schema:
-            type: boolean
-            default: false
+            type: string
+            enum:
+              - direct
+              - indirect
+              - none
+            default: none
           explode: false
         - name: fields
           in: query
           required: false
           description: Control which fields are included in the response to optimize payload size and improve performance.
           schema:
-            $ref: '#/components/schemas/FieldMask'
+            allOf:
+              - $ref: '#/components/schemas/FieldMask'
             default: subject(group.name),role(name),resource(name,type),last_modified
           explode: false
         - name: order_by
@@ -201,7 +238,8 @@ paths:
           required: false
           description: Sort by specified field(s), prefix with '-' for descending order
           schema:
-            $ref: '#/components/schemas/OrderBy'
+            allOf:
+              - $ref: '#/components/schemas/OrderBy'
             default: subject_name
           explode: false
       responses:
@@ -230,7 +268,7 @@ paths:
                     meta:
                       limit: 10
                     links:
-                      next: http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?limit=10&parent_role_bindings=true&cursor=xyz
+                      next: http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?limit=10&exclude_sources=direct&cursor=xyz
                       previous: null
                     data:
                       - last_modified: '2024-08-04T12:00:00Z'
@@ -248,10 +286,10 @@ paths:
                           id: 550e8400-e29b-41d4-a716-446655440003
                           name: Child Workspace
                           type: workspace
-                        inherited_from:
-                          id: 550e8400-e29b-41d4-a716-446655440001
-                          name: Parent Workspace
-                          type: workspace
+                        sources:
+                          - id: 550e8400-e29b-41d4-a716-446655440001
+                            name: Parent Workspace
+                            type: workspace
                 example1:
                   value:
                     meta:
@@ -331,7 +369,7 @@ paths:
         - name: resource_id
           in: query
           required: true
-          description: Identify the resource ID for the set of role bindings to replace
+          description: 'Identify the resource ID for the set of role bindings to replace. For workspace: UUID. For tenant: tenant resource ID (format: {domain}/{org_id}).'
           schema:
             type: string
           explode: false
@@ -340,7 +378,7 @@ paths:
           required: true
           description: Identify the resource type for the set of role bindings to replace
           schema:
-            type: string
+            $ref: '#/components/schemas/ResourceType'
           explode: false
         - name: subject_id
           in: query
@@ -360,7 +398,8 @@ paths:
           in: query
           required: false
           schema:
-            $ref: '#/components/schemas/FieldMask'
+            allOf:
+              - $ref: '#/components/schemas/FieldMask'
             default: resource(id),subject(id),roles(id),last_modified
           explode: false
       responses:
@@ -467,7 +506,8 @@ paths:
           in: query
           required: false
           schema:
-            $ref: '#/components/schemas/FieldMask'
+            allOf:
+              - $ref: '#/components/schemas/FieldMask'
             default: resource(id),role(id),subject(id,type)
           explode: false
       responses:
@@ -583,7 +623,8 @@ paths:
           in: query
           required: false
           schema:
-            $ref: '#/components/schemas/Limit'
+            allOf:
+              - $ref: '#/components/schemas/Limit'
             default: 10
           explode: false
         - name: cursor
@@ -605,7 +646,8 @@ paths:
           required: false
           description: Control which fields are included in the response to optimize payload size.
           schema:
-            $ref: '#/components/schemas/FieldMask'
+            allOf:
+              - $ref: '#/components/schemas/FieldMask'
             default: id,name,description,last_modified
           explode: false
         - name: order_by
@@ -613,7 +655,8 @@ paths:
           required: false
           description: "Sort by specified field(s), prefix with '-' for descending order. Allowed fields: name, last_modified."
           schema:
-            $ref: '#/components/schemas/OrderBy'
+            allOf:
+              - $ref: '#/components/schemas/OrderBy'
             default: name
           explode: false
       responses:
@@ -832,7 +875,8 @@ paths:
           required: false
           description: Control which fields are included in the response to optimize payload size.
           schema:
-            $ref: '#/components/schemas/FieldMask'
+            allOf:
+              - $ref: '#/components/schemas/FieldMask'
             default: id,name,description,permissions,last_modified
           explode: false
       responses:
@@ -929,7 +973,8 @@ paths:
           required: false
           description: Control which fields are included in the response to optimize payload size.
           schema:
-            $ref: '#/components/schemas/FieldMask'
+            allOf:
+              - $ref: '#/components/schemas/FieldMask'
             default: id,name,description,permissions,last_modified
           explode: false
       responses:
@@ -1121,7 +1166,8 @@ paths:
           in: query
           required: false
           schema:
-            $ref: '#/components/schemas/Limit'
+            allOf:
+              - $ref: '#/components/schemas/Limit'
             default: 10
           explode: false
         - name: offset
@@ -1129,7 +1175,8 @@ paths:
           required: false
           description: Offset for offset-based pagination.
           schema:
-            $ref: '#/components/schemas/Offset'
+            allOf:
+              - $ref: '#/components/schemas/Offset'
             default: 0
           explode: false
         - name: type
@@ -1137,7 +1184,8 @@ paths:
           required: false
           description: Defaults to all when param is not supplied.
           schema:
-            $ref: '#/components/schemas/Workspaces.WorkspaceTypesQueryParam'
+            allOf:
+              - $ref: '#/components/schemas/Workspaces.WorkspaceTypesQueryParam'
             default: all
           explode: false
         - name: name
@@ -1146,6 +1194,13 @@ paths:
           description: Case sensitive exact match of workspace by name.
           schema:
             type: string
+          explode: false
+        - name: parent_id
+          in: query
+          required: false
+          description: Filter workspaces by parent workspace UUID. Returns only direct children of the specified workspace. Useful for lazy-loading a nested tree structure.
+          schema:
+            $ref: '#/components/schemas/UUID'
           explode: false
         - name: ids
           in: query
@@ -2029,6 +2084,12 @@ components:
             instance:
               type: string
               format: uri
+    ResourceType:
+      type: string
+      enum:
+        - workspace
+        - tenant
+      description: Resource type for role binding operations. 'workspace' for workspace-scoped bindings (resource_id is workspace UUID). 'tenant' for tenant-scoped bindings (resource_id is tenant resource ID in format {domain}/{org_id}, e.g. redhat/12345).
     Role:
       type: object
       properties:
@@ -2282,10 +2343,11 @@ components:
           allOf:
             - $ref: '#/components/schemas/RoleBindings.Resource'
           description: Resource the roles apply to
-        inherited_from:
-          allOf:
-            - $ref: '#/components/schemas/RoleBindings.Resource'
-          description: Resource from which this role binding is inherited (only present when parent_role_bindings=true)
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/RoleBindings.Resource'
+          description: Resources from which this role binding is sourced (direct or inherited)
       example:
         last_modified: '2024-08-04T12:00:00Z'
         subject:
@@ -2302,10 +2364,10 @@ components:
           id: 550e8400-e29b-41d4-a716-446655440003
           name: Child Workspace
           type: workspace
-        inherited_from:
-          id: 550e8400-e29b-41d4-a716-446655440001
-          name: Parent Workspace
-          type: workspace
+        sources:
+          - id: 550e8400-e29b-41d4-a716-446655440001
+            name: Parent Workspace
+            type: workspace
     RoleBindings.UpdateRoleBindingsRequest:
       type: object
       required:
@@ -2371,7 +2433,6 @@ components:
       type: object
       required:
         - name
-        - description
         - permissions
       properties:
         name:
@@ -2440,7 +2501,6 @@ components:
           allOf:
             - $ref: '#/components/schemas/UUID'
           description: Parent ID of Workspace A
-          default: Parent ID of Workspace A
       allOf:
         - $ref: '#/components/schemas/Workspaces.BasicWorkspace'
       example:
@@ -2469,7 +2529,6 @@ components:
           allOf:
             - $ref: '#/components/schemas/UUID'
           description: The UUID of the new parent workspace.
-          default: Parent ID of target workspace
       example:
         parent_id: c1f729e2-3e2b-4f9e-b247-a4b568393e11
     Workspaces.MoveWorkspaceResponse:
@@ -2481,11 +2540,11 @@ components:
         id:
           allOf:
             - $ref: '#/components/schemas/UUID'
-          default: Workspace ID of moved workspace
+          description: Workspace ID of moved workspace
         parent_id:
           allOf:
             - $ref: '#/components/schemas/UUID'
-          default: New parent ID of moved workspace
+          description: New parent ID of moved workspace
       example:
         _: 200
         id: e4277742-b91c-43f1-a185-b827e8574345
@@ -2587,7 +2646,6 @@ components:
           allOf:
             - $ref: '#/components/schemas/UUID'
           description: Must match current parent_id value. Not updatable directly on the workspace.
-          default: Parent ID of Workspace A
       example:
         parent_id: c1f729e2-3e2b-4f9e-b247-a4b568393e11
         name: Alpha Workspace
