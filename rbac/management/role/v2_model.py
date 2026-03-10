@@ -19,7 +19,8 @@
 
 from __future__ import annotations
 
-from typing import Iterable
+import logging
+from typing import Iterable, Optional
 
 from django.db import models
 from django.db.models import signals
@@ -33,7 +34,9 @@ from migration_tool.models import V2role
 from rest_framework import serializers
 from uuid_utils.compat import uuid7
 
-from api.models import TenantAwareModel
+from api.models import Tenant, TenantAwareModel
+
+logger = logging.getLogger(__name__)
 
 
 class RoleV2(TenantAwareModel):
@@ -74,6 +77,16 @@ class RoleV2(TenantAwareModel):
         """Save the model and run all validations from the model."""
         self.full_clean()
         super().save(*args, **kwargs)
+
+    @property
+    def org_id(self) -> Optional[str]:
+        """Return the org_id for this role. None for seeded roles (public tenant)."""
+        if self.tenant.tenant_name == Tenant.PUBLIC_TENANT_NAME:
+            return None
+        if self.tenant.org_id is None:
+            logger.error("Non-public tenant %s has no org_id", self.tenant_id)
+            return None
+        return str(self.tenant.org_id)
 
     def as_migration_value(self) -> V2role:
         """Get the V2role representing to this role's daya."""

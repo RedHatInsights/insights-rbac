@@ -16,8 +16,6 @@
 #
 """Serializers for RoleV2 API."""
 
-import logging
-
 from management.exceptions import RequiredFieldError
 from management.role.v2_exceptions import (
     InvalidRolePermissionsError,
@@ -30,10 +28,6 @@ from management.role.v2_model import RoleV2
 from management.role.v2_service import RoleV2Service
 from management.utils import FieldSelection, FieldSelectionValidationError, UUIDStringField
 from rest_framework import serializers
-
-from api.models import Tenant
-
-logger = logging.getLogger(__name__)
 
 # Centralized mapping from domain exceptions to API error fields
 ERROR_MAPPING = {
@@ -102,15 +96,8 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
         return len(obj.permissions.all())
 
     def get_org_id(self, obj):
-        """Return org_id from the role's tenant. None for public tenant (seeded roles)."""
-        tenant = obj.tenant
-        if tenant.tenant_name == Tenant.PUBLIC_TENANT_NAME:
-            return None
-        org_id = tenant.org_id
-        if org_id is None:
-            logger.error("Non-public tenant %s has no org_id", tenant.id)
-            return None
-        return str(org_id)
+        """Return org_id from the role."""
+        return obj.org_id
 
 
 class RoleFieldSelection(FieldSelection):
