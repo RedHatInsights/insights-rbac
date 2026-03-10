@@ -21,6 +21,8 @@ import logging
 import re
 from urllib.parse import urlparse
 
+from management.group.model import Group
+from management.role_binding.model import RoleBinding
 from rest_framework.exceptions import ValidationError
 from rest_framework.pagination import CursorPagination, LimitOffsetPagination
 from rest_framework.response import Response
@@ -139,6 +141,9 @@ class V2CursorPagination(CursorPagination):
     Available ordering fields (for subject_type=user):
     - user.username, user.uuid
     - role.name, role.uuid, role.created, role.modified
+
+    Available ordering fields (for list endpoint, RoleBinding model):
+    - Custom ordering not yet supported; default is by role creation time (UUIDv7).
     """
 
     page_size = 10
@@ -174,45 +179,101 @@ class V2CursorPagination(CursorPagination):
         "role.created": "role_binding_entries__binding__role__created",
     }
 
+    # For role binding list endpoint, the queryset is on RoleBinding model.
+    # TODO: Custom ordering is not yet supported for the list endpoint.
+    # The default ordering is by role creation time (UUIDv7).
+    # This mapping will be redesigned when custom ordering support is added.
+    ROLE_BINDING_FIELD_MAPPING = {
+        # Role fields (direct access from RoleBinding)
+        "role.id": "role__uuid",
+        "role.name": "role__name",
+        "role.uuid": "role__uuid",
+        "role.modified": "role__modified",
+        "role.created": "role_created",  # Annotated for cursor pagination
+        # Resource fields
+        "resource.id": "resource_id",
+        "resource.type": "resource_type",
+    }
+
     # Default ordering for each subject type
     GROUP_DEFAULT_ORDERING = "-modified"
     USER_DEFAULT_ORDERING = "username"
+    ROLE_BINDING_DEFAULT_ORDERING = "role_created"
 
     # Combined mapping for backward compatibility (defaults to group)
     FIELD_MAPPING = GROUP_FIELD_MAPPING
 
-    def _get_field_mapping(self, request) -> dict:
-        """Get the appropriate field mapping based on subject_type.
+    def _get_field_mapping(self, request, queryset) -> dict:
+        """Get the appropriate field mapping based on subject_type or queryset model.
 
-        For role-bindings endpoint (with subject_type parameter):
+        For role-bindings by-subject endpoint (with subject_type parameter):
         - subject_type=user: returns USER_FIELD_MAPPING
         - subject_type=group: returns GROUP_FIELD_MAPPING
 
-        For other endpoints (no subject_type): returns the class's FIELD_MAPPING,
-        which subclasses can override for their specific needs.
+        For role-bindings list endpoint (RoleBinding model):
+        - returns ROLE_BINDING_FIELD_MAPPING
+
+        For other endpoints: returns the class's FIELD_MAPPING.
 
         Args:
             request: The HTTP request object
+            queryset: The queryset being paginated
 
         Returns:
             Field mapping dict appropriate for the endpoint/subject_type
         """
+        # First check subject_type for by-subject endpoint
         subject_type = request.query_params.get("subject_type")
         if subject_type == "user":
             return self.USER_FIELD_MAPPING
         elif subject_type == "group":
             return self.GROUP_FIELD_MAPPING
+
+        # Check queryset model for list endpoint
+        model = queryset.model
+        if model == RoleBinding:
+            return self.ROLE_BINDING_FIELD_MAPPING
+        if model == Group:
+            return self.GROUP_FIELD_MAPPING
+
         # For endpoints without subject_type, use the class's own FIELD_MAPPING
         return self.FIELD_MAPPING
+
+    def _get_default_ordering(self, request, queryset) -> str:
+        """Get the appropriate default ordering based on subject_type or queryset model.
+
+        Args:
+            request: The HTTP request object
+            queryset: The queryset being paginated
+
+        Returns:
+            Default ordering field for the subject_type/model
+        """
+        # First check subject_type for by-subject endpoint
+        subject_type = request.query_params.get("subject_type")
+        if subject_type == "user":
+            return self.USER_DEFAULT_ORDERING
+        elif subject_type == "group":
+            return self.GROUP_DEFAULT_ORDERING
+
+        # Check queryset model
+        model = queryset.model
+        if model == RoleBinding:
+            return self.ROLE_BINDING_DEFAULT_ORDERING
+        if model == Group:
+            return self.GROUP_DEFAULT_ORDERING
+
+        # Fall back to instance ordering for backwards compatibility
+        return self.ordering
 
     def _convert_order_field(self, field: str, field_mapping: dict) -> str | None:
         """Convert dot notation field to Django ORM field.
 
-        Only accepts fields using dot notation (e.g., group.name, role.name, user.username).
-        Direct field names without dot notation are rejected.
+        Accepts any field name present in the field_mapping, including both
+        dot notation (e.g., group.name) and direct names (e.g., name).
 
         Args:
-            field: The field name, must use dot notation (e.g., group.name, -role.modified)
+            field: The field name (e.g., group.name, -role.modified)
             field_mapping: The field mapping dict to use for conversion
 
         Returns:
@@ -227,26 +288,8 @@ class V2CursorPagination(CursorPagination):
             orm_field = field_mapping[field_name]
             return f"-{orm_field}" if descending else orm_field
 
-        # Unknown dot notation field - reject it
+        # Unknown field - reject it
         return None
-
-    def _get_default_ordering(self, request) -> str:
-        """Get the appropriate default ordering based on subject_type.
-
-        Args:
-            request: The HTTP request object
-
-        Returns:
-            Default ordering field for the subject_type, or self.ordering if
-            subject_type is not specified (for backwards compatibility)
-        """
-        subject_type = request.query_params.get("subject_type")
-        if subject_type == "user":
-            return self.USER_DEFAULT_ORDERING
-        elif subject_type == "group":
-            return self.GROUP_DEFAULT_ORDERING
-        # Fall back to instance ordering for backwards compatibility
-        return self.ordering
 
     def get_ordering(self, request, queryset, view):
         """Get ordering from order_by query parameter or use default.
@@ -262,8 +305,9 @@ class V2CursorPagination(CursorPagination):
         """
         order_by_list = request.query_params.getlist("order_by")
 
-        # Get the default ordering based on subject_type
-        default_ordering = self._get_default_ordering(request)
+        # Get appropriate field mapping and default ordering
+        field_mapping = self._get_field_mapping(request, queryset)
+        default_ordering = self._get_default_ordering(request, queryset)
 
         # No order_by provided, use default
         if not order_by_list:
@@ -276,9 +320,6 @@ class V2CursorPagination(CursorPagination):
 
         if not order_fields:
             return (default_ordering,)
-
-        # Get the appropriate field mapping based on subject_type
-        field_mapping = self._get_field_mapping(request)
 
         # Convert dot notation to Django ORM fields
         converted_fields = []

@@ -22,7 +22,8 @@ from management.models import BindingMapping, Workspace
 from management.principal.model import Principal
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.role.model import Role
-from management.role.v2_model import SeededRoleV2, CustomRoleV2, RoleBinding
+from management.role.v2_model import CustomRoleV2, SeededRoleV2
+from management.role_binding.model import RoleBinding
 from management.tenant_service import V2TenantBootstrapService
 from management.workspace.service import WorkspaceService
 from migration_tool.in_memory_tuples import (
@@ -45,6 +46,7 @@ from tests.management.role.test_dual_write import DualWriteTestCase
 from tests.v2_util import assert_v2_roles_consistent, make_read_tuples_mock
 
 
+@override_settings(ATOMIC_RETRY_DISABLED=True)
 class CleanupOrphanBindingsTest(DualWriteTestCase):
     """Tests for the cleanup_tenant_orphan_bindings endpoint."""
 
@@ -883,6 +885,7 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         self.assertSetEqual(set(self.tuples), initial_tuples, "No relations should have been affected.")
 
 
+@override_settings(ATOMIC_RETRY_DISABLED=True)
 class RebuildTenantWorkspaceRelationsTest(DualWriteTestCase):
     """Tests for the rebuild_tenant_workspace_relations endpoint."""
 

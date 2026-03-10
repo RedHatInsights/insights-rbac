@@ -46,6 +46,7 @@ Base path: `/api/rbac/v1/`
 | `/api/rbac/v1/policies/` | Policy management |
 | `/api/rbac/v1/cross-account-requests/` | Cross-account access requests |
 | `/api/rbac/v1/status/` | Health check (no auth required) |
+| `/api/rbac/v1/ready/` | Readiness probe (no auth required) |
 | `/api/rbac/v1/openapi.json` | OpenAPI specification (no auth required) |
 
 ### V2 API (Workspace-centric)
@@ -363,6 +364,7 @@ The following endpoints do not require authentication:
 | Endpoint | Description |
 |----------|-------------|
 | `/api/rbac/v1/status/` | Server health check |
+| `/api/rbac/v1/ready/` | Readiness probe |
 | `/api/rbac/v1/openapi.json` | V1 OpenAPI specification |
 | `/api/rbac/v2/openapi.json` | V2 OpenAPI specification |
 | `/metrics` | Prometheus metrics |

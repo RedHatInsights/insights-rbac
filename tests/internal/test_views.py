@@ -40,6 +40,7 @@ from api.models import User, Tenant
 from api.utils import reset_imported_tenants
 from management.audit_log.model import AuditLog
 from management.cache import TenantCache
+from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
 from management.models import BindingMapping, Group, Permission, Policy, Role, Workspace
 from management.principal.model import Principal
 from management.relation_replicator.noop_replicator import NoopReplicator
@@ -75,6 +76,7 @@ from kessel.inventory.v1beta2.check_request_pb2 import CheckRequest
 from tests.identity_request import IdentityRequest
 from tests.management.role.test_dual_write import RbacFixture
 from tests.rbac.test_middleware import EnvironmentVarGuard
+from tests.v2_util import seed_v2_role_from_v1
 
 
 class BaseInternalViewsetTests(IdentityRequest):
@@ -2723,6 +2725,7 @@ class InternalViewsetUserLookupTests(BaseInternalViewsetTests):
         self.assertEqual(resp_groups[0]["name"], "test_group_platform_default")
 
 
+@override_settings(ATOMIC_RETRY_DISABLED=True)
 class FixMissingBindingBaseTuplesTests(BaseInternalViewsetTests):
     """Test the fix_missing_binding_base_tuples internal API endpoint."""
 
@@ -2732,7 +2735,7 @@ class FixMissingBindingBaseTuplesTests(BaseInternalViewsetTests):
         self.url = "/_private/api/utils/fix_missing_binding_base_tuples/"
         self._tuples = InMemoryTuples()
 
-    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True, ROOT_SCOPE_PERMISSIONS="test:resource:read")
     @patch("management.tasks.fix_missing_binding_base_tuples_in_worker.delay")
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     def test_fix_missing_base_tuples(self, mock_replicate, mock_worker):
@@ -2758,27 +2761,19 @@ class FixMissingBindingBaseTuplesTests(BaseInternalViewsetTests):
         )
         Access.objects.create(role=role, permission=perm, tenant=self.public_tenant)
 
-        # Get or create workspace hierarchy
-        root_ws, _ = Workspace.objects.get_or_create(
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-            defaults={"name": "Root Workspace for Fix Test"},
-        )
+        seed_v2_role_from_v1(role)
+
+        # Bootstrap the tenant to create workspace hierarchy (without replicating, since we don't need the tuples).
+        V2TenantBootstrapService(replicator=NoopReplicator()).bootstrap_tenant(self.tenant)
 
         # Create binding WITHOUT replication (simulating pre-V2 state - missing base tuples)
-        binding = BindingMapping.objects.create(
-            role=role,
-            mappings={
-                "id": "test-binding-no-base-tuples",
-                "groups": [str(self.group.uuid)],
-                "users": {},
-                "role": {"id": str(role.uuid), "is_system": True, "permissions": []},
-            },
-            resource_type_namespace="rbac",
-            resource_type_name="workspace",
-            resource_id=str(root_ws.id),
-        )
+        RelationApiDualWriteGroupHandler(
+            group=self.group, event_type=ReplicationEventType.ASSIGN_ROLE, replicator=NoopReplicator()
+        ).generate_relations_reset_roles([role])
 
+        root_ws = Workspace.objects.root(tenant=self.tenant)
+
+        binding = BindingMapping.objects.get(role=role)
         binding_id = binding.mappings["id"]
 
         # BEFORE FIX: Verify NO tuples exist (simulating missing Kessel relationships)
@@ -2790,17 +2785,17 @@ class FixMissingBindingBaseTuplesTests(BaseInternalViewsetTests):
         mock_worker.side_effect = lambda **kwargs: fix_missing_binding_base_tuples_in_worker(**kwargs)
 
         # CALL THE FIX API
-        response = self.client.post(f"{self.url}?binding_ids={binding.id}", **self.request.META)
+        response = self.client.post(f"{self.url}?binding_uuids={binding_id}", **self.request.META)
         self.assertEqual(response.status_code, 202)  # Now returns 202 (Accepted) since it's async
 
         data = response.json()
         self.assertIn("message", data)
-        self.assertEqual(data["binding_ids"], [binding.id])
+        self.assertEqual(data["binding_uuids"], [binding_id])
 
         # Verify worker was called
-        mock_worker.assert_called_once_with(binding_ids=[binding.id])
+        mock_worker.assert_called_once_with(binding_uuids=[binding_id])
 
-        # AFTER FIX: Verify ALL tuples now exist (API replicates all tuples via binding.as_tuples())
+        # AFTER FIX: Verify ALL tuples now exist.
 
         # Verify t_role tuple was created
         t_role_after = self._tuples.find_tuples(
@@ -4502,6 +4497,207 @@ class InternalRelationsViewsetTests(BaseInternalViewsetTests):
         response_body = json.loads(response.content)
         self.assertEqual(response.status_code, 500)
         self.assertEqual(response_body["detail"], "Invalid request body provided in request to read_tuples.")
+
+    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.create_client_channel")
+    def test_lookup_subjects(self, mock_create_channel, mock_get_token):
+        """Test a request to lookup_subjects endpoint returns the correct response."""
+
+        mock_stub = MagicMock()
+        mock_response_1 = lookup_pb2.LookupSubjectsResponse(
+            subject=common_pb2.SubjectReference(
+                subject=common_pb2.ObjectReference(
+                    type=common_pb2.ObjectType(namespace="rbac", name="principal"), id="user-12345"
+                )
+            )
+        )
+
+        mock_response_2 = lookup_pb2.LookupSubjectsResponse(
+            subject=common_pb2.SubjectReference(
+                subject=common_pb2.ObjectReference(
+                    type=common_pb2.ObjectType(namespace="rbac", name="principal"), id="user-67891"
+                )
+            )
+        )
+
+        mock_stub.LookupSubjects.return_value = [mock_response_1, mock_response_2]
+
+        with patch("internal.views.lookup_pb2_grpc.KesselLookupServiceStub", return_value=mock_stub):
+
+            request_body = {
+                "resource": {
+                    "type": {"namespace": "rbac", "name": "workspace"},
+                    "id": "workspace-123",
+                },
+                "relation": "user_grant",
+                "subject_type": {"namespace": "rbac", "name": "principal"},
+            }
+
+            response = self.client.post(
+                "/_private/api/relations/lookup_subjects/",
+                request_body,
+                format="json",
+                **self.request.META,
+            )
+
+            response_body = json.loads(response.content)
+            subject_1 = response_body["subjects"][0]["subject"]["subject"]
+            subject_2 = response_body["subjects"][1]["subject"]["subject"]
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("subjects", response_body)
+            self.assertEqual(subject_1["id"], "user-12345")
+            self.assertEqual(subject_1["type"]["namespace"], "rbac")
+            self.assertEqual(subject_1["type"]["name"], "principal")
+            self.assertEqual(subject_2["id"], "user-67891")
+            self.assertEqual(subject_2["type"]["namespace"], "rbac")
+            self.assertEqual(subject_2["type"]["name"], "principal")
+
+    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.create_client_channel")
+    def test_lookup_subjects_with_subject_relation(self, mock_create_channel, mock_get_token):
+        """Test a request to lookup_subjects endpoint with optional subject_relation parameter."""
+
+        mock_stub = MagicMock()
+        mock_response = lookup_pb2.LookupSubjectsResponse(
+            subject=common_pb2.SubjectReference(
+                relation="member",
+                subject=common_pb2.ObjectReference(
+                    type=common_pb2.ObjectType(namespace="rbac", name="group"), id="group-12345"
+                ),
+            )
+        )
+
+        mock_stub.LookupSubjects.return_value = [mock_response]
+
+        with patch("internal.views.lookup_pb2_grpc.KesselLookupServiceStub", return_value=mock_stub):
+
+            request_body = {
+                "resource": {
+                    "type": {"namespace": "rbac", "name": "role_binding"},
+                    "id": "binding-123",
+                },
+                "relation": "subject",
+                "subject_type": {"namespace": "rbac", "name": "group"},
+                "subject_relation": "member",
+            }
+
+            response = self.client.post(
+                "/_private/api/relations/lookup_subjects/",
+                request_body,
+                format="json",
+                **self.request.META,
+            )
+
+            response_body = json.loads(response.content)
+            self.assertEqual(response.status_code, 200)
+            self.assertIn("subjects", response_body)
+            subject = response_body["subjects"][0]["subject"]
+            self.assertEqual(subject["relation"], "member")
+            self.assertEqual(subject["subject"]["id"], "group-12345")
+
+    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.create_client_channel")
+    def test_lookup_subjects_empty(self, mock_create_channel, mock_get_token):
+        """Test a request to lookup_subjects endpoint returns the correct response when no subjects are found."""
+
+        mock_stub = MagicMock()
+
+        mock_stub.LookupSubjects.return_value = []
+
+        with patch("internal.views.lookup_pb2_grpc.KesselLookupServiceStub", return_value=mock_stub):
+
+            request_body = {
+                "resource": {
+                    "type": {"namespace": "rbac", "name": "workspace"},
+                    "id": "workspace-123",
+                },
+                "relation": "user_grant",
+                "subject_type": {"namespace": "rbac", "name": "principal"},
+            }
+
+            response = self.client.post(
+                "/_private/api/relations/lookup_subjects/",
+                request_body,
+                format="json",
+                **self.request.META,
+            )
+            self.assertEqual(response.status_code, 204)
+
+    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.create_client_channel", side_effect=RpcError("Simulated GRPC error"))
+    def test_lookup_subjects_grpc_error(self, mock_channel, mock_token):
+        """Test a request to lookup_subjects endpoint returns the correct response in case of grpc error."""
+
+        request_body = {
+            "resource": {
+                "type": {"namespace": "rbac", "name": "workspace"},
+                "id": "workspace-123",
+            },
+            "relation": "user_grant",
+            "subject_type": {"namespace": "rbac", "name": "principal"},
+        }
+
+        response = self.client.post(
+            "/_private/api/relations/lookup_subjects/",
+            request_body,
+            format="json",
+            **self.request.META,
+        )
+        response_body = json.loads(response.content)
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("detail", response_body)
+        self.assertIn("error", response_body)
+        self.assertEqual(response_body["detail"], "Error occurred in gRPC call")
+        self.assertEqual(response_body["error"], "Simulated GRPC error")
+
+    @patch("internal.views.create_client_channel", side_effect=Exception("Simulated internal error"))
+    def test_lookup_subjects_error(self, mock_channel):
+        """Test a request to lookup_subjects endpoint returns the correct response in case of an error."""
+
+        request_body = {
+            "resource": {
+                "type": {"namespace": "rbac", "name": "workspace"},
+                "id": "workspace-123",
+            },
+            "relation": "user_grant",
+            "subject_type": {"namespace": "rbac", "name": "principal"},
+        }
+
+        response = self.client.post(
+            "/_private/api/relations/lookup_subjects/",
+            request_body,
+            format="json",
+            **self.request.META,
+        )
+        response_body = json.loads(response.content)
+        self.assertEqual(response.status_code, 500)
+        self.assertIn("detail", response_body)
+        self.assertIn("error", response_body)
+        self.assertEqual(response_body["detail"], "Error occurred in call to lookup subjects endpoint")
+        self.assertEqual(response_body["error"], "Simulated internal error")
+
+    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.create_client_channel")
+    def test_lookup_subjects_invalid_body(self, mock_create_channel, mock_get_token):
+        """Test a request to lookup_subjects endpoint returns the correct response in case of input validation failure."""
+        request_body = {
+            "invalid_resource": {
+                "type": {"namespace": "rbac", "name": "workspace"},
+                "id": "workspace-123",
+            },
+            "relation": "user_grant",
+            "subject_type": {"namespace": "rbac", "name": "principal"},
+        }
+
+        response = self.client.post(
+            "/_private/api/relations/lookup_subjects/",
+            request_body,
+            format="json",
+            **self.request.META,
+        )
+        response_body = json.loads(response.content)
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(response_body["detail"], "Invalid request body provided in request to lookup_subjects.")
 
 
 class InternalInventoryViewsetTests(BaseInternalViewsetTests):

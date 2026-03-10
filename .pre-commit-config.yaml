@@ -9,7 +9,7 @@ repos:
     pass_filenames: false
     require_serial: true
 - repo: https://github.com/psf/black
-  rev: 26.1.0
+  rev: 26.3.0
   hooks:
   - id: black
     args: ["--check", "-l", "119", "-t", "py312", "rbac", "tests", "--diff"]
@@ -21,7 +21,13 @@ repos:
   - id: end-of-file-fixer
   - id: debug-statements
 - repo: https://github.com/adamchainz/django-upgrade
-  rev: 1.29.1
+  rev: 1.30.0
   hooks:
     - id: django-upgrade
       args: [--target-version, "5.2"]
+-   repo: https://github.com/python-openapi/openapi-spec-validator
+    rev: 0.8.4
+    hooks:
+    -   id: openapi-spec-validator
+        files: ^(docs/source/specs/|rbac/internal/specs/).*\.(yaml|yml|json)$
+        exclude: (package(-lock)?\.json|tspconfig\.yaml|rbac/internal/specs/openapi\.json)$

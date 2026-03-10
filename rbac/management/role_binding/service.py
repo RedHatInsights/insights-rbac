@@ -17,44 +17,82 @@
 """Service layer for role binding management."""
 
 import logging
-from typing import Iterable, Literal, Optional, Sequence
+from dataclasses import dataclass
+from typing import Iterable, Optional, Sequence
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Max, Prefetch, Q, QuerySet
-from django.db.models.aggregates import Count
-from google.protobuf import json_format
-from internal.jwt_utils import JWTManager, JWTProvider
-from kessel.relations.v1beta1 import common_pb2, lookup_pb2, lookup_pb2_grpc
-from management.cache import JWTCache
+from django.db.models import Count, Max, Prefetch, Q, QuerySet, TextChoices
+from management.atomic_transactions import atomic
+from management.exceptions import InvalidFieldError, NotFoundError, RequiredFieldError
 from management.group.model import Group
 from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
 from management.permission.scope_service import Scope
 from management.principal.model import Principal
+from management.relation_replicator.noop_replicator import NoopReplicator
+from management.relation_replicator.outbox_replicator import OutboxReplicator
+from management.relation_replicator.relation_replicator import (
+    PartitionKey,
+    RelationReplicator,
+    ReplicationEvent,
+    ReplicationEventType,
+)
+from management.relation_replicator.types import RelationTuple
 from management.role.platform import platform_v2_role_uuid_for
-from management.role.v2_model import PlatformRoleV2, RoleBinding, RoleBindingGroup, RoleBindingPrincipal
+from management.role.v2_model import PlatformRoleV2, RoleV2
+from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
+from management.role_binding.util import lookup_binding_subjects
+from management.subject import Subject, SubjectType
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
-from management.utils import create_client_channel_relation
 from management.workspace.model import Workspace
 
 from api.models import Tenant
 
-SubjectType = Literal["group", "user"]
+
+class ExcludeSources(TextChoices):
+    """Enum for exclude_sources query parameter values."""
+
+    DIRECT = "direct", "Exclude direct bindings"
+    INDIRECT = "indirect", "Exclude inherited bindings"
+    NONE = "none", "Show all bindings"
+
+
+@dataclass
+class UpdateRoleBindingResult:
+    """Result of updating role bindings for a subject on a resource."""
+
+    subject_type: str
+    roles: list[RoleV2]
+    resource_id: str
+    resource_type: str
+    subject: Group | Principal
+    resource_name: Optional[str] = None
+
 
 logger = logging.getLogger(__name__)
 
-# Lazily instantiate the JWT helpers once so all requests reuse the same objects.
-_jwt_cache = JWTCache()
-_jwt_provider = JWTProvider()
-_jwt_manager = JWTManager(_jwt_provider, _jwt_cache)
+
+@dataclass
+class CreateBindingRequest:
+    """Typed input for a single role binding creation."""
+
+    role_id: str
+    resource_type: str
+    resource_id: str
+    subject_type: str
+    subject_id: str
 
 
 class RoleBindingService:
     """Service for role binding queries and operations."""
 
-    def __init__(self, tenant: Tenant):
-        """Initialize the service with a tenant."""
+    def __init__(self, tenant: Tenant, replicator: RelationReplicator | None = None):
+        """Initialize the service with a tenant and optional replicator."""
         self.tenant = tenant
+        if settings.REPLICATION_TO_RELATION_ENABLED:
+            self._replicator = replicator if replicator is not None else OutboxReplicator()
+        else:
+            self._replicator = NoopReplicator()
 
     def get_role_bindings_by_subject(self, params: dict) -> QuerySet:
         """Get role bindings grouped by subject from a dictionary of parameters.
@@ -74,23 +112,25 @@ class RoleBindingService:
         resource_id = params["resource_id"]
         resource_type = params["resource_type"]
         subject_id = params.get("subject_id")
-        include_inherited = params.get("parent_role_bindings", False)
+        exclude_sources = params.get("exclude_sources", ExcludeSources.NONE)
 
         # Ensure default bindings exist (lazy creation)
         self._ensure_default_bindings_exist()
 
-        # If parent_role_bindings is requested, lookup inherited binding UUIDs via Relations API
         binding_uuids = None
+        exclude_direct = exclude_sources == ExcludeSources.DIRECT
+        include_inherited = exclude_sources in (ExcludeSources.DIRECT, ExcludeSources.NONE)
+
         if include_inherited:
             binding_uuids = self._lookup_binding_uuids_via_relations(resource_type, resource_id)
 
-        if subject_type == "user":
+        if subject_type == SubjectType.USER:
             # Build user queryset
             queryset = self._build_user_queryset(resource_id, resource_type, binding_uuids)
             queryset = self._apply_user_filters(queryset, subject_id)
         else:
             # Default to group queryset (includes when subject_type is None or "group")
-            queryset = self._build_base_queryset(resource_id, resource_type, binding_uuids)
+            queryset = self._build_base_queryset(resource_id, resource_type, binding_uuids, exclude_direct=exclude_direct)
             queryset = self._apply_subject_filters(queryset, subject_type, subject_id)
 
         return queryset
@@ -100,7 +140,7 @@ class RoleBindingService:
 
         Args:
             resource_id: The resource identifier
-            resource_type: The type of resource (e.g., 'workspace')
+            resource_type: The type of resource (e.g., 'workspace', 'tenant')
 
         Returns:
             Resource name or None if not found
@@ -112,6 +152,8 @@ class RoleBindingService:
             except Workspace.DoesNotExist:
                 logger.warning(f"Workspace {resource_id} not found for tenant {self.tenant}")
                 return None
+        if resource_type == "tenant" and resource_id == self.tenant.tenant_resource_id():
+            return self.tenant.tenant_name
         return None
 
     def build_context(self, params: dict) -> dict:
@@ -135,8 +177,93 @@ class RoleBindingService:
             "subject_type": params.get("subject_type"),
         }
 
+    @atomic
+    def batch_create(self, requests: list[CreateBindingRequest]) -> list[dict]:
+        """Create multiple role bindings."""
+        roles = self._get_roles(list({req.role_id for req in requests}))
+        roles_by_uuid = {str(r.uuid): r for r in roles}
+        roles_by_id = {r.id: r for r in roles}
+
+        subjects_by_uuid = self._resolve_subjects(requests)
+
+        for resource_type, resource_id in {(r.resource_type, r.resource_id) for r in requests}:
+            self._validate_resource(resource_type, resource_id)
+
+        access_groups = self._group_by_subject_resource(requests, roles_by_uuid)
+        all_tuples_to_add: list[RelationTuple] = []
+
+        for key, role_ids in access_groups.items():
+            subject_type, subject_id, resource_type, resource_id = key
+            subject = subjects_by_uuid[subject_id]
+
+            created, linked = self._add_access(subject, resource_type, resource_id, roles_by_id, role_ids)
+            tuples_add, _ = RoleBinding.replication_tuples(
+                subject=subject, bindings_created=created, subject_linked_to=linked
+            )
+            all_tuples_to_add.extend(tuples_add)
+
+        self._replicate_tuples(all_tuples_to_add, [], ReplicationEventType.BATCH_CREATE_ROLE_BINDING)
+
+        resource_names = self._compute_resource_names(requests)
+        result = [
+            {
+                "role": roles_by_uuid[req.role_id],
+                "subject_type": req.subject_type,
+                "subject": subjects_by_uuid[req.subject_id],
+                "resource_type": req.resource_type,
+                "resource_id": req.resource_id,
+                "resource_name": resource_names[(req.resource_type, req.resource_id)],
+            }
+            for req in requests
+        ]
+
+        logger.info("Created %d role binding(s) for tenant %s", len(result), self.tenant.org_id)
+        return result
+
+    def _resolve_subjects(self, requests: list[CreateBindingRequest]) -> dict[str, Group | Principal]:
+        """Batch-resolve all subjects, raising NotFoundError for any missing."""
+        group_uuids = {r.subject_id for r in requests if r.subject_type == SubjectType.GROUP}
+        user_uuids = {r.subject_id for r in requests if r.subject_type == SubjectType.USER}
+
+        groups_by_uuid = Subject.objects.groups(group_uuids)
+        missing = group_uuids - set(groups_by_uuid.keys())
+        if missing:
+            raise NotFoundError(SubjectType.GROUP, ", ".join(missing))
+
+        principals_by_uuid = Subject.objects.users(user_uuids)
+        missing = user_uuids - set(principals_by_uuid.keys())
+        if missing:
+            raise NotFoundError(SubjectType.USER, ", ".join(missing))
+
+        return {**groups_by_uuid, **principals_by_uuid}
+
+    @staticmethod
+    def _group_by_subject_resource(
+        requests: list[CreateBindingRequest],
+        roles_by_uuid: dict[str, RoleV2],
+    ) -> dict[tuple, set[int]]:
+        """Group requests into (subject_type, subject_id, resource_type, resource_id) -> role PKs."""
+        groups: dict[tuple, set[int]] = {}
+        for req in requests:
+            key = (req.subject_type, req.subject_id, req.resource_type, req.resource_id)
+            groups.setdefault(key, set()).add(roles_by_uuid[req.role_id].id)
+        return groups
+
+    def _compute_resource_names(self, requests: list[CreateBindingRequest]) -> dict[tuple[str, str], str | None]:
+        """Resolve display names for each unique resource."""
+        result: dict[tuple[str, str], str | None] = {}
+        for req in requests:
+            key = (req.resource_type, req.resource_id)
+            if key not in result:
+                result[key] = self.get_resource_name(req.resource_id, req.resource_type)
+        return result
+
     def _build_base_queryset(
-        self, resource_id: str, resource_type: str, binding_uuids: Optional[Sequence[str]] = None
+        self,
+        resource_id: str,
+        resource_type: str,
+        binding_uuids: Optional[Sequence[str]] = None,
+        exclude_direct: bool = False,
     ) -> QuerySet:
         """Build base queryset of groups with role bindings for a resource.
 
@@ -144,19 +271,25 @@ class RoleBindingService:
             resource_id: The resource identifier
             resource_type: The type of resource
             binding_uuids: Optional list of binding UUIDs to include (for inherited bindings)
+            exclude_direct: If True, exclude direct bindings and only show inherited
 
         Returns:
             Annotated QuerySet of Group objects
         """
-        # Build filter for bindings - either by resource or by explicit UUIDs
-        if binding_uuids is not None:
-            # Include both direct bindings and inherited bindings by UUID
+        if exclude_direct and binding_uuids is None:
+            # Relations API failed — cannot determine inherited bindings, return empty
+            return Group.objects.none()
+        elif exclude_direct and binding_uuids is not None:
+            # Only inherited bindings by UUID (exclude direct)
+            binding_filter = Q(role_binding_entries__binding__uuid__in=binding_uuids)
+        elif binding_uuids is not None:
+            # Both direct and inherited bindings (exclude_sources=none)
             binding_filter = Q(
                 role_binding_entries__binding__resource_type=resource_type,
                 role_binding_entries__binding__resource_id=resource_id,
             ) | Q(role_binding_entries__binding__uuid__in=binding_uuids)
         else:
-            # Only direct bindings for the specified resource
+            # Only direct bindings (exclude_sources=indirect)
             binding_filter = Q(
                 role_binding_entries__binding__resource_type=resource_type,
                 role_binding_entries__binding__resource_id=resource_id,
@@ -225,7 +358,7 @@ class RoleBindingService:
         if subject_type:
             # For group queryset, only 'group' subject type is valid
             # 'user' type is handled separately in _build_user_queryset
-            if subject_type != "group":
+            if subject_type != SubjectType.GROUP:
                 # Filter out all results for unsupported subject types
                 return queryset.none()
 
@@ -323,86 +456,13 @@ class RoleBindingService:
 
         return queryset
 
-    def _parse_resource_type(self, resource_type: str) -> tuple[str, str]:
-        """Parse resource type into namespace and name.
-
-        Args:
-            resource_type: Resource type string, optionally prefixed with namespace
-                          (e.g., "workspace" or "rbac/workspace")
-
-        Returns:
-            Tuple of (namespace, name)
-        """
-        if "/" in resource_type:
-            parts = resource_type.split("/", 1)
-            return (parts[0], parts[1])
-        return ("rbac", resource_type)  # Default namespace
-
     def _lookup_binding_uuids_via_relations(self, resource_type: str, resource_id: str) -> Optional[list[str]]:
-        """Use the Relations API to resolve binding UUIDs that affect the given resource."""
-        if not settings.RELATION_API_SERVER:
-            logger.warning("RELATION_API_SERVER is not configured; skipping inheritance lookup.")
-            return None
+        """Use the Relations API to resolve binding UUIDs that affect the given resource.
 
-        try:
-            logger.info(
-                "Calling _lookup_binding_uuids_via_relations for resource_type=%s, resource_id=%s",
-                resource_type,
-                resource_id,
-            )
-            resource_ns, resource_name = self._parse_resource_type(resource_type)
-            token = _jwt_manager.get_jwt_from_redis()
-            metadata = [("authorization", f"Bearer {token}")] if token else []
-            binding_ids = set()
-
-            with create_client_channel_relation(settings.RELATION_API_SERVER) as channel:
-                stub = lookup_pb2_grpc.KesselLookupServiceStub(channel)
-
-                # Build request in a way that is compatible with multiple proto versions.
-                request_kwargs = {
-                    # Mirrors: zed permission lookup-subjects rbac/workspace <id> user_grant rbac/role_binding
-                    "resource": common_pb2.ObjectReference(
-                        type=common_pb2.ObjectType(namespace=resource_ns, name=resource_name),
-                        id=str(resource_id),
-                    ),
-                    "subject_type": common_pb2.ObjectType(namespace="rbac", name="role_binding"),
-                }
-
-                # Newer API versions use a 'permission' field; older ones may use 'relation'.
-                # In the current schema, the permission is `user_grant` on rbac/workspace.
-                request_fields = lookup_pb2.LookupSubjectsRequest.DESCRIPTOR.fields_by_name
-                if "permission" in request_fields:
-                    request_kwargs["permission"] = "role_binding_view"
-                elif "relation" in request_fields:
-                    request_kwargs["relation"] = "t_binding"
-
-                request = lookup_pb2.LookupSubjectsRequest(**request_kwargs)
-                logger.info("LookupSubjects request payload: %s", request)
-
-                responses: Iterable[lookup_pb2.LookupSubjectsResponse] = stub.LookupSubjects(
-                    request, metadata=metadata
-                )
-                for idx, response in enumerate(responses, start=1):
-                    payload = json_format.MessageToDict(response)
-                    logger.info("LookupSubjects response #%s: %s", idx, payload)
-                    subject = payload.get("subject", {})
-                    subject_id = subject.get("id") or subject.get("subject", {}).get("id")
-                    if subject_id:
-                        logger.info("Adding binding subject_id from Relations: %s", subject_id)
-                        binding_ids.add(subject_id)
-
-            result = list(binding_ids)
-            logger.info(
-                "Resolved %d binding UUID(s) via Relations for resource_type=%s, resource_id=%s: %s",
-                len(result),
-                resource_type,
-                resource_id,
-                result,
-            )
-            return result
-        except Exception:  # noqa: BLE001
-            logger.exception("Failed to lookup inherited bindings through Relations")
-            return None
+        Uses the recursive 'binding' relation to find role_bindings on this resource
+        and any parent resources in the hierarchy.
+        """
+        return lookup_binding_subjects(resource_type, resource_id)
 
     def _ensure_default_bindings_exist(self) -> None:
         """Lazily create default role bindings if they don't exist.
@@ -661,3 +721,309 @@ class RoleBindingService:
             )
         except Exception as e:
             logger.error(f"Failed to restore default bindings for tenant {self.tenant.org_id}: {e}")
+
+    @atomic
+    def update_role_bindings_for_subject(
+        self,
+        resource_type: str,
+        resource_id: str,
+        subject_type: str,
+        subject_id: str,
+        role_ids: list[str],
+    ) -> UpdateRoleBindingResult:
+        """Update role bindings for a subject on a resource.
+
+        This replaces all existing role bindings for the subject on the resource
+        with the provided roles.
+
+        Args:
+            resource_type: The type of resource (e.g., 'workspace')
+            resource_id: The resource identifier
+            subject_type: The type of subject ('group' or 'user')
+            subject_id: The subject identifier (UUID)
+            role_ids: List of role UUIDs to assign
+
+        Returns:
+            UpdateRoleBindingResult with the updated binding information
+
+        Raises:
+            UnsupportedSubjectTypeError: If the subject type is not supported
+            NotFoundError: If the subject or resource cannot be found
+            InvalidFieldError: If one or more roles cannot be found
+        """
+        self._validate_resource(resource_type, resource_id)
+
+        roles = self._get_roles(role_ids)
+
+        subject = Subject.objects.by_type(type=subject_type, id=subject_id)
+
+        self._replace_role_bindings(
+            resource_type=resource_type,
+            resource_id=resource_id,
+            subject=subject.entity,
+            roles=roles,
+        )
+
+        result = UpdateRoleBindingResult(
+            subject_type=subject_type,
+            roles=roles,
+            resource_id=resource_id,
+            resource_type=resource_type,
+            subject=subject.entity,
+            resource_name=self.get_resource_name(resource_id, resource_type),
+        )
+
+        logger.info(
+            "Updated role bindings for %s '%s' on %s '%s': %d roles assigned",
+            subject_type,
+            subject_id,
+            resource_type,
+            resource_id,
+            len(roles),
+        )
+
+        return result
+
+    def _validate_resource(self, resource_type: str, resource_id: str) -> None:
+        """Validate that the resource exists and belongs to this tenant.
+
+        Only resource types with a local table (currently workspace) are
+        checked for existence.  All other types are accepted as is because
+        there is no local record to validate against.
+
+        TODO: check in inventory API for existence of the resource.
+
+        Args:
+            resource_type: The type of resource (e.g., ``"workspace"``)
+            resource_id: The resource identifier
+
+        Raises:
+            RequiredFieldError: If resource_type or resource_id is empty
+            NotFoundError: If the resource cannot be found for this tenant
+        """
+        if not resource_type:
+            raise RequiredFieldError("resource_type")
+
+        if not resource_id:
+            raise RequiredFieldError("resource_id")
+
+        if resource_type == "workspace":
+            if not Workspace.objects.exists_for_tenant(resource_id, tenant=self.tenant):
+                raise NotFoundError(resource_type, resource_id)
+
+        if resource_type == "tenant":
+            expected_resource_id = self.tenant.tenant_resource_id()
+            if expected_resource_id is None or resource_id != expected_resource_id:
+                raise NotFoundError(resource_type, resource_id)
+
+    def _get_roles(self, role_ids: list[str]) -> list[RoleV2]:
+        """Get assignable roles by their UUIDs, validating all exist.
+
+        Uses RoleV2.objects.assignable() to filter to roles that can be
+        assigned to bindings (custom + seeded, not platform).
+
+        Raises:
+            RequiredFieldError: If role_ids is empty
+            InvalidFieldError: If any requested role UUIDs don't exist or aren't assignable
+        """
+        if not role_ids:
+            raise RequiredFieldError("roles")
+
+        roles = list(RoleV2.objects.filter(uuid__in=role_ids).assignable())
+
+        found_ids = {str(r.uuid) for r in roles}
+        requested_ids = set(role_ids)
+
+        if found_ids != requested_ids:
+            missing = list(requested_ids - found_ids)
+            raise InvalidFieldError("roles", f"The following roles do not exist: {', '.join(missing)}")
+
+        return roles
+
+    def _replace_role_bindings(
+        self,
+        resource_type: str,
+        resource_id: str,
+        subject: Group | Principal,
+        roles: Sequence[RoleV2],
+    ) -> None:
+        """Replace all role bindings for a subject on a resource.
+
+        Computes the diff between current and desired roles, then only
+        adds/removes what actually changed. No-ops when the state already matches.
+
+        TODO: Refactor to move single-instance business logic (e.g. subject
+        linking/unlinking) into the RoleBinding model, keeping only
+        cross-instance CRUD orchestration in the service.
+
+        Args:
+            resource_type: The type of resource (e.g., 'workspace')
+            resource_id: The resource identifier
+            subject: The subject (Group or Principal) to update bindings for
+            roles: The roles to assign to the subject
+        """
+        # 1. Query current bindings for this subject on this resource
+        current_bindings = RoleBinding.objects.for_resource(resource_type, resource_id, self.tenant)
+        if isinstance(subject, Group):
+            current_bindings = current_bindings.filter(group_entries__group=subject)
+        else:
+            current_bindings = current_bindings.filter(principal_entries__principal=subject)
+
+        # 2. Compute the diff
+        current_role_ids = {b.role_id for b in current_bindings}
+        desired_role_ids = {r.id for r in roles}
+
+        access_to_add = desired_role_ids - current_role_ids
+        access_to_remove = current_role_ids - desired_role_ids
+
+        # 3. No-op: nothing to add or remove
+        if not access_to_add and not access_to_remove:
+            return
+
+        bindings_created: list[RoleBinding] = []
+        bindings_deleted: list[RoleBinding] = []
+        subject_linked_to: list[RoleBinding] = []
+        subject_unlinked_from: list[RoleBinding] = []
+
+        # 4. Remove: unlink subject from roles no longer desired,
+        #    then delete any bindings left with no subjects attached.
+        if access_to_remove:
+            bindings_to_remove = [b for b in current_bindings if b.role_id in access_to_remove]
+            orphaned, unlinked = self._remove_access(subject, bindings_to_remove)
+            bindings_deleted.extend(orphaned)
+            subject_unlinked_from.extend(unlinked)
+
+        # 5. Add: create bindings for newly desired roles and link subject
+        if access_to_add:
+            roles_by_id = {r.id: r for r in roles}
+            created, linked = self._add_access(subject, resource_type, resource_id, roles_by_id, access_to_add)
+            bindings_created.extend(created)
+            subject_linked_to.extend(linked)
+
+        # 6. Compute replication tuples from the changeset (pure model logic)
+        tuples_to_add, tuples_to_remove = RoleBinding.replication_tuples(
+            subject=subject,
+            bindings_created=bindings_created,
+            bindings_deleted=bindings_deleted,
+            subject_linked_to=subject_linked_to,
+            subject_unlinked_from=subject_unlinked_from,
+        )
+
+        # 7. Replicate to SpiceDB via the outbox
+        self._replicate_tuples(tuples_to_add, tuples_to_remove, ReplicationEventType.UPDATE_ROLE_BINDINGS_FOR_SUBJECT)
+
+    def _remove_access(
+        self,
+        subject: Group | Principal,
+        bindings: Sequence[RoleBinding],
+    ) -> tuple[list[RoleBinding], list[RoleBinding]]:
+        """Remove a subject from bindings, cleaning up orphaned bindings.
+
+        Returns:
+            (orphaned_bindings, unlinked_bindings):
+            - orphaned_bindings: bindings that had no subjects left and were deleted
+            - unlinked_bindings: bindings the subject was unlinked from
+        """
+        binding_ids = [b.id for b in bindings]
+
+        # 1. Unlink: remove subject from these bindings
+        if isinstance(subject, Group):
+            RoleBindingGroup.objects.filter(group=subject, binding_id__in=binding_ids).delete()
+        else:
+            RoleBindingPrincipal.objects.filter(principal=subject, binding_id__in=binding_ids).delete()
+
+        # 2. Cleanup: delete any bindings that are now orphaned
+        orphaned = list(RoleBinding.objects.filter(id__in=binding_ids).orphaned())
+        if orphaned:
+            RoleBinding.objects.filter(id__in=[b.id for b in orphaned]).delete()
+
+        return orphaned, list(bindings)
+
+    def _add_access(
+        self,
+        subject: Group | Principal,
+        resource_type: str,
+        resource_id: str,
+        roles_by_id: dict,
+        role_ids: set,
+    ) -> tuple[list[RoleBinding], list[RoleBinding]]:
+        """Create or find bindings for roles and link the subject.
+
+        Uses bulk operations to minimise DB round-trips:
+        1 query  — find existing bindings for these roles on this resource
+        1 insert — bulk-create any missing bindings
+        1 insert — bulk-create through-model links (ignore_conflicts for safety)
+
+        Returns:
+            (created_bindings, linked_bindings):
+            - created_bindings: newly created RoleBinding instances
+            - linked_bindings: all bindings the subject was linked to
+        """
+        # 1. Find existing bindings for these roles on this resource
+        existing = list(
+            RoleBinding.objects.for_resource(resource_type, resource_id, self.tenant).filter(role_id__in=role_ids)
+        )
+        existing_role_ids = {b.role_id for b in existing}
+
+        # 2. Bulk-create bindings for roles that don't have one yet
+        new_bindings: list[RoleBinding] = []
+        new_role_ids = role_ids - existing_role_ids
+        if new_role_ids:
+            new_bindings = RoleBinding.objects.bulk_create(
+                [
+                    RoleBinding(
+                        role=roles_by_id[rid],
+                        resource_type=resource_type,
+                        resource_id=resource_id,
+                        tenant=self.tenant,
+                    )
+                    for rid in new_role_ids
+                ],
+            )
+            existing.extend(new_bindings)
+
+        # 3. Link subject to all bindings in one bulk insert
+        if isinstance(subject, Group):
+            RoleBindingGroup.objects.bulk_create(
+                [RoleBindingGroup(binding=b, group=subject) for b in existing],
+                ignore_conflicts=True,
+            )
+        else:
+            RoleBindingPrincipal.objects.bulk_create(
+                [RoleBindingPrincipal(binding=b, principal=subject, source="v2_api") for b in existing],
+                ignore_conflicts=True,
+            )
+
+        return new_bindings, existing
+
+    def _replicate_tuples(
+        self,
+        tuples_to_add: list[RelationTuple],
+        tuples_to_remove: list[RelationTuple],
+        event_type: ReplicationEventType,
+    ) -> None:
+        """Replicate relation tuple changes to SpiceDB via the outbox.
+
+        Writes a ``ReplicationEvent`` to the outbox table within the
+        current transaction.  The async Debezium worker picks it up
+        and sends it to SpiceDB.
+
+        No-ops when both lists are empty (avoids an empty outbox row).
+
+        Args:
+            tuples_to_add: Relation tuples to add.
+            tuples_to_remove: Relation tuples to remove.
+            event_type: The replication event type.
+        """
+        if not tuples_to_add and not tuples_to_remove:
+            return
+
+        self._replicator.replicate(
+            ReplicationEvent(
+                event_type=event_type,
+                info={"org_id": str(self.tenant.org_id)},
+                partition_key=PartitionKey.byEnvironment(),
+                add=tuples_to_add,
+                remove=tuples_to_remove,
+            )
+        )

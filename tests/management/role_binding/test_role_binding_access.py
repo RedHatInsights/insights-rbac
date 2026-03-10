@@ -81,6 +81,10 @@ class RoleBindingAccessTestMixin:
         Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.ROOT).delete()
         super().tearDown()
 
+    def _get_list_url(self):
+        """Get the list URL."""
+        return reverse("v2_management:role-bindings-list")
+
     def _get_by_subject_url(self):
         """Get the by-subject URL."""
         return reverse("v2_management:role-bindings-by-subject")
@@ -269,6 +273,49 @@ class RoleBindingAccessIntegrationTests(RoleBindingAccessTestMixin, TransactionI
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_access_granted_for_tenant_resource_type_when_org_admin(self):
+        """Test that access is granted for resource_type=tenant when user is org admin."""
+        tenant_resource_id = self.tenant.tenant_resource_id()
+        request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=True)
+        headers = request_context["request"].META
+
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource_id={tenant_resource_id}&resource_type=tenant",
+            **headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_access_denied_for_tenant_when_not_org_admin(self):
+        """Test that access is denied for resource_type=tenant when user is not org admin."""
+        tenant_resource_id = self.tenant.tenant_resource_id()
+        request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+        headers = request_context["request"].META
+
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource_id={tenant_resource_id}&resource_type=tenant",
+            **headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_access_denied_for_tenant_when_resource_id_mismatch(self):
+        """Test that access is denied when resource_type=tenant but resource_id does not match user's tenant."""
+        # Use a resource_id that doesn't match the request's tenant (e.g., another org's tenant)
+        other_tenant_resource_id = "localhost/other-org-12345"
+        request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=True)
+        headers = request_context["request"].META
+
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource_id={other_tenant_resource_id}&resource_type=tenant",
+            **headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
 
 @override_settings(V2_APIS_ENABLED=True)
@@ -488,6 +535,70 @@ class RoleBindingKesselPermissionTests(RoleBindingAccessTestMixin, TransactionId
         self.assertFalse(result)
         mock_get_principal_id.assert_not_called()
         mock_checker_class.assert_not_called()
+
+    @patch("management.permissions.role_binding_access.WorkspaceInventoryAccessChecker")
+    def test_kessel_permission_allows_tenant_resource_type_when_org_admin(self, mock_checker_class):
+        """Tenant resource type: org admin allowed without Kessel check."""
+        permission = RoleBindingKesselAccessPermission()
+
+        mock_checker = MagicMock()
+        mock_checker_class.return_value = mock_checker
+
+        tenant_resource_id = self.tenant.tenant_resource_id()
+        mock_request = Mock()
+        mock_request.user.system = False
+        mock_request.user.admin = True
+        mock_request.query_params = {
+            "resource_id": tenant_resource_id,
+            "resource_type": "tenant",
+        }
+        mock_request.tenant = self.tenant
+
+        mock_view = Mock()
+
+        result = permission.has_permission(mock_request, mock_view)
+
+        self.assertTrue(result)
+        mock_checker.check_resource_access.assert_not_called()
+
+    def test_kessel_permission_denies_tenant_when_not_org_admin(self):
+        """Tenant resource type: non-org-admin denied."""
+        permission = RoleBindingKesselAccessPermission()
+
+        tenant_resource_id = self.tenant.tenant_resource_id()
+        mock_request = Mock()
+        mock_request.user.system = False
+        mock_request.user.admin = False
+        mock_request.query_params = {
+            "resource_id": tenant_resource_id,
+            "resource_type": "tenant",
+        }
+        mock_request.tenant = self.tenant
+
+        mock_view = Mock()
+
+        result = permission.has_permission(mock_request, mock_view)
+
+        self.assertFalse(result)
+
+    def test_kessel_permission_denies_tenant_when_resource_id_mismatch(self):
+        """Tenant resource type: org admin denied when resource_id does not match tenant."""
+        permission = RoleBindingKesselAccessPermission()
+
+        mock_request = Mock()
+        mock_request.user.system = False
+        mock_request.user.admin = True
+        mock_request.query_params = {
+            "resource_id": "localhost/other-org-12345",
+            "resource_type": "tenant",
+        }
+        mock_request.tenant = self.tenant
+
+        mock_view = Mock()
+
+        result = permission.has_permission(mock_request, mock_view)
+
+        self.assertFalse(result)
 
     @patch("management.permissions.role_binding_access.get_kessel_principal_id")
     @patch("management.permissions.role_binding_access.WorkspaceInventoryAccessChecker")

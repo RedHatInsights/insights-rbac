@@ -17,6 +17,8 @@
 """Service for RoleV2 management."""
 
 import logging
+import uuid
+from typing import Iterable, Optional
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -36,12 +38,16 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEventType,
 )
 from management.role.v2_exceptions import (
+    CustomRoleRequiredError,
     InvalidRolePermissionsError,
     PermissionsNotFoundError,
     RoleAlreadyExistsError,
     RoleDatabaseError,
+    RolesNotFoundError,
 )
 from management.role.v2_model import CustomRoleV2, RoleV2
+from management.role_binding.model import RoleBinding
+from management.utils import as_uuid
 
 from api.models import Tenant
 
@@ -74,22 +80,13 @@ class RoleV2Service:
         else:
             self._replicator = NoopReplicator()
 
-    @atomic
-    def create(
-        self,
-        name: str,
-        description: str,
-        permission_data: list[dict],
-        tenant: Tenant,
-    ) -> CustomRoleV2:
-        """Create a new custom role with the given attributes."""
-        # TODO: Move this validation to RoleV2 model once a migration is created
-        # to change description from TextField(null=True, blank=True) to
-        # TextField(null=False, blank=False). Currently enforced here because
-        # the API requires description but the model doesn't yet.
-        if not description or not description.strip():
-            raise RequiredFieldError("description")
+    def _validate_and_resolve_permissions(self, permission_data: list[dict]) -> list:
+        """
+        Validate permissions and resolve permission objects.
 
+        Returns list of Permission objects.
+        Raises domain exceptions for validation failures.
+        """
         if not permission_data:
             raise RequiredFieldError("permissions")
 
@@ -104,6 +101,19 @@ class RoleV2Service:
         if not_found:
             raise PermissionsNotFoundError(list(not_found))
 
+        return permissions
+
+    @atomic
+    def create(
+        self,
+        name: str,
+        description: str,
+        permission_data: list[dict],
+        tenant: Tenant,
+    ) -> CustomRoleV2:
+        """Create a new custom role with the given attributes."""
+        permissions = self._validate_and_resolve_permissions(permission_data)
+
         try:
             role = CustomRoleV2(
                 name=name,
@@ -113,12 +123,14 @@ class RoleV2Service:
             role.save()
             role.permissions.set(permissions)
 
+            tuples_to_add, _ = CustomRoleV2.replication_tuples(role, new_permissions=permissions)
+
             self._replicator.replicate(
                 ReplicationEvent(
                     event_type=ReplicationEventType.CREATE_CUSTOM_ROLE,
                     info={"role_uuid": str(role.uuid), "org_id": str(tenant.org_id)},
                     partition_key=PartitionKey.byEnvironment(),
-                    add=role.as_tuples(),
+                    add=tuples_to_add,
                 )
             )
 
@@ -144,9 +156,78 @@ class RoleV2Service:
             logger.exception("Database error creating role '%s'", name)
             raise RoleDatabaseError()
 
+    @atomic
+    def update(
+        self,
+        role_uuid: str,
+        name: str,
+        description: str,
+        permission_data: list[dict],
+        tenant: Tenant,
+    ) -> CustomRoleV2:
+        """Update an existing custom role with the given attributes."""
+        permissions = self._validate_and_resolve_permissions(permission_data)
+
+        try:
+            # Lock the role for update to prevent concurrent modifications
+            # Prefetch permissions to ensure they're loaded for the old state snapshot
+            role = (
+                CustomRoleV2.objects.filter(uuid=role_uuid, tenant=tenant)
+                .select_for_update()
+                .prefetch_related("permissions")
+                .first()
+            )
+            if not role:
+                raise RolesNotFoundError([role_uuid])
+
+            # Capture current state before update for outbox replication
+            # The permissions are already loaded from prefetch_related above
+            old_permissions = list(role.permissions.all())
+
+            role.update(name, description)
+            role.save()
+            role.permissions.set(permissions)
+
+            tuples_to_add, tuples_to_remove = CustomRoleV2.replication_tuples(
+                role, old_permissions=old_permissions, new_permissions=permissions
+            )
+
+            self._replicator.replicate(
+                ReplicationEvent(
+                    event_type=ReplicationEventType.UPDATE_CUSTOM_ROLE,
+                    info={"role_uuid": str(role.uuid), "org_id": str(tenant.org_id)},
+                    partition_key=PartitionKey.byEnvironment(),
+                    add=tuples_to_add,
+                    remove=tuples_to_remove,
+                )
+            )
+            logger.info(
+                "Updated custom role '%s' (uuid=%s) with %d permissions for tenant %s",
+                role.name,
+                role.uuid,
+                len(permissions),
+                tenant.org_id,
+            )
+
+            return role
+
+        except RolesNotFoundError:
+            raise
+        except ValidationError as e:
+            error_msg = str(e)
+            if "name" in error_msg.lower() and "already exists" in error_msg.lower():
+                raise RoleAlreadyExistsError(name)
+            raise
+        except IntegrityError as e:
+            error_msg = str(e)
+            if "unique role v2 name per tenant" in error_msg.lower() or "unique" in error_msg.lower():
+                raise RoleAlreadyExistsError(name)
+            logger.exception("Database error updating role '%s'", name)
+            raise RoleDatabaseError()
+
     def list(self, params: dict) -> QuerySet:
-        """Get a list of roles for the tenant."""
-        queryset = RoleV2.objects.filter(tenant=self.tenant).exclude(type=RoleV2.Types.PLATFORM)
+        """Get a list of roles for the tenant, including seeded roles from the public tenant."""
+        queryset = RoleV2.objects.for_tenant(self.tenant).exclude(type=RoleV2.Types.PLATFORM)
 
         name = params.get("name")
         if name:
@@ -160,3 +241,69 @@ class RoleV2Service:
                 queryset = queryset.prefetch_related("permissions")
 
         return queryset
+
+    @atomic
+    def bulk_delete(self, ids: Iterable[str | uuid.UUID], from_tenant: Optional[Tenant] = None):
+        """Delete custom roles with the provided UUIDs."""
+        # Normalize UUIDs. These should have already been validated.
+        ids = {as_uuid(id) for id in ids}
+
+        query = RoleV2.objects.filter(uuid__in=ids)
+
+        if from_tenant is not None:
+            query = query.filter(tenant=from_tenant)
+
+        roles: list[RoleV2] = list(query)
+
+        if len(roles) != len(ids):
+            raise RolesNotFoundError(ids.difference(r.uuid for r in roles))
+
+        non_custom_roles = [r for r in roles if r.type != RoleV2.Types.CUSTOM]
+
+        if non_custom_roles:
+            error_info = ", ".join(f"{str(r.uuid)} ({r.name!r})" for r in non_custom_roles)
+            raise CustomRoleRequiredError(f"Only custom roles can be deleted, but got the following: {error_info}")
+
+        relations_to_remove = []
+        binding_pks_to_remove = []
+
+        # We must still explicitly lock the roles to prevent conflicts with old dual-write code that does not
+        # necessarily use SERIALIZABLE transactions.
+        roles_to_remove = list(
+            CustomRoleV2.objects.filter(pk__in=(r.pk for r in roles))
+            .prefetch_related("permissions")
+            .select_for_update(of=["self"])
+        )
+
+        for role_binding in (
+            RoleBinding.objects.filter(role__in=roles)
+            .prefetch_related("role", "group_entries", "principal_entries")
+            .iterator(chunk_size=1000)
+        ):
+            relations_to_remove.extend(role_binding.all_tuples())
+            binding_pks_to_remove.append(role_binding.pk)
+
+        for role in roles_to_remove:
+            to_add, to_remove = CustomRoleV2.replication_tuples(
+                role=role,
+                old_permissions=list(role.permissions.all()),
+                new_permissions=[],
+            )
+
+            if len(to_add) != 0:
+                raise AssertionError("Relations should not be added while deleting roles.")
+
+            relations_to_remove.extend(to_remove)
+
+        self._replicator.replicate(
+            ReplicationEvent(
+                event_type=ReplicationEventType.DELETE_CUSTOM_ROLE,
+                info={"role_uuids": [str(r.uuid) for r in roles_to_remove]},
+                partition_key=PartitionKey.byEnvironment(),
+                add=[],
+                remove=relations_to_remove,
+            )
+        )
+
+        RoleBinding.objects.filter(pk__in=binding_pks_to_remove).delete()
+        CustomRoleV2.objects.filter(pk__in=(r.pk for r in roles_to_remove)).delete()

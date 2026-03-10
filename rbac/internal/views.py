@@ -86,10 +86,12 @@ from management.role.relation_api_dual_write_handler import (
 )
 from management.role.serializer import BindingMappingSerializer
 from management.tasks import (
+    bulk_cleanup_orphan_bindings_in_worker,
     clean_invalid_workspace_resource_definitions_in_worker,
     fix_missing_binding_base_tuples_in_worker,
     migrate_binding_scope_in_worker,
     migrate_data_in_worker,
+    remove_unassigned_system_binding_mappings_in_worker,
     run_migrations_in_worker,
     run_ocm_performance_in_worker,
     run_seeds_in_worker,
@@ -1783,6 +1785,66 @@ def check_relation(request):
         )
 
 
+def lookup_subjects(request):
+    """POST to retrieve subjects that have a relationship with a given resource."""
+    # Parse JSON data from the POST request body
+    req_data = load_request_body(request)
+
+    if not validate_relations_input("lookup_subjects", req_data):
+        return JsonResponse({"detail": "Invalid request body provided in request to lookup_subjects."}, status=500)
+
+    # Request parameters for subject lookup on relations api from post request
+    resource_type_name = req_data["resource"]["type"]["name"]
+    resource_type_namespace = req_data["resource"]["type"]["namespace"]
+    resource_id = req_data["resource"]["id"]
+    subject_type_name = req_data["subject_type"]["name"]
+    subject_type_namespace = req_data["subject_type"]["namespace"]
+    relation = req_data["relation"]
+    subject_relation = req_data.get("subject_relation") or None
+    token = jwt_manager.get_jwt_from_redis()
+
+    try:
+        with create_client_channel(settings.RELATION_API_SERVER) as channel:
+            stub = lookup_pb2_grpc.KesselLookupServiceStub(channel)
+
+            request_data = lookup_pb2.LookupSubjectsRequest(
+                resource=common_pb2.ObjectReference(
+                    type=common_pb2.ObjectType(
+                        name=resource_type_name,
+                        namespace=resource_type_namespace,
+                    ),
+                    id=resource_id,
+                ),
+                relation=relation,
+                subject_type=common_pb2.ObjectType(
+                    name=subject_type_name,
+                    namespace=subject_type_namespace,
+                ),
+                subject_relation=subject_relation,
+            )
+
+        # Pass JWT token in metadata
+        metadata = [("authorization", f"Bearer {token}")]
+        responses = stub.LookupSubjects(request_data, metadata=metadata)
+
+        if responses:
+            response_data = []
+            for r in responses:
+                response_to_dict = json_format.MessageToDict(r)
+                response_data.append(response_to_dict)
+            json_response = {"subjects": response_data}
+            return JsonResponse(json_response, status=200)
+        return JsonResponse("No subjects found", status=204, safe=False)
+    except RpcError as e:
+        logger.error(f"gRPC error: {str(e)}")
+        return JsonResponse({"detail": "Error occurred in gRPC call", "error": str(e)}, status=400)
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
+        return JsonResponse(
+            {"detail": "Error occurred in call to lookup subjects endpoint", "error": str(e)}, status=500
+        )
+
+
 def group_assignments(request, group_uuid):
     """Calculate and check if group-principals are correct on relations api."""
     group = get_object_or_404(Group, uuid=group_uuid)
@@ -2217,11 +2279,6 @@ def migrate_binding_scope(request):
     """View method for running binding scope migration.
 
     POST /_private/api/utils/migrate_binding_scope/
-    query params:
-        write_relationships: True, False, outbox, logging (default: True)
-            - True/outbox: Create V2 models and replicate to outbox
-            - logging: Create V2 models and log what would be replicated
-            - False: Create V2 models without replication
 
     Migrates all role bindings to the correct scope based on permission scopes.
     Iterates through roles (not binding mappings) and uses dual write handlers.
@@ -2229,17 +2286,12 @@ def migrate_binding_scope(request):
     if request.method != "POST":
         return JsonResponse({"error": "Invalid method, only 'POST' is allowed."}, status=405)
 
-    write_relationships = request.GET.get("write_relationships", "True")
+    logger.info("Running binding scope migration.")
 
-    logger.info(f"Running binding scope migration: write_relationships={write_relationships}")
-
-    migrate_binding_scope_in_worker.delay(write_relationships=write_relationships)
+    migrate_binding_scope_in_worker.delay()
 
     return JsonResponse(
-        {
-            "message": "Binding scope migration is running in a background worker.",
-            "write_relationships": write_relationships,
-        },
+        {"message": "Binding scope migration is running in a background worker."},
         status=202,
     )
 
@@ -2290,30 +2342,30 @@ def fix_missing_binding_base_tuples(request):
     POST /_private/api/utils/fix_missing_binding_base_tuples/?binding_ids=1,2,3
 
     Query params:
-        binding_ids (optional): Comma-separated list of binding IDs to fix. If not provided, fixes ALL.
+        binding_uuids (optional): Comma-separated list of binding UUIDs to fix. If not provided, fixes ALL.
 
     Triggers a background worker to replicate all tuples for the specified bindings.
     Kessel/SpiceDB handles duplicate tuples gracefully.
 
     Returns 202 Accepted with a message that the worker is running.
     """
-    binding_ids_param = request.GET.get("binding_ids", "")
+    binding_uuids_param = request.GET.get("binding_uuids", "")
 
     logger.info("Fixing missing binding base tuples")
 
     # Parse binding IDs if provided
-    binding_ids = None
-    if binding_ids_param:
-        binding_ids = [int(id.strip()) for id in binding_ids_param.split(",")]
-        logger.info(f"Will fix {len(binding_ids)} specific bindings: {binding_ids}")
+    binding_uuids = None
+    if binding_uuids_param:
+        binding_uuids = [id.strip() for id in binding_uuids_param.split(",")]
+        logger.info(f"Will fix {len(binding_uuids)} specific bindings: {binding_uuids}")
 
     # Trigger the background worker
-    fix_missing_binding_base_tuples_in_worker.delay(binding_ids=binding_ids)
+    fix_missing_binding_base_tuples_in_worker.delay(binding_uuids=binding_uuids)
 
     return JsonResponse(
         {
             "message": "Fix missing binding base tuples is running in a background worker.",
-            "binding_ids": binding_ids if binding_ids else "all",
+            "binding_uuids": binding_uuids if binding_uuids else "all",
         },
         status=202,
     )
@@ -2380,6 +2432,31 @@ def cleanup_tenant_orphan_bindings(request, org_id):
 
 
 @require_http_methods(["POST"])
+def bulk_cleanup_orphan_bindings(request):
+    """
+    Clean up orphaned role binding relationships.
+
+    POST /_private/api/utils/bulk_cleanup_orphan_bindings/
+
+    Query params:
+        tenant_limit: maximum number of tenants to process (default 100, for testing)
+
+    Returns:
+        JSON response indicating the task has been queued
+    """
+    tenant_limit = int(request.GET.get("tenant_limit", 100))
+
+    try:
+        bulk_cleanup_orphan_bindings_in_worker.delay(tenant_limit=tenant_limit)
+        return JsonResponse(
+            {"message": "Cleanup enqueued in background worker.", "tenant_limit": tenant_limit}, status=202
+        )
+    except Exception as e:
+        logger.exception(f"Error fixing orphan relations, {tenant_limit=}", exc_info=True)
+        return JsonResponse({"detail": f"Error fixing orphan relations: {str(e)}"}, status=500)
+
+
+@require_http_methods(["POST"])
 def rebuild_tenant_workspace_relations(request, org_id):
     """
     Rebuild workspace parent relations for a tenant in Kessel.
@@ -2439,3 +2516,21 @@ def rebuild_tenant_workspace_relations(request, org_id):
             {"detail": f"Error rebuilding workspace relations: {str(e)}"},
             status=500,
         )
+
+
+@require_http_methods(["POST"])
+def remove_unassigned_system_binding_mappings(request):
+    """
+    Remove unassigned system binding mappings (which should not normally be created).
+
+    POST /_private/api/utils/remove_unassigned_system_binding_mappings/
+
+    Returns:
+        JSON response indicating the task has been queued
+    """
+    try:
+        remove_unassigned_system_binding_mappings_in_worker.delay()
+        return JsonResponse({"message": "Cleanup enqueued in background worker."}, status=202)
+    except Exception as e:
+        logger.exception("Error removing unassigned system binding mappings", exc_info=True)
+        return JsonResponse({"detail": f"Error removing unassigned system binding mappings: {str(e)}"}, status=500)

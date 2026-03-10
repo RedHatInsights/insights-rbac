@@ -22,10 +22,11 @@ from management.role.v2_exceptions import (
     PermissionsNotFoundError,
     RoleAlreadyExistsError,
     RoleDatabaseError,
+    RolesNotFoundError,
 )
 from management.role.v2_model import RoleV2
 from management.role.v2_service import RoleV2Service
-from management.utils import FieldSelection, FieldSelectionValidationError
+from management.utils import FieldSelection, FieldSelectionValidationError, UUIDStringField
 from rest_framework import serializers
 
 # Centralized mapping from domain exceptions to API error fields
@@ -151,6 +152,15 @@ class RoleV2ListSerializer(serializers.Serializer):
         return _validate_fields_parameter(value, RoleV2Service.DEFAULT_LIST_FIELDS)
 
 
+class RoleIdSerializer(serializers.Serializer):
+    """Serializer for a role ID reference.
+
+    Reusable nested serializer for any API that accepts role references by UUID.
+    """
+
+    id = serializers.UUIDField(required=True, help_text="Role identifier")
+
+
 class RoleV2RequestSerializer(serializers.ModelSerializer):
     """Serializer for RoleV2 create/update requests."""
 
@@ -158,7 +168,7 @@ class RoleV2RequestSerializer(serializers.ModelSerializer):
 
     id = serializers.UUIDField(source="uuid", read_only=True)
     name = serializers.CharField()
-    description = serializers.CharField()
+    description = serializers.CharField(required=False, allow_blank=True, default="")
     permissions = PermissionSerializer(many=True, write_only=True)
 
     class Meta:
@@ -192,3 +202,32 @@ class RoleV2RequestSerializer(serializers.ModelSerializer):
         except tuple(ERROR_MAPPING.keys()) as e:
             field = ERROR_MAPPING[type(e)]
             raise serializers.ValidationError({field: str(e)})
+
+    def update(self, instance, validated_data):
+        """Update an existing RoleV2 using the service layer."""
+        tenant = self.context["request"].tenant
+        permission_data = validated_data.pop("permissions", [])
+
+        try:
+            return self.service.update(
+                role_uuid=str(instance.uuid),
+                name=validated_data.get("name"),
+                description=validated_data.get("description"),
+                permission_data=permission_data,
+                tenant=tenant,
+            )
+        except RolesNotFoundError as e:
+            from rest_framework.exceptions import NotFound
+
+            raise NotFound(str(e))
+        except RequiredFieldError as e:
+            raise serializers.ValidationError({e.field_name: str(e)})
+        except tuple(ERROR_MAPPING.keys()) as e:
+            field = ERROR_MAPPING[type(e)]
+            raise serializers.ValidationError({field: str(e)})
+
+
+class RoleV2BulkDeleteRequestSerializer(serializers.Serializer):
+    """Serializer for requests to delete multiple roles."""
+
+    ids = serializers.ListField(child=UUIDStringField())

@@ -23,7 +23,7 @@ from django.core.management import call_command
 from internal.migrations.remove_orphan_relations import cleanup_tenant_orphan_bindings
 from internal.utils import (
     clean_invalid_workspace_resource_definitions,
-    get_replicator,
+    remove_unassigned_system_binding_mappings,
     replicate_missing_binding_tuples,
 )
 from management.health.healthcheck import redis_health
@@ -84,32 +84,23 @@ def migrate_data_in_worker(kwargs):
 
 
 @shared_task
-def migrate_binding_scope_in_worker(write_relationships: str = "True"):
-    """
-    Celery task to migrate role binding scopes.
-
-    Args:
-        write_relationships: How to handle replication.
-            - "True" or "outbox": Create V2 models and replicate to outbox (default)
-            - "logging": Create V2 models and log what would be replicated
-            - "False": Create V2 models without replication
-    """
-    replicator = get_replicator(write_relationships)
-    return migrate_all_role_bindings(replicator=replicator)
+def migrate_binding_scope_in_worker():
+    """Celery task to migrate role binding scopes."""
+    return migrate_all_role_bindings()
 
 
 @shared_task
-def fix_missing_binding_base_tuples_in_worker(binding_ids=None):
+def fix_missing_binding_base_tuples_in_worker(binding_uuids=None):
     """
     Celery task to fix missing base tuples for bindings.
 
     Args:
-        binding_ids (list[int], optional): List of binding IDs to fix. If None, fixes all bindings.
+        binding_uuids (list[str], optional): List of binding UUIDs to fix. If None, fixes all bindings.
 
     Returns:
         dict: Results with bindings_checked, bindings_fixed, and tuples_added count.
     """
-    return replicate_missing_binding_tuples(binding_ids=binding_ids)
+    return replicate_missing_binding_tuples(binding_uuids=binding_uuids)
 
 
 @shared_task
@@ -139,3 +130,20 @@ def cleanup_tenant_orphan_bindings_in_worker(org_id, dry_run=False):
         dict: Results with cleanup counts and migration results
     """
     return cleanup_tenant_orphan_bindings(org_id=org_id, dry_run=dry_run)
+
+
+@shared_task
+def bulk_cleanup_orphan_bindings_in_worker(tenant_limit: int):
+    """
+    Celery task to clean up orphaned relationships.
+
+    Args:
+        tenant_limit (int): maximum number of tenants to process
+    """
+    return call_command("fix_orphan_relations", tenant_limit=tenant_limit)
+
+
+@shared_task
+def remove_unassigned_system_binding_mappings_in_worker():
+    """Celery to remove unassigned system BindingMappings."""
+    return remove_unassigned_system_binding_mappings()

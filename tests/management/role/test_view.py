@@ -40,7 +40,8 @@ from management.models import (
     Workspace,
     BindingMapping,
 )
-from management.role.v2_model import CustomRoleV2, RoleBinding
+from management.role.v2_model import CustomRoleV2
+from management.role_binding.model import RoleBinding
 from migration_tool.in_memory_tuples import (
     all_of,
     InMemoryRelationReplicator,
@@ -1417,7 +1418,8 @@ class RoleViewsetTests(IdentityRequest):
         al_response = al_client.get(al_url, **self.headers)
         retrieve_data = al_response.data.get("data")
         al_list = retrieve_data
-        al_dict = al_list[1]
+        # Audit logs are now ordered by -created (newest first), so edit action is at index 0
+        al_dict = al_list[0]
 
         al_dict_principal_username = al_dict["principal_username"]
         al_dict_description = al_dict["description"]
@@ -1498,7 +1500,8 @@ class RoleViewsetTests(IdentityRequest):
             al_response = al_client.get(al_url, **self.headers)
             retrieve_data = al_response.data.get("data")
             al_list = retrieve_data
-            al_dict = al_list[1]
+            # Audit logs are now ordered by -created (newest first), so edit action is at index 0
+            al_dict = al_list[0]
 
             al_dict_principal_username = al_dict["principal_username"]
             al_dict_description = al_dict["description"]
