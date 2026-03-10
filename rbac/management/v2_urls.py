@@ -29,6 +29,13 @@ class V2Router(DefaultRouter):
 
     routes = DefaultRouter.routes + [
         Route(
+            url=r"^{prefix}:batchCreate{trailing_slash}$",
+            mapping={"post": "batch_create"},
+            name="{basename}-batch-create",
+            detail=False,
+            initkwargs={"suffix": "BatchCreate"},
+        ),
+        Route(
             url=r"^{prefix}:batchDelete{trailing_slash}$",
             mapping={"post": "bulk_destroy"},
             name="{basename}-bulk-destroy",
