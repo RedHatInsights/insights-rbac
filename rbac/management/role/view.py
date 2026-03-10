@@ -43,6 +43,7 @@ from management.role.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
 )
 from management.role.serializer import AccessSerializer, RoleDynamicSerializer, RolePatchSerializer
+from management.tenant_mapping.v2_activation import V1WriteBlockedError, assert_v1_write_allowed
 from management.utils import validate_uuid
 from management.workspace.model import Workspace
 from rest_framework import mixins, serializers, status, viewsets
@@ -274,8 +275,14 @@ class RoleViewSet(
         """
         try:
             with transaction.atomic():
+                assert_v1_write_allowed(request.tenant)
                 self.validate_role(request)
                 return super().create(request=request, args=args, kwargs=kwargs)
+        except V1WriteBlockedError:
+            return Response(
+                status=status.HTTP_403_FORBIDDEN,
+                data={"errors": [{"detail": V1WriteBlockedWhenWorkspacesEnabled.message}]},
+            )
         except IntegrityError as e:
             if DUPLICATE_KEY_ERROR_MSG in e.args[0]:
                 raise serializers.ValidationError(
@@ -391,7 +398,13 @@ class RoleViewSet(
 
         try:
             with transaction.atomic():
+                assert_v1_write_allowed(request.tenant)
                 return super().destroy(request=request, args=args, kwargs=kwargs)
+        except V1WriteBlockedError:
+            return Response(
+                status=status.HTTP_403_FORBIDDEN,
+                data={"errors": [{"detail": V1WriteBlockedWhenWorkspacesEnabled.message}]},
+            )
         except DualWriteException as e:
             return self.dual_write_exception_response(e)
 
@@ -408,7 +421,13 @@ class RoleViewSet(
 
         try:
             with transaction.atomic():
+                assert_v1_write_allowed(request.tenant)
                 return super().update(request=request, args=args, kwargs=kwargs)
+        except V1WriteBlockedError:
+            return Response(
+                status=status.HTTP_403_FORBIDDEN,
+                data={"errors": [{"detail": V1WriteBlockedWhenWorkspacesEnabled.message}]},
+            )
         except DualWriteException as e:
             return self.dual_write_exception_response(e)
 
@@ -473,8 +492,14 @@ class RoleViewSet(
         validate_uuid(kwargs.get("uuid"), "role uuid validation")
         try:
             with transaction.atomic():
+                assert_v1_write_allowed(request.tenant)
                 self.validate_role(request)
                 return super().update(request=request, args=args, kwargs=kwargs)
+        except V1WriteBlockedError:
+            return Response(
+                status=status.HTTP_403_FORBIDDEN,
+                data={"errors": [{"detail": V1WriteBlockedWhenWorkspacesEnabled.message}]},
+            )
         except DualWriteException as e:
             return self.dual_write_exception_response(e)
 

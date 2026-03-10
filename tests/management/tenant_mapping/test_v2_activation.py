@@ -1,0 +1,99 @@
+#
+# Copyright 2026 Red Hat, Inc.
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU Affero General Public License as
+# published by the Free Software Foundation, either version 3 of the
+# License, or (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU Affero General Public License for more details.
+#
+# You should have received a copy of the GNU Affero General Public License
+# along with this program.  If not, see <https://www.gnu.org/licenses/>.
+#
+"""Tests for V2 write activation state."""
+
+from django.test import TestCase
+from django.db import transaction
+
+from api.models import Tenant
+from management.tenant_mapping.model import TenantMapping
+from management.tenant_mapping.v2_activation import (
+    V1WriteBlockedError,
+    assert_v1_write_allowed,
+    ensure_v2_write_activated,
+    is_v2_write_activated,
+)
+from tests.management.role.test_dual_write import RbacFixture
+
+
+class V2ActivationTests(TestCase):
+    """Tests for V2 activation functions."""
+
+    def setUp(self):
+        self.fixture = RbacFixture()
+        self.bootstrapped = self.fixture.new_tenant(org_id="activation-test-org")
+        self.tenant = self.bootstrapped.tenant
+
+    def test_new_tenant_is_not_v2_activated(self):
+        self.assertFalse(is_v2_write_activated(self.tenant))
+
+    def test_ensure_v2_write_activated_sets_timestamp(self):
+        with transaction.atomic():
+            ensure_v2_write_activated(self.tenant)
+
+        mapping = TenantMapping.objects.get(tenant=self.tenant)
+        self.assertIsNotNone(mapping.v2_write_activated_at)
+
+    def test_ensure_v2_write_activated_is_idempotent(self):
+        with transaction.atomic():
+            ensure_v2_write_activated(self.tenant)
+
+        mapping = TenantMapping.objects.get(tenant=self.tenant)
+        first_timestamp = mapping.v2_write_activated_at
+
+        with transaction.atomic():
+            ensure_v2_write_activated(self.tenant)
+
+        mapping.refresh_from_db()
+        self.assertEqual(first_timestamp, mapping.v2_write_activated_at)
+
+    def test_is_v2_write_activated_after_activation(self):
+        self.assertFalse(is_v2_write_activated(self.tenant))
+
+        with transaction.atomic():
+            ensure_v2_write_activated(self.tenant)
+
+        self.assertTrue(is_v2_write_activated(self.tenant))
+
+    def test_assert_v1_write_allowed_before_activation(self):
+        with transaction.atomic():
+            assert_v1_write_allowed(self.tenant)
+
+    def test_assert_v1_write_blocked_after_activation(self):
+        with transaction.atomic():
+            ensure_v2_write_activated(self.tenant)
+
+        with self.assertRaises(V1WriteBlockedError):
+            with transaction.atomic():
+                assert_v1_write_allowed(self.tenant)
+
+    def test_unbootstrapped_tenant_allows_v1_writes(self):
+        """A tenant without a TenantMapping should still allow V1 writes."""
+        unbootstrapped = self.fixture.new_unbootstrapped_tenant(org_id="unboot-org")
+        self.assertFalse(is_v2_write_activated(unbootstrapped))
+
+        with transaction.atomic():
+            assert_v1_write_allowed(unbootstrapped)
+
+    def test_unbootstrapped_tenant_v2_activation_noop(self):
+        """ensure_v2_write_activated is a no-op for tenants without TenantMapping."""
+        unbootstrapped = self.fixture.new_unbootstrapped_tenant(org_id="unboot-noop-org")
+
+        with transaction.atomic():
+            ensure_v2_write_activated(unbootstrapped)
+
+        self.assertFalse(is_v2_write_activated(unbootstrapped))

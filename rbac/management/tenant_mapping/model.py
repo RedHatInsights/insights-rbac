@@ -46,6 +46,10 @@ class TenantMapping(models.Model):
 
     tenant = models.OneToOneField(Tenant, on_delete=models.CASCADE, related_name="tenant_mapping")
 
+    # Once set, this tenant has performed V2 write operations and must never
+    # be allowed to write via V1 again, regardless of feature flag state.
+    v2_write_activated_at = models.DateTimeField(null=True, blank=True, default=None)
+
     # Default group UUID specific to a Tenant. This is used for adding members of the Tenant to the access graph.
     # It is also used for custom default group UUID, so that the custom roles get bound to the default group
     # members.

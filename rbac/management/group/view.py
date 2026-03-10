@@ -68,6 +68,7 @@ from management.querysets import (
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.view import RoleViewSet
 from management.role_binding.service import RoleBindingService
+from management.tenant_mapping.v2_activation import V1WriteBlockedError, assert_v1_write_allowed, is_v2_write_activated
 from management.utils import validate_and_get_key, validate_group_name, validate_uuid
 from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
@@ -1294,17 +1295,16 @@ class GroupViewSet(
         roles = []
         validate_uuid(uuid, "group uuid validation")
         group = self.get_object()
-        if request.method in ("POST", "DELETE") and FEATURE_FLAGS.is_v2_edit_api_enabled(request.user.org_id):
+        v2_write_msg = (
+            "V1 role-to-group assignment operations are not allowed "
+            "for orgs using workspaces. Use v2 role bindings instead."
+        )
+        if request.method in ("POST", "DELETE") and (
+            FEATURE_FLAGS.is_v2_edit_api_enabled(request.user.org_id) or is_v2_write_activated(request.tenant)
+        ):
             return Response(
                 status=status.HTTP_403_FORBIDDEN,
-                data={
-                    "errors": [
-                        {
-                            "detail": "V1 role-to-group assignment operations are not allowed "
-                            "for orgs using workspaces. Use v2 role bindings instead."
-                        }
-                    ]
-                },
+                data={"errors": [{"detail": v2_write_msg}]},
             )
         if request.method == "POST":
             self.protect_default_admin_group_roles(group)
@@ -1316,10 +1316,16 @@ class GroupViewSet(
             if serializer.is_valid(raise_exception=True):
                 roles = request.data.pop(ROLES_KEY, [])
 
-            with transaction.atomic():
-                group = set_system_flag_before_update(group, request.tenant, request.user)
-
-                add_roles(group, roles, request.tenant, user=request.user)
+            try:
+                with transaction.atomic():
+                    assert_v1_write_allowed(request.tenant)
+                    group = set_system_flag_before_update(group, request.tenant, request.user)
+                    add_roles(group, roles, request.tenant, user=request.user)
+            except V1WriteBlockedError:
+                return Response(
+                    status=status.HTTP_403_FORBIDDEN,
+                    data={"errors": [{"detail": v2_write_msg}]},
+                )
 
             response_data = GroupRoleSerializerIn(group)
             response = Response(status=status.HTTP_200_OK, data=response_data.data)
@@ -1353,9 +1359,16 @@ class GroupViewSet(
             role_ids = request.query_params.get(ROLES_KEY, "").split(",")
             serializer = GroupRoleSerializerIn(data={"roles": role_ids})
             if serializer.is_valid(raise_exception=True):
-                with transaction.atomic():
-                    group = set_system_flag_before_update(group, request.tenant, request.user)
-                    remove_roles(group, role_ids, request.tenant, request.user)
+                try:
+                    with transaction.atomic():
+                        assert_v1_write_allowed(request.tenant)
+                        group = set_system_flag_before_update(group, request.tenant, request.user)
+                        remove_roles(group, role_ids, request.tenant, request.user)
+                except V1WriteBlockedError:
+                    return Response(
+                        status=status.HTTP_403_FORBIDDEN,
+                        data={"errors": [{"detail": v2_write_msg}]},
+                    )
 
                 # Save the information to audit logs
                 roles = _roles_by_query_or_ids(role_ids, request.tenant)
