@@ -71,6 +71,16 @@ class WorkspaceAccessFilterBackend(filters.BaseFilterBackend):
         # Determine the relation/permission and workspace_id based on action
         relation = permission_from_request(request, view)
         action = getattr(view, "action", None)
+
+        # For move action, use 'view' for source workspace visibility check.
+        # The actual move permission (create) is checked by WorkspaceAccessPermission
+        # for both source and target workspaces. Using 'view' here ensures that
+        # workspaces visible to the user (including root via fallback) are not
+        # filtered out, so the service layer can return proper validation errors
+        # (e.g., "cannot move root workspace") instead of 404.
+        if action == "move":
+            relation = "view"
+
         workspace_id = str(view.kwargs.get("pk")) if action in self.DETAIL_ACTIONS else None
 
         # Call is_user_allowed_v2 - handles both list and detail cases

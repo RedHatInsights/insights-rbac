@@ -244,9 +244,14 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
 
         Note: Access checks for both source and target workspaces are handled by
         WorkspaceAccessPermission.has_permission() before this method is called.
+        Source workspace visibility is checked by WorkspaceAccessFilterBackend
+        via get_object() below.
         """
-        target_workspace_id = self._parent_id_query_param_validation(request)
+        # Get source workspace first - this triggers FilterBackend access check.
+        # Must happen before target validation so that users without access to
+        # the source workspace get 404 (not a validation error for the target).
         workspace = self.get_object()
+        target_workspace_id = self._parent_id_query_param_validation(request)
         serializer = self.get_serializer(workspace)
         return serializer.move(workspace, target_workspace_id)
 

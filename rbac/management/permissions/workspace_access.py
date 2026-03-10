@@ -28,6 +28,7 @@ in management/workspace/filters.py.
 """
 
 import logging
+import uuid as uuid_module
 
 from feature_flags import FEATURE_FLAGS
 from management.permissions.system_user_utils import SystemUserAccessResult, check_system_user_access
@@ -156,13 +157,14 @@ class WorkspaceAccessPermission(permissions.BasePermission):
         # For create operations, check permission on parent workspace (ws_id)
         # ws_id is the parent workspace ID where the new workspace will be created
         if view.action == "create":
-            if not is_user_allowed_v2(request, perm, ws_id):
-                return False
-            return True
+            return self._check_create_permission_v2(request, perm, ws_id)
 
-        # For move operations, check target workspace access
-        # Source workspace access is handled by FilterBackend
+        # For move operations, check source and target workspace access
         if view.action == "move":
+            # Check source workspace access first
+            if not self._check_move_source_access_v2(request, perm, ws_id):
+                return False
+            # Then check target workspace access
             return self._check_move_target_access_v2(request)
 
         # For list/detail operations, allow request to proceed
@@ -213,6 +215,99 @@ class WorkspaceAccessPermission(permissions.BasePermission):
 
         return True
 
+    def _user_has_any_create_permission_v2(self, request) -> bool:
+        """
+        Check if the user has 'create' permission on any workspace.
+
+        Uses a list-style Kessel check (StreamedListObjects) and inspects
+        has_real_workspace_access to distinguish genuine permissions from
+        fallback workspaces (root, default, ungrouped).
+
+        Args:
+            request: The HTTP request object
+
+        Returns:
+            bool: True if user has create permission on at least one workspace
+        """
+        is_user_allowed_v2(request, "create", None)
+        return getattr(request, "has_real_workspace_access", False)
+
+    def _check_create_permission_v2(self, request, perm, ws_id) -> bool:
+        """
+        Check create permission with parent_id pre-validation.
+
+        Ensures that validation errors (invalid UUID, non-existent parent, root parent)
+        are returned to users who have create capability, rather than being masked by
+        a 403 from the Kessel check on an invalid parent workspace.
+
+        - Invalid UUID parent_id: always return True (all users get 400 from view validation)
+        - Non-existent or root parent: check general create capability; write-capable users
+          see the validation error, read-only users get 403
+        - Valid parent: normal Kessel permission check on that parent
+        """
+        from management.workspace.model import Workspace
+
+        parent_id = request.data.get("parent_id")
+
+        if parent_id:
+            # Validate UUID format - if invalid, skip permission check entirely.
+            # Invalid UUID is a format error, not a security concern.
+            try:
+                uuid_module.UUID(str(parent_id))
+            except (ValueError, AttributeError):
+                return True
+
+            # Check if parent exists and is a valid type for creating children
+            parent_ws = Workspace.objects.filter(id=parent_id, tenant=request.tenant).only("type").first()
+
+            if parent_ws is None or parent_ws.type == Workspace.Types.ROOT:
+                # Parent doesn't exist or is root (invalid for child creation).
+                # Check if user has create permission on any workspace.
+                # Write-capable users will see the validation error (400/404).
+                # Read-only users get 403.
+                return self._user_has_any_create_permission_v2(request)
+
+        # Valid parent (or no parent specified, defaults handled by ws_id) - normal check
+        if not is_user_allowed_v2(request, perm, ws_id):
+            return False
+        return True
+
+    def _check_move_source_access_v2(self, request, perm, ws_id) -> bool:
+        """
+        Check source workspace access for move operations in V2 mode.
+
+        If the source workspace is a root workspace (which cannot be moved),
+        checks general create capability so that write-capable users see
+        the validation error (400) instead of 403.
+
+        Args:
+            request: The HTTP request object
+            perm: The permission to check (e.g. 'create')
+            ws_id: The source workspace ID from workspace_from_request
+
+        Returns:
+            bool: True if the user has permission on the source workspace
+        """
+        from management.workspace.model import Workspace
+
+        if ws_id:
+            try:
+                uuid_module.UUID(str(ws_id))
+            except (ValueError, AttributeError):
+                return True
+
+            source_ws = Workspace.objects.filter(id=ws_id, tenant=request.tenant).only("type").first()
+
+            if source_ws is not None and source_ws.type == Workspace.Types.ROOT:
+                # Root workspace cannot be moved - check general create capability
+                # so write-capable users see the 400 validation error
+                return self._user_has_any_create_permission_v2(request)
+
+            if not is_user_allowed_v2(request, perm, ws_id):
+                return False
+
+        return True
+
     def _get_target_workspace_id(self, request) -> str | None:
         """
         Get and validate the target workspace ID from request body.
@@ -248,16 +343,32 @@ class WorkspaceAccessPermission(permissions.BasePermission):
         In V2, we use the Inventory API to check if the user has 'create' permission
         on the target workspace (from SpiceDB schema: create, view, edit, move, delete).
 
+        If the target is root workspace (invalid move target), checks general create
+        capability so write-capable users see the validation error (400) instead of 403.
+
         Args:
             request: The HTTP request object
 
         Returns:
             bool: True if the user has 'create' permission on target workspace
         """
+        from management.workspace.model import Workspace
+
         target_workspace_id = self._get_target_workspace_id(request)
         if target_workspace_id is None:
             # Let validation handle missing/invalid parent_id
             return True
+
+        # Pre-validate target: if it doesn't exist or is root, check general capability
+        target_ws = Workspace.objects.filter(id=target_workspace_id, tenant=request.tenant).only("type").first()
+
+        if target_ws is None or target_ws.type == Workspace.Types.ROOT:
+            # Target doesn't exist or is root (invalid move target).
+            # Write-capable users should see the validation error, not 403.
+            if self._user_has_any_create_permission_v2(request):
+                return True
+            self.message = TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE
+            return False
 
         # V2: Check 'create' permission on target workspace via Inventory API
         if not is_user_allowed_v2(request, "create", target_workspace_id):
