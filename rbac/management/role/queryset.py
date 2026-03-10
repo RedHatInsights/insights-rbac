@@ -17,7 +17,7 @@
 """QuerySet for RoleV2 lookups."""
 
 from django.db import models
-from django.db.models import Q
+from django.db.models import Count, Q
 
 
 class RoleV2QuerySet(models.QuerySet):
@@ -35,12 +35,27 @@ class RoleV2QuerySet(models.QuerySet):
         return self.exclude(type=RoleV2.Types.PLATFORM)
 
     def for_tenant(self, tenant):
-        """Return roles visible to the given tenant.
-
-        Includes the tenant's own roles and roles from the public tenant
-        (e.g. seeded roles). Does not filter by role type — callers are
-        responsible for excluding platform roles where needed.
-        """
+        """Return roles scoped to the given tenant, including seeded roles from the public tenant."""
         from api.models import Tenant
 
         return self.filter(Q(tenant=tenant) | Q(tenant__tenant_name=Tenant.PUBLIC_TENANT_NAME))
+
+    def with_fields(self, fields):
+        """Apply field-driven eager loading so the serializer never triggers lazy loads.
+
+        Args:
+            fields: Set of response field names that drive select_related,
+                    prefetch_related, and annotations.
+        """
+        qs = self
+        if "org_id" in fields:
+            qs = qs.select_related("tenant")
+        if "permissions_count" in fields:
+            qs = qs.annotate(permissions_count_annotation=Count("permissions", distinct=True))
+        if "permissions" in fields:
+            qs = qs.prefetch_related("permissions")
+        return qs
+
+    def named(self, name):
+        """Filter to roles matching an exact name."""
+        return self.filter(name__exact=name)

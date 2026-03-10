@@ -59,13 +59,16 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
     DEFAULT_CREATE_UPDATE_FIELDS = {"id", "name", "description", "permissions", "last_modified"}
 
     def get_queryset(self):
-        """Return roles visible to the requesting tenant, restricting writes to custom roles."""
-        base_qs = RoleV2.objects.for_tenant(self.request.tenant).prefetch_related("permissions")
+        """Return assignable roles for the requesting tenant. Restricts writes to custom roles."""
+        if self.action == "retrieve":
+            fields = RoleV2Service.DEFAULT_RETRIEVE_FIELDS
+        else:
+            fields = self.DEFAULT_CREATE_UPDATE_FIELDS
+        base_qs = RoleV2.objects.for_tenant(self.request.tenant).assignable().with_fields(fields)
 
         if self.action in ("list", "retrieve"):
             return base_qs
-        else:
-            return base_qs.filter(type=RoleV2.Types.CUSTOM)
+        return base_qs.filter(type=RoleV2.Types.CUSTOM)
 
     def get_serializer_context(self):
         """Add validated fields parameter to serializer context."""
@@ -143,7 +146,7 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         # Build response with field selection and permission ordering
         input_permissions = request.data.get("permissions", [])
         response_serializer = RoleV2ResponseSerializer(
-            role, context={"input_permissions": input_permissions, "fields": fields}
+            role, context={"request": request, "input_permissions": input_permissions, "fields": fields}
         )
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
@@ -160,7 +163,7 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         # Build response with field selection and permission ordering
         input_permissions = request.data.get("permissions", [])
         response_serializer = RoleV2ResponseSerializer(
-            role, context={"input_permissions": input_permissions, "fields": fields}
+            role, context={"request": request, "input_permissions": input_permissions, "fields": fields}
         )
         return Response(response_serializer.data, status=status.HTTP_200_OK)
 

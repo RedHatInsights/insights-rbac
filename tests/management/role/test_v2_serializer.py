@@ -303,7 +303,7 @@ class RoleV2SerializerFieldSelectionTests(IdentityRequest):
         serializer = RoleV2ResponseSerializer(role)
         data = serializer.data
 
-        expected = {"id", "name", "description", "permissions_count", "permissions", "last_modified"}
+        expected = {"id", "name", "description", "permissions_count", "permissions", "last_modified", "org_id"}
         self.assertEqual(set(data.keys()), expected)
 
 

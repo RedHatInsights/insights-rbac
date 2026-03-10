@@ -80,6 +80,8 @@ model Role {
     permissions_count?: int32;
     @doc("Timestamp of when the role was last modified")
     last_modified?: offsetDateTime;
+    @doc("ID of the organization that owns this role. Will not be populated if roles belong to the Public Tenant.")
+    org_id?: string;
 }
 
 /**
@@ -1382,6 +1384,7 @@ namespace Roles {
         **Examples:**
         - `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)
         - `?fields=permissions_count,last_modified` - Include only count and timestamp
+        - `?fields=id,name,org_id` - Include org_id (not returned by default; must be requested explicitly)
         """)
         @example("id,name,permissions_count")
         @query fields?: string = DefaultRoleFieldMask;
