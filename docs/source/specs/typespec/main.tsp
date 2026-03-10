@@ -1257,7 +1257,7 @@ namespace Roles {
     /**
      * Default fields returned for role detail operations (get/create/update)
      */
-    const DefaultRoleFieldMask: FieldMask = "id,name,description,permissions,last_modified,org_id";
+    const DefaultRoleFieldMask: FieldMask = "id,name,description,permissions,last_modified";
 
     @doc("Role data for create and update operations")
     @example(#{
@@ -1340,7 +1340,7 @@ namespace Roles {
         @query name?: string;
 
         @doc("Control which fields are included in the response to optimize payload size.")
-        @query fields?: FieldMask = "id,name,description,last_modified,org_id";
+        @query fields?: FieldMask = "id,name,description,last_modified";
 
         @doc("Sort by specified field(s), prefix with '-' for descending order. Allowed fields: name, last_modified.")
         @query order_by?: OrderBy = "name";
@@ -1384,7 +1384,7 @@ namespace Roles {
         **Examples:**
         - `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)
         - `?fields=permissions_count,last_modified` - Include only count and timestamp
-        - `?fields=id,name,org_id` - Include org_id (org_id is included by default)
+        - `?fields=id,name,org_id` - Include org_id (not returned by default; must be requested explicitly)
         """)
         @example("id,name,permissions_count")
         @query fields?: string = DefaultRoleFieldMask;

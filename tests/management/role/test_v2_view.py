@@ -106,9 +106,8 @@ class RoleV2RetrieveViewTest(IdentityRequest):
         self.assertEqual(data["description"], "A test custom role")
         self.assertIn("last_modified", data)
         self.assertIn("permissions", data)
-        self.assertIn("org_id", data)
-        self.assertEqual(data["org_id"], str(self.tenant.org_id))
-        # permissions_count is not in default retrieve fields
+        # org_id and permissions_count are not returned by default
+        self.assertNotIn("org_id", data)
         self.assertNotIn("permissions_count", data)
 
         # Verify permissions
@@ -250,8 +249,8 @@ class RoleV2RetrieveViewTest(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.json()
 
-        # Default retrieve fields per API spec (line 1223 in main.tsp)
-        expected_fields = {"id", "name", "description", "permissions", "last_modified", "org_id"}
+        # Default retrieve fields per API spec
+        expected_fields = {"id", "name", "description", "permissions", "last_modified"}
         actual_fields = set(data.keys())
 
         self.assertEqual(actual_fields, expected_fields)
@@ -464,12 +463,12 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertEqual(len(response.data["data"]), 1)
 
         role_data = response.data["data"][0]
-        expected_fields = {"id", "name", "description", "last_modified", "org_id"}
+        expected_fields = {"id", "name", "description", "last_modified"}
         self.assertEqual(set(role_data.keys()), expected_fields)
 
         self.assertEqual(role_data["name"], "test_role")
         self.assertEqual(role_data["description"], "Test description")
-        self.assertEqual(role_data["org_id"], str(self.tenant.org_id))
+        self.assertNotIn("org_id", role_data)
         self.assertNotIn("permissions", role_data)
         self.assertNotIn("permissions_count", role_data)
 
@@ -697,7 +696,7 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertEqual(perm["operation"], "read")
 
     def test_list_roles_with_all_available_fields(self):
-        """Test that all available fields can be requested."""
+        """Test that all available fields can be requested, including opt-in org_id."""
         url = f"{self.url}?fields=id,name,description,permissions_count,permissions,last_modified,org_id"
         response = self.client.get(url, **self.headers)
 
@@ -706,6 +705,7 @@ class RoleV2ViewSetTests(IdentityRequest):
 
         expected = {"id", "name", "description", "permissions_count", "permissions", "last_modified", "org_id"}
         self.assertEqual(set(role_data.keys()), expected)
+        self.assertEqual(role_data["org_id"], str(self.tenant.org_id))
 
     def test_list_roles_with_only_id_field(self):
         """Test minimal field request returns only id."""
