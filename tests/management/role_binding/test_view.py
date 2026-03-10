@@ -37,7 +37,7 @@ from management.models import Group, Permission, Principal, Workspace
 from management.permission.scope_service import Scope
 from management.role.definer import seed_roles
 from management.role.platform import platform_v2_role_uuid_for
-from management.role.v2_model import PlatformRoleV2, RoleV2
+from management.role.v2_model import PlatformRoleV2, RoleV2, SeededRoleV2
 from management.role.v2_service import RoleV2Service
 from management.role_binding.model import RoleBinding, RoleBindingGroup
 from management.role_binding.service import RoleBindingService
@@ -47,6 +47,19 @@ from management.tenant_service.v2 import V2TenantBootstrapService
 from migration_tool.in_memory_tuples import InMemoryRelationReplicator
 from rbac import urls
 from tests.identity_request import IdentityRequest
+
+
+def _create_seeded_role_binding(tenant, workspace, permission, role_name, group_name):
+    """Create a seeded role from the public tenant with a binding and group in the given tenant."""
+    public_tenant, _ = Tenant.objects.get_or_create(tenant_name="public")
+    seeded_role = SeededRoleV2.objects.create(name=role_name, description=role_name, tenant=public_tenant)
+    seeded_role.permissions.add(permission)
+    seeded_binding = RoleBinding.objects.create(
+        role=seeded_role, resource_type="workspace", resource_id=str(workspace.id), tenant=tenant
+    )
+    seeded_group = Group.objects.create(name=group_name, description=group_name, tenant=tenant)
+    RoleBindingGroup.objects.create(group=seeded_group, binding=seeded_binding)
+    return seeded_role, seeded_binding, seeded_group
 
 
 @override_settings(V2_APIS_ENABLED=True)
@@ -748,6 +761,62 @@ class RoleBindingListViewSetTest(IdentityRequest):
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]), 1)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_includes_bindings_with_seeded_roles(self, mock_permission):
+        """Test that role bindings referencing seeded roles from public tenant are returned."""
+        seeded_role, _, _ = _create_seeded_role_binding(
+            self.tenant, self.workspace, self.permission, "Seeded Role for Binding", "seeded_role_group"
+        )
+
+        url = self._get_list_url()
+        response = self.client.get(f"{url}?limit=100", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        returned_role_ids = {str(item["role"]["id"]) for item in response.data["data"]}
+        self.assertIn(str(seeded_role.uuid), returned_role_ids)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_filter_by_seeded_role_id(self, mock_permission):
+        """Test that filtering by a seeded role's UUID returns its bindings."""
+        seeded_role, _, _ = _create_seeded_role_binding(
+            self.tenant, self.workspace, self.permission, "Filterable Seeded Role", "filter_seeded_group"
+        )
+
+        url = self._get_list_url()
+        response = self.client.get(f"{url}?role_id={seeded_role.uuid}&fields=role(name)&limit=100", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(str(response.data["data"][0]["role"]["id"]), str(seeded_role.uuid))
+        self.assertEqual(response.data["data"][0]["role"]["name"], "Filterable Seeded Role")
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_seeded_role_binding_has_correct_role_data(self, mock_permission):
+        """Test that bindings with seeded roles include correct role name and ID in response."""
+        seeded_role, _, _ = _create_seeded_role_binding(
+            self.tenant, self.workspace, self.permission, "Detailed Seeded Role", "detail_seeded_group"
+        )
+
+        url = self._get_list_url()
+        response = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&fields=role(name)&limit=100",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        seeded_items = [item for item in response.data["data"] if str(item["role"]["id"]) == str(seeded_role.uuid)]
+        self.assertEqual(len(seeded_items), 1)
+        self.assertEqual(seeded_items[0]["role"]["name"], "Detailed Seeded Role")
 
 
 @override_settings(V2_APIS_ENABLED=True)
@@ -1682,6 +1751,50 @@ class RoleBindingViewSetTest(IdentityRequest):
             **self.headers,
         )
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_by_subject_includes_bindings_with_seeded_roles(self, mock_permission):
+        """Test that by-subject returns groups whose bindings reference seeded roles from public tenant."""
+        _, _, seeded_group = _create_seeded_role_binding(
+            self.tenant, self.workspace, self.permission, "Seeded Role for BySubject", "seeded_bysubject_group"
+        )
+
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&limit=100",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        returned_subject_ids = {str(item["subject"]["id"]) for item in response.data["data"]}
+        self.assertIn(str(seeded_group.uuid), returned_subject_ids)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_by_subject_seeded_role_appears_in_roles_list(self, mock_permission):
+        """Test that by-subject response includes seeded role ID in the roles list for a group."""
+        seeded_role, _, seeded_group = _create_seeded_role_binding(
+            self.tenant, self.workspace, self.permission, "Seeded Role in Roles List", "seeded_roles_list_group"
+        )
+
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace"
+            f"&subject_id={seeded_group.uuid}&fields=role(name)&limit=100",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        role_ids = {str(r["id"]) for r in response.data["data"][0]["roles"]}
+        self.assertIn(str(seeded_role.uuid), role_ids)
+        role_names = {r["name"] for r in response.data["data"][0]["roles"]}
+        self.assertIn("Seeded Role in Roles List", role_names)
 
 
 @override_settings(V2_APIS_ENABLED=True)
