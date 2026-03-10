@@ -693,9 +693,7 @@ class RoleV2ServiceListResourceTypeTests(IdentityRequest):
         self.root_role = RoleV2.objects.create(name="root_role", description="Root scoped", tenant=self.tenant)
         self.root_role.permissions.add(self.root_perm)
 
-        self.tenant_role = RoleV2.objects.create(
-            name="tenant_role", description="Tenant scoped", tenant=self.tenant
-        )
+        self.tenant_role = RoleV2.objects.create(name="tenant_role", description="Tenant scoped", tenant=self.tenant)
         self.tenant_role.permissions.add(self.tenant_perm)
 
         self.mixed_role = RoleV2.objects.create(
