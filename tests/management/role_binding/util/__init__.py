@@ -1,5 +1,5 @@
 #
-# Copyright 2019 Red Hat, Inc.
+# Copyright 2025 Red Hat, Inc.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -14,11 +14,4 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-
-"""API views for import organization"""
-
-# flake8: noqa
-# pylint: disable=unused-import
-from api.status.view import ready, status
-from api.openapi.view import openapi
-from api.cross_access.view import CrossAccountRequestViewSet
+"""Tests for role binding utility modules."""

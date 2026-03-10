@@ -356,7 +356,7 @@ objects:
           timeoutSeconds: 3
         readinessProbe:
           httpGet:
-            path: /api/rbac/v1/status/
+            path: /api/rbac/v1/ready/
             port: 8000
             scheme: HTTP
           initialDelaySeconds: 60
@@ -1481,7 +1481,7 @@ parameters:
   value: approval
 - description: Whether or not to bootstrap tenants using V2 logic (i.e. creating workspaces and relations).
   name: V2_BOOTSTRAP_TENANT
-  value: 'False'
+  value: 'True'
 - description: Timestamp expiration allowance on destructive actions through the internal RBAC API
   name: RBAC_DESTRUCTIVE_API_ENABLED_UNTIL
   value: ''
@@ -1591,6 +1591,9 @@ parameters:
 - description: Enable sending out notification events of Red Hat changes
   name: NOTIFICATIONS_RH_ENABLED
   value: 'False'
+- description: Enable sending out notification events (typo variant used by service deployer)
+  name: NOTIFICATONS_ENABLED
+  value: 'False'
 - name: TENANT_TRANSLATOR_HOST
   required: true
 - name: TENANT_TRANSLATOR_PORT
@@ -1685,6 +1688,7 @@ parameters:
   value: "False"
 - name: V2_APIS_ENABLED
   description: Flag to explicitly enable v2 API endpoints
+  value: 'True'
 - name: V2_READ_ONLY_API_MODE
   description: Enforce GET only on RBAC v2 APIs only
   value: 'False'
@@ -1720,7 +1724,7 @@ parameters:
   value: 'group.id'
 - description: Flag to enable returning workspace hierarchy in v1 access
   name: WORKSPACE_HIERARCHY_ENABLED
-  value: 'False'
+  value: 'True'
 - name: ADD_UNGROUPED_HOSTS_ID
   description: Add ungrouped hosts workspace id in addition to null
   value: 'False'
@@ -1735,7 +1739,7 @@ parameters:
   value: '5'
 - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
   description: When true, prevents the ability to create peer workspaces against the default workspace
-  value: 'False'
+  value: 'True'
 - name: READ_YOUR_WRITES_TIMEOUT_SECONDS
   description: Timeout in seconds for read-your-writes consistency check after workspace creation
   value: '10'
@@ -1777,10 +1781,10 @@ parameters:
   value: 300Mi
 - name: RBAC_KAFKA_CONSUMER_TOPIC
   description: The name of the topic for the RBAC Kafka consumer
-  value: 'outbox.event.rbac-consumer-replication-event'
+  value: 'outbox.event.relations-replication-event'
 - name: RBAC_KAFKA_CONSUMER_GROUP_ID
   description: The consumer group ID for the RBAC Kafka consumer
-  value: 'rbac-consumer-group'
+  value: 'connect-relations-sink-connector'
 - name: RBAC_KAFKA_CONSUMER_REPLICAS
   description: The number of replicas for the RBAC Kafka consumer (set to 0 to disable)
   value: '0'

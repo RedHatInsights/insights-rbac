@@ -1,5 +1,5 @@
 #
-# Copyright 2019 Red Hat, Inc.
+# Copyright 2025 Red Hat, Inc.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -14,11 +14,8 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
+"""Utility modules for role binding management."""
 
-"""API views for import organization"""
+from management.role_binding.util.relations_api_client import lookup_binding_subjects, parse_resource_type
 
-# flake8: noqa
-# pylint: disable=unused-import
-from api.status.view import ready, status
-from api.openapi.view import openapi
-from api.cross_access.view import CrossAccountRequestViewSet
+__all__ = ["lookup_binding_subjects", "parse_resource_type"]

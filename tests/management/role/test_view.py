@@ -1418,7 +1418,8 @@ class RoleViewsetTests(IdentityRequest):
         al_response = al_client.get(al_url, **self.headers)
         retrieve_data = al_response.data.get("data")
         al_list = retrieve_data
-        al_dict = al_list[1]
+        # Audit logs are now ordered by -created (newest first), so edit action is at index 0
+        al_dict = al_list[0]
 
         al_dict_principal_username = al_dict["principal_username"]
         al_dict_description = al_dict["description"]
@@ -1499,7 +1500,8 @@ class RoleViewsetTests(IdentityRequest):
             al_response = al_client.get(al_url, **self.headers)
             retrieve_data = al_response.data.get("data")
             al_list = retrieve_data
-            al_dict = al_list[1]
+            # Audit logs are now ordered by -created (newest first), so edit action is at index 0
+            al_dict = al_list[0]
 
             al_dict_principal_username = al_dict["principal_username"]
             al_dict_description = al_dict["description"]

@@ -16,6 +16,11 @@
 #
 """Domain exceptions for RoleV2 operations."""
 
+import uuid
+from collections.abc import Iterable
+
+from management.utils import as_uuid
+
 
 class RoleV2Error(Exception):
     """Base exception for RoleV2 domain errors."""
@@ -57,10 +62,22 @@ class InvalidRolePermissionsError(RoleV2Error):
         super().__init__(message)
 
 
-class RoleNotFoundError(RoleV2Error):
-    """Raised when attempting to access a role that does not exist."""
+class RolesNotFoundError(RoleV2Error):
+    """Raised when one or more roles cannot be found."""
 
-    def __init__(self, uuid: str):
-        """Initialize with the role UUID that was not found."""
-        self.uuid = uuid
-        super().__init__(f"Role with UUID '{uuid}' not found.")
+    def __init__(self, uuids: Iterable[str | uuid.UUID]):
+        """Initialize RolesNotFoundError with UUIDs."""
+        self.uuids = list(as_uuid(u) for u in uuids)
+
+        if len(self.uuids) == 1:
+            super().__init__(f"Role with UUID {str(self.uuids[0])!r} not found.")
+        else:
+            super().__init__(f"Roles with UUIDs {', '.join(repr(str(u)) for u in self.uuids)} not found.")
+
+
+class CustomRoleRequiredError(RoleV2Error):
+    """Raised when an operation requires a custom role, but a custom role was not provided."""
+
+    def __init__(self, message: str):
+        """Initialize the exception with a message."""
+        super().__init__(message)

@@ -16,12 +16,20 @@
 #
 """Test the RoleV2Service."""
 
+import uuid
+from unittest.mock import patch
+
 from django.test import override_settings
 from management.exceptions import RequiredFieldError
-from management.models import Permission
-from management.role.v2_exceptions import RoleAlreadyExistsError
-from management.role.v2_model import CustomRoleV2, RoleV2
+from management.models import Group, Workspace, Permission
+from management.relation_replicator.outbox_replicator import OutboxReplicator
+from management.role.definer import seed_roles
+from management.role.v2_exceptions import RoleAlreadyExistsError, RolesNotFoundError, CustomRoleRequiredError
+from management.role.v2_model import CustomRoleV2, RoleV2, SeededRoleV2, PlatformRoleV2
 from management.role.v2_service import RoleV2Service
+from management.role_binding.model import RoleBinding
+from management.role_binding.service import RoleBindingService
+from management.tenant_service import V2TenantBootstrapService
 from migration_tool.in_memory_tuples import (
     InMemoryRelationReplicator,
     InMemoryTuples,
@@ -48,6 +56,8 @@ class RoleV2ServiceTests(IdentityRequest):
         self.permission1 = Permission.objects.create(permission="inventory:hosts:read", tenant=self.tenant)
         self.permission2 = Permission.objects.create(permission="inventory:hosts:write", tenant=self.tenant)
         self.permission3 = Permission.objects.create(permission="cost:reports:read", tenant=self.tenant)
+
+        self.permission1_data = {"application": "inventory", "resource_type": "hosts", "operation": "read"}
 
     def tearDown(self):
         """Tear down RoleV2Service tests."""
@@ -106,37 +116,37 @@ class RoleV2ServiceTests(IdentityRequest):
         self.assertIn(self.permission2, role.permissions.all())
         self.assertIn(self.permission3, role.permissions.all())
 
-    def test_create_role_with_empty_description_raises_error(self):
-        """Test that creating a role with empty description raises RequiredFieldError."""
+    def test_create_role_with_empty_description_succeeds(self):
+        """Test that creating a role with empty description succeeds."""
         permission_data = [
             {"application": "inventory", "resource_type": "hosts", "operation": "read"},
         ]
 
-        with self.assertRaises(RequiredFieldError) as context:
-            self.service.create(
-                name="No Description Role",
-                description="",
-                permission_data=permission_data,
-                tenant=self.tenant,
-            )
+        role = self.service.create(
+            name="No Description Role",
+            description="",
+            permission_data=permission_data,
+            tenant=self.tenant,
+        )
 
-        self.assertEqual(context.exception.field_name, "description")
+        self.assertEqual(role.description, "")
+        self.assertEqual(role.permissions.count(), 1)
 
-    def test_create_role_with_whitespace_only_description_raises_error(self):
-        """Test that whitespace-only description raises RequiredFieldError."""
+    def test_create_role_with_whitespace_only_description_succeeds(self):
+        """Test that creating a role with whitespace-only description succeeds."""
         permission_data = [
             {"application": "inventory", "resource_type": "hosts", "operation": "read"},
         ]
 
-        with self.assertRaises(RequiredFieldError) as context:
-            self.service.create(
-                name="Whitespace Description Role",
-                description="   ",
-                permission_data=permission_data,
-                tenant=self.tenant,
-            )
+        role = self.service.create(
+            name="Whitespace Description Role",
+            description="   ",
+            permission_data=permission_data,
+            tenant=self.tenant,
+        )
 
-        self.assertEqual(context.exception.field_name, "description")
+        self.assertEqual(role.description, "   ")
+        self.assertEqual(role.permissions.count(), 1)
 
     def test_create_role_with_empty_permissions_raises_error(self):
         """Test that creating a role with empty permissions raises RequiredFieldError."""
@@ -292,8 +302,8 @@ class RoleV2ServiceTests(IdentityRequest):
         )
         self.assertEqual(len(write_tuples), 1, "Expected 1 write permission tuple")
 
-    def test_update_role_with_empty_description_raises_error(self):
-        """Test that updating a role with empty description raises RequiredFieldError."""
+    def test_update_role_with_empty_description_succeeds(self):
+        """Test that updating a role with empty description succeeds."""
         permission_data = [
             {"application": "inventory", "resource_type": "hosts", "operation": "read"},
         ]
@@ -305,16 +315,15 @@ class RoleV2ServiceTests(IdentityRequest):
             tenant=self.tenant,
         )
 
-        with self.assertRaises(RequiredFieldError) as context:
-            self.service.update(
-                role_uuid=str(role.uuid),
-                name="Test Role",
-                description="",
-                permission_data=permission_data,
-                tenant=self.tenant,
-            )
+        updated_role = self.service.update(
+            role_uuid=str(role.uuid),
+            name="Test Role",
+            description="",
+            permission_data=permission_data,
+            tenant=self.tenant,
+        )
 
-        self.assertEqual(context.exception.field_name, "description")
+        self.assertEqual(updated_role.description, "")
 
     def test_update_role_with_empty_permissions_raises_error(self):
         """Test that updating a role with empty permissions raises RequiredFieldError."""
@@ -418,6 +427,169 @@ class RoleV2ServiceTests(IdentityRequest):
             )
         )
         self.assertEqual(len(cost_tuples), 1, "Expected 1 cost:reports:read permission tuple")
+
+    # ==========================================================================
+    # Tests for bulk_delete()
+    # ==========================================================================
+
+    def test_delete_empty(self):
+        """Test that calling bulk_delete with no roles is successful."""
+        try:
+            self.service.bulk_delete([])
+        except Exception as e:
+            self.fail(f"Unexpected exception: {e}")
+
+    def test_delete_roles_across_tenants(self):
+        """Test that custom roles can be deleted."""
+        tenant2 = V2TenantBootstrapService(OutboxReplicator()).new_bootstrapped_tenant("t2").tenant
+
+        r1 = self.service.create("r1", "r1", [self.permission1_data], self.tenant)
+        r2 = self.service.create("r2", "r2", [self.permission1_data], tenant2)
+
+        self.service.bulk_delete([str(r1.uuid), str(r2.uuid)])
+
+        self.assertFalse(RoleV2.objects.filter(pk=r1.pk).exists())
+        self.assertFalse(RoleV2.objects.filter(pk=r2.pk).exists())
+
+    def test_delete_roles_within_tenant(self):
+        """Test that multiple custom roles within a tenant can be deleted."""
+        r1 = self.service.create("r1", "r1", [self.permission1_data], self.tenant)
+        r2 = self.service.create("r2", "r2", [self.permission1_data], self.tenant)
+
+        self.service.bulk_delete([str(r1.uuid), str(r2.uuid)], from_tenant=self.tenant)
+
+        self.assertFalse(RoleV2.objects.filter(pk=r1.pk).exists())
+        self.assertFalse(RoleV2.objects.filter(pk=r2.pk).exists())
+
+    def test_delete_role_without_tenant(self):
+        """Test that custom roles cannot be deleted outside the provided tenant."""
+        tenant2 = V2TenantBootstrapService(OutboxReplicator()).new_bootstrapped_tenant("t2").tenant
+
+        r1 = self.service.create("r1", "r1", [self.permission1_data], self.tenant)
+        r2 = self.service.create("r2", "r2", [self.permission1_data], tenant2)
+
+        with self.assertRaises(RolesNotFoundError) as context:
+            self.service.bulk_delete([str(r1.uuid), str(r2.uuid)], from_tenant=self.tenant)
+
+        self.assertIn(r2.uuid, context.exception.uuids)
+
+        self.assertTrue(CustomRoleV2.objects.filter(pk=r1.pk).exists())
+        self.assertTrue(CustomRoleV2.objects.filter(pk=r2.pk).exists())
+
+    def test_delete_nonexistent(self):
+        """Test that a nonexistent role cannot be deleted."""
+        fake_a = uuid.uuid4()
+        fake_b = uuid.uuid4()
+
+        with self.assertRaises(RolesNotFoundError) as context:
+            self.service.bulk_delete([str(fake_a), fake_b])
+
+        self.assertIn(fake_a, context.exception.uuids)
+        self.assertIn(fake_b, context.exception.uuids)
+
+    def test_delete_seeded_role(self):
+        """Test that a seeded role cannot be deleted."""
+        # Create some seeded roles.
+        seed_roles()
+
+        seeded_role = SeededRoleV2.objects.first()
+        custom_role = self.service.create("custom", "custom", [self.permission1_data], self.tenant)
+
+        self.assertIsNotNone(seeded_role)
+
+        with self.assertRaises(CustomRoleRequiredError) as context:
+            self.service.bulk_delete([str(seeded_role.uuid), str(custom_role.uuid)])
+
+        self.assertIn(str(seeded_role.uuid), str(context.exception))
+
+        # No role should have been deleted.
+        self.assertTrue(CustomRoleV2.objects.filter(pk=custom_role.pk).exists())
+        self.assertTrue(SeededRoleV2.objects.filter(pk=seeded_role.pk).exists())
+
+    def test_delete_platform_role(self):
+        """Test that a platform role cannot be deleted."""
+        # Create platform roles.
+        seed_roles()
+
+        platform_role = PlatformRoleV2.objects.first()
+        custom_role = self.service.create("custom", "custom", [self.permission1_data], self.tenant)
+
+        self.assertIsNotNone(platform_role)
+
+        with self.assertRaises(CustomRoleRequiredError) as context:
+            self.service.bulk_delete([str(platform_role.uuid), str(custom_role.uuid)])
+
+        self.assertIn(str(platform_role.uuid), str(context.exception))
+        self.assertTrue(PlatformRoleV2.objects.filter(pk=platform_role.pk).exists())
+
+    def test_delete_duplicate_ids(self):
+        """Test that a role is deleted if its ID is provided multiple times."""
+        role = self.service.create("role", "role", [self.permission1_data], self.tenant)
+        self.service.bulk_delete([role.uuid, str(role.uuid), str(role.uuid)])
+
+        self.assertFalse(RoleV2.objects.filter(pk=role.pk).exists())
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    def test_delete_replication(self):
+        tuples = InMemoryTuples()
+        replicator = InMemoryRelationReplicator(tuples)
+
+        V2TenantBootstrapService(replicator=replicator).bootstrap_tenant(self.tenant, force=True)
+
+        initial_tuples = set(tuples)
+
+        service = RoleV2Service(tenant=self.tenant, replicator=replicator)
+
+        def assert_permission_count(count: int, role_uuid: str):
+            self.assertEqual(
+                count,
+                tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "role", role_uuid),
+                        relation("inventory_hosts_read"),
+                        subject("rbac", "principal", "*"),
+                    )
+                ),
+            )
+
+        def assert_role_binding_group_count(count: int, role_binding_uuid: str, group_uuid: str):
+            self.assertEqual(
+                count,
+                tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "role_binding", role_binding_uuid),
+                        relation("subject"),
+                        subject("rbac", "group", group_uuid, "member"),
+                    )
+                ),
+            )
+
+        role = service.create("a role", "a description", [self.permission1_data], self.tenant)
+        assert_permission_count(1, str(role.uuid))
+
+        group = Group.objects.create(tenant=self.tenant, name="a group")
+        workspace = Workspace.objects.default(tenant=self.tenant)
+
+        RoleBindingService(tenant=self.tenant, replicator=replicator).update_role_bindings_for_subject(
+            resource_type="workspace",
+            resource_id=str(workspace.id),
+            subject_type="group",
+            subject_id=str(group.uuid),
+            role_ids=[str(role.uuid)],
+        )
+
+        role_binding = RoleBinding.objects.get(role=role)
+
+        assert_role_binding_group_count(1, role_binding_uuid=str(role_binding.uuid), group_uuid=str(group.uuid))
+
+        service.bulk_delete([str(role.uuid)])
+
+        assert_permission_count(0, str(role.uuid))
+        assert_role_binding_group_count(0, role_binding_uuid=str(role_binding.uuid), group_uuid=str(group.uuid))
+
+        # We have created a role and a role binding, then destroyed them. We should have exactly the same tuples as
+        # when we started.
+        self.assertEqual(set(tuples), initial_tuples)
 
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)

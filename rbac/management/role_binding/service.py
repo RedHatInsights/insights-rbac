@@ -18,16 +18,12 @@
 
 import logging
 from dataclasses import dataclass
-from typing import Iterable, Optional, Sequence
+from typing import Optional, Sequence
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Count, Max, Prefetch, Q, QuerySet
-from google.protobuf import json_format
-from internal.jwt_utils import JWTManager, JWTProvider
-from kessel.relations.v1beta1 import common_pb2, lookup_pb2, lookup_pb2_grpc
+from django.db.models import Count, Max, Prefetch, Q, QuerySet, TextChoices
 from management.atomic_transactions import atomic
-from management.cache import JWTCache
 from management.exceptions import InvalidFieldError, NotFoundError, RequiredFieldError
 from management.group.model import Group
 from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
@@ -45,12 +41,20 @@ from management.relation_replicator.types import RelationTuple
 from management.role.platform import platform_v2_role_uuid_for
 from management.role.v2_model import PlatformRoleV2, RoleV2
 from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
+from management.role_binding.util import lookup_binding_subjects
 from management.subject import Subject, SubjectType
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
-from management.utils import create_client_channel_relation
 from management.workspace.model import Workspace
 
 from api.models import Tenant
+
+
+class ExcludeSources(TextChoices):
+    """Enum for exclude_sources query parameter values."""
+
+    DIRECT = "direct", "Exclude direct bindings"
+    INDIRECT = "indirect", "Exclude inherited bindings"
+    NONE = "none", "Show all bindings"
 
 
 @dataclass
@@ -79,12 +83,6 @@ class CreateBindingRequest:
     subject_id: str
 
 
-# Lazily instantiate the JWT helpers once so all requests reuse the same objects.
-_jwt_cache = JWTCache()
-_jwt_provider = JWTProvider()
-_jwt_manager = JWTManager(_jwt_provider, _jwt_cache)
-
-
 class RoleBindingService:
     """Service for role binding queries and operations."""
 
@@ -111,18 +109,19 @@ class RoleBindingService:
         """
         resource_id = params["resource_id"]
         resource_type = params["resource_type"]
-        include_inherited = params.get("parent_role_bindings", False)
+        exclude_sources = params.get("exclude_sources", ExcludeSources.NONE)
 
         # Ensure default bindings exist (lazy creation)
         self._ensure_default_bindings_exist()
 
-        # If parent_role_bindings is requested, lookup inherited binding UUIDs via Relations API
         binding_uuids = None
+        exclude_direct = exclude_sources == ExcludeSources.DIRECT
+        include_inherited = exclude_sources in (ExcludeSources.DIRECT, ExcludeSources.NONE)
+
         if include_inherited:
             binding_uuids = self._lookup_binding_uuids_via_relations(resource_type, resource_id)
 
-        # Build base queryset for the specified resource
-        queryset = self._build_base_queryset(resource_id, resource_type, binding_uuids)
+        queryset = self._build_base_queryset(resource_id, resource_type, binding_uuids, exclude_direct=exclude_direct)
 
         # Apply subject filters
         queryset = self._apply_subject_filters(queryset, params.get("subject_type"), params.get("subject_id"))
@@ -134,7 +133,7 @@ class RoleBindingService:
 
         Args:
             resource_id: The resource identifier
-            resource_type: The type of resource (e.g., 'workspace')
+            resource_type: The type of resource (e.g., 'workspace', 'tenant')
 
         Returns:
             Resource name or None if not found
@@ -146,6 +145,8 @@ class RoleBindingService:
             except Workspace.DoesNotExist:
                 logger.warning(f"Workspace {resource_id} not found for tenant {self.tenant}")
                 return None
+        if resource_type == "tenant" and resource_id == self.tenant.tenant_resource_id():
+            return self.tenant.tenant_name
         return None
 
     def build_context(self, params: dict) -> dict:
@@ -250,7 +251,11 @@ class RoleBindingService:
         return result
 
     def _build_base_queryset(
-        self, resource_id: str, resource_type: str, binding_uuids: Optional[Sequence[str]] = None
+        self,
+        resource_id: str,
+        resource_type: str,
+        binding_uuids: Optional[Sequence[str]] = None,
+        exclude_direct: bool = False,
     ) -> QuerySet:
         """Build base queryset of groups with role bindings for a resource.
 
@@ -258,19 +263,25 @@ class RoleBindingService:
             resource_id: The resource identifier
             resource_type: The type of resource
             binding_uuids: Optional list of binding UUIDs to include (for inherited bindings)
+            exclude_direct: If True, exclude direct bindings and only show inherited
 
         Returns:
             Annotated QuerySet of Group objects
         """
-        # Build filter for bindings - either by resource or by explicit UUIDs
-        if binding_uuids is not None:
-            # Include both direct bindings and inherited bindings by UUID
+        if exclude_direct and binding_uuids is None:
+            # Relations API failed — cannot determine inherited bindings, return empty
+            return Group.objects.none()
+        elif exclude_direct and binding_uuids is not None:
+            # Only inherited bindings by UUID (exclude direct)
+            binding_filter = Q(role_binding_entries__binding__uuid__in=binding_uuids)
+        elif binding_uuids is not None:
+            # Both direct and inherited bindings (exclude_sources=none)
             binding_filter = Q(
                 role_binding_entries__binding__resource_type=resource_type,
                 role_binding_entries__binding__resource_id=resource_id,
             ) | Q(role_binding_entries__binding__uuid__in=binding_uuids)
         else:
-            # Only direct bindings for the specified resource
+            # Only direct bindings (exclude_sources=indirect)
             binding_filter = Q(
                 role_binding_entries__binding__resource_type=resource_type,
                 role_binding_entries__binding__resource_id=resource_id,
@@ -347,86 +358,13 @@ class RoleBindingService:
 
         return queryset
 
-    def _parse_resource_type(self, resource_type: str) -> tuple[str, str]:
-        """Parse resource type into namespace and name.
-
-        Args:
-            resource_type: Resource type string, optionally prefixed with namespace
-                          (e.g., "workspace" or "rbac/workspace")
-
-        Returns:
-            Tuple of (namespace, name)
-        """
-        if "/" in resource_type:
-            parts = resource_type.split("/", 1)
-            return (parts[0], parts[1])
-        return ("rbac", resource_type)  # Default namespace
-
     def _lookup_binding_uuids_via_relations(self, resource_type: str, resource_id: str) -> Optional[list[str]]:
-        """Use the Relations API to resolve binding UUIDs that affect the given resource."""
-        if not settings.RELATION_API_SERVER:
-            logger.warning("RELATION_API_SERVER is not configured; skipping inheritance lookup.")
-            return None
+        """Use the Relations API to resolve binding UUIDs that affect the given resource.
 
-        try:
-            logger.info(
-                "Calling _lookup_binding_uuids_via_relations for resource_type=%s, resource_id=%s",
-                resource_type,
-                resource_id,
-            )
-            resource_ns, resource_name = self._parse_resource_type(resource_type)
-            token = _jwt_manager.get_jwt_from_redis()
-            metadata = [("authorization", f"Bearer {token}")] if token else []
-            binding_ids = set()
-
-            with create_client_channel_relation(settings.RELATION_API_SERVER) as channel:
-                stub = lookup_pb2_grpc.KesselLookupServiceStub(channel)
-
-                # Build request in a way that is compatible with multiple proto versions.
-                request_kwargs = {
-                    # Mirrors: zed permission lookup-subjects rbac/workspace <id> user_grant rbac/role_binding
-                    "resource": common_pb2.ObjectReference(
-                        type=common_pb2.ObjectType(namespace=resource_ns, name=resource_name),
-                        id=str(resource_id),
-                    ),
-                    "subject_type": common_pb2.ObjectType(namespace="rbac", name="role_binding"),
-                }
-
-                # Newer API versions use a 'permission' field; older ones may use 'relation'.
-                # In the current schema, the permission is `user_grant` on rbac/workspace.
-                request_fields = lookup_pb2.LookupSubjectsRequest.DESCRIPTOR.fields_by_name
-                if "permission" in request_fields:
-                    request_kwargs["permission"] = "role_binding_view"
-                elif "relation" in request_fields:
-                    request_kwargs["relation"] = "t_binding"
-
-                request = lookup_pb2.LookupSubjectsRequest(**request_kwargs)
-                logger.info("LookupSubjects request payload: %s", request)
-
-                responses: Iterable[lookup_pb2.LookupSubjectsResponse] = stub.LookupSubjects(
-                    request, metadata=metadata
-                )
-                for idx, response in enumerate(responses, start=1):
-                    payload = json_format.MessageToDict(response)
-                    logger.info("LookupSubjects response #%s: %s", idx, payload)
-                    subject = payload.get("subject", {})
-                    subject_id = subject.get("id") or subject.get("subject", {}).get("id")
-                    if subject_id:
-                        logger.info("Adding binding subject_id from Relations: %s", subject_id)
-                        binding_ids.add(subject_id)
-
-            result = list(binding_ids)
-            logger.info(
-                "Resolved %d binding UUID(s) via Relations for resource_type=%s, resource_id=%s: %s",
-                len(result),
-                resource_type,
-                resource_id,
-                result,
-            )
-            return result
-        except Exception:  # noqa: BLE001
-            logger.exception("Failed to lookup inherited bindings through Relations")
-            return None
+        Uses the recursive 'binding' relation to find role_bindings on this resource
+        and any parent resources in the hierarchy.
+        """
+        return lookup_binding_subjects(resource_type, resource_id)
 
     def _ensure_default_bindings_exist(self) -> None:
         """Lazily create default role bindings if they don't exist.
@@ -773,6 +711,11 @@ class RoleBindingService:
 
         if resource_type == "workspace":
             if not Workspace.objects.exists_for_tenant(resource_id, tenant=self.tenant):
+                raise NotFoundError(resource_type, resource_id)
+
+        if resource_type == "tenant":
+            expected_resource_id = self.tenant.tenant_resource_id()
+            if expected_resource_id is None or resource_id != expected_resource_id:
                 raise NotFoundError(resource_type, resource_id)
 
     def _get_roles(self, role_ids: list[str]) -> list[RoleV2]:

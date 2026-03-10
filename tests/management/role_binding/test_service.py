@@ -40,6 +40,7 @@ from management.exceptions import InvalidFieldError, NotFoundError
 from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
 from management.role_binding.serializer import RoleBindingByGroupSerializer, RoleBindingFieldSelection
 from management.role_binding.service import CreateBindingRequest, RoleBindingService
+from management.role_binding.util import parse_resource_type
 from management.tenant_mapping.model import TenantMapping
 from management.utils import FieldSelectionValidationError
 from tests.identity_request import IdentityRequest
@@ -387,6 +388,32 @@ class RoleBindingServiceTests(IdentityRequest):
 
         self.assertEqual(queryset.count(), 0)
 
+    def test_get_role_bindings_by_subject_for_tenant(self):
+        """Test that get_role_bindings_by_subject works with resource_type=tenant."""
+        tenant_resource_id = self.tenant.tenant_resource_id()
+        tenant_binding = RoleBinding.objects.create(
+            role=self.role,
+            resource_type="tenant",
+            resource_id=tenant_resource_id,
+            tenant=self.tenant,
+        )
+        RoleBindingGroup.objects.create(
+            group=self.group,
+            binding=tenant_binding,
+        )
+
+        params = {
+            "resource_id": tenant_resource_id,
+            "resource_type": "tenant",
+        }
+        queryset = self.service.get_role_bindings_by_subject(params)
+
+        self.assertEqual(queryset.count(), 1)
+        self.assertEqual(queryset.first().name, "test_group")
+
+        RoleBindingGroup.objects.filter(binding=tenant_binding).delete()
+        tenant_binding.delete()
+
     def test_get_resource_name_for_workspace(self):
         """Test getting resource name for workspace."""
         name = self.service.get_resource_name(str(self.workspace.id), "workspace")
@@ -400,6 +427,17 @@ class RoleBindingServiceTests(IdentityRequest):
     def test_get_resource_name_for_unknown_type(self):
         """Test getting resource name for unknown resource type."""
         name = self.service.get_resource_name("some-id", "unknown_type")
+        self.assertIsNone(name)
+
+    def test_get_resource_name_for_tenant(self):
+        """Test getting resource name for tenant."""
+        tenant_resource_id = self.tenant.tenant_resource_id()
+        name = self.service.get_resource_name(tenant_resource_id, "tenant")
+        self.assertEqual(name, self.tenant.tenant_name)
+
+    def test_get_resource_name_for_tenant_mismatch_returns_none(self):
+        """Test getting resource name for tenant with mismatched resource_id returns None."""
+        name = self.service.get_resource_name("localhost/other-org-12345", "tenant")
         self.assertIsNone(name)
 
     def test_build_context(self):
@@ -430,34 +468,34 @@ class RoleBindingServiceTests(IdentityRequest):
 
     def test_parse_resource_type_with_namespace(self):
         """Test parsing resource type with namespace prefix."""
-        ns, name = self.service._parse_resource_type("rbac/workspace")
+        ns, name = parse_resource_type("rbac/workspace")
         self.assertEqual(ns, "rbac")
         self.assertEqual(name, "workspace")
 
     def test_parse_resource_type_without_namespace(self):
         """Test parsing resource type without namespace defaults to rbac."""
-        ns, name = self.service._parse_resource_type("workspace")
+        ns, name = parse_resource_type("workspace")
         self.assertEqual(ns, "rbac")
         self.assertEqual(name, "workspace")
 
     def test_parse_resource_type_with_custom_namespace(self):
         """Test parsing resource type with custom namespace."""
-        ns, name = self.service._parse_resource_type("custom/resource")
+        ns, name = parse_resource_type("custom/resource")
         self.assertEqual(ns, "custom")
         self.assertEqual(name, "resource")
 
     def test_parse_resource_type_with_multiple_slashes(self):
         """Test parsing resource type with multiple slashes only splits on first."""
-        ns, name = self.service._parse_resource_type("ns/path/to/resource")
+        ns, name = parse_resource_type("ns/path/to/resource")
         self.assertEqual(ns, "ns")
         self.assertEqual(name, "path/to/resource")
 
-    def test_get_role_bindings_by_subject_with_parent_role_bindings_false(self):
-        """Test that parent_role_bindings=False returns only direct bindings."""
+    def test_get_role_bindings_by_subject_with_exclude_sources_indirect(self):
+        """Test that exclude_sources=indirect returns only direct bindings."""
         params = {
             "resource_id": str(self.workspace.id),
             "resource_type": "workspace",
-            "parent_role_bindings": False,
+            "exclude_sources": "indirect",
         }
         queryset = self.service.get_role_bindings_by_subject(params)
 
@@ -465,8 +503,8 @@ class RoleBindingServiceTests(IdentityRequest):
         group = queryset.first()
         self.assertEqual(group.name, "test_group")
 
-    def test_get_role_bindings_by_subject_with_parent_role_bindings_none(self):
-        """Test that parent_role_bindings=None (default) returns only direct bindings."""
+    def test_get_role_bindings_by_subject_with_exclude_sources_default(self):
+        """Test that exclude_sources defaults to 'none' (falls back to direct without Relations API)."""
         params = {
             "resource_id": str(self.workspace.id),
             "resource_type": "workspace",
@@ -557,6 +595,116 @@ class RoleBindingServiceTests(IdentityRequest):
         # Should return our manually created group with binding
         self.assertEqual(queryset.count(), 1)
         self.assertEqual(queryset.first().name, "test_group")
+
+    def test_parse_resource_type_with_namespace(self):
+        """Test parsing resource type with namespace prefix."""
+        ns, name = parse_resource_type("rbac/workspace")
+        self.assertEqual(ns, "rbac")
+        self.assertEqual(name, "workspace")
+
+    def test_parse_resource_type_without_namespace(self):
+        """Test parsing resource type without namespace defaults to rbac."""
+        ns, name = parse_resource_type("workspace")
+        self.assertEqual(ns, "rbac")
+        self.assertEqual(name, "workspace")
+
+    def test_parse_resource_type_with_custom_namespace(self):
+        """Test parsing resource type with custom namespace."""
+        ns, name = parse_resource_type("custom/resource")
+        self.assertEqual(ns, "custom")
+        self.assertEqual(name, "resource")
+
+    def test_parse_resource_type_with_multiple_slashes(self):
+        """Test parsing resource type with multiple slashes only splits on first."""
+        ns, name = parse_resource_type("ns/path/to/resource")
+        self.assertEqual(ns, "ns")
+        self.assertEqual(name, "path/to/resource")
+
+    def test_get_role_bindings_by_subject_with_exclude_sources_indirect(self):
+        """Test that exclude_sources=indirect returns only direct bindings."""
+        params = {
+            "resource_id": str(self.workspace.id),
+            "resource_type": "workspace",
+            "exclude_sources": "indirect",
+        }
+        queryset = self.service.get_role_bindings_by_subject(params)
+
+        self.assertEqual(queryset.count(), 1)
+        group = queryset.first()
+        self.assertEqual(group.name, "test_group")
+
+    def test_get_role_bindings_by_subject_with_exclude_sources_default(self):
+        """Test that exclude_sources defaults to 'none' (falls back to direct without Relations API)."""
+        params = {
+            "resource_id": str(self.workspace.id),
+            "resource_type": "workspace",
+        }
+        queryset = self.service.get_role_bindings_by_subject(params)
+
+        self.assertEqual(queryset.count(), 1)
+
+    def test_build_base_queryset_with_binding_uuids_includes_inherited(self):
+        """Test that _build_base_queryset includes inherited bindings when UUIDs provided."""
+        # Create a second group with binding on a different resource (parent workspace)
+        parent_group = Group.objects.create(
+            name="parent_group",
+            tenant=self.tenant,
+        )
+        parent_binding = RoleBinding.objects.create(
+            role=self.role,
+            resource_type="workspace",
+            resource_id=str(self.default_workspace.id),  # Parent workspace
+            tenant=self.tenant,
+        )
+        RoleBindingGroup.objects.create(
+            group=parent_group,
+            binding=parent_binding,
+        )
+
+        # Query for child workspace but include parent binding UUID
+        binding_uuids = [str(parent_binding.uuid)]
+        queryset = self.service._build_base_queryset(str(self.workspace.id), "workspace", binding_uuids)
+
+        # Should include both direct binding group and inherited binding group
+        self.assertEqual(queryset.count(), 2)
+        group_names = set(queryset.values_list("name", flat=True))
+        self.assertIn("test_group", group_names)
+        self.assertIn("parent_group", group_names)
+
+        # Cleanup
+        RoleBindingGroup.objects.filter(binding=parent_binding).delete()
+        parent_binding.delete()
+        parent_group.delete()
+
+    def test_build_base_queryset_without_binding_uuids_excludes_inherited(self):
+        """Test that _build_base_queryset excludes inherited bindings when no UUIDs."""
+        # Create a second group with binding on a different resource (parent workspace)
+        parent_group = Group.objects.create(
+            name="parent_group",
+            tenant=self.tenant,
+        )
+        parent_binding = RoleBinding.objects.create(
+            role=self.role,
+            resource_type="workspace",
+            resource_id=str(self.default_workspace.id),  # Parent workspace
+            tenant=self.tenant,
+        )
+        RoleBindingGroup.objects.create(
+            group=parent_group,
+            binding=parent_binding,
+        )
+
+        # Query for child workspace without inherited UUIDs
+        queryset = self.service._build_base_queryset(str(self.workspace.id), "workspace", None)
+
+        # Should only include direct binding group
+        self.assertEqual(queryset.count(), 1)
+        self.assertEqual(queryset.first().name, "test_group")
+
+        # Cleanup
+        RoleBindingGroup.objects.filter(binding=parent_binding).delete()
+        parent_binding.delete()
+        parent_group.delete()
 
 
 class RoleBindingSerializerTests(IdentityRequest):
@@ -1807,6 +1955,19 @@ class UpdateRoleBindingsForSubjectTests(_ReplicationAssertionsMixin, IdentityReq
                     },
                     "workspace",
                     fake_workspace_id,
+                ),
+                # Tenant resource_id does not match tenant
+                (
+                    "invalid_tenant_resource",
+                    {
+                        "resource_type": "tenant",
+                        "resource_id": "localhost/other-org-12345",
+                        "subject_type": "group",
+                        "subject_id": str(self.group.uuid),
+                        "role_ids": [str(self.role1.uuid)],
+                    },
+                    "tenant",
+                    "localhost/other-org-12345",
                 ),
             ]
 
