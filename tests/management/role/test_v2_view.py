@@ -32,6 +32,7 @@ from management import v2_urls
 from management.audit_log.model import AuditLog
 from management.models import Permission
 from management.permission.scope_service import ImplicitResourceService, PermissionScopeCache
+from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.role.definer import seed_roles
 from management.role.v2_model import CustomRoleV2, PlatformRoleV2, RoleV2, SeededRoleV2
@@ -422,6 +423,8 @@ class RoleV2ViewSetTests(IdentityRequest):
         clear_url_caches()
 
         super().setUp()
+        # Bootstrap tenant so V2 writes (create/update/destroy) can run ensure_v2_write_activated
+        V2TenantBootstrapService(NoopReplicator()).bootstrap_tenant(self.tenant)
         self.client = APIClient()
         self.client.credentials(HTTP_X_RH_IDENTITY=self.headers.get("HTTP_X_RH_IDENTITY"))
         # URL for roles endpoint

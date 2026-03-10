@@ -22,6 +22,7 @@ from django.db import transaction
 from api.models import Tenant
 from management.tenant_mapping.model import TenantMapping
 from management.tenant_mapping.v2_activation import (
+    TenantNotBootstrappedError,
     V1WriteBlockedError,
     assert_v1_write_allowed,
     ensure_v2_write_activated,
@@ -89,11 +90,10 @@ class V2ActivationTests(TestCase):
         with transaction.atomic():
             assert_v1_write_allowed(unbootstrapped)
 
-    def test_unbootstrapped_tenant_v2_activation_noop(self):
-        """ensure_v2_write_activated is a no-op for tenants without TenantMapping."""
+    def test_unbootstrapped_tenant_v2_activation_raises(self):
+        """ensure_v2_write_activated raises TenantNotBootstrappedError for tenants without TenantMapping."""
         unbootstrapped = self.fixture.new_unbootstrapped_tenant(org_id="unboot-noop-org")
 
-        with transaction.atomic():
-            ensure_v2_write_activated(unbootstrapped)
-
-        self.assertFalse(is_v2_write_activated(unbootstrapped))
+        with self.assertRaises(TenantNotBootstrappedError):
+            with transaction.atomic():
+                ensure_v2_write_activated(unbootstrapped)

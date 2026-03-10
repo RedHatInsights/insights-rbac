@@ -20,10 +20,9 @@ Provides functions to lock and check whether a tenant has been activated for V2
 writes. Once activated, a tenant must never write via V1 again, regardless of
 feature flag state.
 
-These functions use SELECT FOR UPDATE on TenantMapping to serialize concurrent
-V1 and V2 write attempts for the same tenant. This prevents the TOCTOU race
-between the feature flag check (outside transaction) and the actual write
-(inside transaction).
+Uses SELECT FOR SHARE where possible to allow concurrent reads within a tenant,
+escalating to SELECT FOR UPDATE only when updating. Django does not support
+FOR SHARE in the ORM, so raw SQL is used.
 
 Usage:
     # In V2 write paths (inside SERIALIZABLE transaction):
@@ -35,10 +34,33 @@ Usage:
 
 import logging
 
+from django.db import connection
 from django.utils import timezone
 from management.tenant_mapping.model import TenantMapping
 
 logger = logging.getLogger(__name__)
+
+_TABLE = TenantMapping._meta.db_table
+
+
+def _lock_for_share(tenant):
+    """Lock the TenantMapping row with SELECT FOR SHARE. Returns (id, v2_write_activated_at) or None."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f'SELECT id, v2_write_activated_at FROM "{_TABLE}" WHERE tenant_id = %s FOR SHARE',
+            [tenant.id],
+        )
+        return cursor.fetchone()
+
+
+def _lock_for_update(tenant):
+    """Lock the TenantMapping row with SELECT FOR UPDATE. Returns (id, v2_write_activated_at) or None."""
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f'SELECT id, v2_write_activated_at FROM "{_TABLE}" WHERE tenant_id = %s FOR UPDATE',
+            [tenant.id],
+        )
+        return cursor.fetchone()
 
 
 class V1WriteBlockedError(Exception):
@@ -47,34 +69,41 @@ class V1WriteBlockedError(Exception):
     pass
 
 
-def _lock_tenant_mapping(tenant):
-    """Lock the TenantMapping row for the given tenant using SELECT FOR UPDATE.
+class TenantNotBootstrappedError(Exception):
+    """Raised when a V2 write is attempted on a tenant that has no TenantMapping."""
 
-    Returns the locked TenantMapping, or None if the tenant has no mapping
-    (i.e. not bootstrapped for V2).
-    """
-    try:
-        return TenantMapping.objects.select_for_update().get(tenant=tenant)
-    except TenantMapping.DoesNotExist:
-        return None
+    pass
 
 
 def ensure_v2_write_activated(tenant):
     """Mark the tenant as V2-activated if not already. Must be called inside a transaction.
 
-    This locks the TenantMapping row and sets v2_write_activated_at if it hasn't
-    been set yet. Subsequent V1 writes will be blocked by assert_v1_write_allowed.
-
-    If the tenant has no TenantMapping (not bootstrapped), this is a no-op.
+    Takes a shared lock first; if already V2, returns (allows concurrent V2 reads).
+    If not V2, escalates to exclusive lock and updates. This reduces contention
+    compared to always using FOR UPDATE.
     """
-    mapping = _lock_tenant_mapping(tenant)
-    if mapping is None:
+    row = _lock_for_share(tenant)
+    if row is None:
+        raise TenantNotBootstrappedError(
+            f"Tenant {tenant.org_id} has no TenantMapping; V2 writes require tenant bootstrapping."
+        )
+    _pk, v2_activated = row
+    if v2_activated is not None:
         return
 
-    if mapping.v2_write_activated_at is None:
-        mapping.v2_write_activated_at = timezone.now()
-        mapping.save(update_fields=["v2_write_activated_at"])
-        logger.info("Tenant %s activated for V2 writes", tenant.org_id)
+    row = _lock_for_update(tenant)
+    if row is None:
+        raise TenantNotBootstrappedError(
+            f"Tenant {tenant.org_id} has no TenantMapping; V2 writes require tenant bootstrapping."
+        )
+    _pk, v2_activated = row
+    if v2_activated is not None:
+        return
+
+    mapping = TenantMapping.objects.get(tenant=tenant)
+    mapping.v2_write_activated_at = timezone.now()
+    mapping.save(update_fields=["v2_write_activated_at"])
+    logger.info("Tenant %s activated for V2 writes", tenant.org_id)
 
 
 def is_v2_write_activated(tenant):
@@ -94,17 +123,16 @@ def is_v2_write_activated(tenant):
 def assert_v1_write_allowed(tenant):
     """Assert that V1 writes are still allowed for this tenant. Must be called inside a transaction.
 
-    Locks the TenantMapping row and checks v2_write_activated_at. If the tenant
-    has ever performed a V2 write, raises V1WriteBlockedError.
-
-    If the tenant has no TenantMapping (not bootstrapped), V1 writes are allowed.
+    Uses SELECT FOR SHARE: a tenant cannot go V2->V1, and the shared lock prevents
+    any V2 write (which needs FOR UPDATE) from converting the tenant while we hold it.
     """
-    mapping = _lock_tenant_mapping(tenant)
-    if mapping is None:
+    row = _lock_for_share(tenant)
+    if row is None:
         return
 
-    if mapping.v2_write_activated_at is not None:
+    _pk, v2_activated = row
+    if v2_activated is not None:
         raise V1WriteBlockedError(
             f"Tenant {tenant.org_id} has been activated for V2 writes "
-            f"(since {mapping.v2_write_activated_at}). V1 writes are no longer permitted."
+            f"(since {v2_activated}). V1 writes are no longer permitted."
         )
