@@ -329,13 +329,14 @@
             "explode": false
           },
           {
-            "name": "parent_role_bindings",
+            "name": "exclude_sources",
             "in": "query",
             "required": false,
-            "description": "Include role bindings inherited from parent resources",
+            "description": "Exclude bindings by source type: 'none' (default) shows all, 'indirect' excludes inherited, 'direct' excludes direct",
             "schema": {
-              "type": "boolean",
-              "default": false
+              "type": "string",
+              "enum": ["direct", "indirect", "none"],
+              "default": "none"
             },
             "explode": false
           },
@@ -404,7 +405,7 @@
                         "limit": 10
                       },
                       "links": {
-                        "next": "http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?limit=10&parent_role_bindings=true&cursor=xyz",
+                        "next": "http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?limit=10&exclude_sources=direct&cursor=xyz",
                         "previous": null
                       },
                       "data": [
@@ -430,11 +431,13 @@
                             "name": "Child Workspace",
                             "type": "workspace"
                           },
-                          "inherited_from": {
-                            "id": "550e8400-e29b-41d4-a716-446655440001",
-                            "name": "Parent Workspace",
-                            "type": "workspace"
-                          }
+                          "sources": [
+                            {
+                              "id": "550e8400-e29b-41d4-a716-446655440001",
+                              "name": "Parent Workspace",
+                              "type": "workspace"
+                            }
+                          ]
                         }
                       ]
                     }
@@ -3590,13 +3593,12 @@
             ],
             "description": "Resource the roles apply to"
           },
-          "inherited_from": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/RoleBindings.Resource"
-              }
-            ],
-            "description": "Resource from which this role binding is inherited (only present when parent_role_bindings=true)"
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoleBindings.Resource"
+            },
+            "description": "Resources from which this role binding is sourced (direct or inherited)"
           }
         },
         "example": {
@@ -3621,11 +3623,13 @@
             "name": "Child Workspace",
             "type": "workspace"
           },
-          "inherited_from": {
-            "id": "550e8400-e29b-41d4-a716-446655440001",
-            "name": "Parent Workspace",
-            "type": "workspace"
-          }
+          "sources": [
+            {
+              "id": "550e8400-e29b-41d4-a716-446655440001",
+              "name": "Parent Workspace",
+              "type": "workspace"
+            }
+          ]
         }
       },
       "RoleBindings.UpdateRoleBindingsRequest": {
@@ -3731,7 +3735,6 @@
         "type": "object",
         "required": [
           "name",
-          "description",
           "permissions"
         ],
         "properties": {

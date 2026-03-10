@@ -22,7 +22,7 @@ from typing import Optional, Sequence
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import Count, Max, Prefetch, Q, QuerySet
+from django.db.models import Count, Max, Prefetch, Q, QuerySet, TextChoices
 from management.atomic_transactions import atomic
 from management.exceptions import InvalidFieldError, NotFoundError, RequiredFieldError
 from management.group.model import Group
@@ -47,6 +47,14 @@ from management.tenant_mapping.model import DefaultAccessType, TenantMapping
 from management.workspace.model import Workspace
 
 from api.models import Tenant
+
+
+class ExcludeSources(TextChoices):
+    """Enum for exclude_sources query parameter values."""
+
+    DIRECT = "direct", "Exclude direct bindings"
+    INDIRECT = "indirect", "Exclude inherited bindings"
+    NONE = "none", "Show all bindings"
 
 
 @dataclass
@@ -101,18 +109,19 @@ class RoleBindingService:
         """
         resource_id = params["resource_id"]
         resource_type = params["resource_type"]
-        include_inherited = params.get("parent_role_bindings", False)
+        exclude_sources = params.get("exclude_sources", ExcludeSources.NONE)
 
         # Ensure default bindings exist (lazy creation)
         self._ensure_default_bindings_exist()
 
-        # If parent_role_bindings is requested, lookup inherited binding UUIDs via Relations API
         binding_uuids = None
+        exclude_direct = exclude_sources == ExcludeSources.DIRECT
+        include_inherited = exclude_sources in (ExcludeSources.DIRECT, ExcludeSources.NONE)
+
         if include_inherited:
             binding_uuids = self._lookup_binding_uuids_via_relations(resource_type, resource_id)
 
-        # Build base queryset for the specified resource
-        queryset = self._build_base_queryset(resource_id, resource_type, binding_uuids)
+        queryset = self._build_base_queryset(resource_id, resource_type, binding_uuids, exclude_direct=exclude_direct)
 
         # Apply subject filters
         queryset = self._apply_subject_filters(queryset, params.get("subject_type"), params.get("subject_id"))
@@ -242,7 +251,11 @@ class RoleBindingService:
         return result
 
     def _build_base_queryset(
-        self, resource_id: str, resource_type: str, binding_uuids: Optional[Sequence[str]] = None
+        self,
+        resource_id: str,
+        resource_type: str,
+        binding_uuids: Optional[Sequence[str]] = None,
+        exclude_direct: bool = False,
     ) -> QuerySet:
         """Build base queryset of groups with role bindings for a resource.
 
@@ -250,19 +263,25 @@ class RoleBindingService:
             resource_id: The resource identifier
             resource_type: The type of resource
             binding_uuids: Optional list of binding UUIDs to include (for inherited bindings)
+            exclude_direct: If True, exclude direct bindings and only show inherited
 
         Returns:
             Annotated QuerySet of Group objects
         """
-        # Build filter for bindings - either by resource or by explicit UUIDs
-        if binding_uuids is not None:
-            # Include both direct bindings and inherited bindings by UUID
+        if exclude_direct and binding_uuids is None:
+            # Relations API failed — cannot determine inherited bindings, return empty
+            return Group.objects.none()
+        elif exclude_direct and binding_uuids is not None:
+            # Only inherited bindings by UUID (exclude direct)
+            binding_filter = Q(role_binding_entries__binding__uuid__in=binding_uuids)
+        elif binding_uuids is not None:
+            # Both direct and inherited bindings (exclude_sources=none)
             binding_filter = Q(
                 role_binding_entries__binding__resource_type=resource_type,
                 role_binding_entries__binding__resource_id=resource_id,
             ) | Q(role_binding_entries__binding__uuid__in=binding_uuids)
         else:
-            # Only direct bindings for the specified resource
+            # Only direct bindings (exclude_sources=indirect)
             binding_filter = Q(
                 role_binding_entries__binding__resource_type=resource_type,
                 role_binding_entries__binding__resource_id=resource_id,
