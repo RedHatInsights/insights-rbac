@@ -748,6 +748,35 @@ class RoleV2ServiceListTests(IdentityRequest):
 
         self.assertEqual(queryset.count(), 2)
 
+    def test_list_name_glob_excess_wildcards_become_literal(self):
+        """Test that wildcards beyond the maxsplit limit are treated as literal '*'."""
+
+        # Build a pattern with >10 wildcards: "a*b*c*...*<last>"
+        segments = [chr(ord("a") + i) for i in range(13)]
+        search_pattern = "*".join(segments)
+
+        # Role whose name uses literal '*' where the excess wildcards are
+        role_with_stars = RoleV2.objects.create(
+            name="*".join(segments),
+            description="Has literal stars",
+            tenant=self.tenant,
+        )
+        # Role that replaces the excess '*' with regular chars — should NOT match
+        partial = list(segments)
+        partial[-2] = "X" + partial[-2]
+        partial[-1] = "X" + partial[-1]
+        RoleV2.objects.create(
+            name="X".join(segments),
+            description="No literal stars",
+            tenant=self.tenant,
+        )
+
+        queryset = self.service.list({"name": search_pattern})
+
+        names = set(queryset.values_list("name", flat=True))
+        self.assertIn(role_with_stars.name, names)
+        self.assertEqual(queryset.count(), 1)
+
     def test_list_annotates_permissions_count(self):
         """Test that queryset has permissions_count_annotation when fields includes permissions_count."""
         queryset = self.service.list({"fields": {"permissions_count"}})
