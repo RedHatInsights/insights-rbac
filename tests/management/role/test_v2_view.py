@@ -793,11 +793,33 @@ class RoleV2ViewSetTests(IdentityRequest):
         names = {r["name"] for r in response.data["data"]}
         self.assertNotIn("mixed_role", names)
 
-    def test_list_roles_without_resource_type_returns_400(self):
-        """Test that omitting the required resource_type returns 400."""
+    @override_settings(TENANT_SCOPE_PERMISSIONS="tenant_app:*:*", ROOT_SCOPE_PERMISSIONS="root_app:*:*")
+    def test_list_roles_without_resource_type_returns_all_scopes(self):
+        """Test that omitting resource_type returns roles from all scopes."""
+        tenant_perm = Permission.objects.create(permission="tenant_app:res:read", tenant=self.tenant)
+        tenant_role = RoleV2.objects.create(name="tenant_role", description="Tenant", tenant=self.tenant)
+        tenant_role.permissions.add(tenant_perm)
+
         response = self.client.get(self.url, **self.headers)
 
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        names = {r["name"] for r in response.data["data"]}
+        self.assertIn("test_role", names)
+        self.assertIn("tenant_role", names)
+
+    def test_list_roles_resource_id_without_resource_type_returns_400(self):
+        """Test that providing resource_id without resource_type returns 400."""
+        url = f"{self.url}?resource_id=some-id"
+        response = self.client.get(url, **self.headers)
+
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_list_roles_resource_id_with_resource_type_accepted(self):
+        """Test that providing resource_id with resource_type is accepted."""
+        url = f"{self.url}?resource_type=workspace&resource_id=some-id"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
 
     @override_settings(TENANT_SCOPE_PERMISSIONS="", ROOT_SCOPE_PERMISSIONS="")
     def test_list_roles_unknown_resource_type_returns_empty(self):

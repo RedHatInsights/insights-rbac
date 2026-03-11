@@ -728,11 +728,11 @@ class RoleV2ServiceListResourceTypeTests(IdentityRequest):
         names = set(queryset.values_list("name", flat=True))
         self.assertNotIn("mixed_role", names)
 
-    def test_list_without_resource_type_raises_error(self):
-        """Omitting resource_type raises RequiredFieldError."""
-        with self.assertRaises(RequiredFieldError) as ctx:
-            self.service.list({})
-        self.assertEqual(ctx.exception.field_name, "resource_type")
+    def test_list_without_resource_type_returns_all_roles(self):
+        """Omitting resource_type returns roles from all scopes."""
+        queryset = self.service.list({})
+        names = set(queryset.values_list("name", flat=True))
+        self.assertEqual(names, {"default_role", "root_role", "tenant_role", "mixed_role"})
 
     def test_list_unknown_resource_type_returns_empty(self):
         """An unknown resource_type returns an empty queryset."""

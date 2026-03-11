@@ -244,9 +244,17 @@ class RoleV2Service:
             queryset = queryset.with_fields(fields)
 
         resource_type = params.get("resource_type")
-        if not resource_type:
-            raise RequiredFieldError("resource_type")
+        if resource_type:
+            queryset = self._filter_by_resource_type(queryset, resource_type)
 
+        name = params.get("name")
+        if name:
+            queryset = queryset.named(name)
+
+        return queryset
+
+    def _filter_by_resource_type(self, queryset: QuerySet, resource_type: str) -> QuerySet:
+        """Filter roles by their permission scope matching the given resource_type."""
         matching_scopes = scopes_for_resource_type(resource_type)
         if not matching_scopes:
             return queryset.none()
@@ -254,25 +262,17 @@ class RoleV2Service:
         higher_non_matching = {s for s in (set(Scope) - matching_scopes) if s > max(matching_scopes)}
 
         if Scope.DEFAULT in matching_scopes:
-            # Roles with no permissions default to DEFAULT scope, which matches.
-            # Only need to exclude roles whose highest scope is in a higher non-matching scope.
             if higher_non_matching:
                 higher_perm_ids = self._get_permission_ids_for_scopes(higher_non_matching)
                 if higher_perm_ids:
                     queryset = queryset.exclude(permissions__id__in=higher_perm_ids)
         else:
-            # Roles must have at least one permission in the matching scopes
-            # to qualify (roles with no permissions default to DEFAULT, which doesn't match).
             matching_perm_ids = self._get_permission_ids_for_scopes(matching_scopes)
             queryset = queryset.filter(permissions__id__in=matching_perm_ids).distinct()
             if higher_non_matching:
                 higher_perm_ids = self._get_permission_ids_for_scopes(higher_non_matching)
                 if higher_perm_ids:
                     queryset = queryset.exclude(permissions__id__in=higher_perm_ids)
-
-        name = params.get("name")
-        if name:
-            queryset = queryset.named(name)
 
         return queryset
 
