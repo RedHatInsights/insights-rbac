@@ -28,7 +28,7 @@ from management.atomic_transactions import atomic
 from management.exceptions import RequiredFieldError
 from management.permission.exceptions import InvalidPermissionDataError
 from management.permission.model import Permission, PermissionValue
-from management.permission.scope_service import ImplicitResourceService, Scope, scopes_for_resource_type
+from management.permission.scope_service import Scope, default_implicit_resource_service, scopes_for_resource_type
 from management.permission.service import PermissionService
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
@@ -229,11 +229,10 @@ class RoleV2Service:
     @staticmethod
     def _get_permission_ids_for_scopes(scopes: set[Scope]) -> set[int]:
         """Return Permission IDs whose computed scope falls within the given set of scopes."""
-        scope_service = ImplicitResourceService.from_settings()
         return {
             row.id
             for row in Permission.objects.values_list("id", "permission", named=True)
-            if scope_service.scope_for_permission(row.permission) in scopes
+            if default_implicit_resource_service.scope_for_permission(row.permission) in scopes
         }
 
     def list(self, params: dict) -> QuerySet:

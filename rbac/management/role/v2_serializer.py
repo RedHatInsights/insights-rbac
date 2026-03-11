@@ -163,7 +163,7 @@ class RoleV2ListSerializer(serializers.Serializer):
         return _validate_fields_parameter(value, RoleV2Service.DEFAULT_LIST_FIELDS)
 
     def validate(self, data):
-        """Validate that resource_id is not provided without resource_type."""
+        """Cross-field validation: resource_id requires resource_type."""
         if data.get("resource_id") and not data.get("resource_type"):
             raise serializers.ValidationError(
                 {"resource_id": "resource_type is required when resource_id is provided."}

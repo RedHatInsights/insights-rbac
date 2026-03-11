@@ -267,10 +267,6 @@ class ImplicitResourceService:
         # TODO: this may need to eventually take into account resource definitions for custom roles.
         return self.highest_scope_for_permissions(a.permission.permission for a in role.access.all())
 
-    def scope_for_v2_role(self, role) -> Scope:
-        """Return the implicit scope for a V2 role based on its permissions."""
-        return self.highest_scope_for_permissions(p.permission for p in role.permissions.all())
-
     def v2_bound_resource_for_permission(
         self,
         permissions: Iterable[str],
