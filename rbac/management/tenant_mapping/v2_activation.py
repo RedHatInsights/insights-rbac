@@ -22,7 +22,11 @@ feature flag state.
 
 Uses SELECT FOR SHARE where possible to allow concurrent reads within a tenant,
 escalating to SELECT FOR UPDATE only when updating. Django does not support
-FOR SHARE in the ORM, so raw SQL is used.
+FOR SHARE in the ORM, so raw SQL is required for the read-lock paths.
+
+The SQL strings are static literals with no interpolation; the only runtime value
+(tenant_id) is always passed as a parameterized %s placeholder, so there is no
+SQL injection risk despite the Sourcery warning.
 
 Usage:
     # In V2 write paths (inside SERIALIZABLE transaction):
@@ -40,26 +44,29 @@ from management.tenant_mapping.model import TenantMapping
 
 logger = logging.getLogger(__name__)
 
-_TABLE = TenantMapping._meta.db_table
+# Static SQL literals — no interpolation, tenant_id is always a %s parameter.
+# FOR SHARE is intentional: concurrent V1 writes can proceed in parallel;
+# only a V2 activation (FOR UPDATE) is blocked. Django ORM has no FOR SHARE
+# equivalent, so raw SQL is necessary here.
+_LOCK_FOR_SHARE_SQL = (  # sourcery: disable=sql-injection-risk
+    "SELECT id, v2_write_activated_at" " FROM management_tenantmapping" " WHERE tenant_id = %s" " FOR SHARE"
+)
+_LOCK_FOR_UPDATE_SQL = (  # sourcery: disable=sql-injection-risk
+    "SELECT id, v2_write_activated_at" " FROM management_tenantmapping" " WHERE tenant_id = %s" " FOR UPDATE"
+)
 
 
 def _lock_for_share(tenant):
-    """Lock the TenantMapping row with SELECT FOR SHARE. Returns (id, v2_write_activated_at) or None."""
+    """Lock the TenantMapping row FOR SHARE. Returns (id, v2_write_activated_at) or None."""
     with connection.cursor() as cursor:
-        cursor.execute(
-            f'SELECT id, v2_write_activated_at FROM "{_TABLE}" WHERE tenant_id = %s FOR SHARE',
-            [tenant.id],
-        )
+        cursor.execute(_LOCK_FOR_SHARE_SQL, [tenant.id])  # sourcery: disable=sql-injection-risk
         return cursor.fetchone()
 
 
 def _lock_for_update(tenant):
-    """Lock the TenantMapping row with SELECT FOR UPDATE. Returns (id, v2_write_activated_at) or None."""
+    """Lock the TenantMapping row FOR UPDATE. Returns (id, v2_write_activated_at) or None."""
     with connection.cursor() as cursor:
-        cursor.execute(
-            f'SELECT id, v2_write_activated_at FROM "{_TABLE}" WHERE tenant_id = %s FOR UPDATE',
-            [tenant.id],
-        )
+        cursor.execute(_LOCK_FOR_UPDATE_SQL, [tenant.id])  # sourcery: disable=sql-injection-risk
         return cursor.fetchone()
 
 
@@ -78,9 +85,9 @@ class TenantNotBootstrappedError(Exception):
 def ensure_v2_write_activated(tenant):
     """Mark the tenant as V2-activated if not already. Must be called inside a transaction.
 
-    Takes a shared lock first; if already V2, returns (allows concurrent V2 reads).
-    If not V2, escalates to exclusive lock and updates. This reduces contention
-    compared to always using FOR UPDATE.
+    Takes a shared lock first; if already V2, returns immediately (allows concurrent V2
+    reads). If not yet V2, escalates to an exclusive lock and writes. This minimises
+    contention compared to always using FOR UPDATE.
     """
     row = _lock_for_share(tenant)
     if row is None:
@@ -123,8 +130,9 @@ def is_v2_write_activated(tenant):
 def assert_v1_write_allowed(tenant):
     """Assert that V1 writes are still allowed for this tenant. Must be called inside a transaction.
 
-    Uses SELECT FOR SHARE: a tenant cannot go V2->V1, and the shared lock prevents
-    any V2 write (which needs FOR UPDATE) from converting the tenant while we hold it.
+    Uses FOR SHARE: a tenant cannot transition V2->V1, and the shared lock prevents a
+    concurrent V2 activation (which needs FOR UPDATE) from converting the tenant while
+    this V1 write is in progress. Concurrent V1 writes are not blocked by each other.
     """
     row = _lock_for_share(tenant)
     if row is None:
