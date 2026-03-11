@@ -18,7 +18,7 @@
 
 import logging
 from dataclasses import dataclass
-from typing import Iterable, Optional, Sequence
+from typing import Optional, Sequence
 
 from django.conf import settings
 from django.db import transaction
@@ -130,7 +130,9 @@ class RoleBindingService:
             queryset = self._apply_user_filters(queryset, subject_id)
         else:
             # Default to group queryset (includes when subject_type is None or "group")
-            queryset = self._build_base_queryset(resource_id, resource_type, binding_uuids, exclude_direct=exclude_direct)
+            queryset = self._build_base_queryset(
+                resource_id, resource_type, binding_uuids, exclude_direct=exclude_direct
+            )
             queryset = self._apply_subject_filters(queryset, subject_type, subject_id)
 
         return queryset
