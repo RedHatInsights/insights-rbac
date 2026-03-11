@@ -932,3 +932,99 @@ def fix_admin_default_bindings(org_id: str) -> dict:
     except Exception as e:
         logger.error(f"Error fixing admin default bindings for tenant {org_id}: {str(e)}", exc_info=True)
         return {"org_id": org_id, "error": str(e)}
+
+
+def remove_unassigned_system_binding_mappings(replicator: Optional[RelationReplicator] = None):
+    """
+    Remove unassigned BindingMappings for system roles.
+
+    Normally, when we remove a subject from a system BindingMapping, we delete it if it now has no subject (is
+    "unassigned"); if we need it later, we will create a new one on demand. Apparently, at some points in the past, we
+    have failed to do this, so this migration removes any such BindingMappings.
+
+    Note that we do not and cannot do the same for custom roles. For custom roles, we maintain the invariant that all of
+    the necessary BindingMappings always exist, even if they are unassigned. This allows assigning a custom role to a
+    group to be implemented as iterating over all of the BindingMappings for that role and adding the group to each.
+    """
+    if replicator is None:
+        replicator = OutboxReplicator()
+
+    for raw_mapping in (
+        BindingMapping.objects.filter(mappings__users={}, mappings__groups=[], role__system=True)
+        .select_related("role")
+        .iterator()
+    ):
+        # We must use SERIALIZABLE here because we are potentially interacting with concurrent V2 writers (which all
+        # use SERIALIZABLE rather than explicit locking).
+        #
+        # Unfortunately, we must *also* use select_for_update() here because we are potentially interacting with
+        # concurrent V1 writers (which all use SELECT FOR UPDATE rather than SERIALIZABLE).
+        with atomic_block():
+            mapping: Optional[BindingMapping] = (
+                BindingMapping.objects.filter(pk=raw_mapping.pk)
+                .select_related("role")
+                .select_for_update(of=["self"])
+                .first()
+            )
+
+            if mapping is None:
+                logger.warning(f"BindingMapping vanished before it could be removed: pk={raw_mapping.pk!r}")
+                continue
+
+            if not mapping.is_unassigned():
+                logger.warning(
+                    f"BindingMapping is no longer unassigned: " f"pk={mapping.pk!r}, mappings={mapping.mappings}"
+                )
+
+                continue
+
+            if not mapping.role.system:
+                raise AssertionError(
+                    f"BindingMapping is no longer associated with system role: "
+                    f"BindingMapping pk={mapping.pk!r}, role pk={mapping.role.pk!r}"
+                )
+
+            # Ensure that we will not accidentally remove system role permissions.
+            if (not mapping.mappings["role"]["is_system"]) or (len(mapping.mappings["role"]["permissions"]) > 0):
+                raise AssertionError(
+                    f"BindingMapping for system role is inconsistent: "
+                    f"pk={mapping.pk!r}, mappings={mapping.mappings}"
+                )
+
+            # Because a BindingMapping exists for this role binding, and BindingMappings for system roles are always
+            # locked for update, we know that this binding cannot be concurrently updated by V1 code.
+            #
+            # If the tenant is a V2 tenant, then it could concurrently be updated by V2 code, but then we will have a
+            # serialization failure if a subject is added after we checked that none exists.
+            role_binding = RoleBinding.objects.filter(uuid=mapping.mappings["id"]).select_for_update().first()
+
+            if role_binding is not None:
+                if role_binding.group_entries.all().exists() or role_binding.principal_entries.all().exists():
+                    raise AssertionError(
+                        f"BindingMapping has no subjects, while associated RoleBinding has subjects: "
+                        f"uuid={mapping.mappings['id']}, BindingMapping pk={mapping.pk!r}, "
+                        f"RoleBinding pk={role_binding.pk!r}"
+                    )
+
+            logger.info(
+                f"Removing empty role binding: uuid={mapping.mappings['id']}, "
+                f"BindingMapping pk={mapping.pk!r}, "
+                f"RoleBinding pk={(role_binding.pk if role_binding is not None else None)!r}"
+            )
+
+            replicator.replicate(
+                ReplicationEvent(
+                    event_type=ReplicationEventType.REMOVE_UNASSIGNED_BINDING_MAPPINGS,
+                    partition_key=PartitionKey.byEnvironment(),
+                    add=[],
+                    remove=mapping.as_tuples(),
+                    info={
+                        "binding_uuid": mapping.mappings["id"],
+                    },
+                )
+            )
+
+            mapping.delete()
+
+            if role_binding is not None:
+                role_binding.delete()

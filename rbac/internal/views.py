@@ -91,6 +91,7 @@ from management.tasks import (
     fix_missing_binding_base_tuples_in_worker,
     migrate_binding_scope_in_worker,
     migrate_data_in_worker,
+    remove_unassigned_system_binding_mappings_in_worker,
     run_migrations_in_worker,
     run_ocm_performance_in_worker,
     run_seeds_in_worker,
@@ -2515,3 +2516,21 @@ def rebuild_tenant_workspace_relations(request, org_id):
             {"detail": f"Error rebuilding workspace relations: {str(e)}"},
             status=500,
         )
+
+
+@require_http_methods(["POST"])
+def remove_unassigned_system_binding_mappings(request):
+    """
+    Remove unassigned system binding mappings (which should not normally be created).
+
+    POST /_private/api/utils/remove_unassigned_system_binding_mappings/
+
+    Returns:
+        JSON response indicating the task has been queued
+    """
+    try:
+        remove_unassigned_system_binding_mappings_in_worker.delay()
+        return JsonResponse({"message": "Cleanup enqueued in background worker."}, status=202)
+    except Exception as e:
+        logger.exception("Error removing unassigned system binding mappings", exc_info=True)
+        return JsonResponse({"detail": f"Error removing unassigned system binding mappings: {str(e)}"}, status=500)

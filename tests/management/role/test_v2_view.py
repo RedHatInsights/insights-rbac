@@ -37,6 +37,7 @@ from management.tenant_service import V2TenantBootstrapService
 from management.utils import PRINCIPAL_CACHE, as_uuid
 
 from rbac import urls
+from api.models import Tenant
 from tests.identity_request import IdentityRequest
 
 
@@ -105,7 +106,8 @@ class RoleV2RetrieveViewTest(IdentityRequest):
         self.assertEqual(data["description"], "A test custom role")
         self.assertIn("last_modified", data)
         self.assertIn("permissions", data)
-        # permissions_count is not in default retrieve fields
+        # org_id and permissions_count are not returned by default
+        self.assertNotIn("org_id", data)
         self.assertNotIn("permissions_count", data)
 
         # Verify permissions
@@ -113,18 +115,12 @@ class RoleV2RetrieveViewTest(IdentityRequest):
         permission_strings = {f"{p['application']}:{p['resource_type']}:{p['operation']}" for p in data["permissions"]}
         self.assertEqual(permission_strings, {"inventory:hosts:read", "inventory:hosts:write"})
 
-    def test_retrieve_platform_role_success(self):
-        """Test retrieving a platform role."""
+    def test_retrieve_platform_role_returns_404(self):
+        """Test that retrieving a platform role returns 404 (platform roles are not exposed)."""
         url = self._get_role_url(self.platform_role.uuid)
         response = self.client.get(url, **self.headers)
 
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        data = response.json()
-
-        self.assertEqual(data["id"], str(self.platform_role.uuid))
-        self.assertEqual(data["name"], "Test Platform Role")
-        self.assertEqual(len(data["permissions"]), 1)
-        self.assertEqual(data["permissions"][0]["application"], "cost")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
     def test_retrieve_role_not_found(self):
         """Test retrieving a non-existent role."""
@@ -253,7 +249,7 @@ class RoleV2RetrieveViewTest(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.json()
 
-        # Default retrieve fields per API spec (line 1223 in main.tsp)
+        # Default retrieve fields per API spec
         expected_fields = {"id", "name", "description", "permissions", "last_modified"}
         actual_fields = set(data.keys())
 
@@ -472,6 +468,7 @@ class RoleV2ViewSetTests(IdentityRequest):
 
         self.assertEqual(role_data["name"], "test_role")
         self.assertEqual(role_data["description"], "Test description")
+        self.assertNotIn("org_id", role_data)
         self.assertNotIn("permissions", role_data)
         self.assertNotIn("permissions_count", role_data)
 
@@ -699,15 +696,16 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertEqual(perm["operation"], "read")
 
     def test_list_roles_with_all_available_fields(self):
-        """Test that all available fields can be requested."""
-        url = f"{self.url}?fields=id,name,description,permissions_count,permissions,last_modified"
+        """Test that all available fields can be requested, including opt-in org_id."""
+        url = f"{self.url}?fields=id,name,description,permissions_count,permissions,last_modified,org_id"
         response = self.client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         role_data = response.data["data"][0]
 
-        expected = {"id", "name", "description", "permissions_count", "permissions", "last_modified"}
+        expected = {"id", "name", "description", "permissions_count", "permissions", "last_modified", "org_id"}
         self.assertEqual(set(role_data.keys()), expected)
+        self.assertEqual(role_data["org_id"], str(self.tenant.org_id))
 
     def test_list_roles_with_only_id_field(self):
         """Test minimal field request returns only id."""
@@ -746,6 +744,57 @@ class RoleV2ViewSetTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["data"], [])
+
+    # ==========================================================================
+    # Tests for seeded roles visibility (public tenant)
+    # ==========================================================================
+
+    def test_list_roles_includes_seeded_roles_from_public_tenant(self):
+        """Test that seeded roles from the public tenant are included in list responses.
+
+        Seeded roles belong to the public tenant but should be visible to all tenants.
+        This is the same pattern as v1 roles.
+        """
+        public_tenant, _ = Tenant.objects.get_or_create(tenant_name="public")
+        SeededRoleV2.objects.create(name="Seeded Role 1", description="A seeded role", tenant=public_tenant)
+        SeededRoleV2.objects.create(name="Seeded Role 2", description="Another seeded role", tenant=public_tenant)
+
+        response = self.client.get(self.url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        returned_names = {r["name"] for r in response.data["data"]}
+        # Should see the custom role from self.tenant AND seeded roles from public tenant
+        self.assertIn("test_role", returned_names)
+        self.assertIn("Seeded Role 1", returned_names)
+        self.assertIn("Seeded Role 2", returned_names)
+
+    def test_list_roles_excludes_platform_roles_from_public_tenant(self):
+        """Test that platform roles from public tenant are still excluded."""
+        public_tenant, _ = Tenant.objects.get_or_create(tenant_name="public")
+        SeededRoleV2.objects.create(name="Visible Seeded", description="Should appear", tenant=public_tenant)
+        RoleV2.objects.create(
+            name="Hidden Platform", description="Should not appear", type=RoleV2.Types.PLATFORM, tenant=public_tenant
+        )
+
+        response = self.client.get(self.url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        returned_names = {r["name"] for r in response.data["data"]}
+        self.assertIn("Visible Seeded", returned_names)
+        self.assertNotIn("Hidden Platform", returned_names)
+
+    def test_retrieve_seeded_role_from_public_tenant(self):
+        """Test that a seeded role from the public tenant can be retrieved by UUID."""
+        public_tenant, _ = Tenant.objects.get_or_create(tenant_name="public")
+        seeded_role = SeededRoleV2.objects.create(
+            name="Retrievable Seeded", description="Should be retrievable", tenant=public_tenant
+        )
+
+        detail_url = reverse("v2_management:roles-detail", kwargs={"uuid": seeded_role.uuid})
+        response = self.client.get(detail_url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["name"], "Retrievable Seeded")
 
     # ==========================================================================
     # Tests for POST /api/v2/roles/ (create)
@@ -943,8 +992,22 @@ class RoleV2ViewSetTests(IdentityRequest):
 
         error_fields = {e.get("field") for e in response.data["errors"]}
         self.assertIn("name", error_fields)
-        self.assertIn("description", error_fields)
         self.assertIn("permissions", error_fields)
+        self.assertNotIn("description", error_fields)
+
+    def test_create_role_without_description_succeeds(self):
+        """Test that creating a role without description returns 201 with empty description."""
+        data = {
+            "name": "No Description Role",
+            "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
+        }
+
+        response = self.client.post(self.url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["name"], "No Description Role")
+        self.assertEqual(response.data["description"], "")
+        self.assertIn("id", response.data)
 
     def test_create_role_returns_response_format(self):
         """Test that create returns proper response format with all fields."""
@@ -1150,8 +1213,8 @@ class RoleV2ViewSetTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
-    def test_update_role_missing_description_returns_400(self):
-        """Test that updating a role without description returns 400."""
+    def test_update_role_missing_description_succeeds(self):
+        """Test that updating a role without description succeeds with empty description."""
         role = CustomRoleV2.objects.create(
             name="Test Role",
             description="Test description",
@@ -1166,9 +1229,9 @@ class RoleV2ViewSetTests(IdentityRequest):
 
         response = self.client.put(update_url, data, format="json")
 
-        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("errors", response.data)
-        self.assertTrue(any(e.get("field") == "description" for e in response.data["errors"]))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["name"], "Test Role")
+        self.assertEqual(response.data["description"], "")
 
     def test_update_role_returns_response_format(self):
         """Test that update returns proper response format with all fields."""

@@ -20,6 +20,13 @@ enum Versions{
     v2,
 }
 
+@doc("Exclude bindings by source type: 'none' (default) shows all, 'indirect' excludes inherited, 'direct' excludes direct")
+enum ExcludeSources {
+    direct,
+    indirect,
+    none,
+}
+
 model Timestamps {
     @doc("2019-01-21T17:32:28Z")
     created: offsetDateTime;
@@ -73,6 +80,8 @@ model Role {
     permissions_count?: int32;
     @doc("Timestamp of when the role was last modified")
     last_modified?: offsetDateTime;
+    @doc("ID of the organization that owns this role. Will not be populated if roles belong to the Public Tenant.")
+    org_id?: string;
 }
 
 /**
@@ -117,6 +126,12 @@ scalar Offset extends int64;
  * - `name,-created` - Sort by name ascending, then created descending
  */
 scalar OrderBy extends string;
+
+@doc("Resource type for role binding operations. 'workspace' for workspace-scoped bindings (resource_id is workspace UUID). 'tenant' for tenant-scoped bindings (resource_id is tenant resource ID in format {domain}/{org_id}, e.g. redhat/12345).")
+enum ResourceType {
+    workspace,
+    tenant,
+}
 
 // Default pagination values
 const DefaultLimit: Limit = 10;
@@ -297,7 +312,7 @@ namespace Workspaces {
     model CreateWorkspaceRequest extends BasicWorkspace{
         //if parent_id is not stated within the request for standard workspaces, it is automatically populated from default workspace.
         @doc("Parent ID of Workspace A")
-        parent_id?: UUID = "Parent ID of Workspace A";
+        parent_id?: UUID;
     }
     @example(#{
         _: 201,
@@ -357,7 +372,7 @@ namespace Workspaces {
         @doc("Description of Workspace A")
         description: string = "Description of Workspace A";
         @doc("Must match current parent_id value. Not updatable directly on the workspace.")
-        parent_id: UUID = "Parent ID of Workspace A";
+        parent_id: UUID;
     }
     @example(#{
         name: "Alpha Workspace - closed",
@@ -406,7 +421,7 @@ namespace Workspaces {
     @example(#{ parent_id: "c1f729e2-3e2b-4f9e-b247-a4b568393e11" })
     model MoveWorkspaceRequest {
       @doc("The UUID of the new parent workspace.")
-      parent_id: UUID = "Parent ID of target workspace";
+      parent_id: UUID;
     }
     @example(#{
         _: 200,
@@ -415,8 +430,10 @@ namespace Workspaces {
     })
     model MoveWorkspaceResponse{
         @statusCode _: 200;
-        @key id: UUID = "Workspace ID of moved workspace";
-        parent_id: UUID = "New parent ID of moved workspace";
+        @doc("Workspace ID of moved workspace")
+        @key id: UUID;
+        @doc("New parent ID of moved workspace")
+        parent_id: UUID;
     }
 
     model Pagination {
@@ -504,6 +521,8 @@ namespace Workspaces {
         @query type?: WorkspaceTypesQueryParam = WorkspaceTypesQueryParam.all;
         @doc("Case sensitive exact match of workspace by name.")
         @query name?: string;
+        @doc("Filter workspaces by parent workspace UUID. Returns only direct children of the specified workspace. Useful for lazy-loading a nested tree structure.")
+        @query parent_id?: UUID;
         @doc("Filter workspaces by one or more comma-separated UUIDs. Defaults to type=standard unless type is explicitly specified.")
         @query(#{explode: false}) ids?: UUID[];
 
@@ -694,7 +713,7 @@ namespace Workspaces {
 @tag("Role Bindings")
 @doc("Operations about role bindings")
 namespace RoleBindings {
-    const DefaultRoleBindingBySubjectFieldMask: FieldMask = "resource(id),subject(id),roles(id),last_modified";
+    const DefaultRoleBindingBySubjectFieldMask: FieldMask = "resource(id),subject(id),roles(id)";
 
 
     @discriminator("type")
@@ -850,11 +869,13 @@ namespace RoleBindings {
             name: "Child Workspace",
             type: "workspace"
         },
-        inherited_from: #{
-            id: "550e8400-e29b-41d4-a716-446655440001",
-            name: "Parent Workspace",
-            type: "workspace"
-        }
+        sources: #[
+            #{
+                id: "550e8400-e29b-41d4-a716-446655440001",
+                name: "Parent Workspace",
+                type: "workspace"
+            }
+        ]
     })
     model RoleBindingBySubject {
         @doc("Timestamp of last modification")
@@ -865,8 +886,8 @@ namespace RoleBindings {
         roles?: KesselRBAC.Role[];
         @doc("Resource the roles apply to")
         resource?: Resource;
-        @doc("Resource from which this role binding is inherited (only present when parent_role_bindings=true)")
-        inherited_from?: Resource;
+        @doc("Resources from which this role binding is sourced (direct or inherited)")
+        sources?: Resource[];
     }
 
     @doc("List role bindings grouped by subject")
@@ -877,7 +898,7 @@ namespace RoleBindings {
             limit: 10,
             cursor: "cD0yMDI1LTA4LTE1KzE0JTNBMDQlM0E0MS42ODM3NTIlMkIwMCUzQTAw",
             resource_id: "550e8400-e29b-41d4-a716-446655440001",
-            resource_type: "workspace"
+            resource_type: ResourceType.workspace
         },
         returnType: #{
             _: 200,
@@ -918,9 +939,9 @@ namespace RoleBindings {
     @opExample(#{
         parameters: #{
             limit: 10,
-            parent_role_bindings: true,
+            exclude_sources: ExcludeSources.direct,
             resource_id: "550e8400-e29b-41d4-a716-446655440001",
-            resource_type: "workspace"
+            resource_type: ResourceType.workspace
         },
         returnType: #{
             _: 200,
@@ -928,7 +949,7 @@ namespace RoleBindings {
                 limit: 10
             },
             links: #{
-                next: "http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?limit=10&parent_role_bindings=true&cursor=xyz",
+                next: "http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?limit=10&exclude_sources=direct&cursor=xyz",
                 previous: null
             },
             data: #[
@@ -954,11 +975,13 @@ namespace RoleBindings {
                         name: "Child Workspace",
                         type: "workspace"
                     },
-                    inherited_from: #{
-                        id: "550e8400-e29b-41d4-a716-446655440001",
-                        name: "Parent Workspace",
-                        type: "workspace"
-                    }
+                    sources: #[
+                        #{
+                            id: "550e8400-e29b-41d4-a716-446655440001",
+                            name: "Parent Workspace",
+                            type: "workspace"
+                        }
+                    ]
                 }
             ]
         }
@@ -969,12 +992,12 @@ namespace RoleBindings {
         @doc("Cursor for cursor-based pagination.")
         @query cursor?: Cursor;
 
-        @doc("Filter by resource ID")
+        @doc("Filter by resource ID. For workspace: UUID. For tenant: tenant resource ID (format: {domain}/{org_id}).")
         @example("550e8400-e29b-41d4-a716-446655440001")
         @query resource_id: string;
         @doc("Filter by resource type")
-        @example("workspace")
-        @query resource_type: string;
+        @example(ResourceType.workspace)
+        @query resource_type: ResourceType;
         @doc("Filter by subject type")
         @example("group")
         @query subject_type?: string;
@@ -982,12 +1005,11 @@ namespace RoleBindings {
         @example("550e8400-e29b-41d4-a716-446655440004")
         @query subject_id?: string;
 
-        @doc("Include role bindings inherited from parent resources")
-        @query parent_role_bindings?: boolean = false;
+        @query exclude_sources?: ExcludeSources = ExcludeSources.none;
 
         @doc("Control which fields are included in the response to optimize payload size and improve performance.")
-        @example("subject(group.name,group.user_count),role(name),resource(name,type),last_modified")
-        @query fields?: FieldMask = "subject(group.name),role(name),resource(name,type),last_modified";
+        @example("subject(group.name,group.user_count),roles(name),resource(name,type),last_modified")
+        @query fields?: FieldMask = "subject(group.name),roles(name),resource(name,type),last_modified";
         @doc("Sort by specified field(s), prefix with '-' for descending order")
         @example("subject_name,-subject_type")
         @query order_by?: OrderBy = "subject_name";
@@ -1056,7 +1078,7 @@ namespace RoleBindings {
     @opExample(#{
         parameters: #{
             resource_id: "550e8400-e29b-41d4-a716-446655440001",
-            resource_type: "workspace",
+            resource_type: ResourceType.workspace,
             subject_id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
             subject_type: "group",
             body: #{
@@ -1068,7 +1090,6 @@ namespace RoleBindings {
         },
         returnType: #{
             _: 200,
-            last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
             subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group", group: #{ name: "Engineering Team", user_count: 25 } },
             roles: #[
                 #{ id: "550e8400-e29b-41d4-a716-446655440002", name: "Workspace Admin" },
@@ -1078,13 +1099,13 @@ namespace RoleBindings {
         }
     })
     @put op update(
-        @doc("Identify the resource ID for the set of role bindings to replace")
+        @doc("Identify the resource ID for the set of role bindings to replace. For workspace: UUID. For tenant: tenant resource ID (format: {domain}/{org_id}).")
         @example("550e8400-e29b-41d4-a716-446655440001")
         @query resource_id: string;
 
         @doc("Identify the resource type for the set of role bindings to replace")
-        @example("workspace")
-        @query resource_type: string;
+        @example(ResourceType.workspace)
+        @query resource_type: ResourceType;
 
         @doc("Identify the subject ID for the set of role bindings to replace")
         @example("550e8400-e29b-41d4-a716-446655440004")
@@ -1203,6 +1224,22 @@ namespace RoleBindings {
         @example("550e8400-e29b-41d4-a716-446655440002")
         @query role_id?: string;
 
+        @doc("Filter by resource ID")
+        @example("550e8400-e29b-41d4-a716-446655440001")
+        @query resource_id?: string;
+
+        @doc("Filter by resource type")
+        @example("workspace")
+        @query resource_type?: string;
+
+        @doc("Filter by subject type (e.g., 'group')")
+        @example("group")
+        @query subject_type?: string;
+
+        @doc("Filter by subject ID")
+        @example("3fa85f64-5717-4562-b3fc-2c963f66afa6")
+        @query subject_id?: string;
+
         @doc("Control which fields are included in the response to optimize payload size.")
         @query fields?: FieldMask = "resource(id),role(id),subject(id,type)";
 
@@ -1235,7 +1272,7 @@ namespace Roles {
         @doc("A human readable name for the role. Must be unique within a tenant.")
         name: string;
         @doc("A description of the role to help clarify its purpose. Does not need to be unique.")
-        description: string;
+        description?: string;
         @doc("List of permissions to assign to this role")
         permissions: Permission[];
     }
@@ -1347,6 +1384,7 @@ namespace Roles {
         **Examples:**
         - `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)
         - `?fields=permissions_count,last_modified` - Include only count and timestamp
+        - `?fields=id,name,org_id` - Include org_id (not returned by default; must be requested explicitly)
         """)
         @example("id,name,permissions_count")
         @query fields?: string = DefaultRoleFieldMask;

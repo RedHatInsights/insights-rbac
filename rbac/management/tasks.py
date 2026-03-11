@@ -23,6 +23,7 @@ from django.core.management import call_command
 from internal.migrations.remove_orphan_relations import cleanup_tenant_orphan_bindings
 from internal.utils import (
     clean_invalid_workspace_resource_definitions,
+    remove_unassigned_system_binding_mappings,
     replicate_missing_binding_tuples,
 )
 from management.health.healthcheck import redis_health
@@ -140,3 +141,9 @@ def bulk_cleanup_orphan_bindings_in_worker(tenant_limit: int):
         tenant_limit (int): maximum number of tenants to process
     """
     return call_command("fix_orphan_relations", tenant_limit=tenant_limit)
+
+
+@shared_task
+def remove_unassigned_system_binding_mappings_in_worker():
+    """Celery to remove unassigned system BindingMappings."""
+    return remove_unassigned_system_binding_mappings()
