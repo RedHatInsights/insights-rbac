@@ -45,9 +45,6 @@ unleashclient = "*"
 django-pgtransaction = "*"
 kessel-sdk = {extras = ["auth"], version = "*"}
 mcp = ">=1.26.0"
-httpx = "<1.0,>=0.27"
-starlette = "<1.0,>=0.36"
-pydantic = ">=2.10,<3"
 
 [dev-packages]
 sphinx-rtd-theme = "==3.1.0"
