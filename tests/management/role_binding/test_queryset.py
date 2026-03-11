@@ -27,7 +27,7 @@ from tests.identity_request import IdentityRequest
 
 
 class RoleBindingQuerySetTest(IdentityRequest):
-    """Tests for RoleBinding.objects.for_tenant()."""
+    """Tests for RoleBindingQuerySet chainable methods."""
 
     def setUp(self):
         """Set up test data."""
@@ -65,7 +65,7 @@ class RoleBindingQuerySetTest(IdentityRequest):
 
     def test_returns_bindings_for_tenant(self):
         """Test that for_tenant returns all bindings belonging to the tenant."""
-        qs = RoleBinding.objects.for_tenant(tenant=self.tenant)
+        qs = RoleBinding.objects.for_tenant(self.tenant)
         self.assertEqual(set(qs), {self.binding_a, self.binding_b})
 
     def test_excludes_other_tenant_bindings(self):
@@ -80,7 +80,7 @@ class RoleBindingQuerySetTest(IdentityRequest):
         )
 
         try:
-            qs = RoleBinding.objects.for_tenant(tenant=self.tenant)
+            qs = RoleBinding.objects.for_tenant(self.tenant)
             self.assertNotIn(other_binding, qs)
             self.assertEqual(qs.count(), 2)
         finally:
@@ -92,7 +92,7 @@ class RoleBindingQuerySetTest(IdentityRequest):
         """Test that for_tenant returns empty queryset for a tenant with no bindings."""
         empty_tenant = Tenant.objects.create(tenant_name="empty", org_id="empty_org")
         try:
-            qs = RoleBinding.objects.for_tenant(tenant=empty_tenant)
+            qs = RoleBinding.objects.for_tenant(empty_tenant)
             self.assertEqual(qs.count(), 0)
         finally:
             empty_tenant.delete()
@@ -100,24 +100,28 @@ class RoleBindingQuerySetTest(IdentityRequest):
     # --- role_id filtering ---
 
     def test_role_id_filtering(self):
-        """Test that role_id filters correctly for various inputs."""
+        """Test that for_role filters correctly for various inputs."""
         cases = [
             ("match_role_a", self.role_a.uuid, 1, {self.binding_a}),
             ("match_role_b", self.role_b.uuid, 1, {self.binding_b}),
             ("no_match", uuid.uuid4(), 0, set()),
-            ("none_returns_all", None, 2, {self.binding_a, self.binding_b}),
         ]
         for label, role_id, expected_count, expected_set in cases:
             with self.subTest(label=label):
-                qs = RoleBinding.objects.for_tenant(tenant=self.tenant, role_id=role_id)
+                qs = RoleBinding.objects.for_tenant(self.tenant).for_role(role_id)
                 self.assertEqual(qs.count(), expected_count)
                 self.assertEqual(set(qs), expected_set)
+
+        # None case: no for_role call returns all
+        qs = RoleBinding.objects.for_tenant(self.tenant)
+        self.assertEqual(qs.count(), 2)
+        self.assertEqual(set(qs), {self.binding_a, self.binding_b})
 
     # --- Eager loading ---
 
     def test_eager_loading(self):
         """Test that role and group relations are eagerly loaded (no extra queries)."""
-        qs = RoleBinding.objects.for_tenant(tenant=self.tenant)
+        qs = RoleBinding.objects.for_tenant(self.tenant)
         binding = list(qs)[0]  # evaluate queryset to trigger prefetch
 
         cases = [
@@ -131,6 +135,20 @@ class RoleBindingQuerySetTest(IdentityRequest):
             with self.subTest(label=label):
                 with self.assertNumQueries(0):
                     access_fn(binding)
+
+    # --- No-op chainable method tests ---
+
+    def test_for_resource_filter_noop_when_no_args(self):
+        """for_resource_filter() with no args should be a no-op and return all tenant bindings."""
+        qs_all = RoleBinding.objects.for_tenant(self.tenant)
+        qs_filtered = qs_all.for_resource_filter()
+        self.assertEqual(set(qs_filtered), set(qs_all))
+
+    def test_for_subject_noop_when_no_args(self):
+        """for_subject() with no args should be a no-op and return all tenant bindings."""
+        qs_all = RoleBinding.objects.for_tenant(self.tenant)
+        qs_filtered = qs_all.for_subject()
+        self.assertEqual(set(qs_filtered), set(qs_all))
 
     # --- resource_id / resource_type filtering ---
 
@@ -149,7 +167,9 @@ class RoleBindingQuerySetTest(IdentityRequest):
         ]
         for label, res_id, res_type, expected_count, expected_set in cases:
             with self.subTest(label=label):
-                qs = RoleBinding.objects.for_tenant(tenant=self.tenant, resource_id=res_id, resource_type=res_type)
+                qs = RoleBinding.objects.for_tenant(self.tenant).for_resource_filter(
+                    resource_id=res_id, resource_type=res_type
+                )
                 self.assertEqual(qs.count(), expected_count)
                 self.assertEqual(set(qs), expected_set)
 
@@ -173,7 +193,7 @@ class RoleBindingQuerySetTest(IdentityRequest):
         try:
             for label, subject_id, expected_count, expected_set in cases:
                 with self.subTest(label=label):
-                    qs = RoleBinding.objects.for_tenant(tenant=self.tenant, subject_id=subject_id)
+                    qs = RoleBinding.objects.for_tenant(self.tenant).for_subject(subject_id=subject_id)
                     self.assertEqual(qs.count(), expected_count)
                     self.assertEqual(set(qs), expected_set)
         finally:
@@ -202,7 +222,7 @@ class RoleBindingQuerySetTest(IdentityRequest):
             ]
             for label, subject_type, expected_count in cases:
                 with self.subTest(label=label):
-                    qs = RoleBinding.objects.for_tenant(tenant=self.tenant, subject_type=subject_type)
+                    qs = RoleBinding.objects.for_tenant(self.tenant).for_subject(subject_type=subject_type)
                     self.assertEqual(qs.count(), expected_count)
         finally:
             RoleBindingPrincipal.objects.filter(binding=binding_c).delete()
@@ -226,7 +246,7 @@ class RoleBindingQuerySetTest(IdentityRequest):
             ]
             for label, sid, expected_count, expected_set in cases:
                 with self.subTest(label=label):
-                    qs = RoleBinding.objects.for_tenant(tenant=self.tenant, subject_type="user", subject_id=sid)
+                    qs = RoleBinding.objects.for_tenant(self.tenant).for_subject(subject_type="user", subject_id=sid)
                     self.assertEqual(qs.count(), expected_count)
                     self.assertEqual(set(qs), expected_set)
         finally:
@@ -246,13 +266,44 @@ class RoleBindingQuerySetTest(IdentityRequest):
 
         try:
             # subject_id matching a group
-            qs = RoleBinding.objects.for_tenant(tenant=self.tenant, subject_id=self.group.uuid)
+            qs = RoleBinding.objects.for_tenant(self.tenant).for_subject(subject_id=self.group.uuid)
             self.assertEqual(qs.count(), 2)
 
             # subject_id matching a principal
-            qs = RoleBinding.objects.for_tenant(tenant=self.tenant, subject_id=principal.uuid)
+            qs = RoleBinding.objects.for_tenant(self.tenant).for_subject(subject_id=principal.uuid)
             self.assertEqual(qs.count(), 1)
             self.assertEqual(set(qs), {binding_c})
+        finally:
+            RoleBindingPrincipal.objects.filter(binding=binding_c).delete()
+            binding_c.delete()
+            role_c.delete()
+            principal.delete()
+
+    def test_subject_type_mismatch_returns_empty(self):
+        """Test that subject_type narrows the search to the correct relation table.
+
+        A group UUID passed with subject_type='user' should return nothing (and vice versa),
+        because the type constrains which relation table is queried.
+        """
+        principal = Principal.objects.create(username="mismatch_user", tenant=self.tenant, user_id="user-mismatch")
+        role_c = RoleV2.objects.create(name="role_c", tenant=self.tenant)
+        binding_c = RoleBinding.objects.create(
+            role=role_c, resource_type="workspace", resource_id="res-3", tenant=self.tenant
+        )
+        RoleBindingPrincipal.objects.create(principal=principal, binding=binding_c, source="default")
+
+        try:
+            # group UUID with subject_type='user' — searches principal_entries, finds nothing
+            qs = RoleBinding.objects.for_tenant(self.tenant).for_subject(
+                subject_type="user", subject_id=self.group.uuid
+            )
+            self.assertEqual(qs.count(), 0)
+
+            # principal UUID with subject_type='group' — searches group_entries, finds nothing
+            qs = RoleBinding.objects.for_tenant(self.tenant).for_subject(
+                subject_type="group", subject_id=principal.uuid
+            )
+            self.assertEqual(qs.count(), 0)
         finally:
             RoleBindingPrincipal.objects.filter(binding=binding_c).delete()
             binding_c.delete()
@@ -263,27 +314,29 @@ class RoleBindingQuerySetTest(IdentityRequest):
 
     def test_combined_role_and_resource_filter(self):
         """Test role_id + resource filters together."""
-        qs = RoleBinding.objects.for_tenant(
-            tenant=self.tenant, role_id=self.role_a.uuid, resource_id="res-1", resource_type="workspace"
+        qs = (
+            RoleBinding.objects.for_tenant(self.tenant)
+            .for_role(self.role_a.uuid)
+            .for_resource_filter(resource_id="res-1", resource_type="workspace")
         )
         self.assertEqual(set(qs), {self.binding_a})
 
     def test_combined_role_and_resource_no_match(self):
         """Test that combining filters that don't intersect returns empty."""
-        qs = RoleBinding.objects.for_tenant(
-            tenant=self.tenant, role_id=self.role_a.uuid, resource_id="res-2", resource_type="workspace"
+        qs = (
+            RoleBinding.objects.for_tenant(self.tenant)
+            .for_role(self.role_a.uuid)
+            .for_resource_filter(resource_id="res-2", resource_type="workspace")
         )
         self.assertEqual(qs.count(), 0)
 
     def test_combined_all_filters(self):
         """Test all filters together (role_id + resource + subject)."""
-        qs = RoleBinding.objects.for_tenant(
-            tenant=self.tenant,
-            role_id=self.role_a.uuid,
-            resource_id="res-1",
-            resource_type="workspace",
-            subject_type="group",
-            subject_id=self.group.uuid,
+        qs = (
+            RoleBinding.objects.for_tenant(self.tenant)
+            .for_role(self.role_a.uuid)
+            .for_resource_filter(resource_id="res-1", resource_type="workspace")
+            .for_subject(subject_type="group", subject_id=self.group.uuid)
         )
         self.assertEqual(set(qs), {self.binding_a})
 
@@ -291,7 +344,7 @@ class RoleBindingQuerySetTest(IdentityRequest):
 
     def test_annotates_role_created(self):
         """Test that role_created annotation is present and correct."""
-        qs = RoleBinding.objects.for_tenant(tenant=self.tenant)
+        qs = RoleBinding.objects.for_tenant(self.tenant)
         for binding, role in [
             (self.binding_a, self.role_a),
             (self.binding_b, self.role_b),
