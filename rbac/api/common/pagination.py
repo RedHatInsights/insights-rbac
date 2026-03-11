@@ -240,18 +240,20 @@ class V2CursorPagination(CursorPagination):
         """
         model = queryset.model
 
+        # Check queryset model first - this ensures correct mapping regardless of
+        # query parameters (e.g., list endpoint with subject_type filter)
         if self._is_model(model, "RoleBinding"):
             return self.ROLE_BINDING_FIELD_MAPPING
+        if self._is_model(model, "Principal"):
+            return self.USER_FIELD_MAPPING
+        if self._is_model(model, "Group"):
+            return self.GROUP_FIELD_MAPPING
 
-        # For by-subject endpoint, check subject_type to determine field mapping
+        # Fallback: check subject_type parameter for endpoints with dynamic querysets
         subject_type = request.query_params.get("subject_type")
         if subject_type == "user":
             return self.USER_FIELD_MAPPING
         elif subject_type == "group":
-            return self.GROUP_FIELD_MAPPING
-
-        # Check queryset model for Group (by-subject endpoint without subject_type)
-        if self._is_model(model, "Group"):
             return self.GROUP_FIELD_MAPPING
 
         # For endpoints without subject_type, use the class's own FIELD_MAPPING
@@ -275,21 +277,20 @@ class V2CursorPagination(CursorPagination):
         """
         model = queryset.model
 
-        # RoleBinding queryset (list endpoint) - always use role_created
-        # This must be checked FIRST because subject_type can be passed as a filter
-        # to the list endpoint, but the queryset is still RoleBinding
+        # Check queryset model first - this ensures correct ordering regardless of
+        # query parameters (e.g., list endpoint with subject_type filter)
         if self._is_model(model, "RoleBinding"):
             return self.ROLE_BINDING_DEFAULT_ORDERING
+        if self._is_model(model, "Principal"):
+            return self.USER_DEFAULT_ORDERING
+        if self._is_model(model, "Group"):
+            return self.GROUP_DEFAULT_ORDERING
 
-        # For by-subject endpoint, check subject_type to determine ordering
+        # Fallback: check subject_type parameter for endpoints with dynamic querysets
         subject_type = request.query_params.get("subject_type")
         if subject_type == "user":
             return self.USER_DEFAULT_ORDERING
         elif subject_type == "group":
-            return self.GROUP_DEFAULT_ORDERING
-
-        # Check queryset model for Group (by-subject endpoint without subject_type)
-        if self._is_model(model, "Group"):
             return self.GROUP_DEFAULT_ORDERING
 
         # Fall back to instance ordering for backwards compatibility
