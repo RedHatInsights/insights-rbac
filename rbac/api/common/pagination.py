@@ -21,8 +21,6 @@ import logging
 import re
 from urllib.parse import urlparse
 
-from management.group.model import Group
-from management.role_binding.model import RoleBinding
 from rest_framework.exceptions import ValidationError
 from rest_framework.pagination import CursorPagination, LimitOffsetPagination
 from rest_framework.response import Response
@@ -203,6 +201,22 @@ class V2CursorPagination(CursorPagination):
     # Combined mapping for backward compatibility (defaults to group)
     FIELD_MAPPING = GROUP_FIELD_MAPPING
 
+    @staticmethod
+    def _is_model(queryset_model, model_name: str) -> bool:
+        """Check if queryset model matches expected model by name.
+
+        Uses Django's _meta API for robust comparison that works across
+        different import paths and parallel test execution.
+
+        Args:
+            queryset_model: The model class from queryset.model
+            model_name: Expected model name (e.g., 'RoleBinding', 'Group')
+
+        Returns:
+            True if the model matches, False otherwise
+        """
+        return queryset_model._meta.model_name.lower() == model_name.lower()
+
     def _get_field_mapping(self, request, queryset) -> dict:
         """Get the appropriate field mapping based on subject_type or queryset model.
 
@@ -229,11 +243,11 @@ class V2CursorPagination(CursorPagination):
         elif subject_type == "group":
             return self.GROUP_FIELD_MAPPING
 
-        # Check queryset model for list endpoint
+        # Check queryset model for list endpoint (use _meta for robust comparison)
         model = queryset.model
-        if model == RoleBinding:
+        if self._is_model(model, "RoleBinding"):
             return self.ROLE_BINDING_FIELD_MAPPING
-        if model == Group:
+        if self._is_model(model, "Group"):
             return self.GROUP_FIELD_MAPPING
 
         # For endpoints without subject_type, use the class's own FIELD_MAPPING
@@ -256,11 +270,11 @@ class V2CursorPagination(CursorPagination):
         elif subject_type == "group":
             return self.GROUP_DEFAULT_ORDERING
 
-        # Check queryset model
+        # Check queryset model (use _meta for robust comparison)
         model = queryset.model
-        if model == RoleBinding:
+        if self._is_model(model, "RoleBinding"):
             return self.ROLE_BINDING_DEFAULT_ORDERING
-        if model == Group:
+        if self._is_model(model, "Group"):
             return self.GROUP_DEFAULT_ORDERING
 
         # Fall back to instance ordering for backwards compatibility
