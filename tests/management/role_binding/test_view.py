@@ -2317,10 +2317,10 @@ class BatchCreateViewTests(IdentityRequest):
         item = response.data["role_bindings"][0]
 
         self.assertIn("id", item["role"])
-        self.assertEqual(item["role"]["id"], str(self.role.uuid))
+        self.assertEqual(item["role"]["id"], self.role.uuid)
 
         self.assertIn("id", item["subject"])
-        self.assertEqual(item["subject"]["id"], str(self.group.uuid))
+        self.assertEqual(item["subject"]["id"], self.group.uuid)
         self.assertEqual(item["subject"]["type"], "group")
 
         self.assertIn("id", item["resource"])
@@ -2331,7 +2331,7 @@ class BatchCreateViewTests(IdentityRequest):
         return_value=True,
     )
     def test_batch_create_with_fields_param(self, mock_permission):
-        """Query param ?fields=role(name,id) filters response fields."""
+        """Query param ?fields=role(name,id) strips unrequested top-level sections."""
         url = self._get_batch_create_url()
         response = self.client.post(
             f"{url}?fields=role(name,id)", self._valid_payload(), format="json", **self.headers
@@ -2713,7 +2713,7 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
         actual["roles"] = sorted(actual["roles"], key=lambda r: str(r["id"]))
         expected_roles = sorted([{"id": self.role1.uuid}, {"id": self.role2.uuid}], key=lambda r: str(r["id"]))
         expected = {
-            "subject": {"id": self.group.uuid, "type": SubjectType.GROUP},
+            "subject": {"id": self.group.uuid},
             "roles": expected_roles,
             "resource": {"id": str(self.workspace.id)},
         }
@@ -2737,11 +2737,7 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
         expected = {
-            "subject": {
-                "id": self.principal.uuid,
-                "type": SubjectType.USER,
-                "user": {"username": self.principal.username},
-            },
+            "subject": {"id": self.principal.uuid},
             "roles": [{"id": self.role1.uuid}],
             "resource": {"id": str(self.workspace.id)},
         }
@@ -2777,7 +2773,7 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
 
         # Should only have role2 (role1 was replaced)
         expected = {
-            "subject": {"id": self.group.uuid, "type": SubjectType.GROUP},
+            "subject": {"id": self.group.uuid},
             "roles": [{"id": self.role2.uuid}],
             "resource": {"id": str(self.workspace.id)},
         }
@@ -2994,7 +2990,7 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
                     {"roles": [{"id": str(self.role1.uuid)}]},
                     "Invalid field(s): Unknown field: 'bogus_field'."
                     " Valid resource fields: ['id', 'name', 'type']."
-                    " Valid role fields: ['id', 'name']."
+                    " Valid roles fields: ['id', 'name']."
                     " Valid subject fields: ['group.description', 'group.name',"
                     " 'group.user_count', 'id', 'type']."
                     " Valid root fields: ['last_modified'].",
@@ -3062,7 +3058,7 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
 
         # Only one binding should be created despite the duplicate
         expected = {
-            "subject": {"id": self.group.uuid, "type": SubjectType.GROUP},
+            "subject": {"id": self.group.uuid},
             "roles": [{"id": self.role1.uuid}],
             "resource": {"id": str(self.workspace.id)},
         }

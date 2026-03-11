@@ -80,6 +80,8 @@ model Role {
     permissions_count?: int32;
     @doc("Timestamp of when the role was last modified")
     last_modified?: offsetDateTime;
+    @doc("ID of the organization that owns this role. Will not be populated if roles belong to the Public Tenant.")
+    org_id?: string;
 }
 
 /**
@@ -711,7 +713,7 @@ namespace Workspaces {
 @tag("Role Bindings")
 @doc("Operations about role bindings")
 namespace RoleBindings {
-    const DefaultRoleBindingBySubjectFieldMask: FieldMask = "resource(id),subject(id),roles(id),last_modified";
+    const DefaultRoleBindingBySubjectFieldMask: FieldMask = "resource(id),subject(id),roles(id)";
 
 
     @discriminator("type")
@@ -937,7 +939,7 @@ namespace RoleBindings {
     @opExample(#{
         parameters: #{
             limit: 10,
-            exclude_sources: "direct",
+            exclude_sources: ExcludeSources.direct,
             resource_id: "550e8400-e29b-41d4-a716-446655440001",
             resource_type: ResourceType.workspace
         },
@@ -1006,8 +1008,8 @@ namespace RoleBindings {
         @query exclude_sources?: ExcludeSources = ExcludeSources.none;
 
         @doc("Control which fields are included in the response to optimize payload size and improve performance.")
-        @example("subject(group.name,group.user_count),role(name),resource(name,type),last_modified")
-        @query fields?: FieldMask = "subject(group.name),role(name),resource(name,type),last_modified";
+        @example("subject(group.name,group.user_count),roles(name),resource(name,type),last_modified")
+        @query fields?: FieldMask = "subject(group.name),roles(name),resource(name,type),last_modified";
         @doc("Sort by specified field(s), prefix with '-' for descending order")
         @example("subject_name,-subject_type")
         @query order_by?: OrderBy = "subject_name";
@@ -1088,7 +1090,6 @@ namespace RoleBindings {
         },
         returnType: #{
             _: 200,
-            last_modified: offsetDateTime.fromISO("2024-08-04T12:00:00Z"),
             subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group", group: #{ name: "Engineering Team", user_count: 25 } },
             roles: #[
                 #{ id: "550e8400-e29b-41d4-a716-446655440002", name: "Workspace Admin" },
@@ -1383,6 +1384,7 @@ namespace Roles {
         **Examples:**
         - `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)
         - `?fields=permissions_count,last_modified` - Include only count and timestamp
+        - `?fields=id,name,org_id` - Include org_id (not returned by default; must be requested explicitly)
         """)
         @example("id,name,permissions_count")
         @query fields?: string = DefaultRoleFieldMask;
