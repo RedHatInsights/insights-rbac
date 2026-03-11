@@ -320,16 +320,9 @@ def _get_tools() -> list[Any]:
     """Resolve and cache tool metadata from FastMCP on first call.
 
     Tools are static (listChanged: False). Lazy initialization avoids
-    import-time side effects. Uses run_until_complete when an event loop
-    is already running (e.g. under ASGI) to avoid RuntimeError.
+    import-time side effects. Runs in WSGI context where no event loop
+    is active; ASGI would require a different approach.
     """
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        loop = None
-
-    if loop is not None:
-        return loop.run_until_complete(mcp.list_tools())
     return asyncio.run(mcp.list_tools())
 
 
