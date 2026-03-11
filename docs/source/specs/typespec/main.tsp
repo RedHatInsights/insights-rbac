@@ -1336,7 +1336,7 @@ namespace Roles {
         @doc("Cursor for cursor-based pagination.")
         @query cursor?: Cursor;
 
-        @doc("Filter by role name using case sensitive exact match.")
+        @doc("Filter by role name. Exact match by default; use * as a wildcard for partial matching (e.g. foo*).")
         @query name?: string;
 
         @doc("Control which fields are included in the response to optimize payload size.")

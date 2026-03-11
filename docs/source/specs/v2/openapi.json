@@ -959,7 +959,7 @@
             "name": "name",
             "in": "query",
             "required": false,
-            "description": "Filter by role name using case sensitive exact match.",
+            "description": "Filter by role name. Exact match by default; use * as a wildcard for partial matching (e.g. foo*).",
             "schema": {
               "type": "string"
             },

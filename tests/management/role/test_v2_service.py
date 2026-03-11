@@ -647,6 +647,47 @@ class RoleV2ServiceListTests(IdentityRequest):
 
         self.assertEqual(queryset.count(), 0)
 
+    def test_list_filters_by_name_wildcard_prefix(self):
+        """Test that name=role_o* matches names starting with 'role_o'."""
+        queryset = self.service.list({"name": "role_o*"})
+
+        self.assertEqual(queryset.count(), 1)
+        self.assertEqual(queryset.first().name, "role_one")
+
+    def test_list_filters_by_name_wildcard_suffix(self):
+        """Test that name=*two matches names ending with 'two'."""
+        queryset = self.service.list({"name": "*two"})
+
+        self.assertEqual(queryset.count(), 1)
+        self.assertEqual(queryset.first().name, "role_two")
+
+    def test_list_filters_by_name_wildcard_contains(self):
+        """Test that name=*ole_* matches names containing 'ole_'."""
+        queryset = self.service.list({"name": "*ole_*"})
+
+        self.assertEqual(queryset.count(), 2)
+        names = set(queryset.values_list("name", flat=True))
+        self.assertEqual(names, {"role_one", "role_two"})
+
+    def test_list_filters_by_name_wildcard_complex(self):
+        """Test that a multi-wildcard pattern like r*_on* matches correctly."""
+        queryset = self.service.list({"name": "r*_on*"})
+
+        self.assertEqual(queryset.count(), 1)
+        self.assertEqual(queryset.first().name, "role_one")
+
+    def test_list_name_exact_match_unchanged(self):
+        """Test that name without wildcard still requires exact match."""
+        queryset = self.service.list({"name": "role"})
+
+        self.assertEqual(queryset.count(), 0)
+
+    def test_list_filters_by_name_wildcard_no_match(self):
+        """Test that a wildcard pattern matching nothing returns empty."""
+        queryset = self.service.list({"name": "zzz*"})
+
+        self.assertEqual(queryset.count(), 0)
+
     def test_list_without_name_returns_all(self):
         """Test that omitting the name param returns all roles for the tenant."""
         RoleV2.objects.create(name="role_other", description="Other role", tenant=self.tenant)
@@ -654,6 +695,87 @@ class RoleV2ServiceListTests(IdentityRequest):
         queryset = self.service.list({})
 
         self.assertEqual(queryset.count(), 3)
+
+    def test_list_name_with_literal_star_matches_as_glob(self):
+        """Test that a role whose name contains '*' is matched by glob, not literally.
+
+        If a role is named 'role_*_admin', searching for 'role_*_admin' treats
+        the '*' as a wildcard, so it also matches 'role_foo_admin'.
+        """
+        RoleV2.objects.create(name="role_*_admin", description="Star role", tenant=self.tenant)
+        RoleV2.objects.create(name="role_foo_admin", description="Foo role", tenant=self.tenant)
+
+        queryset = self.service.list({"name": "role_*_admin"})
+
+        names = set(queryset.values_list("name", flat=True))
+        self.assertIn("role_*_admin", names)
+        self.assertIn("role_foo_admin", names)
+        self.assertEqual(queryset.count(), 2)
+
+    def test_list_name_with_literal_star_no_exact_escape(self):
+        """Test there is no way to search for a literal '*' via the name filter.
+
+        Since any '*' triggers glob mode, a role named 'star*role' cannot be
+        targeted exclusively — the filter will always treat '*' as a wildcard.
+        """
+        RoleV2.objects.create(name="star*role", description="Has star", tenant=self.tenant)
+        RoleV2.objects.create(name="starXrole", description="No star", tenant=self.tenant)
+
+        queryset = self.service.list({"name": "star*role"})
+
+        self.assertEqual(queryset.count(), 2)
+
+    def test_list_name_regex_metacharacters_escaped(self):
+        """Test that regex metacharacters in role names are properly escaped.
+
+        A role named 'role.one' must NOT match 'role_one' when searched by
+        exact name, because '.' is escaped by re.escape().
+        """
+        RoleV2.objects.create(name="role.one", description="Dot role", tenant=self.tenant)
+
+        exact = self.service.list({"name": "role.one"})
+        self.assertEqual(exact.count(), 1)
+        self.assertEqual(exact.first().name, "role.one")
+
+        # role_one and role_two already exist from setUp; '.' must NOT act as regex wildcard
+        glob = self.service.list({"name": "role.*"})
+        names = set(glob.values_list("name", flat=True))
+        self.assertEqual(names, {"role.one"})
+
+    def test_list_name_glob_star_only_matches_all(self):
+        """Test that name='*' matches every role for the tenant."""
+        queryset = self.service.list({"name": "*"})
+
+        self.assertEqual(queryset.count(), 2)
+
+    def test_list_name_glob_excess_wildcards_become_literal(self):
+        """Test that wildcards beyond the maxsplit limit are treated as literal '*'."""
+
+        # Build a pattern with >10 wildcards: "a*b*c*...*<last>"
+        segments = [chr(ord("a") + i) for i in range(13)]
+        search_pattern = "*".join(segments)
+
+        # Role whose name uses literal '*' where the excess wildcards are
+        role_with_stars = RoleV2.objects.create(
+            name="*".join(segments),
+            description="Has literal stars",
+            tenant=self.tenant,
+        )
+        # Role that replaces the excess '*' with regular chars — should NOT match
+        partial = list(segments)
+        partial[-2] = "X" + partial[-2]
+        partial[-1] = "X" + partial[-1]
+        RoleV2.objects.create(
+            name="X".join(segments),
+            description="No literal stars",
+            tenant=self.tenant,
+        )
+
+        queryset = self.service.list({"name": search_pattern})
+
+        names = set(queryset.values_list("name", flat=True))
+        self.assertIn(role_with_stars.name, names)
+        self.assertEqual(queryset.count(), 1)
 
     def test_list_annotates_permissions_count(self):
         """Test that queryset has permissions_count_annotation when fields includes permissions_count."""
