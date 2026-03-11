@@ -18,7 +18,7 @@
 
 from management.atomic_transactions import atomic
 from management.base_viewsets import BaseV2ViewSet
-from management.permissions import RoleAccessPermission
+from management.permissions.role_v2_access import RoleV2KesselAccessPermission
 from management.role.v2_exceptions import CustomRoleRequiredError, RolesNotFoundError
 from management.role.v2_model import RoleV2
 from management.role.v2_serializer import (
@@ -48,7 +48,7 @@ class RoleV2CursorPagination(V2CursorPagination):
 class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
     """RoleV2 ViewSet."""
 
-    permission_classes = (RoleAccessPermission,)
+    permission_classes = (RoleV2KesselAccessPermission,)
     queryset = RoleV2.objects.exclude(type=RoleV2.Types.PLATFORM)
     serializer_class = RoleV2ResponseSerializer
     pagination_class = RoleV2CursorPagination

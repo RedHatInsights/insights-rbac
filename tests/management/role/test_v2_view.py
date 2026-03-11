@@ -52,6 +52,12 @@ class RoleV2RetrieveViewTest(IdentityRequest):
         super().setUp()
         self.client = APIClient()
 
+        self._permission_patcher = patch(
+            "management.permissions.role_v2_access.RoleV2KesselAccessPermission.has_permission",
+            return_value=True,
+        )
+        self.mock_permission = self._permission_patcher.start()
+
         # Create permissions
         self.permission1 = Permission.objects.create(
             permission="inventory:hosts:read",
@@ -84,6 +90,7 @@ class RoleV2RetrieveViewTest(IdentityRequest):
 
     def tearDown(self):
         """Tear down test data."""
+        self._permission_patcher.stop()
         RoleV2.objects.filter(tenant=self.tenant).delete()
         Permission.objects.filter(tenant=self.tenant).delete()
         super().tearDown()
@@ -293,15 +300,16 @@ class RoleV2RetrieveViewTest(IdentityRequest):
         self.assertEqual(data["id"], str(self.custom_role.uuid))
         self.assertEqual(data["name"], "Test Custom Role")
 
-    @patch("management.permissions.RoleAccessPermission.has_permission")
-    def test_retrieve_role_permission_denied(self, mock_permission):
+    def test_retrieve_role_permission_denied(self):
         """Test retrieving a role when user lacks permission."""
-        mock_permission.return_value = False
+        self.mock_permission.return_value = False
 
         url = self._get_role_url(self.custom_role.uuid)
         response = self.client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+        self.mock_permission.return_value = True
 
     def test_retrieve_role_with_special_characters_in_name(self):
         """Test retrieving a role with special characters in name and description."""
@@ -412,6 +420,12 @@ class RoleV2ViewSetTests(IdentityRequest):
         super().setUp()
         self.client = APIClient()
         self.client.credentials(HTTP_X_RH_IDENTITY=self.headers.get("HTTP_X_RH_IDENTITY"))
+
+        self._permission_patcher = patch(
+            "management.permissions.role_v2_access.RoleV2KesselAccessPermission.has_permission",
+            return_value=True,
+        )
+        self.mock_permission = self._permission_patcher.start()
         # URL for roles endpoint
         self.url = reverse("v2_management:roles-list")
         self.delete_url = reverse("v2_management:roles-bulk-destroy")
@@ -430,6 +444,7 @@ class RoleV2ViewSetTests(IdentityRequest):
 
     def tearDown(self):
         """Tear down RoleV2ViewSet tests."""
+        self._permission_patcher.stop()
         RoleV2.objects.all().delete()
         Permission.objects.filter(tenant=self.tenant).delete()
 
