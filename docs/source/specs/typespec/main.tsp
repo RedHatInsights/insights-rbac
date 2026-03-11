@@ -1017,7 +1017,7 @@ namespace RoleBindings {
 
     @doc("Grant access to a resource to a set of subjects with a set of roles")
     @summary("Grant access to a resource to a set of subjects with a set of roles")
-    @route(":batchCreate")
+    @route(":batchCreate/")
     @opExample(#{
         parameters: #{
             body: #{
@@ -1480,7 +1480,7 @@ namespace Roles {
     }
 
     @doc("Delete multiple roles by ID atomically.")
-    @route(":batchDelete")
+    @route(":batchDelete/")
     @opExample(#{
         parameters: #{
             body: #{
