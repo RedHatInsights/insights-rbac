@@ -1070,6 +1070,31 @@ class RoleBindingViewSetTest(IdentityRequest):
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
     )
+    def test_by_subject_returns_role_name_with_fields_param(self, mock_permission):
+        """Test that fields=roles(name) returns role name in the response."""
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace" f"&fields=roles(name)&limit=1",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertGreaterEqual(len(response.data["data"]), 1)
+
+        item = response.data["data"][0]
+        self.assertIn("roles", item)
+        self.assertIsInstance(item["roles"], list)
+        self.assertGreater(len(item["roles"]), 0, "Expected at least one role in response")
+
+        role = item["roles"][0]
+        self.assertIn("name", role, "Role name should be present when fields=roles(name) is requested")
+        self.assertIsInstance(role["name"], str)
+        self.assertGreater(len(role["name"]), 0)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
     def test_by_subject_strips_nul_bytes_from_resource_id(self, mock_permission):
         """Test that NUL bytes are stripped from resource_id parameter."""
         url = self._get_by_subject_url()

@@ -526,6 +526,25 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertEqual(len(response.data["data"]), 1)
         self.assertEqual(response.data["data"][0]["name"], "test_role")
 
+    def test_list_roles_with_wildcard_name_filter(self):
+        """Test that name=test* returns roles starting with 'test'."""
+        RoleV2.objects.create(name="other_role", description="Other", tenant=self.tenant)
+
+        url = f"{self.url}?name=test*"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["name"], "test_role")
+
+    def test_list_roles_wildcard_no_match(self):
+        """Test that a wildcard pattern matching nothing returns empty list."""
+        url = f"{self.url}?name=zzz*"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"], [])
+
     def test_list_roles_with_order_by_name(self):
         """Test that order_by parameter returns roles sorted by name."""
         RoleV2.objects.create(name="other_role", description="Other", tenant=self.tenant)
