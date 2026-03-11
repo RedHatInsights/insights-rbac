@@ -26,7 +26,6 @@ from management.models import Permission, Role
 from management.permission.scope_service import (
     ImplicitResourceService,
     Scope,
-    resource_type_for_scope,
     scopes_for_resource_type,
 )
 from .test_model import INVALID_PERMISSIONS_V1
@@ -600,16 +599,7 @@ class RoleTests(TestCase):
 
 
 class ResourceTypeMappingTest(TestCase):
-    """Tests for resource_type_for_scope and scopes_for_resource_type helpers."""
-
-    def test_resource_type_for_tenant_scope(self):
-        self.assertEqual(resource_type_for_scope(Scope.TENANT), "tenant")
-
-    def test_resource_type_for_root_scope(self):
-        self.assertEqual(resource_type_for_scope(Scope.ROOT), "workspace")
-
-    def test_resource_type_for_default_scope(self):
-        self.assertEqual(resource_type_for_scope(Scope.DEFAULT), "workspace")
+    """Tests for scopes_for_resource_type helper."""
 
     def test_scopes_for_tenant_resource_type(self):
         self.assertEqual(scopes_for_resource_type("tenant"), {Scope.TENANT})

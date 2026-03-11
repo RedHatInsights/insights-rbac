@@ -301,11 +301,6 @@ SCOPE_RESOURCE_TYPE: dict[Scope, str] = {
 """Maps each Scope to the resource_type string it binds to."""
 
 
-def resource_type_for_scope(scope: Scope) -> str:
-    """Return the resource_type string a given scope binds to."""
-    return SCOPE_RESOURCE_TYPE[scope]
-
-
 def scopes_for_resource_type(resource_type: str) -> set[Scope]:
     """Return all Scope values that map to the given resource_type."""
     return {scope for scope, rt in SCOPE_RESOURCE_TYPE.items() if rt == resource_type}
