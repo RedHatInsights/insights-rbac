@@ -215,17 +215,19 @@ class V2CursorPagination(CursorPagination):
         Returns:
             True if the model matches, False otherwise
         """
-        return queryset_model._meta.model_name.lower() == model_name.lower()
+        # Use model_name from _meta (Django sets this to class name in lowercase)
+        actual_name = queryset_model._meta.model_name
+        expected_name = model_name.lower()
+        return actual_name == expected_name
 
     def _get_field_mapping(self, request, queryset) -> dict:
-        """Get the appropriate field mapping based on subject_type or queryset model.
+        """Get the appropriate field mapping based on queryset model or subject_type.
 
-        For role-bindings by-subject endpoint (with subject_type parameter):
-        - subject_type=user: returns USER_FIELD_MAPPING
-        - subject_type=group: returns GROUP_FIELD_MAPPING
+        For the list endpoint (RoleBinding queryset), always returns ROLE_BINDING_FIELD_MAPPING
+        regardless of any subject_type filter parameter.
 
-        For role-bindings list endpoint (RoleBinding model):
-        - returns ROLE_BINDING_FIELD_MAPPING
+        For the by-subject endpoint (Group/Principal queryset), returns the mapping
+        based on the subject_type parameter.
 
         For other endpoints: returns the class's FIELD_MAPPING.
 
@@ -236,17 +238,19 @@ class V2CursorPagination(CursorPagination):
         Returns:
             Field mapping dict appropriate for the endpoint/subject_type
         """
-        # First check subject_type for by-subject endpoint
+        model = queryset.model
+
+        if self._is_model(model, "RoleBinding"):
+            return self.ROLE_BINDING_FIELD_MAPPING
+
+        # For by-subject endpoint, check subject_type to determine field mapping
         subject_type = request.query_params.get("subject_type")
         if subject_type == "user":
             return self.USER_FIELD_MAPPING
         elif subject_type == "group":
             return self.GROUP_FIELD_MAPPING
 
-        # Check queryset model for list endpoint (use _meta for robust comparison)
-        model = queryset.model
-        if self._is_model(model, "RoleBinding"):
-            return self.ROLE_BINDING_FIELD_MAPPING
+        # Check queryset model for Group (by-subject endpoint without subject_type)
         if self._is_model(model, "Group"):
             return self.GROUP_FIELD_MAPPING
 
@@ -254,26 +258,37 @@ class V2CursorPagination(CursorPagination):
         return self.FIELD_MAPPING
 
     def _get_default_ordering(self, request, queryset) -> str:
-        """Get the appropriate default ordering based on subject_type or queryset model.
+        """Get the appropriate default ordering based on queryset model or subject_type.
+
+        For the list endpoint (RoleBinding queryset), always uses role_created ordering
+        regardless of any subject_type filter parameter.
+
+        For the by-subject endpoint (Group/Principal queryset), uses ordering based
+        on the subject_type parameter.
 
         Args:
             request: The HTTP request object
             queryset: The queryset being paginated
 
         Returns:
-            Default ordering field for the subject_type/model
+            Default ordering field for the queryset model/subject_type
         """
-        # First check subject_type for by-subject endpoint
+        model = queryset.model
+
+        # RoleBinding queryset (list endpoint) - always use role_created
+        # This must be checked FIRST because subject_type can be passed as a filter
+        # to the list endpoint, but the queryset is still RoleBinding
+        if self._is_model(model, "RoleBinding"):
+            return self.ROLE_BINDING_DEFAULT_ORDERING
+
+        # For by-subject endpoint, check subject_type to determine ordering
         subject_type = request.query_params.get("subject_type")
         if subject_type == "user":
             return self.USER_DEFAULT_ORDERING
         elif subject_type == "group":
             return self.GROUP_DEFAULT_ORDERING
 
-        # Check queryset model (use _meta for robust comparison)
-        model = queryset.model
-        if self._is_model(model, "RoleBinding"):
-            return self.ROLE_BINDING_DEFAULT_ORDERING
+        # Check queryset model for Group (by-subject endpoint without subject_type)
         if self._is_model(model, "Group"):
             return self.GROUP_DEFAULT_ORDERING
 
