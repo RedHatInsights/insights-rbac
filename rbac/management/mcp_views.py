@@ -21,6 +21,7 @@ import asyncio
 import inspect
 import json
 import logging
+import time
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -35,6 +36,7 @@ from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from management.principal.view import PrincipalView
 from mcp.server.fastmcp import FastMCP
+from prometheus_client import Counter, Histogram
 
 from api.common import RH_IDENTITY_HEADER
 
@@ -45,6 +47,19 @@ _principal_view = PrincipalView.as_view()
 logger = logging.getLogger(__name__)
 
 PROTOCOL_VERSION = "2025-03-26"
+
+# --- Prometheus metrics ---
+
+mcp_tool_call_total = Counter(
+    "rbac_mcp_tool_call_total",
+    "Total MCP tool calls (excludes hello)",
+    ["tool", "status"],
+)
+mcp_tool_call_duration_seconds = Histogram(
+    "rbac_mcp_tool_call_duration_seconds",
+    "Duration of MCP tool calls in seconds (excludes hello)",
+    ["tool"],
+)
 
 # Factory for building internal Django requests to delegate to views.
 _request_factory = RequestFactory()
@@ -268,10 +283,22 @@ class MCPView(View):
 
     def post(self, request: HttpRequest) -> HttpResponse:
         """Handle MCP JSON-RPC requests via HTTP POST."""
+        org_id = getattr(getattr(request, "user", None), "org_id", None)
+        req_id = getattr(request, "req_id", "unknown")
+
         try:
             rpc_req = _parse_jsonrpc(request.body)
         except JsonRpcError as exc:
+            logger.warning(
+                "mcp: parse error, org_id=%s, req_id=%s, code=%s, msg='%s'",
+                org_id,
+                req_id,
+                exc.code,
+                exc.message,
+            )
             return _error_response(exc.request_id, exc.code, exc.message)
+
+        logger.info("mcp: method=%s, org_id=%s, req_id=%s", rpc_req.method, org_id, req_id)
 
         if rpc_req.request_id is None:
             return HttpResponse(status=202, content_type="application/json")
@@ -283,6 +310,7 @@ class MCPView(View):
         if rpc_req.method == "tools/call":
             return _handle_tools_call(request, rpc_req.request_id, rpc_req.params)
 
+        logger.warning("mcp: unknown method=%s, org_id=%s, req_id=%s", rpc_req.method, org_id, req_id)
         return _error_response(rpc_req.request_id, -32601, f"Method not found: {rpc_req.method}")
 
     def get(self, request: HttpRequest) -> HttpResponse:
@@ -299,7 +327,8 @@ class MCPView(View):
 
 def _handle_initialize(request: HttpRequest, request_id: Any, params: dict[str, Any]) -> JsonResponse:
     """Handle MCP initialize request."""
-    logger.info("MCP initialize request received")
+    client_info = params.get("clientInfo", {})
+    logger.info("mcp: initialize, client=%s/%s", client_info.get("name", "unknown"), client_info.get("version", "?"))
     result = {
         "protocolVersion": PROTOCOL_VERSION,
         "capabilities": {
@@ -328,7 +357,6 @@ def _get_tools() -> list[Any]:
 
 def _handle_tools_list(request: HttpRequest, request_id: Any, params: dict[str, Any]) -> JsonResponse:
     """Handle MCP tools/list request using FastMCP's registered tools."""
-    logger.info("MCP tools/list request received")
     tools_data = [
         {
             "name": tool.name,
@@ -366,27 +394,55 @@ def _handle_tools_call(request: HttpRequest, request_id: Any, params: dict[str, 
 
     config = _TOOL_CONFIG.get(tool_name)
     if config is None:
+        logger.warning("mcp: tools/call unknown tool='%s'", tool_name)
         return _error_response(request_id, -32602, f"Unknown tool: {tool_name}")
 
-    logger.info("MCP tools/call: tool='%s', argument_keys=%s", tool_name, list(arguments.keys()))
+    org_id = getattr(getattr(request, "user", None), "org_id", None)
+    logger.info(
+        "mcp: tools/call tool='%s', org_id=%s, args=%s",
+        tool_name,
+        org_id,
+        list(arguments.keys()),
+    )
 
     if config.requires_auth:
-        user = getattr(request, "user", None)
-        if not user or not getattr(user, "org_id", None):
+        if not org_id:
+            logger.warning("mcp: tools/call tool='%s' rejected, no auth", tool_name)
+            _record_metric(tool_name, "auth_error")
             return _error_response(request_id, -32000, "Authentication required")
+
+    track = tool_name != "hello"
+    start = time.monotonic() if track else 0
 
     try:
         if config.passes_request:
             result = config.fn(request, **arguments)
         else:
             result = config.fn(**arguments)
+
+        if track:
+            duration = time.monotonic() - start
+            _record_metric(tool_name, "success", duration)
+            logger.info("mcp: tools/call tool='%s' completed in %.3fs", tool_name, duration)
+
         content = [{"type": "text", "text": _normalize_tool_result(result)}]
         return _success_response(request_id, {"content": content, "isError": False})
     except TypeError as exc:
+        if track:
+            _record_metric(tool_name, "invalid_params", time.monotonic() - start)
         return _error_response(request_id, -32602, f"Invalid params for tool '{tool_name}': {exc}")
     except Exception:
-        logger.exception("Error executing MCP tool '%s'", tool_name)
+        if track:
+            _record_metric(tool_name, "error", time.monotonic() - start)
+        logger.exception("mcp: tools/call tool='%s' failed", tool_name)
         return _error_response(request_id, -32603, "Internal error executing tool")
+
+
+def _record_metric(tool_name: str, status: str, duration: float | None = None) -> None:
+    """Record prometheus metrics for a tool call."""
+    mcp_tool_call_total.labels(tool=tool_name, status=status).inc()
+    if duration is not None:
+        mcp_tool_call_duration_seconds.labels(tool=tool_name).observe(duration)
 
 
 # --- JSON-RPC response helpers ---
