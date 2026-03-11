@@ -21,8 +21,6 @@ import logging
 import re
 from urllib.parse import urlparse
 
-from management.group.model import Group
-from management.role_binding.model import RoleBinding
 from rest_framework.exceptions import ValidationError
 from rest_framework.pagination import CursorPagination, LimitOffsetPagination
 from rest_framework.response import Response
@@ -230,10 +228,10 @@ class V2CursorPagination(CursorPagination):
             return self.GROUP_FIELD_MAPPING
 
         # Check queryset model for list endpoint
-        model = queryset.model
-        if model == RoleBinding:
+        model_name = queryset.model._meta.object_name
+        if model_name == "RoleBinding":
             return self.ROLE_BINDING_FIELD_MAPPING
-        if model == Group:
+        if model_name == "Group":
             return self.GROUP_FIELD_MAPPING
 
         # For endpoints without subject_type, use the class's own FIELD_MAPPING
@@ -257,10 +255,10 @@ class V2CursorPagination(CursorPagination):
             return self.GROUP_DEFAULT_ORDERING
 
         # Check queryset model
-        model = queryset.model
-        if model == RoleBinding:
+        model_name = queryset.model._meta.object_name
+        if model_name == "RoleBinding":
             return self.ROLE_BINDING_DEFAULT_ORDERING
-        if model == Group:
+        if model_name == "Group":
             return self.GROUP_DEFAULT_ORDERING
 
         # Fall back to instance ordering for backwards compatibility
