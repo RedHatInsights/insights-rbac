@@ -98,11 +98,16 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         input_serializer.is_valid(raise_exception=True)
         validated_params = input_serializer.validated_data
 
-        queryset = RoleBinding.objects.for_tenant(
-            tenant=request.tenant,
-            role_id=validated_params.get("role_id"),
-            resource_id=validated_params.get("resource_id"),
+        queryset = RoleBinding.objects.for_tenant(request.tenant)
+
+        role_id = validated_params.get("role_id")
+        if role_id:
+            queryset = queryset.for_role(role_id)
+
+        queryset = queryset.for_resource_filter(
             resource_type=validated_params.get("resource_type"),
+            resource_id=validated_params.get("resource_id"),
+        ).for_subject(
             subject_type=validated_params.get("subject_type"),
             subject_id=validated_params.get("subject_id"),
         )
