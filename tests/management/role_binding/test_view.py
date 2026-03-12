@@ -1638,7 +1638,7 @@ class RoleBindingViewSetTest(IdentityRequest):
         url = self._get_by_subject_url()
         response = self.client.get(
             f"{url}?resource_id={self.workspace.id}&resource_type=workspace&subject_type=user"
-            "&fields=subject(user.username),role(name),resource(type)&limit=1",
+            "&fields=subject(user.username),roles(name),resource(type)&limit=1",
             **self.headers,
         )
 
@@ -3128,7 +3128,7 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
                     " Valid resource fields: ['id', 'name', 'type']."
                     " Valid roles fields: ['id', 'name']."
                     " Valid subject fields: ['group.description', 'group.name',"
-                    " 'group.user_count', 'id', 'type']."
+                    " 'group.user_count', 'id', 'type', 'user.username']."
                     " Valid root fields: ['last_modified'].",
                     "fields",
                 ),

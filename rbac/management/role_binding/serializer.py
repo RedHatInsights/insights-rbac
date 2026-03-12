@@ -54,7 +54,7 @@ class RoleBindingBySubjectFieldSelection(FieldSelection):
 
     VALID_ROOT_FIELDS = {"last_modified"}
     VALID_NESTED_FIELDS = {
-        "subject": {"id", "type", "group.name", "group.description", "group.user_count"},
+        "subject": {"id", "type", "group.name", "group.description", "group.user_count", "user.username"},
         "roles": {"id", "name"},
         "resource": {"id", "name", "type"},
     }
