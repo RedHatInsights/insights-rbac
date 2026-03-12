@@ -1231,7 +1231,10 @@ class RoleV2ViewSetTests(IdentityRequest):
         response = self.client.post(self.url, data, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("name", response.data["detail"])
+        self.assertEqual(response.data["detail"], "Role name must not contain asterisks (*).")
+        self.assertIn("errors", response.data)
+        self.assertGreater(len(response.data["errors"]), 0)
+        self.assertEqual(response.data["errors"][0]["field"], "name")
 
     # ==========================================================================
     # Tests for PUT /api/v2/roles/{uuid}/ (update)
@@ -1508,7 +1511,10 @@ class RoleV2ViewSetTests(IdentityRequest):
         response = self.client.put(update_url, data, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("name", response.data["detail"])
+        self.assertEqual(response.data["detail"], "Role name must not contain asterisks (*).")
+        self.assertIn("errors", response.data)
+        self.assertGreater(len(response.data["errors"]), 0)
+        self.assertEqual(response.data["errors"][0]["field"], "name")
 
     def test_update_platform_role_returns_404(self):
         """Test that attempting to update a platform role returns 404."""

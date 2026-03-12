@@ -201,7 +201,7 @@ class RoleV2RequestSerializer(serializers.ModelSerializer):
 
     def validate_name(self, value):
         """Reject names containing '*' which conflicts with glob/wildcard search syntax."""
-        if "*" in value:
+        if isinstance(value, str) and "*" in value:
             raise serializers.ValidationError("Role name must not contain asterisks (*).")
         return value
 
