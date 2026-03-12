@@ -138,7 +138,11 @@ def _validate_fields_parameter(value: str, default_fields: set) -> set:
 class RoleV2ListSerializer(serializers.Serializer):
     """Input serializer for RoleV2 list query parameters."""
 
-    name = serializers.CharField(required=False, allow_blank=True, help_text="Filter by exact role name")
+    name = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Filter by role name. Use * as wildcard for partial matching.",
+    )
     fields = serializers.CharField(required=False, default="", allow_blank=True, help_text="Control included fields")
 
     def to_internal_value(self, data):
