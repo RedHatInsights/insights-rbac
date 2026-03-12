@@ -40,8 +40,10 @@ from management.models import (
     Workspace,
     BindingMapping,
 )
+from management.relation_replicator.noop_replicator import NoopReplicator
 from management.role.v2_model import CustomRoleV2
 from management.role_binding.model import RoleBinding
+from management.tenant_service.v2 import V2TenantBootstrapService
 from migration_tool.in_memory_tuples import (
     all_of,
     InMemoryRelationReplicator,
@@ -155,6 +157,7 @@ class RoleViewsetTests(IdentityRequest):
     def setUp(self):
         """Set up the role viewset tests."""
         super().setUp()
+        V2TenantBootstrapService(replicator=NoopReplicator()).bootstrap_tenant(self.tenant)
         sys_role_config = {
             "name": "system_role",
             "display_name": "system_display",
@@ -261,18 +264,15 @@ class RoleViewsetTests(IdentityRequest):
 
         self.access3 = Access.objects.create(permission=self.permission2, role=self.sysRole, tenant=self.tenant)
         Permission.objects.create(permission="cost-management:*:*", tenant=self.tenant)
-        self.root_workspace = Workspace.objects.create(
-            name="root",
-            description="Root workspace",
+        self.root_workspace, _ = Workspace.objects.get_or_create(
             tenant=self.tenant,
-            type="root",
+            type=Workspace.Types.ROOT,
+            defaults={"name": "root", "description": "Root workspace"},
         )
-        self.default_workspace = Workspace.objects.create(
-            name="default",
-            description="Default workspace",
+        self.default_workspace, _ = Workspace.objects.get_or_create(
             tenant=self.tenant,
-            parent=self.root_workspace,
-            type="default",
+            type=Workspace.Types.DEFAULT,
+            defaults={"name": "default", "description": "Default workspace", "parent": self.root_workspace},
         )
         self.child_workspace = Workspace.objects.create(
             name="child",
@@ -2544,6 +2544,7 @@ class RoleViewNonAdminTests(IdentityRequest):
     def setUp(self):
         """Set up the role viewset nonadmin tests."""
         super().setUp()
+        V2TenantBootstrapService(replicator=NoopReplicator()).bootstrap_tenant(self.tenant)
 
         platform_default_role_config = {
             "name": "platform_default_role",

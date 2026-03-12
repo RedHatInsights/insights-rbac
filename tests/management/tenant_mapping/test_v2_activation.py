@@ -82,13 +82,14 @@ class V2ActivationTests(TestCase):
             with transaction.atomic():
                 assert_v1_write_allowed(self.tenant)
 
-    def test_unbootstrapped_tenant_allows_v1_writes(self):
-        """A tenant without a TenantMapping should still allow V1 writes."""
+    def test_unbootstrapped_tenant_assert_v1_write_raises(self):
+        """assert_v1_write_allowed raises TenantNotBootstrappedError for tenants without TenantMapping."""
         unbootstrapped = self.fixture.new_unbootstrapped_tenant(org_id="unboot-org")
         self.assertFalse(is_v2_write_activated(unbootstrapped))
 
-        with transaction.atomic():
-            assert_v1_write_allowed(unbootstrapped)
+        with self.assertRaises(TenantNotBootstrappedError):
+            with transaction.atomic():
+                assert_v1_write_allowed(unbootstrapped)
 
     def test_unbootstrapped_tenant_v2_activation_raises(self):
         """ensure_v2_write_activated raises TenantNotBootstrappedError for tenants without TenantMapping."""

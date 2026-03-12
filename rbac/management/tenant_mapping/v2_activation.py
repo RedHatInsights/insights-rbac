@@ -120,7 +120,9 @@ def assert_v1_write_allowed(tenant):
     """
     row = _lock_for_share(tenant)
     if row is None:
-        return
+        raise TenantNotBootstrappedError(
+            f"Tenant {tenant.org_id} has no TenantMapping; V1 writes require tenant bootstrapping."
+        )
 
     _pk, v2_activated = row
     if v2_activated is not None:
