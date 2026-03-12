@@ -22,7 +22,6 @@ from management.role.v2_exceptions import (
     PermissionsNotFoundError,
     RoleAlreadyExistsError,
     RoleDatabaseError,
-    RolesNotFoundError,
 )
 from management.role.v2_model import RoleV2
 from management.role.v2_service import RoleV2Service
@@ -72,7 +71,18 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
 
     def get_permissions(self, obj):
         """Return permissions, ordered by input order if available, otherwise alphabetically."""
-        permissions = list(obj.permissions.all())
+        # Check if permissions were attached by service to avoid extra query
+        # (e.g., after create/update operations where we already have them in memory)
+        if hasattr(obj, "_resolved_permissions"):
+            # Use resolved permissions from service (no query)
+            permissions = list(obj._resolved_permissions)
+        elif hasattr(obj, "_prefetched_objects_cache") and "permissions" in obj._prefetched_objects_cache:
+            # Use prefetched permissions (no query)
+            permissions = list(obj._prefetched_objects_cache["permissions"])
+        else:
+            # Fall back to querying (for cases without prefetch or resolved permissions)
+            permissions = list(obj.permissions.all())
+
         input_permissions = self.context.get("input_permissions")
 
         if input_permissions:
@@ -93,6 +103,11 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
         count = getattr(obj, "permissions_count_annotation", None)
         if count is not None:
             return count
+        # Check if permissions were already resolved/prefetched to avoid extra query
+        if hasattr(obj, "_resolved_permissions"):
+            return len(obj._resolved_permissions)
+        elif hasattr(obj, "_prefetched_objects_cache") and "permissions" in obj._prefetched_objects_cache:
+            return len(obj._prefetched_objects_cache["permissions"])
         return len(obj.permissions.all())
 
     def get_org_id(self, obj):
@@ -175,6 +190,47 @@ class RoleV2ListSerializer(serializers.Serializer):
         return data
 
 
+class RoleV2WriteQueryParamsSerializer(serializers.Serializer):
+    """Input serializer for RoleV2 create/update query parameters."""
+
+    fields = serializers.CharField(required=False, default="", allow_blank=True, help_text="Control included fields")
+
+    def validate_fields(self, value):
+        """
+        Parse, validate, and resolve fields parameter for write operations.
+
+        For write operations (create/update), strictly validate field names following
+        Google API Design Guide recommendations to prevent user confusion.
+
+        Raises:
+            ValidationError: If fields parameter contains invalid field names
+        """
+        if not value:
+            return RoleV2Service.DEFAULT_RETRIEVE_FIELDS
+
+        try:
+            field_selection = RoleFieldSelection.parse(value)
+        except FieldSelectionValidationError as e:
+            raise serializers.ValidationError(e.message)
+
+        if not field_selection:
+            return RoleV2Service.DEFAULT_RETRIEVE_FIELDS
+
+        # Resolve to actual response serializer fields
+        valid_fields = set(RoleV2ResponseSerializer.Meta.fields)
+        resolved = field_selection.root_fields & valid_fields
+
+        # For write operations, error if any requested field is invalid
+        invalid_fields = field_selection.root_fields - valid_fields
+        if invalid_fields:
+            raise serializers.ValidationError(
+                f"Invalid field(s): {', '.join(sorted(invalid_fields))}. "
+                f"Valid fields are: {', '.join(sorted(valid_fields))}"
+            )
+
+        return resolved or RoleV2Service.DEFAULT_RETRIEVE_FIELDS
+
+
 class RoleIdSerializer(serializers.Serializer):
     """Serializer for a role ID reference.
 
@@ -239,10 +295,6 @@ class RoleV2RequestSerializer(serializers.ModelSerializer):
                 permission_data=permission_data,
                 tenant=tenant,
             )
-        except RolesNotFoundError as e:
-            from rest_framework.exceptions import NotFound
-
-            raise NotFound(str(e))
         except RequiredFieldError as e:
             raise serializers.ValidationError({e.field_name: str(e)})
         except tuple(ERROR_MAPPING.keys()) as e:

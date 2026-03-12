@@ -22,15 +22,15 @@ from management.permissions import RoleAccessPermission
 from management.role.v2_exceptions import CustomRoleRequiredError, RolesNotFoundError
 from management.role.v2_model import RoleV2
 from management.role.v2_serializer import (
-    RoleFieldSelection,
     RoleV2BulkDeleteRequestSerializer,
     RoleV2ListSerializer,
     RoleV2RequestSerializer,
     RoleV2ResponseSerializer,
+    RoleV2WriteQueryParamsSerializer,
     _validate_fields_parameter,
 )
 from management.role.v2_service import RoleV2Service
-from management.utils import FieldSelectionValidationError, v2response_error_from_errors
+from management.utils import v2response_error_from_errors
 from management.v2_mixins import AtomicOperationsMixin
 from rest_framework import status
 from rest_framework.response import Response
@@ -73,9 +73,17 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
     def get_serializer_context(self):
         """Add validated fields parameter to serializer context."""
         context = super().get_serializer_context()
+
         if self.action == "retrieve":
+            # Lenient validation for read operations (silently filters invalid fields)
             fields_param = self.request.query_params.get("fields", "").replace("\x00", "")
             context["fields"] = _validate_fields_parameter(fields_param, RoleV2Service.DEFAULT_RETRIEVE_FIELDS)
+        elif self.action in ("create", "update"):
+            # Strict validation for write operations (errors on invalid fields)
+            query_params_serializer = RoleV2WriteQueryParamsSerializer(data=self.request.query_params)
+            query_params_serializer.is_valid(raise_exception=True)
+            context["fields"] = query_params_serializer.validated_data.get("fields")
+
         return context
 
     def get_serializer_class(self):
@@ -85,36 +93,6 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         if self.action == "bulk_destroy":
             return RoleV2BulkDeleteRequestSerializer
         return RoleV2ResponseSerializer
-
-    def _parse_fields_param(self, fields_str: str | None) -> set[str]:
-        """
-        Parse and validate the fields query parameter.
-
-        Args:
-            fields_str: Comma-separated list of field names from query params
-
-        Returns:
-            Set of validated field names
-
-        Note:
-            Invalid fields are silently ignored and filtered out.
-            If all fields are invalid, returns default fields.
-        """
-        if not fields_str:
-            return self.DEFAULT_CREATE_UPDATE_FIELDS
-
-        try:
-            field_selection = RoleFieldSelection.parse(fields_str)
-        except FieldSelectionValidationError:
-            # Invalid fields - return defaults and let the request proceed
-            return self.DEFAULT_CREATE_UPDATE_FIELDS
-
-        if not field_selection:
-            return self.DEFAULT_CREATE_UPDATE_FIELDS
-
-        # Resolve to actual response serializer fields (filters out invalid fields)
-        resolved = field_selection.root_fields & set(RoleV2ResponseSerializer.Meta.fields)
-        return resolved or self.DEFAULT_CREATE_UPDATE_FIELDS
 
     def list(self, request, *args, **kwargs):
         """Get a list of roles."""
@@ -136,35 +114,29 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
 
     def create(self, request, *args, **kwargs):
         """Create a role and return the full response representation."""
-        # Validate and parse fields query parameter
-        fields = self._parse_fields_param(request.query_params.get("fields"))
-
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         role = serializer.save()
 
-        # Build response with field selection and permission ordering
+        # Build response with field selection (from context) and permission ordering
         input_permissions = request.data.get("permissions", [])
-        response_serializer = RoleV2ResponseSerializer(
-            role, context={"request": request, "input_permissions": input_permissions, "fields": fields}
-        )
+        context = self.get_serializer_context()
+        context["input_permissions"] = input_permissions
+        response_serializer = RoleV2ResponseSerializer(role, context=context)
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
     def update(self, request, *args, **kwargs):
         """Update a role and return the full response representation."""
-        # Validate and parse fields query parameter
-        fields = self._parse_fields_param(request.query_params.get("fields"))
-
         instance = self.get_object()
         serializer = self.get_serializer(instance, data=request.data)
         serializer.is_valid(raise_exception=True)
         role = serializer.save()
 
-        # Build response with field selection and permission ordering
+        # Build response with field selection (from context) and permission ordering
         input_permissions = request.data.get("permissions", [])
-        response_serializer = RoleV2ResponseSerializer(
-            role, context={"request": request, "input_permissions": input_permissions, "fields": fields}
-        )
+        context = self.get_serializer_context()
+        context["input_permissions"] = input_permissions
+        response_serializer = RoleV2ResponseSerializer(role, context=context)
         return Response(response_serializer.data, status=status.HTTP_200_OK)
 
     @atomic
