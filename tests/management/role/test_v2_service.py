@@ -22,6 +22,7 @@ from unittest.mock import patch
 from django.test import override_settings
 from management.exceptions import RequiredFieldError
 from management.models import Group, Workspace, Permission
+from management.permission.scope_service import ImplicitResourceService, PermissionScopeCache
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.role.definer import seed_roles
 from management.role.v2_exceptions import RoleAlreadyExistsError, RolesNotFoundError, CustomRoleRequiredError
@@ -628,7 +629,7 @@ class RoleV2ServiceListTests(IdentityRequest):
 
     def test_list_returns_roles_for_tenant(self):
         """Test that list() returns all roles belonging to the tenant."""
-        queryset = self.service.list({})
+        queryset = self.service.list({"resource_type": "workspace"})
 
         self.assertEqual(queryset.count(), 2)
         names = set(queryset.values_list("name", flat=True))
@@ -636,14 +637,14 @@ class RoleV2ServiceListTests(IdentityRequest):
 
     def test_list_filters_by_exact_name(self):
         """Test that name param filters using case-sensitive exact match."""
-        queryset = self.service.list({"name": "role_one"})
+        queryset = self.service.list({"resource_type": "workspace", "name": "role_one"})
 
         self.assertEqual(queryset.count(), 1)
         self.assertEqual(queryset.first().name, "role_one")
 
     def test_list_name_filter_no_match_returns_empty(self):
         """Test that a name filter matching nothing returns an empty queryset."""
-        queryset = self.service.list({"name": "nonexistent_role"})
+        queryset = self.service.list({"resource_type": "workspace", "name": "nonexistent_role"})
 
         self.assertEqual(queryset.count(), 0)
 
@@ -692,7 +693,7 @@ class RoleV2ServiceListTests(IdentityRequest):
         """Test that omitting the name param returns all roles for the tenant."""
         RoleV2.objects.create(name="role_other", description="Other role", tenant=self.tenant)
 
-        queryset = self.service.list({})
+        queryset = self.service.list({"resource_type": "workspace"})
 
         self.assertEqual(queryset.count(), 3)
 
@@ -779,7 +780,7 @@ class RoleV2ServiceListTests(IdentityRequest):
 
     def test_list_annotates_permissions_count(self):
         """Test that queryset has permissions_count_annotation when fields includes permissions_count."""
-        queryset = self.service.list({"fields": {"permissions_count"}})
+        queryset = self.service.list({"resource_type": "workspace", "fields": {"permissions_count"}})
 
         for role in queryset:
             self.assertTrue(hasattr(role, "permissions_count_annotation"))
@@ -788,3 +789,91 @@ class RoleV2ServiceListTests(IdentityRequest):
         role_two = queryset.get(name="role_two")
         self.assertEqual(role_one.permissions_count_annotation, 1)
         self.assertEqual(role_two.permissions_count_annotation, 2)
+
+
+@override_settings(ATOMIC_RETRY_DISABLED=True)
+class RoleV2ServiceListResourceTypeTests(IdentityRequest):
+    """Test the RoleV2Service.list() resource_type filtering."""
+
+    def setUp(self):
+        """Set up resource_type filter tests."""
+        super().setUp()
+        self.service = RoleV2Service(tenant=self.tenant)
+
+        scope_service = ImplicitResourceService(
+            tenant_scope_permissions=["tenant_app:*:*"],
+            root_scope_permissions=["root_app:*:*"],
+        )
+        test_cache = PermissionScopeCache(scope_service)
+        self._cache_patcher = patch("management.role.v2_service.permission_scope_cache", test_cache)
+        self._cache_patcher.start()
+
+        self.default_perm = Permission.objects.create(permission="default_app:resource:read", tenant=self.tenant)
+        self.root_perm = Permission.objects.create(permission="root_app:resource:read", tenant=self.tenant)
+        self.tenant_perm = Permission.objects.create(permission="tenant_app:resource:read", tenant=self.tenant)
+
+        self.default_role = RoleV2.objects.create(
+            name="default_role", description="Default scoped", tenant=self.tenant
+        )
+        self.default_role.permissions.add(self.default_perm)
+
+        self.root_role = RoleV2.objects.create(name="root_role", description="Root scoped", tenant=self.tenant)
+        self.root_role.permissions.add(self.root_perm)
+
+        self.tenant_role = RoleV2.objects.create(name="tenant_role", description="Tenant scoped", tenant=self.tenant)
+        self.tenant_role.permissions.add(self.tenant_perm)
+
+        self.mixed_role = RoleV2.objects.create(
+            name="mixed_role", description="Has both default and tenant perms", tenant=self.tenant
+        )
+        self.mixed_role.permissions.add(self.default_perm, self.tenant_perm)
+
+    def tearDown(self):
+        """Tear down resource_type filter tests."""
+        from management.utils import PRINCIPAL_CACHE
+
+        self._cache_patcher.stop()
+        RoleV2.objects.all().delete()
+        Permission.objects.filter(tenant=self.tenant).delete()
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
+        super().tearDown()
+
+    def test_list_resource_type_tenant_returns_tenant_scoped_roles(self):
+        """Roles whose highest scope is TENANT should be returned for resource_type=tenant."""
+        queryset = self.service.list({"resource_type": "tenant"})
+        names = set(queryset.values_list("name", flat=True))
+        self.assertEqual(names, {"tenant_role", "mixed_role"})
+
+    def test_list_resource_type_workspace_returns_workspace_scoped_roles(self):
+        """Roles whose highest scope is DEFAULT or ROOT should be returned for resource_type=workspace."""
+        queryset = self.service.list({"resource_type": "workspace"})
+        names = set(queryset.values_list("name", flat=True))
+        self.assertEqual(names, {"default_role", "root_role"})
+
+    def test_list_resource_type_workspace_excludes_mixed_role(self):
+        """A role with both default and tenant permissions has highest scope TENANT and should not appear for workspace."""
+        queryset = self.service.list({"resource_type": "workspace"})
+        names = set(queryset.values_list("name", flat=True))
+        self.assertNotIn("mixed_role", names)
+
+    def test_list_without_resource_type_returns_all_roles(self):
+        """Omitting resource_type returns roles from all scopes."""
+        queryset = self.service.list({})
+        names = set(queryset.values_list("name", flat=True))
+        self.assertEqual(names, {"default_role", "root_role", "tenant_role", "mixed_role"})
+
+    def test_list_unknown_resource_type_returns_empty(self):
+        """An unknown resource_type returns an empty queryset."""
+        queryset = self.service.list({"resource_type": "unknown"})
+        self.assertEqual(queryset.count(), 0)
+
+    def test_list_resource_type_combined_with_name_filter(self):
+        """resource_type and name filters can be combined."""
+        queryset = self.service.list({"resource_type": "tenant", "name": "tenant_role"})
+        self.assertEqual(queryset.count(), 1)
+        self.assertEqual(queryset.first().name, "tenant_role")
+
+    def test_list_resource_type_combined_with_name_filter_no_match(self):
+        """Combined filters that contradict each other return empty."""
+        queryset = self.service.list({"resource_type": "workspace", "name": "tenant_role"})
+        self.assertEqual(queryset.count(), 0)

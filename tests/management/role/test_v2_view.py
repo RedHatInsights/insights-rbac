@@ -29,6 +29,7 @@ from rest_framework.test import APIClient
 
 from management import v2_urls
 from management.models import Permission
+from management.permission.scope_service import ImplicitResourceService, PermissionScopeCache
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.role.definer import seed_roles
 from management.role.v2_model import CustomRoleV2, PlatformRoleV2, RoleV2, SeededRoleV2
@@ -39,6 +40,17 @@ from management.utils import PRINCIPAL_CACHE, as_uuid
 from rbac import urls
 from api.models import Tenant
 from tests.identity_request import IdentityRequest
+
+CACHE_PATCH_TARGET = "management.role.v2_service.permission_scope_cache"
+
+
+def _scope_cache(tenant_perms="", root_perms=""):
+    """Build a PermissionScopeCache backed by a test ImplicitResourceService."""
+    scope_service = ImplicitResourceService(
+        tenant_scope_permissions=[p.strip() for p in tenant_perms.split(",") if p.strip()],
+        root_scope_permissions=[p.strip() for p in root_perms.split(",") if p.strip()],
+    )
+    return PermissionScopeCache(scope_service)
 
 
 @override_settings(V2_APIS_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
@@ -414,6 +426,7 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.client.credentials(HTTP_X_RH_IDENTITY=self.headers.get("HTTP_X_RH_IDENTITY"))
         # URL for roles endpoint
         self.url = reverse("v2_management:roles-list")
+        self.list_url = f"{self.url}?resource_type=workspace"
         self.delete_url = reverse("v2_management:roles-bulk-destroy")
 
         # Create test permissions
@@ -443,7 +456,7 @@ class RoleV2ViewSetTests(IdentityRequest):
 
     def test_list_roles_returns_paginated_response(self):
         """Test that list endpoint returns paginated response."""
-        response = self.client.get(self.url, **self.headers)
+        response = self.client.get(self.list_url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIn("meta", response.data)
@@ -457,7 +470,7 @@ class RoleV2ViewSetTests(IdentityRequest):
 
     def test_list_roles_returns_default_fields(self):
         """Test that roles return default fields when no fields parameter is provided."""
-        response = self.client.get(self.url, **self.headers)
+        response = self.client.get(self.list_url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]), 1)
@@ -481,7 +494,7 @@ class RoleV2ViewSetTests(IdentityRequest):
             tenant=self.tenant,
         )
 
-        response = self.client.get(self.url, **self.headers)
+        response = self.client.get(self.list_url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]), 1)
@@ -489,7 +502,7 @@ class RoleV2ViewSetTests(IdentityRequest):
 
     def test_list_roles_with_custom_fields(self):
         """Test that fields parameter returns only requested fields."""
-        url = f"{self.url}?fields=id,name,permissions_count"
+        url = f"{self.list_url}&fields=id,name,permissions_count"
         response = self.client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -504,10 +517,10 @@ class RoleV2ViewSetTests(IdentityRequest):
         """Test that name filter returns only matching roles."""
         RoleV2.objects.create(name="other_role", description="Other", tenant=self.tenant)
 
-        response = self.client.get(self.url, **self.headers)
+        response = self.client.get(self.list_url, **self.headers)
         self.assertEqual(len(response.data["data"]), 2)
 
-        url = f"{self.url}?name=test_role"
+        url = f"{self.list_url}&name=test_role"
         response = self.client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -538,7 +551,7 @@ class RoleV2ViewSetTests(IdentityRequest):
         RoleV2.objects.create(name="other_role", description="Other", tenant=self.tenant)
         RoleV2.objects.create(name="first_role", description="First", tenant=self.tenant)
 
-        url = f"{self.url}?order_by=name"
+        url = f"{self.list_url}&order_by=name"
         response = self.client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]), 3)
@@ -546,7 +559,7 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertEqual(response.data["data"][1]["name"], "other_role")
         self.assertEqual(response.data["data"][2]["name"], "test_role")
         # order by descending name
-        url = f"{self.url}?order_by=-name"
+        url = f"{self.list_url}&order_by=-name"
         response = self.client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]), 3)
@@ -561,7 +574,7 @@ class RoleV2ViewSetTests(IdentityRequest):
         RoleV2.objects.create(name="other_role", description="Other", tenant=self.tenant)
 
         # Ascending order
-        url = f"{self.url}?order_by=last_modified"
+        url = f"{self.list_url}&order_by=last_modified"
         response = self.client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]), 3)
@@ -578,7 +591,7 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertEqual(last_modified_values, sorted(last_modified_values))
 
         # Descending order
-        url = f"{self.url}?order_by=-last_modified"
+        url = f"{self.list_url}&order_by=-last_modified"
         response = self.client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]), 3)
@@ -599,7 +612,7 @@ class RoleV2ViewSetTests(IdentityRequest):
         RoleV2.objects.create(name="other_role", description="Other", tenant=self.tenant)
 
         # Filter by name containing "test_role" and order by last_modified descending
-        url = f"{self.url}?name=test_role&order_by=-last_modified"
+        url = f"{self.list_url}&name=test_role&order_by=-last_modified"
         response = self.client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -609,7 +622,7 @@ class RoleV2ViewSetTests(IdentityRequest):
 
     def test_list_roles_with_invalid_order_by(self):
         """Test that invalid order_by field returns 400 error."""
-        url = f"{self.url}?order_by=foobar"
+        url = f"{self.list_url}&order_by=foobar"
         response = self.client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -617,7 +630,7 @@ class RoleV2ViewSetTests(IdentityRequest):
 
     def test_list_roles_with_invalid_order_by_permissions_count(self):
         """Test invalid but real field in ?order_by= returns 400 error."""
-        url = f"{self.url}?order_by=permissions_count"
+        url = f"{self.list_url}&order_by=permissions_count"
         response = self.client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -629,7 +642,7 @@ class RoleV2ViewSetTests(IdentityRequest):
         RoleV2.objects.create(name="role_2", description="Second", tenant=self.tenant)
         RoleV2.objects.create(name="role_3", description="Third", tenant=self.tenant)
 
-        url = f"{self.url}?limit=2"
+        url = f"{self.list_url}&limit=2"
         response = self.client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -638,7 +651,7 @@ class RoleV2ViewSetTests(IdentityRequest):
 
     def test_list_roles_meta_contains_correct_limit(self):
         """Test that meta.limit reflects the requested limit value."""
-        url = f"{self.url}?limit=5"
+        url = f"{self.list_url}&limit=5"
         response = self.client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -650,7 +663,7 @@ class RoleV2ViewSetTests(IdentityRequest):
         for i in range(5):
             RoleV2.objects.create(name=f"extra_role_{i}", description=f"Extra {i}", tenant=self.tenant)
 
-        url = f"{self.url}?limit=2"
+        url = f"{self.list_url}&limit=2"
         response = self.client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -659,7 +672,7 @@ class RoleV2ViewSetTests(IdentityRequest):
 
     def test_list_roles_pagination_previous_link_null_on_first_page(self):
         """Test that links.previous is null on the first page."""
-        response = self.client.get(self.url, **self.headers)
+        response = self.client.get(self.list_url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIsNone(response.data["links"]["previous"])
@@ -668,7 +681,7 @@ class RoleV2ViewSetTests(IdentityRequest):
         """Test that empty name filter returns all roles."""
         RoleV2.objects.create(name="other_role", description="Other", tenant=self.tenant)
 
-        url = f"{self.url}?name="
+        url = f"{self.list_url}&name="
         response = self.client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -678,7 +691,7 @@ class RoleV2ViewSetTests(IdentityRequest):
         """Test that whitespace-only name filter is treated as empty."""
         RoleV2.objects.create(name="other_role", description="Other", tenant=self.tenant)
 
-        url = f"{self.url}?name=%20"
+        url = f"{self.list_url}&name=%20"
         response = self.client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -689,7 +702,7 @@ class RoleV2ViewSetTests(IdentityRequest):
         RoleV2.objects.create(name="Test_Role", description="Uppercase", tenant=self.tenant)
 
         # Should not match "test_role" (lowercase from setUp)
-        url = f"{self.url}?name=Test_Role"
+        url = f"{self.list_url}&name=Test_Role"
         response = self.client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -698,7 +711,7 @@ class RoleV2ViewSetTests(IdentityRequest):
 
     def test_list_roles_with_permissions_field(self):
         """Test that requesting permissions field returns permissions array."""
-        url = f"{self.url}?fields=id,name,permissions"
+        url = f"{self.list_url}&fields=id,name,permissions"
         response = self.client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -716,7 +729,7 @@ class RoleV2ViewSetTests(IdentityRequest):
 
     def test_list_roles_with_all_available_fields(self):
         """Test that all available fields can be requested, including opt-in org_id."""
-        url = f"{self.url}?fields=id,name,description,permissions_count,permissions,last_modified,org_id"
+        url = f"{self.list_url}&fields=id,name,description,permissions_count,permissions,last_modified,org_id"
         response = self.client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -728,7 +741,7 @@ class RoleV2ViewSetTests(IdentityRequest):
 
     def test_list_roles_with_only_id_field(self):
         """Test minimal field request returns only id."""
-        url = f"{self.url}?fields=id"
+        url = f"{self.list_url}&fields=id"
         response = self.client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -737,7 +750,7 @@ class RoleV2ViewSetTests(IdentityRequest):
 
     def test_list_roles_with_invalid_fields_raises_validation_error(self):
         """Test that requesting only invalid fields raises a validation error."""
-        url = f"{self.url}?fields=invalid_field,another_invalid"
+        url = f"{self.list_url}&fields=invalid_field,another_invalid"
         response = self.client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
@@ -749,7 +762,7 @@ class RoleV2ViewSetTests(IdentityRequest):
         # Delete the role created in setUp
         RoleV2.objects.filter(tenant=self.tenant).delete()
 
-        response = self.client.get(self.url, **self.headers)
+        response = self.client.get(self.list_url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["data"], [])
@@ -758,11 +771,109 @@ class RoleV2ViewSetTests(IdentityRequest):
 
     def test_list_roles_with_no_matching_name(self):
         """Test that empty list is returned when name filter matches nothing."""
-        url = f"{self.url}?name=nonexistent_role"
+        url = f"{self.list_url}&name=nonexistent_role"
         response = self.client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["data"], [])
+
+    # ==========================================================================
+    # Tests for GET /api/v2/roles/?resource_type=... (list with resource_type)
+    # ==========================================================================
+
+    @patch(CACHE_PATCH_TARGET, _scope_cache(tenant_perms="tenant_app:*:*", root_perms="root_app:*:*"))
+    def test_list_roles_filter_by_resource_type_tenant(self):
+        """Test that resource_type=tenant returns only tenant-scoped roles."""
+        tenant_perm = Permission.objects.create(permission="tenant_app:res:read", tenant=self.tenant)
+        tenant_role = RoleV2.objects.create(name="tenant_role", description="Tenant", tenant=self.tenant)
+        tenant_role.permissions.add(tenant_perm)
+
+        url = f"{self.url}?resource_type=tenant"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        names = {r["name"] for r in response.data["data"]}
+        self.assertIn("tenant_role", names)
+        self.assertNotIn("test_role", names)
+
+    @patch(CACHE_PATCH_TARGET, _scope_cache(tenant_perms="tenant_app:*:*", root_perms="root_app:*:*"))
+    def test_list_roles_filter_by_resource_type_workspace(self):
+        """Test that resource_type=workspace returns only workspace-scoped roles."""
+        tenant_perm = Permission.objects.create(permission="tenant_app:res:read", tenant=self.tenant)
+        tenant_role = RoleV2.objects.create(name="tenant_role", description="Tenant", tenant=self.tenant)
+        tenant_role.permissions.add(tenant_perm)
+
+        url = f"{self.url}?resource_type=workspace"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        names = {r["name"] for r in response.data["data"]}
+        self.assertIn("test_role", names)
+        self.assertNotIn("tenant_role", names)
+
+    @patch(CACHE_PATCH_TARGET, _scope_cache(tenant_perms="tenant_app:*:*"))
+    def test_list_roles_filter_excludes_mixed_scope_from_workspace(self):
+        """A role with both default and tenant permissions should not appear for resource_type=workspace."""
+        tenant_perm = Permission.objects.create(permission="tenant_app:res:read", tenant=self.tenant)
+        mixed_role = RoleV2.objects.create(name="mixed_role", description="Mixed", tenant=self.tenant)
+        mixed_role.permissions.add(self.permission1, tenant_perm)
+
+        url = f"{self.url}?resource_type=workspace"
+        response = self.client.get(url, **self.headers)
+
+        names = {r["name"] for r in response.data["data"]}
+        self.assertNotIn("mixed_role", names)
+
+    @patch(CACHE_PATCH_TARGET, _scope_cache(tenant_perms="tenant_app:*:*", root_perms="root_app:*:*"))
+    def test_list_roles_without_resource_type_returns_all_scopes(self):
+        """Test that omitting resource_type returns roles from all scopes."""
+        tenant_perm = Permission.objects.create(permission="tenant_app:res:read", tenant=self.tenant)
+        tenant_role = RoleV2.objects.create(name="tenant_role", description="Tenant", tenant=self.tenant)
+        tenant_role.permissions.add(tenant_perm)
+
+        response = self.client.get(self.url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        names = {r["name"] for r in response.data["data"]}
+        self.assertIn("test_role", names)
+        self.assertIn("tenant_role", names)
+
+    def test_list_roles_resource_id_without_resource_type_returns_400(self):
+        """Test that providing resource_id without resource_type returns 400."""
+        url = f"{self.url}?resource_id=some-id"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_list_roles_resource_id_with_resource_type_accepted(self):
+        """Test that providing resource_id with resource_type is accepted."""
+        url = f"{self.url}?resource_type=workspace&resource_id=some-id"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    @patch(CACHE_PATCH_TARGET, _scope_cache())
+    def test_list_roles_unknown_resource_type_returns_empty(self):
+        """Test that an unrecognized resource_type returns an empty list."""
+        url = f"{self.url}?resource_type=unknown_type"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"], [])
+
+    @patch(CACHE_PATCH_TARGET, _scope_cache(tenant_perms="tenant_app:*:*"))
+    def test_list_roles_resource_type_combined_with_name(self):
+        """Test that resource_type and name filters can be combined."""
+        tenant_perm = Permission.objects.create(permission="tenant_app:res:read", tenant=self.tenant)
+        tenant_role = RoleV2.objects.create(name="tenant_role", description="Tenant", tenant=self.tenant)
+        tenant_role.permissions.add(tenant_perm)
+
+        url = f"{self.url}?resource_type=tenant&name=tenant_role"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+        self.assertEqual(response.data["data"][0]["name"], "tenant_role")
 
     # ==========================================================================
     # Tests for seeded roles visibility (public tenant)
@@ -782,8 +893,6 @@ class RoleV2ViewSetTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         returned_names = {r["name"] for r in response.data["data"]}
-        # Should see the custom role from self.tenant AND seeded roles from public tenant
-        self.assertIn("test_role", returned_names)
         self.assertIn("Seeded Role 1", returned_names)
         self.assertIn("Seeded Role 2", returned_names)
 
