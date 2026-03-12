@@ -126,7 +126,9 @@ class RoleBindingService:
 
         if subject_type == SubjectType.USER:
             # Build user queryset
-            queryset = self._build_user_queryset(resource_id, resource_type, binding_uuids)
+            queryset = self._build_user_queryset(
+                resource_id, resource_type, binding_uuids, exclude_direct=exclude_direct
+            )
             queryset = self._apply_user_filters(queryset, subject_id)
         else:
             # Default to group queryset (includes when subject_type is None or "group")
@@ -370,7 +372,11 @@ class RoleBindingService:
         return queryset
 
     def _build_user_queryset(
-        self, resource_id: str, resource_type: str, binding_uuids: Optional[Sequence[str]] = None
+        self,
+        resource_id: str,
+        resource_type: str,
+        binding_uuids: Optional[Sequence[str]] = None,
+        exclude_direct: bool = False,
     ) -> QuerySet:
         """Build queryset of users (principals) with role bindings for a resource.
 
@@ -380,19 +386,26 @@ class RoleBindingService:
             resource_id: The resource identifier
             resource_type: The type of resource
             binding_uuids: Optional list of binding UUIDs to include (for inherited bindings)
+            exclude_direct: If True, exclude direct bindings and only show inherited
 
         Returns:
             Annotated QuerySet of Principal objects (users only)
         """
-        # Build filter for bindings - either by resource or by explicit UUIDs
-        if binding_uuids is not None:
-            # Include both direct bindings and inherited bindings by UUID
+        # Build filter for bindings based on exclude_direct and binding_uuids
+        if exclude_direct and binding_uuids is None:
+            # Relations API failed — cannot determine inherited bindings, return empty
+            return Principal.objects.none()
+        elif exclude_direct and binding_uuids is not None:
+            # Only inherited bindings by UUID (exclude direct)
+            binding_filter = Q(role_binding_entries__binding__uuid__in=binding_uuids)
+        elif binding_uuids is not None:
+            # Both direct and inherited bindings (exclude_sources=none)
             binding_filter = Q(
                 role_binding_entries__binding__resource_type=resource_type,
                 role_binding_entries__binding__resource_id=resource_id,
             ) | Q(role_binding_entries__binding__uuid__in=binding_uuids)
         else:
-            # Only direct bindings for the specified resource
+            # Only direct bindings (exclude_sources=indirect)
             binding_filter = Q(
                 role_binding_entries__binding__resource_type=resource_type,
                 role_binding_entries__binding__resource_id=resource_id,
