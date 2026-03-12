@@ -57,6 +57,21 @@ class V1WriteBlockedWhenWorkspacesEnabled(permissions.BasePermission):
         return not is_v2_edit_enabled_for_request(request)
 
 
+class V1ApiBlockedWhenWorkspacesEnabled(permissions.BasePermission):
+    """Block all access to a V1 API endpoint when workspaces are enabled for the org.
+
+    Unlike V1WriteBlockedWhenWorkspacesEnabled, this blocks read methods too. Use on
+    V1 endpoints that return data from the V1 data model, which is no longer authoritative
+    once a tenant has been migrated to workspaces (e.g. the /access endpoint).
+    """
+
+    message = "This V1 API is not available for orgs using workspaces."
+
+    def has_permission(self, request, view):
+        """Deny all requests when v2 edit API is enabled for this org."""
+        return not is_v2_edit_enabled_for_request(request)
+
+
 class V2WriteRequiresWorkspacesEnabled(permissions.BasePermission):
     """Deny V2 write operations when workspaces (v2 edit API) is NOT enabled for the org.
 
