@@ -22,12 +22,12 @@ from django.db import transaction
 from api.models import Tenant
 from management.tenant_mapping.model import TenantMapping
 from management.tenant_mapping.v2_activation import (
-    TenantNotBootstrappedError,
     V1WriteBlockedError,
     assert_v1_write_allowed,
     ensure_v2_write_activated,
     is_v2_write_activated,
 )
+from management.tenant_service.v2 import TenantNotBootstrappedError
 from tests.management.role.test_dual_write import RbacFixture
 
 

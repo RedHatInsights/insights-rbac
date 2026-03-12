@@ -29,7 +29,6 @@ from django.db.models.aggregates import Count
 from django.http import Http404
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
-from feature_flags import FEATURE_FLAGS
 from management.authorization.scope_claims import ScopeClaims
 from management.authorization.token_validator import ITSSOTokenValidator
 from management.filters import CommonFilters
@@ -56,6 +55,7 @@ from management.notifications.notification_handlers import (
     group_principal_change_notification_handler,
 )
 from management.permissions import GroupAccessPermission
+from management.permissions.v2_edit_api_access import is_v2_edit_enabled_for_request
 from management.principal.it_service import ITService
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
@@ -68,7 +68,7 @@ from management.querysets import (
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.view import RoleViewSet
 from management.role_binding.service import RoleBindingService
-from management.tenant_mapping.v2_activation import V1WriteBlockedError, assert_v1_write_allowed, is_v2_write_activated
+from management.tenant_mapping.v2_activation import V1WriteBlockedError, assert_v1_write_allowed
 from management.utils import validate_and_get_key, validate_group_name, validate_uuid
 from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
@@ -1299,9 +1299,7 @@ class GroupViewSet(
             "V1 role-to-group assignment operations are not allowed "
             "for orgs using workspaces. Use v2 role bindings instead."
         )
-        if request.method in ("POST", "DELETE") and (
-            FEATURE_FLAGS.is_v2_edit_api_enabled(request.user.org_id) or is_v2_write_activated(request.tenant)
-        ):
+        if request.method in ("POST", "DELETE") and is_v2_edit_enabled_for_request(request):
             return Response(
                 status=status.HTTP_403_FORBIDDEN,
                 data={"errors": [{"detail": v2_write_msg}]},

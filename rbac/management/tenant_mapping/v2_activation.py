@@ -20,9 +20,10 @@ Provides functions to lock and check whether a tenant has been activated for V2
 writes. Once activated, a tenant must never write via V1 again, regardless of
 feature flag state.
 
-Uses SELECT FOR SHARE where possible to allow concurrent reads within a tenant,
-escalating to SELECT FOR UPDATE only when updating. Django does not support
-FOR SHARE in the ORM, so raw SQL is required for the read-lock paths.
+Uses SELECT FOR SHARE for read-lock checks so concurrent V1/V2 reads do not
+block each other. Django ORM has no FOR SHARE equivalent so raw SQL is used
+for that path only. The write path (escalating to exclusive) uses the ORM's
+select_for_update().
 
 The SQL strings are static literals with no interpolation; the only runtime value
 (tenant_id) is always passed as a parameterized %s placeholder, so there is no
@@ -41,6 +42,7 @@ import logging
 from django.db import connection
 from django.utils import timezone
 from management.tenant_mapping.model import TenantMapping
+from management.tenant_service.v2 import TenantNotBootstrappedError
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +53,6 @@ logger = logging.getLogger(__name__)
 _LOCK_FOR_SHARE_SQL = (  # sourcery: disable=sql-injection-risk
     "SELECT id, v2_write_activated_at" " FROM management_tenantmapping" " WHERE tenant_id = %s" " FOR SHARE"
 )
-_LOCK_FOR_UPDATE_SQL = (  # sourcery: disable=sql-injection-risk
-    "SELECT id, v2_write_activated_at" " FROM management_tenantmapping" " WHERE tenant_id = %s" " FOR UPDATE"
-)
 
 
 def _lock_for_share(tenant):
@@ -63,21 +62,8 @@ def _lock_for_share(tenant):
         return cursor.fetchone()
 
 
-def _lock_for_update(tenant):
-    """Lock the TenantMapping row FOR UPDATE. Returns (id, v2_write_activated_at) or None."""
-    with connection.cursor() as cursor:
-        cursor.execute(_LOCK_FOR_UPDATE_SQL, [tenant.id])  # sourcery: disable=sql-injection-risk
-        return cursor.fetchone()
-
-
 class V1WriteBlockedError(Exception):
     """Raised when a V1 write is attempted on a tenant that has been activated for V2."""
-
-    pass
-
-
-class TenantNotBootstrappedError(Exception):
-    """Raised when a V2 write is attempted on a tenant that has no TenantMapping."""
 
     pass
 
@@ -98,16 +84,14 @@ def ensure_v2_write_activated(tenant):
     if v2_activated is not None:
         return
 
-    row = _lock_for_update(tenant)
-    if row is None:
+    mapping = TenantMapping.objects.select_for_update().filter(tenant=tenant).first()
+    if mapping is None:
         raise TenantNotBootstrappedError(
             f"Tenant {tenant.org_id} has no TenantMapping; V2 writes require tenant bootstrapping."
         )
-    _pk, v2_activated = row
-    if v2_activated is not None:
+    if mapping.v2_write_activated_at is not None:
         return
 
-    mapping = TenantMapping.objects.get(tenant=tenant)
     mapping.v2_write_activated_at = timezone.now()
     mapping.save(update_fields=["v2_write_activated_at"])
     logger.info("Tenant %s activated for V2 writes", tenant.org_id)
