@@ -255,18 +255,14 @@ class RoleV2Service:
 
         higher_non_matching = {s for s in (set(Scope) - matching_scopes) if s > max(matching_scopes)}
 
-        if Scope.DEFAULT in matching_scopes:
-            if higher_non_matching:
-                higher_ids = permission_scope_cache.ids_for_scopes(higher_non_matching)
-                if higher_ids:
-                    queryset = queryset.exclude(permissions__id__in=higher_ids)
-        else:
+        if Scope.DEFAULT not in matching_scopes:
             matching_ids = permission_scope_cache.ids_for_scopes(matching_scopes)
             queryset = queryset.filter(permissions__id__in=matching_ids).distinct()
-            if higher_non_matching:
-                higher_ids = permission_scope_cache.ids_for_scopes(higher_non_matching)
-                if higher_ids:
-                    queryset = queryset.exclude(permissions__id__in=higher_ids)
+
+        if higher_non_matching:
+            higher_ids = permission_scope_cache.ids_for_scopes(higher_non_matching)
+            if higher_ids:
+                queryset = queryset.exclude(permissions__id__in=higher_ids)
 
         return queryset
 
