@@ -23,53 +23,50 @@ from management.subject import SubjectType
 class RoleBindingQuerySet(QuerySet):
     """Custom QuerySet for RoleBinding with domain-aware query methods."""
 
-    def for_tenant(
-        self, tenant, role_id=None, resource_id=None, resource_type=None, subject_type=None, subject_id=None
-    ):
-        """Return role bindings for a tenant with related data eagerly loaded.
-
-        Args:
-            tenant: The tenant to filter by.
-            role_id: Optional role UUID to filter by.
-            resource_id: Optional resource ID to filter by.
-            resource_type: Optional resource type to filter by.
-            subject_type: Optional subject type filter ('group' or 'user');
-                unsupported types return an empty queryset.
-            subject_id: Optional subject UUID to filter by. When subject_type
-                is 'group', filters by group UUID; when 'user', filters by
-                principal UUID; when unset, searches both.
-        """
-        qs = (
+    def for_tenant(self, tenant):
+        """Return role bindings for a tenant with related data eagerly loaded."""
+        return (
             self.filter(tenant=tenant)
             .select_related("role")
             .prefetch_related("group_entries__group", "principal_entries__principal")
             .annotate(role_created=F("role__created"))
         )
-        if role_id:
-            qs = qs.filter(role__uuid=role_id)
+
+    def for_role(self, role_id):
+        """Filter by role UUID."""
+        return self.filter(role__uuid=role_id)
+
+    def for_resource_filter(self, resource_type=None, resource_id=None):
+        """Apply optional resource_type and resource_id filters."""
+        qs = self
         if resource_id:
             qs = qs.filter(resource_id=resource_id)
         if resource_type:
             qs = qs.filter(resource_type=resource_type)
+        return qs
 
+    def for_subject(self, subject_type=None, subject_id=None):
+        """Filter by subject type and/or subject ID.
+
+        When subject_type is 'group', filters by group; when 'user', by principal.
+        An unsupported subject_type returns an empty queryset.
+        When subject_id is provided without subject_type, searches both groups and principals.
+        """
         if subject_type == SubjectType.GROUP:
             if subject_id:
-                qs = qs.filter(group_entries__group__uuid=subject_id)
-            else:
-                qs = qs.filter(group_entries__isnull=False).distinct()
+                return self.filter(group_entries__group__uuid=subject_id)
+            return self.filter(group_entries__isnull=False).distinct()
         elif subject_type == SubjectType.USER:
             if subject_id:
-                qs = qs.filter(principal_entries__principal__uuid=subject_id)
-            else:
-                qs = qs.filter(principal_entries__isnull=False).distinct()
+                return self.filter(principal_entries__principal__uuid=subject_id)
+            return self.filter(principal_entries__isnull=False).distinct()
         elif subject_type:
-            return qs.none()
+            return self.none()
         elif subject_id:
-            qs = qs.filter(
+            return self.filter(
                 Q(group_entries__group__uuid=subject_id) | Q(principal_entries__principal__uuid=subject_id)
             ).distinct()
-
-        return qs
+        return self
 
     def for_resource(self, resource_type, resource_id, tenant):
         """Filter to bindings on a specific resource for a tenant."""

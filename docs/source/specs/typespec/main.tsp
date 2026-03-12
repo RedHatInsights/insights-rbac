@@ -1017,7 +1017,7 @@ namespace RoleBindings {
 
     @doc("Grant access to a resource to a set of subjects with a set of roles")
     @summary("Grant access to a resource to a set of subjects with a set of roles")
-    @route(":batchCreate")
+    @route(":batchCreate/")
     @opExample(#{
         parameters: #{
             body: #{
@@ -1336,7 +1336,7 @@ namespace Roles {
         @doc("Cursor for cursor-based pagination.")
         @query cursor?: Cursor;
 
-        @doc("Filter by role name using case sensitive exact match.")
+        @doc("Filter by role name. Exact match by default; use * as a wildcard for partial matching (e.g. foo*).")
         @query name?: string;
 
         @doc("Control which fields are included in the response to optimize payload size.")
@@ -1480,7 +1480,7 @@ namespace Roles {
     }
 
     @doc("Delete multiple roles by ID atomically.")
-    @route(":batchDelete")
+    @route(":batchDelete/")
     @opExample(#{
         parameters: #{
             body: #{

@@ -280,8 +280,9 @@ class RoleBindingOutputSerializer(serializers.Serializer):
         role_data = {"id": role.uuid}
 
         if field_selection is not None:
-            # Add explicitly requested fields
-            for field_name in field_selection.get_nested("role"):
+            # By-subject uses "roles", list endpoint uses "role" - support both
+            role_fields = field_selection.get_nested("role") or field_selection.get_nested("roles")
+            for field_name in role_fields:
                 if field_name != "id":
                     value = getattr(role, field_name, None)
                     if value is not None:
