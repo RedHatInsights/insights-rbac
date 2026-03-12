@@ -189,14 +189,14 @@ class RoleV2WriteQueryParamsSerializer(serializers.Serializer):
 
     fields = serializers.CharField(required=False, default="", allow_blank=True, help_text="Control included fields")
 
-    def _resolve_write_fields(self, raw_value: str) -> set[str]:
+    def _resolve_write_fields(self, raw_value: str, default_fields: set[str]) -> set[str]:
         """Parse and resolve write fields, raising FieldSelectionValidationError or ValueError."""
         if not raw_value:
-            return set(RoleV2Service.DEFAULT_RETRIEVE_FIELDS)
+            return set(default_fields)
 
         field_selection = RoleFieldSelection.parse(raw_value)
         if not field_selection:
-            return set(RoleV2Service.DEFAULT_RETRIEVE_FIELDS)
+            return set(default_fields)
 
         valid_fields = set(RoleV2ResponseSerializer.Meta.fields)
         requested = field_selection.root_fields
@@ -209,7 +209,7 @@ class RoleV2WriteQueryParamsSerializer(serializers.Serializer):
             )
 
         resolved = requested & valid_fields
-        return resolved or set(RoleV2Service.DEFAULT_RETRIEVE_FIELDS)
+        return resolved or set(default_fields)
 
     def validate_fields(self, value):
         """
@@ -221,8 +221,9 @@ class RoleV2WriteQueryParamsSerializer(serializers.Serializer):
         Raises:
             ValidationError: If fields parameter contains invalid field names
         """
+        default_fields = self.context.get("default_fields", RoleV2Service.DEFAULT_RETRIEVE_FIELDS)
         try:
-            return self._resolve_write_fields(value)
+            return self._resolve_write_fields(value, default_fields)
         except FieldSelectionValidationError as e:
             raise serializers.ValidationError(e.message)
         except ValueError as e:
