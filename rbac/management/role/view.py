@@ -579,7 +579,6 @@ class RoleViewSet(
             raise Http404()
 
         access = AccessSerializer(role.access, many=True, context={"request": request}).data
-        access = [item for item in access if item is not None]
         page = self.paginate_queryset(access)
         return self.get_paginated_response(page)
 
