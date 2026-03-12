@@ -115,12 +115,6 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
 
     def create(self, request, *args, **kwargs):
         """Create a role and return the full response representation."""
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        role = serializer.save()
-        # Validate and parse fields query parameter
-        fields = self._parse_fields_param(request.query_params.get("fields"))
-
         with atomic_block():
             serializer = self.get_serializer(data=request.data)
             serializer.is_valid(raise_exception=True)
@@ -138,13 +132,6 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
 
     def update(self, request, *args, **kwargs):
         """Update a role and return the full response representation."""
-        instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data)
-        serializer.is_valid(raise_exception=True)
-        role = serializer.save()
-        # Validate and parse fields query parameter
-        fields = self._parse_fields_param(request.query_params.get("fields"))
-
         with atomic_block():
             instance = self.get_object()
 
