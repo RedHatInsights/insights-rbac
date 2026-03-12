@@ -749,6 +749,30 @@ class RoleViewsetTests(IdentityRequest):
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
+    @override_settings(V1_ROLE_PERMISSION_BLOCK_LIST=["test_app:resource:blocked_action"])
+    def test_read_role_access_filters_blocked_permissions(self):
+        """Test that blocked permissions are filtered from role access endpoint."""
+        blocked_permission = Permission.objects.create(
+            permission="test_app:resource:blocked_action", tenant=self.tenant
+        )
+        allowed_permission = Permission.objects.create(
+            permission="test_app:resource:allowed_action", tenant=self.tenant
+        )
+
+        role = Role.objects.create(name="test_role_block_list", tenant=self.tenant)
+        Access.objects.create(role=role, permission=blocked_permission, tenant=self.tenant)
+        Access.objects.create(role=role, permission=allowed_permission, tenant=self.tenant)
+
+        url = reverse("v1_management:role-access", kwargs={"uuid": role.uuid})
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        permissions = [item["permission"] for item in response.data.get("data", [])]
+
+        self.assertNotIn("test_app:resource:blocked_action", permissions)
+        self.assertIn("test_app:resource:allowed_action", permissions)
+
     def test_read_role_list_success(self):
         """Test that we can read a list of roles."""
         role_name = "roleA"
