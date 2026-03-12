@@ -293,9 +293,64 @@ class ImplicitResourceService:
             raise AssertionError(f"Unexpected scope: {scope}")
 
 
+SCOPE_RESOURCE_TYPE: dict[Scope, str] = {
+    Scope.TENANT: "tenant",
+    Scope.ROOT: "workspace",
+    Scope.DEFAULT: "workspace",
+}
+"""Maps each Scope to the resource_type string it binds to."""
+
+
+def scopes_for_resource_type(resource_type: str) -> set[Scope]:
+    """Return all Scope values that map to the given resource_type."""
+    return {scope for scope, rt in SCOPE_RESOURCE_TYPE.items() if rt == resource_type}
+
+
 """
 A global ImplicitResourceService configured using Django Settings.
 
 See ImplicitResourceService.from_settings for details on how this is configured.
 """
 default_implicit_resource_service = ImplicitResourceService.from_settings()
+
+
+class PermissionScopeCache:
+    """In-process cache mapping Permission IDs to their computed Scope.
+
+    The cache is populated lazily on first access and remains valid for the
+    lifetime of the process.  Call ``invalidate()`` after any operation that
+    mutates the Permission table (e.g. seeding) so the next access rebuilds
+    the mapping from the database.
+    """
+
+    def __init__(self, scope_service: ImplicitResourceService):
+        """Create a cache backed by the given scope service."""
+        self._scope_service = scope_service
+        self._ids_by_scope: dict[Scope, frozenset[int]] | None = None
+
+    def _build(self) -> dict[Scope, frozenset[int]]:
+        from management.permission.model import Permission
+
+        result: dict[Scope, set[int]] = {scope: set() for scope in Scope}
+        for row in Permission.objects.values_list("id", "permission", named=True):
+            scope = self._scope_service.scope_for_permission(row.permission)
+            result[scope].add(row.id)
+        return {s: frozenset(ids) for s, ids in result.items()}
+
+    @property
+    def ids_by_scope(self) -> dict[Scope, frozenset[int]]:
+        """Return the cached mapping, building it on first access."""
+        if self._ids_by_scope is None:
+            self._ids_by_scope = self._build()
+        return self._ids_by_scope
+
+    def ids_for_scopes(self, scopes: set[Scope]) -> frozenset[int]:
+        """Return the union of Permission IDs for the given scopes."""
+        return frozenset().union(*(self.ids_by_scope.get(s, frozenset()) for s in scopes))
+
+    def invalidate(self):
+        """Clear the cached mapping so it is rebuilt on next access."""
+        self._ids_by_scope = None
+
+
+permission_scope_cache = PermissionScopeCache(default_implicit_resource_service)

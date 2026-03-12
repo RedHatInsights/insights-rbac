@@ -143,6 +143,12 @@ class RoleV2ListSerializer(serializers.Serializer):
         allow_blank=True,
         help_text="Filter by role name. Use * as wildcard for partial matching.",
     )
+    resource_type = serializers.CharField(
+        required=False, allow_blank=True, help_text="Filter roles by the resource type they are scoped to"
+    )
+    resource_id = serializers.CharField(
+        required=False, allow_blank=True, help_text="Resource ID (requires resource_type)"
+    )
     fields = serializers.CharField(required=False, default="", allow_blank=True, help_text="Control included fields")
 
     def to_internal_value(self, data):
@@ -159,6 +165,14 @@ class RoleV2ListSerializer(serializers.Serializer):
     def validate_fields(self, value):
         """Parse, validate, and resolve fields parameter into a set of field names."""
         return _validate_fields_parameter(value, RoleV2Service.DEFAULT_LIST_FIELDS)
+
+    def validate(self, data):
+        """Cross-field validation: resource_id requires resource_type."""
+        if data.get("resource_id") and not data.get("resource_type"):
+            raise serializers.ValidationError(
+                {"resource_id": "resource_type is required when resource_id is provided."}
+            )
+        return data
 
 
 class RoleIdSerializer(serializers.Serializer):

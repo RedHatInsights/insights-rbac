@@ -27,7 +27,11 @@
             "in": "query",
             "required": false,
             "schema": {
-              "$ref": "#/components/schemas/Limit",
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Limit"
+                }
+              ],
               "default": 10
             },
             "explode": false
@@ -98,7 +102,11 @@
             "required": false,
             "description": "Control which fields are included in the response to optimize payload size.",
             "schema": {
-              "$ref": "#/components/schemas/FieldMask",
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/FieldMask"
+                }
+              ],
               "default": "resource(id),role(id),subject(id,type)"
             },
             "explode": false
@@ -109,7 +117,11 @@
             "required": false,
             "description": "Default sort is by the time the role was first created. Prefix with '-' for descending order.",
             "schema": {
-              "$ref": "#/components/schemas/OrderBy",
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/OrderBy"
+                }
+              ],
               "default": "role.id"
             },
             "explode": false
@@ -257,7 +269,11 @@
             "in": "query",
             "required": false,
             "schema": {
-              "$ref": "#/components/schemas/Limit",
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Limit"
+                }
+              ],
               "default": 10
             },
             "explode": false
@@ -313,12 +329,13 @@
             "explode": false
           },
           {
-            "name": "exclude_sources",
+            "name": "parent_role_bindings",
             "in": "query",
             "required": false,
+            "description": "Include role bindings inherited from parent resources",
             "schema": {
-              "$ref": "#/components/schemas/ExcludeSources",
-              "default": "none"
+              "type": "boolean",
+              "default": false
             },
             "explode": false
           },
@@ -328,8 +345,12 @@
             "required": false,
             "description": "Control which fields are included in the response to optimize payload size and improve performance.",
             "schema": {
-              "$ref": "#/components/schemas/FieldMask",
-              "default": "subject(group.name),roles(name),resource(name,type),last_modified"
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/FieldMask"
+                }
+              ],
+              "default": "subject(group.name),role(name),resource(name,type),last_modified"
             },
             "explode": false
           },
@@ -339,7 +360,11 @@
             "required": false,
             "description": "Sort by specified field(s), prefix with '-' for descending order",
             "schema": {
-              "$ref": "#/components/schemas/OrderBy",
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/OrderBy"
+                }
+              ],
               "default": "subject_name"
             },
             "explode": false
@@ -379,7 +404,7 @@
                         "limit": 10
                       },
                       "links": {
-                        "next": "http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?limit=10&exclude_sources=direct&cursor=xyz",
+                        "next": "http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?limit=10&parent_role_bindings=true&cursor=xyz",
                         "previous": null
                       },
                       "data": [
@@ -405,13 +430,11 @@
                             "name": "Child Workspace",
                             "type": "workspace"
                           },
-                          "sources": [
-                            {
-                              "id": "550e8400-e29b-41d4-a716-446655440001",
-                              "name": "Parent Workspace",
-                              "type": "workspace"
-                            }
-                          ]
+                          "inherited_from": {
+                            "id": "550e8400-e29b-41d4-a716-446655440001",
+                            "name": "Parent Workspace",
+                            "type": "workspace"
+                          }
                         }
                       ]
                     }
@@ -583,8 +606,12 @@
             "in": "query",
             "required": false,
             "schema": {
-              "$ref": "#/components/schemas/FieldMask",
-              "default": "resource(id),subject(id),roles(id)"
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/FieldMask"
+                }
+              ],
+              "default": "resource(id),subject(id),roles(id),last_modified"
             },
             "explode": false
           }
@@ -598,6 +625,7 @@
                   "$ref": "#/components/schemas/RoleBindings.RoleBindingBySubject"
                 },
                 "example": {
+                  "last_modified": "2024-08-04T12:00:00Z",
                   "subject": {
                     "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
                     "type": "group",
@@ -754,7 +782,11 @@
             "in": "query",
             "required": false,
             "schema": {
-              "$ref": "#/components/schemas/FieldMask",
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/FieldMask"
+                }
+              ],
               "default": "resource(id),role(id),subject(id,type)"
             },
             "explode": false
@@ -940,7 +972,11 @@
             "in": "query",
             "required": false,
             "schema": {
-              "$ref": "#/components/schemas/Limit",
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Limit"
+                }
+              ],
               "default": 10
             },
             "explode": false
@@ -971,7 +1007,11 @@
             "required": false,
             "description": "Control which fields are included in the response to optimize payload size.",
             "schema": {
-              "$ref": "#/components/schemas/FieldMask",
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/FieldMask"
+                }
+              ],
               "default": "id,name,description,last_modified"
             },
             "explode": false
@@ -982,7 +1022,11 @@
             "required": false,
             "description": "Sort by specified field(s), prefix with '-' for descending order. Allowed fields: name, last_modified.",
             "schema": {
-              "$ref": "#/components/schemas/OrderBy",
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/OrderBy"
+                }
+              ],
               "default": "name"
             },
             "explode": false
@@ -1312,7 +1356,11 @@
             "required": false,
             "description": "Control which fields are included in the response to optimize payload size.",
             "schema": {
-              "$ref": "#/components/schemas/FieldMask",
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/FieldMask"
+                }
+              ],
               "default": "id,name,description,permissions,last_modified"
             },
             "explode": false
@@ -1463,7 +1511,11 @@
             "required": false,
             "description": "Control which fields are included in the response to optimize payload size.",
             "schema": {
-              "$ref": "#/components/schemas/FieldMask",
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/FieldMask"
+                }
+              ],
               "default": "id,name,description,permissions,last_modified"
             },
             "explode": false
@@ -1766,7 +1818,11 @@
             "in": "query",
             "required": false,
             "schema": {
-              "$ref": "#/components/schemas/Limit",
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Limit"
+                }
+              ],
               "default": 10
             },
             "explode": false
@@ -1777,7 +1833,11 @@
             "required": false,
             "description": "Offset for offset-based pagination.",
             "schema": {
-              "$ref": "#/components/schemas/Offset",
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Offset"
+                }
+              ],
               "default": 0
             },
             "explode": false
@@ -1788,7 +1848,11 @@
             "required": false,
             "description": "Defaults to all when param is not supplied.",
             "schema": {
-              "$ref": "#/components/schemas/Workspaces.WorkspaceTypesQueryParam",
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/Workspaces.WorkspaceTypesQueryParam"
+                }
+              ],
               "default": "all"
             },
             "explode": false
@@ -2821,15 +2885,6 @@
           }
         }
       },
-      "ExcludeSources": {
-        "type": "string",
-        "enum": [
-          "direct",
-          "indirect",
-          "none"
-        ],
-        "description": "Exclude bindings by source type: 'none' (default) shows all, 'indirect' excludes inherited, 'direct' excludes direct"
-      },
       "FieldMask": {
         "type": "string",
         "description": "Field mask used by the `fields` query parameter to control which fields\nare included in the response.\n\n**Syntax:**\n- Use comma to separate multiple fields: `id,name,description`\n- Use parentheses for nested objects: `subject(id,name),resource(type)`\n\n**Examples:**\n- `id,name`\n- `subject(group.name),role(name)`"
@@ -3539,12 +3594,13 @@
             ],
             "description": "Resource the roles apply to"
           },
-          "sources": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RoleBindings.Resource"
-            },
-            "description": "Resources from which this role binding is sourced (direct or inherited)"
+          "inherited_from": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleBindings.Resource"
+              }
+            ],
+            "description": "Resource from which this role binding is inherited (only present when parent_role_bindings=true)"
           }
         },
         "example": {
@@ -3569,13 +3625,11 @@
             "name": "Child Workspace",
             "type": "workspace"
           },
-          "sources": [
-            {
-              "id": "550e8400-e29b-41d4-a716-446655440001",
-              "name": "Parent Workspace",
-              "type": "workspace"
-            }
-          ]
+          "inherited_from": {
+            "id": "550e8400-e29b-41d4-a716-446655440001",
+            "name": "Parent Workspace",
+            "type": "workspace"
+          }
         }
       },
       "RoleBindings.UpdateRoleBindingsRequest": {
