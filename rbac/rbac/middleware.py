@@ -42,6 +42,7 @@ from rest_framework import status
 from api.common import RH_IDENTITY_HEADER, RH_INSIGHTS_REQUEST_ID
 from api.models import Tenant, User
 from api.serializers import extract_header
+from rbac.a2s import is_a2s_path as _is_a2s_path
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 req_sys_counter = Counter(
@@ -227,8 +228,10 @@ class IdentityHeaderMiddleware:
         # Get request ID
         request.req_id = request.META.get(RH_INSIGHTS_REQUEST_ID)
 
-        if any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES]):
-            # This request is for a private API endpoint
+        if any(
+            [request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES]
+        ) and not _is_a2s_path(request):
+            # This request is for a private API endpoint (except _a2s/ which uses public auth)
             return self.get_response(request)
 
         if is_no_auth(request):
@@ -267,6 +270,8 @@ class IdentityHeaderMiddleware:
             # If we did not get the user information or service account information from the "x-rh-identity" header,
             # then the request is directly unauthorized.
             if not user_info and not service_account:
+                if _is_a2s_path(request):
+                    return self.get_response(request)
                 logger.debug("x-rh-identity does not contain user_info or service_account keys: %s", json_rh_auth)
                 return HttpResponseUnauthorizedRequest()
 
@@ -309,6 +314,8 @@ class IdentityHeaderMiddleware:
                         return HttpResponseUnauthorizedRequest()
                     user.username = f"{user.org_id}-{user.user_id}"
         except (KeyError, TypeError, JSONDecodeError):
+            if _is_a2s_path(request):
+                return self.get_response(request)
             user = build_user_from_psk(request) or build_system_user_from_token(
                 request, token_validator=self.token_validator
             )
