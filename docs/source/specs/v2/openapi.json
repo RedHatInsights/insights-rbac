@@ -743,7 +743,7 @@
         }
       }
     },
-    "/role-bindings:batchCreate": {
+    "/role-bindings:batchCreate/": {
       "post": {
         "operationId": "RoleBindings_batchCreate",
         "summary": "Grant access to a resource to a set of subjects with a set of roles",
@@ -959,7 +959,7 @@
             "name": "name",
             "in": "query",
             "required": false,
-            "description": "Filter by role name using case sensitive exact match.",
+            "description": "Filter by role name. Exact match by default; use * as a wildcard for partial matching (e.g. foo*).",
             "schema": {
               "type": "string"
             },
@@ -1143,7 +1143,7 @@
             "name": "fields",
             "in": "query",
             "required": false,
-            "description": "Control which fields are included in the response to optimize payload size.\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are returned. All response fields become optional.\n\n**Examples:**\n- `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)\n- `?fields=permissions_count,last_modified` - Include only count and timestamp",
+            "description": "Control which fields are included in the response to optimize payload size.\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are returned. All response fields become optional.\n\n**Examples:**\n- `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)\n- `?fields=permissions_count,last_modified` - Include only count and timestamp\n- `?fields=id,name,org_id` - Include org_id (not returned by default; must be requested explicitly)",
             "schema": {
               "type": "string",
               "default": "id,name,description,permissions,last_modified"
@@ -1632,7 +1632,7 @@
         }
       }
     },
-    "/roles:batchDelete": {
+    "/roles:batchDelete/": {
       "post": {
         "operationId": "Roles_batchDelete",
         "description": "Delete multiple roles by ID atomically.",
@@ -3176,8 +3176,7 @@
           },
           "org_id": {
             "type": "string",
-            "description": "ID of the organization that owns this role. Will not be populated if roles belong to the Public Tenant.",
-            "readOnly": true
+            "description": "ID of the organization that owns this role. Will not be populated if roles belong to the Public Tenant."
           }
         },
         "example": {
@@ -3197,8 +3196,7 @@
             }
           ],
           "permissions_count": 2,
-          "last_modified": "2024-08-04T12:00:00Z",
-          "org_id": "100001"
+          "last_modified": "2024-08-04T12:00:00Z"
         }
       },
       "RoleBindings.BaseSubject": {
