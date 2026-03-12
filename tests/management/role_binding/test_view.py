@@ -1648,9 +1648,20 @@ class RoleBindingViewSetTest(IdentityRequest):
         # Should include only the 1 inherited binding (direct are excluded)
         self.assertEqual(len(response.data["data"]), 1)
 
-        # Verify parent_group is in the response
-        subject_ids = [item["subject"]["id"] for item in response.data["data"]]
-        self.assertIn(str(parent_group.uuid), [str(sid) for sid in subject_ids])
+        # Verify parent_group is in the response with non-empty roles
+        parent_group_item = response.data["data"][0]
+        self.assertEqual(str(parent_group_item["subject"]["id"]), str(parent_group.uuid))
+        self.assertIn("roles", parent_group_item)
+        self.assertGreater(
+            len(parent_group_item["roles"]),
+            0,
+            "Inherited-only response should have roles populated from parent binding",
+        )
+        self.assertEqual(
+            str(parent_group_item["roles"][0]["id"]),
+            str(parent_role.uuid),
+            "Inherited group should have the correct role from parent binding",
+        )
 
         # Cleanup
         RoleBindingGroup.objects.filter(binding=parent_binding).delete()
@@ -1756,6 +1767,22 @@ class RoleBindingViewSetTest(IdentityRequest):
         # Verify parent_group is in the response
         subject_ids = [str(item["subject"]["id"]) for item in response.data["data"]]
         self.assertIn(str(parent_group.uuid), subject_ids)
+
+        # Verify inherited group has non-empty roles (inherited from parent workspace)
+        parent_group_item = next(
+            item for item in response.data["data"] if str(item["subject"]["id"]) == str(parent_group.uuid)
+        )
+        self.assertIn("roles", parent_group_item)
+        self.assertGreater(
+            len(parent_group_item["roles"]),
+            0,
+            "Inherited group should have roles populated from parent workspace binding",
+        )
+        self.assertEqual(
+            str(parent_group_item["roles"][0]["id"]),
+            str(parent_role.uuid),
+            "Inherited group should have the correct role from parent binding",
+        )
 
         # Cleanup
         RoleBindingGroup.objects.filter(binding=parent_binding).delete()
