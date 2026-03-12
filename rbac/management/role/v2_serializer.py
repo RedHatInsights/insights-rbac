@@ -69,31 +69,29 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
             for field_name in set(self.fields) - allowed:
                 self.fields.pop(field_name)
 
+    def _get_permissions_iterable(self, obj):
+        """Return iterable of permissions using resolved/prefetched/query fallback."""
+        if hasattr(obj, "_resolved_permissions"):
+            return list(obj._resolved_permissions)
+
+        cache = getattr(obj, "_prefetched_objects_cache", None)
+        if cache and "permissions" in cache:
+            return list(cache["permissions"])
+
+        return list(obj.permissions.all())
+
     def get_permissions(self, obj):
         """Return permissions, ordered by input order if available, otherwise alphabetically."""
-        # Check if permissions were attached by service to avoid extra query
-        # (e.g., after create/update operations where we already have them in memory)
-        if hasattr(obj, "_resolved_permissions"):
-            # Use resolved permissions from service (no query)
-            permissions = list(obj._resolved_permissions)
-        elif hasattr(obj, "_prefetched_objects_cache") and "permissions" in obj._prefetched_objects_cache:
-            # Use prefetched permissions (no query)
-            permissions = list(obj._prefetched_objects_cache["permissions"])
-        else:
-            # Fall back to querying (for cases without prefetch or resolved permissions)
-            permissions = list(obj.permissions.all())
+        permissions = self._get_permissions_iterable(obj)
 
         input_permissions = self.context.get("input_permissions")
-
         if input_permissions:
-            # Sort by input order (for create responses)
-            order_map = {}
-            for i, p in enumerate(input_permissions):
-                key = f"{p.get('application')}:{p.get('resource_type')}:{p.get('operation')}"
-                order_map[key] = i
+            order_map = {
+                f"{p.get('application')}:{p.get('resource_type')}:{p.get('operation')}": i
+                for i, p in enumerate(input_permissions)
+            }
             permissions.sort(key=lambda p: order_map.get(p.permission, float("inf")))
         else:
-            # Sort alphabetically by permission string (for retrieve/list responses)
             permissions.sort(key=lambda p: p.permission)
 
         return PermissionSerializer(permissions, many=True).data
@@ -103,12 +101,8 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
         count = getattr(obj, "permissions_count_annotation", None)
         if count is not None:
             return count
-        # Check if permissions were already resolved/prefetched to avoid extra query
-        if hasattr(obj, "_resolved_permissions"):
-            return len(obj._resolved_permissions)
-        elif hasattr(obj, "_prefetched_objects_cache") and "permissions" in obj._prefetched_objects_cache:
-            return len(obj._prefetched_objects_cache["permissions"])
-        return len(obj.permissions.all())
+
+        return len(self._get_permissions_iterable(obj))
 
     def get_org_id(self, obj):
         """Return org_id from the role."""
@@ -195,6 +189,28 @@ class RoleV2WriteQueryParamsSerializer(serializers.Serializer):
 
     fields = serializers.CharField(required=False, default="", allow_blank=True, help_text="Control included fields")
 
+    def _resolve_write_fields(self, raw_value: str) -> set[str]:
+        """Parse and resolve write fields, raising FieldSelectionValidationError or ValueError."""
+        if not raw_value:
+            return set(RoleV2Service.DEFAULT_RETRIEVE_FIELDS)
+
+        field_selection = RoleFieldSelection.parse(raw_value)
+        if not field_selection:
+            return set(RoleV2Service.DEFAULT_RETRIEVE_FIELDS)
+
+        valid_fields = set(RoleV2ResponseSerializer.Meta.fields)
+        requested = field_selection.root_fields
+        invalid = requested - valid_fields
+        if invalid:
+            # Domain-level error; serializer will adapt to ValidationError
+            raise ValueError(
+                f"Invalid field(s): {', '.join(sorted(invalid))}. "
+                f"Valid fields are: {', '.join(sorted(valid_fields))}"
+            )
+
+        resolved = requested & valid_fields
+        return resolved or set(RoleV2Service.DEFAULT_RETRIEVE_FIELDS)
+
     def validate_fields(self, value):
         """
         Parse, validate, and resolve fields parameter for write operations.
@@ -205,30 +221,12 @@ class RoleV2WriteQueryParamsSerializer(serializers.Serializer):
         Raises:
             ValidationError: If fields parameter contains invalid field names
         """
-        if not value:
-            return RoleV2Service.DEFAULT_RETRIEVE_FIELDS
-
         try:
-            field_selection = RoleFieldSelection.parse(value)
+            return self._resolve_write_fields(value)
         except FieldSelectionValidationError as e:
             raise serializers.ValidationError(e.message)
-
-        if not field_selection:
-            return RoleV2Service.DEFAULT_RETRIEVE_FIELDS
-
-        # Resolve to actual response serializer fields
-        valid_fields = set(RoleV2ResponseSerializer.Meta.fields)
-        resolved = field_selection.root_fields & valid_fields
-
-        # For write operations, error if any requested field is invalid
-        invalid_fields = field_selection.root_fields - valid_fields
-        if invalid_fields:
-            raise serializers.ValidationError(
-                f"Invalid field(s): {', '.join(sorted(invalid_fields))}. "
-                f"Valid fields are: {', '.join(sorted(valid_fields))}"
-            )
-
-        return resolved or RoleV2Service.DEFAULT_RETRIEVE_FIELDS
+        except ValueError as e:
+            raise serializers.ValidationError(str(e))
 
 
 class RoleIdSerializer(serializers.Serializer):
