@@ -22,7 +22,7 @@ from unittest.mock import patch
 from django.test import override_settings
 from management.exceptions import RequiredFieldError
 from management.models import Group, Workspace, Permission
-from management.permission.scope_service import ImplicitResourceService
+from management.permission.scope_service import ImplicitResourceService, PermissionScopeCache
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.role.definer import seed_roles
 from management.role.v2_exceptions import RoleAlreadyExistsError, RolesNotFoundError, CustomRoleRequiredError
@@ -804,8 +804,9 @@ class RoleV2ServiceListResourceTypeTests(IdentityRequest):
             tenant_scope_permissions=["tenant_app:*:*"],
             root_scope_permissions=["root_app:*:*"],
         )
-        self._scope_patcher = patch("management.role.v2_service.default_implicit_resource_service", scope_service)
-        self._scope_patcher.start()
+        test_cache = PermissionScopeCache(scope_service)
+        self._cache_patcher = patch("management.role.v2_service.permission_scope_cache", test_cache)
+        self._cache_patcher.start()
 
         self.default_perm = Permission.objects.create(permission="default_app:resource:read", tenant=self.tenant)
         self.root_perm = Permission.objects.create(permission="root_app:resource:read", tenant=self.tenant)
@@ -831,7 +832,7 @@ class RoleV2ServiceListResourceTypeTests(IdentityRequest):
         """Tear down resource_type filter tests."""
         from management.utils import PRINCIPAL_CACHE
 
-        self._scope_patcher.stop()
+        self._cache_patcher.stop()
         RoleV2.objects.all().delete()
         Permission.objects.filter(tenant=self.tenant).delete()
         PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)

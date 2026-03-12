@@ -29,7 +29,7 @@ from rest_framework.test import APIClient
 
 from management import v2_urls
 from management.models import Permission
-from management.permission.scope_service import ImplicitResourceService
+from management.permission.scope_service import ImplicitResourceService, PermissionScopeCache
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.role.definer import seed_roles
 from management.role.v2_model import CustomRoleV2, PlatformRoleV2, RoleV2, SeededRoleV2
@@ -41,15 +41,16 @@ from rbac import urls
 from api.models import Tenant
 from tests.identity_request import IdentityRequest
 
-SCOPE_PATCH_TARGET = "management.role.v2_service.default_implicit_resource_service"
+CACHE_PATCH_TARGET = "management.role.v2_service.permission_scope_cache"
 
 
-def _scope_service(tenant_perms="", root_perms=""):
-    """Build an ImplicitResourceService for test patching."""
-    return ImplicitResourceService(
+def _scope_cache(tenant_perms="", root_perms=""):
+    """Build a PermissionScopeCache backed by a test ImplicitResourceService."""
+    scope_service = ImplicitResourceService(
         tenant_scope_permissions=[p.strip() for p in tenant_perms.split(",") if p.strip()],
         root_scope_permissions=[p.strip() for p in root_perms.split(",") if p.strip()],
     )
+    return PermissionScopeCache(scope_service)
 
 
 @override_settings(V2_APIS_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
@@ -780,7 +781,7 @@ class RoleV2ViewSetTests(IdentityRequest):
     # Tests for GET /api/v2/roles/?resource_type=... (list with resource_type)
     # ==========================================================================
 
-    @patch(SCOPE_PATCH_TARGET, _scope_service(tenant_perms="tenant_app:*:*", root_perms="root_app:*:*"))
+    @patch(CACHE_PATCH_TARGET, _scope_cache(tenant_perms="tenant_app:*:*", root_perms="root_app:*:*"))
     def test_list_roles_filter_by_resource_type_tenant(self):
         """Test that resource_type=tenant returns only tenant-scoped roles."""
         tenant_perm = Permission.objects.create(permission="tenant_app:res:read", tenant=self.tenant)
@@ -795,7 +796,7 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertIn("tenant_role", names)
         self.assertNotIn("test_role", names)
 
-    @patch(SCOPE_PATCH_TARGET, _scope_service(tenant_perms="tenant_app:*:*", root_perms="root_app:*:*"))
+    @patch(CACHE_PATCH_TARGET, _scope_cache(tenant_perms="tenant_app:*:*", root_perms="root_app:*:*"))
     def test_list_roles_filter_by_resource_type_workspace(self):
         """Test that resource_type=workspace returns only workspace-scoped roles."""
         tenant_perm = Permission.objects.create(permission="tenant_app:res:read", tenant=self.tenant)
@@ -810,7 +811,7 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertIn("test_role", names)
         self.assertNotIn("tenant_role", names)
 
-    @patch(SCOPE_PATCH_TARGET, _scope_service(tenant_perms="tenant_app:*:*"))
+    @patch(CACHE_PATCH_TARGET, _scope_cache(tenant_perms="tenant_app:*:*"))
     def test_list_roles_filter_excludes_mixed_scope_from_workspace(self):
         """A role with both default and tenant permissions should not appear for resource_type=workspace."""
         tenant_perm = Permission.objects.create(permission="tenant_app:res:read", tenant=self.tenant)
@@ -823,7 +824,7 @@ class RoleV2ViewSetTests(IdentityRequest):
         names = {r["name"] for r in response.data["data"]}
         self.assertNotIn("mixed_role", names)
 
-    @patch(SCOPE_PATCH_TARGET, _scope_service(tenant_perms="tenant_app:*:*", root_perms="root_app:*:*"))
+    @patch(CACHE_PATCH_TARGET, _scope_cache(tenant_perms="tenant_app:*:*", root_perms="root_app:*:*"))
     def test_list_roles_without_resource_type_returns_all_scopes(self):
         """Test that omitting resource_type returns roles from all scopes."""
         tenant_perm = Permission.objects.create(permission="tenant_app:res:read", tenant=self.tenant)
@@ -851,7 +852,7 @@ class RoleV2ViewSetTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
-    @patch(SCOPE_PATCH_TARGET, _scope_service())
+    @patch(CACHE_PATCH_TARGET, _scope_cache())
     def test_list_roles_unknown_resource_type_returns_empty(self):
         """Test that an unrecognized resource_type returns an empty list."""
         url = f"{self.url}?resource_type=unknown_type"
@@ -860,7 +861,7 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data["data"], [])
 
-    @patch(SCOPE_PATCH_TARGET, _scope_service(tenant_perms="tenant_app:*:*"))
+    @patch(CACHE_PATCH_TARGET, _scope_cache(tenant_perms="tenant_app:*:*"))
     def test_list_roles_resource_type_combined_with_name(self):
         """Test that resource_type and name filters can be combined."""
         tenant_perm = Permission.objects.create(permission="tenant_app:res:read", tenant=self.tenant)

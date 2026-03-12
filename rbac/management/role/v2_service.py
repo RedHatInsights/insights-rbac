@@ -28,7 +28,7 @@ from management.atomic_transactions import atomic
 from management.exceptions import RequiredFieldError
 from management.permission.exceptions import InvalidPermissionDataError
 from management.permission.model import PermissionValue
-from management.permission.scope_service import default_implicit_resource_service, scopes_for_resource_type
+from management.permission.scope_service import Scope, permission_scope_cache, scopes_for_resource_type
 from management.permission.service import PermissionService
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
@@ -244,20 +244,31 @@ class RoleV2Service:
         return queryset
 
     def _filter_by_resource_type(self, queryset: QuerySet, resource_type: str) -> QuerySet:
-        """Filter roles to those whose highest permission scope maps to resource_type."""
+        """Filter roles to those whose highest permission scope maps to resource_type.
+
+        Uses DB-level filtering with cached Permission-ID-to-Scope mappings to
+        avoid loading all roles and their permissions into Python memory.
+        """
         matching_scopes = scopes_for_resource_type(resource_type)
         if not matching_scopes:
             return queryset.none()
 
-        matching_pks = [
-            role.pk
-            for role in queryset.prefetch_related("permissions")
-            if default_implicit_resource_service.highest_scope_for_permissions(
-                p.permission for p in role.permissions.all()
-            )
-            in matching_scopes
-        ]
-        return queryset.filter(pk__in=matching_pks)
+        higher_non_matching = {s for s in (set(Scope) - matching_scopes) if s > max(matching_scopes)}
+
+        if Scope.DEFAULT in matching_scopes:
+            if higher_non_matching:
+                higher_ids = permission_scope_cache.ids_for_scopes(higher_non_matching)
+                if higher_ids:
+                    queryset = queryset.exclude(permissions__id__in=higher_ids)
+        else:
+            matching_ids = permission_scope_cache.ids_for_scopes(matching_scopes)
+            queryset = queryset.filter(permissions__id__in=matching_ids).distinct()
+            if higher_non_matching:
+                higher_ids = permission_scope_cache.ids_for_scopes(higher_non_matching)
+                if higher_ids:
+                    queryset = queryset.exclude(permissions__id__in=higher_ids)
+
+        return queryset
 
     @atomic
     def bulk_delete(self, ids: Iterable[str | uuid.UUID], from_tenant: Optional[Tenant] = None):
