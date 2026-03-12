@@ -1274,7 +1274,8 @@ namespace Roles {
         ]
     })
     model CreateOrUpdateRoleRequest {
-        @doc("A human readable name for the role. Must be unique within a tenant.")
+        @doc("A human readable name for the role. Must be unique within a tenant. Asterisks (*) are not allowed.")
+        @pattern("^[^*]+$")
         name: string;
         @doc("A description of the role to help clarify its purpose. Does not need to be unique.")
         description?: string;

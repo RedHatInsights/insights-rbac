@@ -3762,7 +3762,8 @@
         "properties": {
           "name": {
             "type": "string",
-            "description": "A human readable name for the role. Must be unique within a tenant."
+            "pattern": "^[^*]+$",
+            "description": "A human readable name for the role. Must be unique within a tenant. Asterisks (*) are not allowed."
           },
           "description": {
             "type": "string",
