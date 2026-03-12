@@ -27,7 +27,9 @@ from django.utils.dateparse import parse_datetime
 from rest_framework import status
 from rest_framework.test import APIClient
 
+from api.models import Tenant
 from management import v2_urls
+from management.audit_log.model import AuditLog
 from management.models import Permission
 from management.permission.scope_service import ImplicitResourceService, PermissionScopeCache
 from management.relation_replicator.outbox_replicator import OutboxReplicator
@@ -36,9 +38,7 @@ from management.role.v2_model import CustomRoleV2, PlatformRoleV2, RoleV2, Seede
 from management.role.v2_service import RoleV2Service
 from management.tenant_service import V2TenantBootstrapService
 from management.utils import PRINCIPAL_CACHE, as_uuid
-
 from rbac import urls
-from api.models import Tenant
 from tests.identity_request import IdentityRequest
 
 CACHE_PATCH_TARGET = "management.role.v2_service.permission_scope_cache"
@@ -440,6 +440,22 @@ class RoleV2ViewSetTests(IdentityRequest):
         # Create a role for list tests
         self.role = RoleV2.objects.create(name="test_role", description="Test description", tenant=self.tenant)
         self.role.permissions.add(self.permission1)
+
+    def _assert_audit_log(self, action: str, description: str):
+        audit_logs = self.client.get("/api/rbac/v1/auditlogs/").data["data"]
+
+        self.assertIn(
+            {
+                "action": action,
+                "description": description,
+                "resource_type": AuditLog.ROLE_V2,
+                "principal_username": self.user_data["username"],
+            },
+            [
+                {k: log[k] for k in ["action", "description", "resource_type", "principal_username"]}
+                for log in audit_logs
+            ],
+        )
 
     def tearDown(self):
         """Tear down RoleV2ViewSet tests."""
@@ -948,6 +964,8 @@ class RoleV2ViewSetTests(IdentityRequest):
             [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
         )
 
+        self._assert_audit_log(action=AuditLog.CREATE, description=f"Created V2 role: {data['name']}")
+
     def test_create_role_multiple_permissions(self):
         """Test creating a role with multiple permissions returns all permissions."""
         data = {
@@ -1219,6 +1237,11 @@ class RoleV2ViewSetTests(IdentityRequest):
             [{"application": "inventory", "resource_type": "hosts", "operation": "write"}],
         )
 
+        self._assert_audit_log(
+            action=AuditLog.EDIT,
+            description=f"V2 role {role.name}:\nEdited name\nEdited description\nEdited permissions",
+        )
+
     def test_update_role_changes_permissions(self):
         """Test that updating a role replaces all permissions."""
         role = CustomRoleV2.objects.create(
@@ -1361,6 +1384,11 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertEqual(response.data["name"], "Test Role")
         self.assertEqual(response.data["description"], "")
 
+        self._assert_audit_log(
+            action=AuditLog.EDIT,
+            description=f"V2 role {role.name}:\nEdited description\nEdited permissions",
+        )
+
     def test_update_role_returns_response_format(self):
         """Test that update returns proper response format with all fields."""
         role = CustomRoleV2.objects.create(
@@ -1454,6 +1482,57 @@ class RoleV2ViewSetTests(IdentityRequest):
         # Platform roles are filtered out in get_queryset() for update action
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
+    def test_update_description_noop_audit_log(self):
+        """Test that name and description are not included in audit log if not modified."""
+        role = CustomRoleV2.objects.create(
+            name="Description Role",
+            description="",
+            tenant=self.tenant,
+        )
+
+        update_url = reverse("v2_management:roles-detail", kwargs={"uuid": str(role.uuid)})
+
+        # We omit the description here, which should be treated as an empty string.
+        data = {
+            "name": "Description Role",
+            "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
+        }
+
+        response = self.client.put(update_url, data, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        self._assert_audit_log(action=AuditLog.EDIT, description=f"V2 role {role.name}:\nEdited permissions")
+
+    def test_update_permissions_audit_log(self):
+        """Test that permissions are not included in audit log if not modified."""
+        role = CustomRoleV2.objects.create(
+            name="Permissions Role",
+            description="",
+            tenant=self.tenant,
+        )
+
+        update_url = reverse("v2_management:roles-detail", kwargs={"uuid": str(role.uuid)})
+
+        # We omit the description here, which should be treated as an empty string.
+        data = {
+            "name": "A Better Role",
+            "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
+        }
+
+        response = self.client.put(update_url, data, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        self._assert_audit_log(
+            action=AuditLog.EDIT, description=f"V2 role {role.name}:\nEdited name\nEdited permissions"
+        )
+
+        data["name"] = "An Even Better Role"
+
+        response = self.client.put(update_url, data, format="json")
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        self._assert_audit_log(action=AuditLog.EDIT, description=f"V2 role A Better Role:\nEdited name")
+
     # ==========================================================================
     # Tests for POST /api/v2/roles:bulkDelete/ (bulk destroy)
     # ==========================================================================
@@ -1495,6 +1574,15 @@ class RoleV2ViewSetTests(IdentityRequest):
 
         self.assertIn("errors", data)
         self.assertEqual(data["errors"], [{"message": data["detail"], "field": "ids"}])
+
+    def test_delete(self):
+        create_response = self._create_role()
+        response = self._request_delete({"ids": [create_response["id"]]})
+
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+        self.assertFalse(RoleV2.objects.filter(uuid=create_response["id"]).exists())
+
+        self._assert_audit_log(action=AuditLog.DELETE, description=f"Deleted V2 role: {create_response["name"]}")
 
     def test_delete_empty(self):
         """Test that deleting 0 roles is successful."""

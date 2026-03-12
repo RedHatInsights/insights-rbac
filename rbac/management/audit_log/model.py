@@ -21,7 +21,9 @@ from django.db import models
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from management.group.model import Group
+from management.permission.model import PermissionValue
 from management.role.model import Role
+from management.role.v2_model import RoleV2
 
 from api.models import Tenant, TenantAwareModel
 
@@ -31,11 +33,13 @@ class AuditLog(TenantAwareModel):
 
     GROUP = "group"
     ROLE = "role"
+    ROLE_V2 = "role_v2"
     USER = "user"
     PERMISSION = "permission"
     RESOURCE_CHOICES = (
         (GROUP, "Group"),
         (ROLE, "Role"),
+        (ROLE_V2, "V2 Role"),
         (USER, "User"),
         (PERMISSION, "Permission"),
     )
@@ -75,6 +79,13 @@ class AuditLog(TenantAwareModel):
             models.Index(fields=["tenant", "action"]),
         ]
 
+    @staticmethod
+    def _format_resource_type(resource_type: str) -> str:
+        if resource_type == AuditLog.ROLE_V2:
+            return "V2 role"
+
+        return resource_type
+
     def get_tenant_id(self, request):
         """Retrieve tenant id from request."""
         tenant_object = get_object_or_404(Tenant, org_id=request._user.org_id)
@@ -90,6 +101,13 @@ class AuditLog(TenantAwareModel):
             role_object_uuid = role_object.uuid
             return role_object_id, role_object_name, role_object_uuid
 
+        elif r_type == AuditLog.ROLE_V2:
+            role_object = get_object_or_404(RoleV2, name=request.data["name"], tenant=verify_tenant)
+            role_object_id = role_object.id
+            role_object_name = "V2 role: " + role_object.name
+            role_object_uuid = role_object.uuid
+            return role_object_id, role_object_name, role_object_uuid
+
         elif r_type == AuditLog.GROUP:
             group_object = get_object_or_404(Group, name=request.data["name"], tenant=verify_tenant)
             group_object_id = group_object.id
@@ -100,8 +118,32 @@ class AuditLog(TenantAwareModel):
         else:
             return ValueError("Wrong Resource Type")
 
+    def _v2_role_edited_field(self, resource_name, request, object):
+        annotations = []
+
+        if request.data.get("name") != object.name:
+            annotations.append("Edited name")
+
+        if request.data.get("description", "") != object.description:
+            annotations.append("Edited description")
+
+        request_permissions = request.data.get("permissions")
+
+        if request_permissions is not None:
+            if {PermissionValue.from_v2_dict(p) for p in request_permissions} != {
+                PermissionValue.parse_v1(p.permission) for p in object.permissions.all()
+            }:
+                annotations.append("Edited permissions")
+
+        return resource_name + ":\n" + "\n".join(annotations)
+
     def find_edited_field(self, resource, resource_name, request, object):
         """Add additional information when group/role is edited."""
+        # We can't fix the usual format because of backwards-compatibility concerns, but we can use a fixed format
+        # for V2 role operations.
+        if resource == AuditLog.ROLE_V2:
+            return self._v2_role_edited_field(resource_name, request, object)
+
         description = resource_name + ": " + "\n "
         if request.data.get("name") != object.name:
             description = description + "Edited name \n"
@@ -134,7 +176,7 @@ class AuditLog(TenantAwareModel):
         self.resource_type = resource
         self.resource_id = object.id
         self.resource_uuid = object.uuid
-        resource_name = self.resource_type + ": " + object.name
+        resource_name = self._format_resource_type(self.resource_type) + ": " + object.name
 
         self.description = "Deleted " + resource_name
 
@@ -149,7 +191,7 @@ class AuditLog(TenantAwareModel):
         self.resource_type = resource
         self.resource_id = object.id
         self.resource_uuid = object.uuid
-        resource_name = resource + " " + object.name
+        resource_name = self._format_resource_type(self.resource_type) + " " + object.name
 
         more_information = self.find_edited_field(resource, resource_name, request, object)
         self.description = more_information

@@ -16,6 +16,7 @@
 #
 """Service for RoleV2 management."""
 
+import builtins
 import logging
 import uuid
 from typing import Iterable, Optional
@@ -267,8 +268,14 @@ class RoleV2Service:
         return queryset
 
     @atomic
-    def bulk_delete(self, ids: Iterable[str | uuid.UUID], from_tenant: Optional[Tenant] = None):
-        """Delete custom roles with the provided UUIDs."""
+    def bulk_delete(
+        self, ids: Iterable[str | uuid.UUID], from_tenant: Optional[Tenant] = None
+    ) -> builtins.list[CustomRoleV2]:
+        """
+        Delete custom roles with the provided UUIDs.
+
+        Returns the roles found before removal.
+        """
         # Normalize UUIDs. These should have already been validated.
         ids = {as_uuid(id) for id in ids}
 
@@ -331,3 +338,5 @@ class RoleV2Service:
 
         RoleBinding.objects.filter(pk__in=binding_pks_to_remove).delete()
         CustomRoleV2.objects.filter(pk__in=(r.pk for r in roles_to_remove)).delete()
+
+        return roles_to_remove
