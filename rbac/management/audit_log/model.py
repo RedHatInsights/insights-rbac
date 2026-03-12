@@ -57,6 +57,12 @@ class AuditLog(TenantAwareModel):
         (REMOVE, "Remove"),
     )
 
+    _model_class_by_resource_type = {
+        GROUP: Group,
+        ROLE: Role,
+        ROLE_V2: RoleV2,
+    }
+
     created = models.DateTimeField(default=timezone.now)
     principal_username = models.TextField(max_length=255, null=False)
     description = models.TextField(max_length=255, null=False)
@@ -93,28 +99,17 @@ class AuditLog(TenantAwareModel):
 
     def get_resource_item(self, r_type, request, *args, **kwargs):
         """Find related information (eg, name, id, etc...) for each resource item."""
-        verify_tenant = self.get_tenant_id(request)
-        if r_type == AuditLog.ROLE:
-            role_object = get_object_or_404(Role, name=request.data["name"], tenant=verify_tenant)
+        model_class = self._model_class_by_resource_type.get(r_type)
+
+        if model_class is not None:
+            verify_tenant = self.get_tenant_id(request)
+
+            role_object = get_object_or_404(model_class, name=request.data["name"], tenant=verify_tenant)
             role_object_id = role_object.id
-            role_object_name = "role: " + role_object.name
+            role_object_name = f"{self._format_resource_type(r_type)}: {role_object.name}"
             role_object_uuid = role_object.uuid
+
             return role_object_id, role_object_name, role_object_uuid
-
-        elif r_type == AuditLog.ROLE_V2:
-            role_object = get_object_or_404(RoleV2, name=request.data["name"], tenant=verify_tenant)
-            role_object_id = role_object.id
-            role_object_name = "V2 role: " + role_object.name
-            role_object_uuid = role_object.uuid
-            return role_object_id, role_object_name, role_object_uuid
-
-        elif r_type == AuditLog.GROUP:
-            group_object = get_object_or_404(Group, name=request.data["name"], tenant=verify_tenant)
-            group_object_id = group_object.id
-            group_object_name = "group: " + group_object.name
-            group_object_uuid = group_object.uuid
-            return group_object_id, group_object_name, group_object_uuid
-
         else:
             return ValueError("Wrong Resource Type")
 
