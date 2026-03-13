@@ -225,6 +225,8 @@ objects:
             value: ${SA_NAME}
           - name: RELATION_API_SERVER
             value: ${RELATION_API_SERVER}
+          - name: RELATIONS_API_INSECURE
+            value: ${RELATIONS_API_INSECURE}
           - name: RELATION_API_CLIENT_ID
             valueFrom:
               secretKeyRef:
@@ -1750,8 +1752,8 @@ parameters:
   description: The grant type for token generation
   value: 'client_credentials'
 - name: REDHAT_SSO
-  description: The SSO url for rbac environment
-  value: 'sso.stage.redhat.com'
+  description: The SSO url for rbac environment. Leave empty for ephemeral/local to skip JWT auth.
+  value: ''
 - name: SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
   description: The UUID for the role for default root workspace level
   value: ''
