@@ -225,8 +225,6 @@ objects:
             value: ${SA_NAME}
           - name: RELATION_API_SERVER
             value: ${RELATION_API_SERVER}
-          - name: RELATIONS_API_INSECURE
-            value: ${RELATIONS_API_INSECURE}
           - name: RELATION_API_CLIENT_ID
             valueFrom:
               secretKeyRef:
