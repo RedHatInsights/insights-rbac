@@ -1339,6 +1339,12 @@ namespace Roles {
         @doc("Filter by role name. Exact match by default; use * as a wildcard for partial matching (e.g. foo*).")
         @query name?: string;
 
+        @doc("Filter roles by the resource type (e.g. 'tenant', 'workspace'). When omitted, returns roles from all scopes.")
+        @query resource_type?: string;
+
+        @doc("Filter by resource ID. Requires resource_type to be specified.")
+        @query resource_id?: string;
+
         @doc("Control which fields are included in the response to optimize payload size.")
         @query fields?: FieldMask = "id,name,description,last_modified";
 
