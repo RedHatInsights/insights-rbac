@@ -16,6 +16,7 @@
 #
 """Service for RoleV2 management."""
 
+import builtins
 import logging
 import uuid
 from typing import Iterable, Optional
@@ -28,6 +29,7 @@ from management.atomic_transactions import atomic
 from management.exceptions import RequiredFieldError
 from management.permission.exceptions import InvalidPermissionDataError
 from management.permission.model import PermissionValue
+from management.permission.scope_service import Scope, permission_scope_cache, scopes_for_resource_type
 from management.permission.service import PermissionService
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
@@ -232,15 +234,48 @@ class RoleV2Service:
         if fields:
             queryset = queryset.with_fields(fields)
 
+        resource_type = params.get("resource_type")
+        if resource_type:
+            queryset = self._filter_by_resource_type(queryset, resource_type)
+
         name = params.get("name")
         if name:
             queryset = queryset.named(name)
 
         return queryset
 
+    def _filter_by_resource_type(self, queryset: QuerySet, resource_type: str) -> QuerySet:
+        """Filter roles to those whose highest permission scope maps to resource_type.
+
+        Uses DB-level filtering with cached Permission-ID-to-Scope mappings to
+        avoid loading all roles and their permissions into Python memory.
+        """
+        matching_scopes = scopes_for_resource_type(resource_type)
+        if not matching_scopes:
+            return queryset.none()
+
+        higher_non_matching = {s for s in (set(Scope) - matching_scopes) if s > max(matching_scopes)}
+
+        if Scope.DEFAULT not in matching_scopes:
+            matching_ids = permission_scope_cache.ids_for_scopes(matching_scopes)
+            queryset = queryset.filter(permissions__id__in=matching_ids).distinct()
+
+        if higher_non_matching:
+            higher_ids = permission_scope_cache.ids_for_scopes(higher_non_matching)
+            if higher_ids:
+                queryset = queryset.exclude(permissions__id__in=higher_ids)
+
+        return queryset
+
     @atomic
-    def bulk_delete(self, ids: Iterable[str | uuid.UUID], from_tenant: Optional[Tenant] = None):
-        """Delete custom roles with the provided UUIDs."""
+    def bulk_delete(
+        self, ids: Iterable[str | uuid.UUID], from_tenant: Optional[Tenant] = None
+    ) -> builtins.list[CustomRoleV2]:
+        """
+        Delete custom roles with the provided UUIDs.
+
+        Returns the roles found before removal.
+        """
         # Normalize UUIDs. These should have already been validated.
         ids = {as_uuid(id) for id in ids}
 
@@ -303,3 +338,5 @@ class RoleV2Service:
 
         RoleBinding.objects.filter(pk__in=binding_pks_to_remove).delete()
         CustomRoleV2.objects.filter(pk__in=(r.pk for r in roles_to_remove)).delete()
+
+        return roles_to_remove
