@@ -32,7 +32,7 @@ objects:
     - topicName: ${RBAC_KAFKA_CONSUMER_TOPIC}
       partitions: 1
       replicas: 3
-    optionalDependencies:
+    dependencies:
       - kessel-inventory
       - kessel-relations
     deployments:
@@ -1787,7 +1787,7 @@ parameters:
   value: 'connect-relations-sink-connector'
 - name: RBAC_KAFKA_CONSUMER_REPLICAS
   description: The number of replicas for the RBAC Kafka consumer (set to 0 to disable)
-  value: '0'
+  value: '1'
 - name: RBAC_KAFKA_CUSTOM_CONSUMER_BROKER
   description: Custom Kafka broker URL for the RBAC Kafka consumer (if empty, uses default Clowder/localhost configuration)
   value: ''
