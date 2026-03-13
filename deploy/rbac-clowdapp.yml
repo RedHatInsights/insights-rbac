@@ -654,6 +654,8 @@ objects:
             value: ${V2_APIS_ENABLED}
           - name: V2_READ_ONLY_API_MODE
             value: ${V2_READ_ONLY_API_MODE}
+          - name: V2_EDIT_API_ENABLED
+            value: ${V2_EDIT_API_ENABLED}
           - name: V1_ROLE_PERMISSION_BLOCK_LIST
             value: ${V1_ROLE_PERMISSION_BLOCK_LIST}
           - name: READ_ONLY_API_MODE
@@ -1691,6 +1693,9 @@ parameters:
   value: 'True'
 - name: V2_READ_ONLY_API_MODE
   description: Enforce GET only on RBAC v2 APIs only
+  value: 'False'
+- name: V2_EDIT_API_ENABLED
+  description: Fallback for feature flag to enable v2 edit APIs and block v1 write APIs per org
   value: 'False'
 - name: V1_ROLE_PERMISSION_BLOCK_LIST
   description: Comma-separated list of exact permission strings to hide from v1 API (e.g., rbac:role:read,rbac:group:write)
