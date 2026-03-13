@@ -947,6 +947,19 @@ class RoleV2ViewSetTests(IdentityRequest):
     # Tests for POST /api/v2/roles/ (create)
     # ==========================================================================
 
+    @patch("management.permissions.v2_edit_api_access.FEATURE_FLAGS.is_v2_edit_api_enabled", return_value=False)
+    def test_create_role_blocked_when_feature_flag_disabled(self, mock_is_v2_edit_enabled):
+        """Test that V2 role create returns 403 when workspaces feature flag is disabled for the org."""
+        data = {
+            "name": "Blocked Role",
+            "description": "Should be blocked",
+            "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
+        }
+        response = self.client.post(self.url, data, format="json")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn("workspaces", str(response.data).lower())
+        mock_is_v2_edit_enabled.assert_called_once_with(self.customer_data["org_id"])
+
     def test_create_role_success(self):
         """Test creating a role via API returns 201"""
         data = {

@@ -57,14 +57,12 @@ class AtomicOperationsMixin:
 
     def _run_atomic(self, operation, request, *args, **kwargs):
         if is_atomic_disabled():
-            if hasattr(request, "tenant"):
-                ensure_v2_write_activated(request.tenant)
+            ensure_v2_write_activated(request.tenant)
             return operation(request, *args, **kwargs)
 
         @pgtransaction.atomic(isolation_level=ISOLATION_LEVEL, retry=self.atomic_retry)
         def atomic_operation():
-            if hasattr(request, "tenant"):
-                ensure_v2_write_activated(request.tenant)
+            ensure_v2_write_activated(request.tenant)
             return operation(request, *args, **kwargs)
 
         return atomic_operation()
