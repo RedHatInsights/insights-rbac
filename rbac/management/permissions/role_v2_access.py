@@ -39,6 +39,7 @@ class RoleV2KesselAccessPermission(permissions.BasePermission):
     Write actions (create, update, bulk_destroy) require rbac_roles_write.
     """
 
+    RESOURCE_TYPE = "tenant"
     ROLES_READ_RELATION = "rbac_roles_read"
     ROLES_WRITE_RELATION = "rbac_roles_write"
     WRITE_ACTIONS = {"create", "update", "bulk_destroy"}
@@ -79,7 +80,7 @@ class RoleV2KesselAccessPermission(permissions.BasePermission):
         relation = self._get_relation(view)
         checker = WorkspaceInventoryAccessChecker()
         return checker.check_resource_access(
-            resource_type="org",
+            resource_type=self.RESOURCE_TYPE,
             resource_id=org_resource_id,
             principal_id=principal_id,
             relation=relation,

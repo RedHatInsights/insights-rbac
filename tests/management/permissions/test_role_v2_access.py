@@ -97,7 +97,7 @@ class RoleV2KesselAccessPermissionTest(TestCase):
         mock_checker.check_resource_access.assert_called_once()
         call_kwargs = mock_checker.check_resource_access.call_args[1]
         self.assertEqual(call_kwargs["relation"], "rbac_roles_read")
-        self.assertEqual(call_kwargs["resource_type"], "org")
+        self.assertEqual(call_kwargs["resource_type"], "tenant")
         self.assertEqual(call_kwargs["resource_id"], "redhat/12345")
         self.assertEqual(call_kwargs["principal_id"], "redhat/test-user-123")
 
@@ -120,7 +120,7 @@ class RoleV2KesselAccessPermissionTest(TestCase):
         mock_checker.check_resource_access.assert_called_once()
         call_kwargs = mock_checker.check_resource_access.call_args[1]
         self.assertEqual(call_kwargs["relation"], "rbac_roles_write")
-        self.assertEqual(call_kwargs["resource_type"], "org")
+        self.assertEqual(call_kwargs["resource_type"], "tenant")
         self.assertEqual(call_kwargs["resource_id"], "redhat/12345")
 
     @patch("management.permissions.role_v2_access.get_kessel_principal_id")
