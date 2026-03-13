@@ -588,6 +588,7 @@ WORKSPACE_ACCESS_CHECK_V2_ENABLED = ENVIRONMENT.bool("WORKSPACE_ACCESS_CHECK_V2_
 # When True, use 'role_binding_view' permission; when False, use 'view' permission for role binding access
 USE_ROLE_BINDING_VIEW_PERMISSION = ENVIRONMENT.bool("USE_ROLE_BINDING_VIEW_PERMISSION", default=True)
 READ_ONLY_API_MODE = ENVIRONMENT.get_value("READ_ONLY_API_MODE", default=False)
+V2_EDIT_API_ENABLED = ENVIRONMENT.bool("V2_EDIT_API_ENABLED", default=False)
 V1_ROLE_PERMISSION_BLOCK_LIST = [
     permission.strip()
     for permission in ENVIRONMENT.get_value("V1_ROLE_PERMISSION_BLOCK_LIST", default="").split(",")

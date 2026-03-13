@@ -2098,7 +2098,7 @@ class DefaultBindingsAPITests(TestCase):
         self.assertEqual(self._count_default_bindings(DefaultAccessType.ADMIN), 3)
 
 
-@override_settings(V2_APIS_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
+@override_settings(V2_APIS_ENABLED=True, V2_EDIT_API_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
 class BatchCreateViewTests(IdentityRequest):
     """Tests for the :batchCreate endpoint on RoleBindingViewSet."""
 
@@ -2107,19 +2107,11 @@ class BatchCreateViewTests(IdentityRequest):
         reload(urls)
         clear_url_caches()
         super().setUp()
+        bootstrapped = V2TenantBootstrapService(InMemoryRelationReplicator()).bootstrap_tenant(self.tenant)
+        self.root_workspace = bootstrapped.root_workspace
+        self.default_workspace = bootstrapped.default_workspace
         self.client = APIClient()
 
-        self.root_workspace = Workspace.objects.create(
-            name=Workspace.SpecialNames.ROOT,
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-        )
-        self.default_workspace = Workspace.objects.create(
-            name=Workspace.SpecialNames.DEFAULT,
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            parent=self.root_workspace,
-        )
         self.workspace = Workspace.objects.create(
             name="Test Workspace",
             tenant=self.tenant,
@@ -2495,7 +2487,7 @@ class BatchCreateViewTests(IdentityRequest):
         self._assert_problem_details(response, 404, f"workspace with id '{fake_ws_id}' not found", "detail")
 
 
-@override_settings(V2_APIS_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
+@override_settings(V2_APIS_ENABLED=True, V2_EDIT_API_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
 class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
     """Tests for PUT /role-bindings/by-subject/ endpoint."""
 
@@ -2504,20 +2496,12 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
         reload(urls)
         clear_url_caches()
         super().setUp()
+        bootstrapped = V2TenantBootstrapService(InMemoryRelationReplicator()).bootstrap_tenant(self.tenant)
+        self.root_workspace = bootstrapped.root_workspace
+        self.default_workspace = bootstrapped.default_workspace
         self.client = APIClient()
 
-        # Create workspace hierarchy
-        self.root_workspace = Workspace.objects.create(
-            name=Workspace.SpecialNames.ROOT,
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-        )
-        self.default_workspace = Workspace.objects.create(
-            name=Workspace.SpecialNames.DEFAULT,
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            parent=self.root_workspace,
-        )
+        # Create workspace hierarchy (root and default from bootstrap)
         self.workspace = Workspace.objects.create(
             name="Test Workspace",
             description="Test workspace description",

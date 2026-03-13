@@ -20,6 +20,7 @@ from management.atomic_transactions import atomic, atomic_block
 from management.audit_log.model import AuditLog
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions import RoleAccessPermission
+from management.permissions.v2_edit_api_access import V2WriteRequiresWorkspacesEnabled
 from management.role.v2_exceptions import CustomRoleRequiredError, RolesNotFoundError
 from management.role.v2_model import RoleV2
 from management.role.v2_serializer import (
@@ -49,7 +50,7 @@ class RoleV2CursorPagination(V2CursorPagination):
 class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
     """RoleV2 ViewSet."""
 
-    permission_classes = (RoleAccessPermission,)
+    permission_classes = (RoleAccessPermission, V2WriteRequiresWorkspacesEnabled)
     queryset = RoleV2.objects.exclude(type=RoleV2.Types.PLATFORM)
     serializer_class = RoleV2ResponseSerializer
     pagination_class = RoleV2CursorPagination
