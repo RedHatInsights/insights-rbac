@@ -1220,6 +1220,22 @@ class RoleV2ViewSetTests(IdentityRequest):
         # Should still succeed but ignore invalid field
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
+    def test_create_role_with_asterisk_in_name_returns_400(self):
+        """Test that creating a role with '*' in the name returns 400."""
+        data = {
+            "name": "role_*_admin",
+            "description": "Should be rejected",
+            "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
+        }
+
+        response = self.client.post(self.url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["detail"], "Role name must not contain asterisks (*).")
+        self.assertIn("errors", response.data)
+        self.assertGreater(len(response.data["errors"]), 0)
+        self.assertEqual(response.data["errors"][0]["field"], "name")
+
     # ==========================================================================
     # Tests for PUT /api/v2/roles/{uuid}/ (update)
     # ==========================================================================
@@ -1475,6 +1491,30 @@ class RoleV2ViewSetTests(IdentityRequest):
         # Default should include permissions per spec
         self.assertIn("permissions", response.data)
         self.assertEqual(len(response.data["permissions"]), 1)
+
+    def test_update_role_with_asterisk_in_name_returns_400(self):
+        """Test that updating a role name to include '*' returns 400."""
+        role = CustomRoleV2.objects.create(
+            name="Original Role For Star Test",
+            description="Original description",
+            tenant=self.tenant,
+        )
+        role.permissions.add(self.permission1)
+
+        update_url = reverse("v2_management:roles-detail", kwargs={"uuid": str(role.uuid)})
+        data = {
+            "name": "Updated*Role",
+            "description": "Should be rejected",
+            "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
+        }
+
+        response = self.client.put(update_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["detail"], "Role name must not contain asterisks (*).")
+        self.assertIn("errors", response.data)
+        self.assertGreater(len(response.data["errors"]), 0)
+        self.assertEqual(response.data["errors"][0]["field"], "name")
 
     def test_update_platform_role_returns_404(self):
         """Test that attempting to update a platform role returns 404."""

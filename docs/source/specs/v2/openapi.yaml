@@ -2461,7 +2461,8 @@ components:
       properties:
         name:
           type: string
-          description: A human readable name for the role. Must be unique within a tenant.
+          pattern: ^[^*]+$
+          description: A human readable name for the role. Must be unique within a tenant. Asterisks (*) are not allowed.
         description:
           type: string
           description: A description of the role to help clarify its purpose. Does not need to be unique.
