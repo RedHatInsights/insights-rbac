@@ -34,15 +34,37 @@ from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
+from management.audit_log.view import AuditLogViewSet
+from management.group.view import GroupViewSet
+from management.permission.view import PermissionViewSet
 from management.principal.view import PrincipalView
+from management.role.v2_view import RoleV2ViewSet
+from management.role_binding.view import RoleBindingViewSet
+from management.workspace.view import WorkspaceViewSet
 from mcp.server.fastmcp import FastMCP
 from prometheus_client import Counter, Histogram
 
 from api.common import RH_IDENTITY_HEADER
+from api.cross_access.view import CrossAccountRequestViewSet
+from api.status.view import status as status_view_fn
 
-# Cache the view function — PrincipalView.as_view() returns a new callable each time,
+# Cache view functions — .as_view() returns a new callable each time,
 # but the result is stateless and reusable.
 _principal_view = PrincipalView.as_view()
+_status_view = status_view_fn
+_permission_list_view = PermissionViewSet.as_view({"get": "list"})
+_auditlog_list_view = AuditLogViewSet.as_view({"get": "list"})
+_role_v2_list_view = RoleV2ViewSet.as_view({"get": "list"})
+_role_v2_detail_view = RoleV2ViewSet.as_view({"get": "retrieve"})
+_group_list_view = GroupViewSet.as_view({"get": "list"})
+_group_detail_view = GroupViewSet.as_view({"get": "retrieve"})
+_group_principals_view = GroupViewSet.as_view({"get": "principals"})
+_cross_account_list_view = CrossAccountRequestViewSet.as_view({"get": "list"})
+_cross_account_detail_view = CrossAccountRequestViewSet.as_view({"get": "retrieve"})
+_workspace_list_view = WorkspaceViewSet.as_view({"get": "list"})
+_workspace_detail_view = WorkspaceViewSet.as_view({"get": "retrieve"})
+_role_binding_list_view = RoleBindingViewSet.as_view({"get": "list"})
+_role_binding_by_subject_view = RoleBindingViewSet.as_view({"get": "by_subject"})
 
 logger = logging.getLogger(__name__)
 
@@ -203,6 +225,422 @@ def list_principals(
     if hasattr(response, "data"):
         return json.dumps(response.data, default=str)
     return response.content.decode()
+
+
+def _call_view(request: HttpRequest, view: Callable[..., Any], path: str, query_params: dict[str, str]) -> str:
+    """Call a Django view with cloned request and return the response as a JSON string."""
+    view_request = _clone_request(request, path, data=query_params)
+    response = view(view_request)
+    if hasattr(response, "data"):
+        return json.dumps(response.data, default=str)
+    return response.content.decode()
+
+
+def _call_detail_view(
+    request: HttpRequest,
+    view: Callable[..., Any],
+    path: str,
+    query_params: dict[str, str],
+    **view_kwargs: str,
+) -> str:
+    """Call a Django detail view with cloned request and return the response as a JSON string.
+
+    Pass the lookup kwarg as a keyword argument, e.g. ``pk=value`` or ``uuid=value``.
+    """
+    view_request = _clone_request(request, path, data=query_params)
+    response = view(view_request, **view_kwargs)
+    if hasattr(response, "data"):
+        return json.dumps(response.data, default=str)
+    return response.content.decode()
+
+
+# ┌──────────────────────────────────────────────────────────────────┐
+# │                   MCP Tool → API Endpoint Map                   │
+# ├──────────────────────────┬───────────────────────────────────────┤
+# │ MCP Tool                 │ API Endpoint(s)                      │
+# ├──────────────────────────┼───────────────────────────────────────┤
+# │ hello                    │ (none — in-process greeting)         │
+# │ list_principals          │ GET /api/v1/principals/              │
+# │ get_status               │ GET /api/v1/status/                  │
+# │ list_permissions         │ GET /api/v1/permissions/             │
+# │ list_audit_logs          │ GET /api/v1/auditlogs/               │
+# │ list_roles_v2            │ GET /api/v2/roles/                   │
+# │ get_role_v2              │ GET /api/v2/roles/{uuid}/            │
+# │ list_groups              │ GET /api/v1/groups/                  │
+# │ get_group                │ GET /api/v1/groups/{uuid}/           │
+# │ list_group_principals    │ GET /api/v1/groups/{uuid}/principals/│
+# │ list_cross_account_reqs  │ GET /api/v1/cross-account-requests/  │
+# │ get_cross_account_req    │ GET /api/v1/cross-account-requests/  │
+# │                          │     {uuid}/                          │
+# │ list_workspaces          │ GET /api/v2/workspaces/              │
+# │ get_workspace            │ GET /api/v2/workspaces/{uuid}/       │
+# │ list_role_bindings       │ GET /api/v2/role-bindings/           │
+# │ list_role_bindings_by_   │ GET /api/v2/role-bindings/by-subject/│
+# │   subject                │                                     │
+# └──────────────────────────┴───────────────────────────────────────┘
+
+
+@register_tool(
+    description=(
+        "Get RBAC server status including API version, commit hash, server address, "
+        "platform info, Python version and loaded modules. No authentication required. "
+        "Calls: GET /api/v1/status/"
+    ),
+)
+def get_status(request: HttpRequest) -> str:
+    """Return server status by delegating to the status view."""
+    path = reverse("v1_api:server-status")
+    view_request = _clone_request(request, path)
+    response = _status_view(view_request)
+    if hasattr(response, "data"):
+        return json.dumps(response.data, default=str)
+    return response.content.decode()
+
+
+@register_tool(
+    description=(
+        "List permissions available in RBAC. Supports filtering by application, "
+        "resource_type, verb, and pagination. "
+        "Calls: GET /api/v1/permissions/"
+    ),
+    requires_auth=True,
+)
+def list_permissions(
+    request: HttpRequest,
+    *,
+    application: str = "",
+    resource_type: str = "",
+    verb: str = "",
+    limit: int = 10,
+    offset: int = 0,
+    order_by: str = "",
+) -> str:
+    """List permissions by delegating to PermissionViewSet."""
+    query_params: dict[str, str] = {
+        "limit": str(limit),
+        "offset": str(offset),
+    }
+    if application:
+        query_params["application"] = application
+    if resource_type:
+        query_params["resource_type"] = resource_type
+    if verb:
+        query_params["verb"] = verb
+    if order_by:
+        query_params["order_by"] = order_by
+
+    path = reverse("v1_management:permission-list")
+    return _call_view(request, _permission_list_view, path, query_params)
+
+
+@register_tool(
+    description=(
+        "List audit log entries for the authenticated organization. "
+        "Supports ordering by created, principal_username, resource_type, action. "
+        "Calls: GET /api/v1/auditlogs/"
+    ),
+    requires_auth=True,
+)
+def list_audit_logs(
+    request: HttpRequest,
+    *,
+    limit: int = 10,
+    offset: int = 0,
+    ordering: str = "-created",
+) -> str:
+    """List audit logs by delegating to AuditLogViewSet."""
+    query_params: dict[str, str] = {
+        "limit": str(limit),
+        "offset": str(offset),
+        "ordering": ordering,
+    }
+    path = reverse("v1_management:auditlog-list")
+    return _call_view(request, _auditlog_list_view, path, query_params)
+
+
+@register_tool(
+    description=(
+        "List roles (V2 API). Returns assignable roles for the tenant. "
+        "Supports ordering by name and last_modified. "
+        "Calls: GET /api/v2/roles/"
+    ),
+    requires_auth=True,
+)
+def list_roles_v2(
+    request: HttpRequest,
+    *,
+    limit: int = 10,
+    offset: int = 0,
+) -> str:
+    """List V2 roles by delegating to RoleV2ViewSet."""
+    query_params: dict[str, str] = {
+        "limit": str(limit),
+        "offset": str(offset),
+    }
+    path = reverse("v2_management:roles-list")
+    return _call_view(request, _role_v2_list_view, path, query_params)
+
+
+@register_tool(
+    description="Get details of a specific role by UUID (V2 API). Calls: GET /api/v2/roles/{uuid}/",
+    requires_auth=True,
+)
+def get_role_v2(
+    request: HttpRequest,
+    *,
+    role_uuid: str,
+) -> str:
+    """Get a single V2 role by delegating to RoleV2ViewSet."""
+    path = reverse("v2_management:roles-detail", kwargs={"uuid": role_uuid})
+    return _call_detail_view(request, _role_v2_detail_view, path, {}, uuid=role_uuid)
+
+
+@register_tool(
+    description=(
+        "List groups for the authenticated organization. "
+        "Supports filtering by name and pagination. "
+        "Calls: GET /api/v1/groups/"
+    ),
+    requires_auth=True,
+)
+def list_groups(
+    request: HttpRequest,
+    *,
+    limit: int = 10,
+    offset: int = 0,
+    name: str = "",
+    order_by: str = "",
+) -> str:
+    """List groups by delegating to GroupViewSet."""
+    query_params: dict[str, str] = {
+        "limit": str(limit),
+        "offset": str(offset),
+    }
+    if name:
+        query_params["name"] = name
+    if order_by:
+        query_params["order_by"] = order_by
+
+    path = reverse("v1_management:group-list")
+    return _call_view(request, _group_list_view, path, query_params)
+
+
+@register_tool(
+    description="Get details of a specific group by UUID. Calls: GET /api/v1/groups/{uuid}/",
+    requires_auth=True,
+)
+def get_group(
+    request: HttpRequest,
+    *,
+    group_uuid: str,
+) -> str:
+    """Get a single group by delegating to GroupViewSet."""
+    path = reverse("v1_management:group-detail", kwargs={"uuid": group_uuid})
+    return _call_detail_view(request, _group_detail_view, path, {}, uuid=group_uuid)
+
+
+@register_tool(
+    description="List principals (users) in a specific group. Calls: GET /api/v1/groups/{uuid}/principals/",
+    requires_auth=True,
+)
+def list_group_principals(
+    request: HttpRequest,
+    *,
+    group_uuid: str,
+    limit: int = 10,
+    offset: int = 0,
+    principal_type: str = "",
+) -> str:
+    """List principals in a group by delegating to GroupViewSet.principals."""
+    query_params: dict[str, str] = {
+        "limit": str(limit),
+        "offset": str(offset),
+    }
+    if principal_type:
+        query_params["principal_type"] = principal_type
+
+    path = reverse("v1_management:group-principals", kwargs={"uuid": group_uuid})
+    view_request = _clone_request(request, path, data=query_params)
+    response = _group_principals_view(view_request, uuid=group_uuid)
+    if hasattr(response, "data"):
+        return json.dumps(response.data, default=str)
+    return response.content.decode()
+
+
+@register_tool(
+    description=(
+        "List cross-account requests for the authenticated organization. "
+        "Supports filtering by org_id, status, approved_only. "
+        "Calls: GET /api/v1/cross-account-requests/"
+    ),
+    requires_auth=True,
+)
+def list_cross_account_requests(
+    request: HttpRequest,
+    *,
+    limit: int = 10,
+    offset: int = 0,
+    status: str = "",
+    org_id: str = "",
+    approved_only: str = "",
+    ordering: str = "",
+) -> str:
+    """List cross-account requests by delegating to CrossAccountRequestViewSet."""
+    query_params: dict[str, str] = {
+        "limit": str(limit),
+        "offset": str(offset),
+    }
+    if status:
+        query_params["status"] = status
+    if org_id:
+        query_params["org_id"] = org_id
+    if approved_only:
+        query_params["approved_only"] = approved_only
+    if ordering:
+        query_params["ordering"] = ordering
+
+    path = reverse("v1_api:cross-list")
+    return _call_view(request, _cross_account_list_view, path, query_params)
+
+
+@register_tool(
+    description=(
+        "Get details of a specific cross-account request by its ID. "
+        "Calls: GET /api/v1/cross-account-requests/{request_id}/"
+    ),
+    requires_auth=True,
+)
+def get_cross_account_request(
+    request: HttpRequest,
+    *,
+    request_id: str,
+) -> str:
+    """Get a single cross-account request by delegating to CrossAccountRequestViewSet."""
+    path = reverse("v1_api:cross-detail", kwargs={"pk": request_id})
+    return _call_detail_view(request, _cross_account_detail_view, path, {}, pk=request_id)
+
+
+@register_tool(
+    description=(
+        "List workspaces for the authenticated organization (V2 API). "
+        "Supports ordering by name, created, modified, type. "
+        "Calls: GET /api/v2/workspaces/"
+    ),
+    requires_auth=True,
+)
+def list_workspaces(
+    request: HttpRequest,
+    *,
+    limit: int = 10,
+    offset: int = 0,
+    ordering: str = "",
+) -> str:
+    """List workspaces by delegating to WorkspaceViewSet."""
+    query_params: dict[str, str] = {
+        "limit": str(limit),
+        "offset": str(offset),
+    }
+    if ordering:
+        query_params["ordering"] = ordering
+
+    path = reverse("v2_management:workspace-list")
+    return _call_view(request, _workspace_list_view, path, query_params)
+
+
+@register_tool(
+    description=(
+        "Get details of a specific workspace by UUID (V2 API). "
+        "Optionally includes workspace ancestry. "
+        "Calls: GET /api/v2/workspaces/{uuid}/"
+    ),
+    requires_auth=True,
+)
+def get_workspace(
+    request: HttpRequest,
+    *,
+    workspace_uuid: str,
+    include_ancestry: str = "false",
+) -> str:
+    """Get a single workspace by delegating to WorkspaceViewSet."""
+    query_params: dict[str, str] = {}
+    if include_ancestry and include_ancestry != "false":
+        query_params["include_ancestry"] = include_ancestry
+
+    path = reverse("v2_management:workspace-detail", kwargs={"pk": workspace_uuid})
+    return _call_detail_view(request, _workspace_detail_view, path, query_params, pk=workspace_uuid)
+
+
+@register_tool(
+    description=(
+        "List role bindings for the authenticated organization (V2 API). "
+        "Supports filtering by role_id, resource_type, resource_id, subject_type, subject_id. "
+        "Calls: GET /api/v2/role-bindings/"
+    ),
+    requires_auth=True,
+)
+def list_role_bindings(
+    request: HttpRequest,
+    *,
+    limit: int = 10,
+    offset: int = 0,
+    role_id: str = "",
+    resource_type: str = "",
+    resource_id: str = "",
+    subject_type: str = "",
+    subject_id: str = "",
+) -> str:
+    """List role bindings by delegating to RoleBindingViewSet."""
+    query_params: dict[str, str] = {
+        "limit": str(limit),
+        "offset": str(offset),
+    }
+    if role_id:
+        query_params["role_id"] = role_id
+    if resource_type:
+        query_params["resource_type"] = resource_type
+    if resource_id:
+        query_params["resource_id"] = resource_id
+    if subject_type:
+        query_params["subject_type"] = subject_type
+    if subject_id:
+        query_params["subject_id"] = subject_id
+
+    path = reverse("v2_management:role-bindings-list")
+    return _call_view(request, _role_binding_list_view, path, query_params)
+
+
+@register_tool(
+    description=(
+        "List role bindings grouped by subject (V2 API). Requires resource_id and resource_type. "
+        "Optionally filter by subject_type and subject_id. "
+        "Calls: GET /api/v2/role-bindings/by-subject/"
+    ),
+    requires_auth=True,
+)
+def list_role_bindings_by_subject(
+    request: HttpRequest,
+    *,
+    resource_id: str,
+    resource_type: str,
+    subject_type: str = "",
+    subject_id: str = "",
+    limit: int = 10,
+    offset: int = 0,
+) -> str:
+    """List role bindings by subject by delegating to RoleBindingViewSet.by_subject."""
+    query_params: dict[str, str] = {
+        "resource_id": resource_id,
+        "resource_type": resource_type,
+        "limit": str(limit),
+        "offset": str(offset),
+    }
+    if subject_type:
+        query_params["subject_type"] = subject_type
+    if subject_id:
+        query_params["subject_id"] = subject_id
+
+    path = reverse("v2_management:role-bindings-by-subject")
+    return _call_view(request, _role_binding_by_subject_view, path, query_params)
 
 
 # --- JSON-RPC parsing ---
