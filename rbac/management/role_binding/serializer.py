@@ -25,6 +25,7 @@ from typing import Optional
 
 from management.models import Group
 from management.role.v2_model import RoleV2
+from management.workspace.model import Workspace
 from management.role.v2_serializer import RoleIdSerializer
 from management.role_binding.model import RoleBinding
 from management.role_binding.service import CreateBindingRequest, ExcludeSources, RoleBindingService
@@ -45,6 +46,7 @@ class RoleBindingFieldSelection(FieldSelection):
         "subject": {"id", "type", "group.name", "group.description", "group.user_count"},
         "role": {"id", "name"},
         "resource": {"id", "name", "type"},
+        "sources": {"id", "name", "type"},
     }
 
 
@@ -98,6 +100,34 @@ class RoleBindingListInputSerializer(RoleBindingInputSerializerMixin, serializer
     # Validated but not acted on yet; default ordering is by role creation time (UUIDv7).
     # Custom ordering support will be added in a follow-on PR.
     order_by = serializers.CharField(required=False, help_text="Sort by specified field(s)")
+    exclude_sources = serializers.ChoiceField(
+        choices=ExcludeSources.values,
+        required=False,
+        default=ExcludeSources.NONE,
+        help_text="Exclude bindings: 'none' (default) shows all, 'indirect' hides inherited, 'direct' hides direct. "
+        "Requires both resource_id and resource_type to be specified for inherited binding lookups.",
+    )
+
+    def validate(self, data):
+        """Validate that resource_id and resource_type are both provided when using inherited binding features."""
+        exclude_sources = data.get("exclude_sources", ExcludeSources.NONE)
+        resource_id = data.get("resource_id")
+        resource_type = data.get("resource_type")
+
+        # For inherited bindings (exclude_sources != indirect), we need both resource_id and resource_type
+        if exclude_sources != ExcludeSources.INDIRECT:
+            if resource_id and not resource_type:
+                raise serializers.ValidationError(
+                    {
+                        "resource_type": "resource_type is required when resource_id is specified with inherited bindings."
+                    }
+                )
+            if resource_type and not resource_id:
+                raise serializers.ValidationError(
+                    {"resource_id": "resource_id is required when resource_type is specified with inherited bindings."}
+                )
+
+        return data
 
 
 class RoleBindingInputSerializer(serializers.Serializer):
@@ -483,7 +513,7 @@ class RoleBindingOutputSerializerMixin:
 class RoleBindingListOutputSerializer(RoleBindingOutputSerializerMixin, serializers.Serializer):
     """Output serializer for the role binding list endpoint.
 
-    Handles RoleBinding objects and returns {role, subject, resource}.
+    Handles RoleBinding objects and returns {role, subject, resource, sources}.
 
     Supports dynamic field selection through the 'field_selection' context parameter.
     Fields are accessed directly on the model using dot notation from the query parameter.
@@ -492,11 +522,13 @@ class RoleBindingListOutputSerializer(RoleBindingOutputSerializerMixin, serializ
     - subject(group.name, group.description) - accesses obj.name, obj.description
     - role(name) - accesses role.name
     - resource(type) - accesses resource type from the binding
+    - sources(name, type) - accesses sources with optional name and type
     """
 
     subject = serializers.SerializerMethodField()
     role = serializers.SerializerMethodField()
     resource = serializers.SerializerMethodField()
+    sources = serializers.SerializerMethodField()
 
     def get_subject(self, obj: RoleBinding):
         """Extract subject information from the RoleBinding.
@@ -559,6 +591,54 @@ class RoleBindingListOutputSerializer(RoleBindingOutputSerializerMixin, serializ
                 resource_data["type"] = obj.resource_type
 
         return resource_data
+
+    def get_sources(self, obj: RoleBinding):
+        """Extract sources information indicating where the role binding is attached.
+
+        Returns a list of resources from which this role binding is sourced.
+        For direct bindings, this is the binding's own resource.
+        For inherited bindings, this is the parent resource where the binding is attached.
+
+        Default (no fields param): Returns only source id.
+        With fields param: id is always included, plus explicitly requested fields (name, type).
+        """
+        field_selection = self._get_field_selection()
+
+        # The source is always the resource where the binding is actually attached
+        source_data: dict = {"id": obj.resource_id}
+
+        if field_selection is not None:
+            source_fields = field_selection.get_nested("sources")
+            if "type" in source_fields:
+                source_data["type"] = obj.resource_type
+            if "name" in source_fields:
+                # Try to get name from workspace if it's a workspace resource
+                source_data["name"] = self._get_resource_name(obj.resource_type, obj.resource_id)
+
+        return [source_data]
+
+    def _get_resource_name(self, resource_type: str, resource_id: str) -> Optional[str]:
+        """Get the name of a resource by type and ID.
+
+        Args:
+            resource_type: The type of resource (e.g., 'workspace', 'tenant')
+            resource_id: The resource identifier
+
+        Returns:
+            Resource name or None if not found
+        """
+        if resource_type == "workspace":
+            try:
+                request = self.context.get("request")
+                tenant = request.tenant if request else None
+                if tenant:
+                    workspace = Workspace.objects.get(id=resource_id, tenant=tenant)
+                else:
+                    workspace = Workspace.objects.get(id=resource_id)
+                return workspace.name
+            except (Workspace.DoesNotExist, ValueError):
+                return None
+        return None
 
 
 class ResourceInputSerializer(serializers.Serializer):

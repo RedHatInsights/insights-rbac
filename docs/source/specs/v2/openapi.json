@@ -97,6 +97,20 @@
             "explode": false
           },
           {
+            "name": "exclude_sources",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ExcludeSources"
+                }
+              ],
+              "default": "none"
+            },
+            "explode": false
+          },
+          {
             "name": "fields",
             "in": "query",
             "required": false,
@@ -107,7 +121,7 @@
                   "$ref": "#/components/schemas/FieldMask"
                 }
               ],
-              "default": "resource(id),role(id),subject(id,type)"
+              "default": "resource(id),role(id),subject(id,type),sources(id)"
             },
             "explode": false
           },
@@ -173,7 +187,12 @@
                       },
                       "resource": {
                         "id": "550e8400-e29b-41d4-a716-446655440001"
-                      }
+                      },
+                      "sources": [
+                        {
+                          "id": "550e8400-e29b-41d4-a716-446655440001"
+                        }
+                      ]
                     }
                   ]
                 }
@@ -329,13 +348,16 @@
             "explode": false
           },
           {
-            "name": "parent_role_bindings",
+            "name": "exclude_sources",
             "in": "query",
             "required": false,
-            "description": "Include role bindings inherited from parent resources",
             "schema": {
-              "type": "boolean",
-              "default": false
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ExcludeSources"
+                }
+              ],
+              "default": "none"
             },
             "explode": false
           },
@@ -350,7 +372,7 @@
                   "$ref": "#/components/schemas/FieldMask"
                 }
               ],
-              "default": "subject(group.name),role(name),resource(name,type),last_modified"
+              "default": "subject(group.name),roles(name),resource(name,type),last_modified"
             },
             "explode": false
           },
@@ -404,7 +426,7 @@
                         "limit": 10
                       },
                       "links": {
-                        "next": "http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?limit=10&parent_role_bindings=true&cursor=xyz",
+                        "next": "http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?limit=10&exclude_sources=direct&cursor=xyz",
                         "previous": null
                       },
                       "data": [
@@ -430,11 +452,13 @@
                             "name": "Child Workspace",
                             "type": "workspace"
                           },
-                          "inherited_from": {
-                            "id": "550e8400-e29b-41d4-a716-446655440001",
-                            "name": "Parent Workspace",
-                            "type": "workspace"
-                          }
+                          "sources": [
+                            {
+                              "id": "550e8400-e29b-41d4-a716-446655440001",
+                              "name": "Parent Workspace",
+                              "type": "workspace"
+                            }
+                          ]
                         }
                       ]
                     }
@@ -611,7 +635,7 @@
                   "$ref": "#/components/schemas/FieldMask"
                 }
               ],
-              "default": "resource(id),subject(id),roles(id),last_modified"
+              "default": "resource(id),subject(id),roles(id)"
             },
             "explode": false
           }
@@ -625,7 +649,6 @@
                   "$ref": "#/components/schemas/RoleBindings.RoleBindingBySubject"
                 },
                 "example": {
-                  "last_modified": "2024-08-04T12:00:00Z",
                   "subject": {
                     "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
                     "type": "group",
@@ -996,6 +1019,26 @@
             "in": "query",
             "required": false,
             "description": "Filter by role name. Exact match by default; use * as a wildcard for partial matching (e.g. foo*).",
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          },
+          {
+            "name": "resource_type",
+            "in": "query",
+            "required": false,
+            "description": "Filter roles by the resource type (e.g. 'tenant', 'workspace'). When omitted, returns roles from all scopes.",
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          },
+          {
+            "name": "resource_id",
+            "in": "query",
+            "required": false,
+            "description": "Filter by resource ID. Requires resource_type to be specified.",
             "schema": {
               "type": "string"
             },
@@ -2885,6 +2928,15 @@
           }
         }
       },
+      "ExcludeSources": {
+        "type": "string",
+        "enum": [
+          "direct",
+          "indirect",
+          "none"
+        ],
+        "description": "Exclude bindings by source type: 'none' (default) shows all, 'indirect' excludes inherited, 'direct' excludes direct"
+      },
       "FieldMask": {
         "type": "string",
         "description": "Field mask used by the `fields` query parameter to control which fields\nare included in the response.\n\n**Syntax:**\n- Use comma to separate multiple fields: `id,name,description`\n- Use parentheses for nested objects: `subject(id,name),resource(type)`\n\n**Examples:**\n- `id,name`\n- `subject(group.name),role(name)`"
@@ -3531,6 +3583,13 @@
               }
             ],
             "description": "The resource on which the subject is granted the role"
+          },
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoleBindings.Resource"
+            },
+            "description": "Resources from which this role binding is sourced (direct or inherited)"
           }
         },
         "example": {
@@ -3594,13 +3653,12 @@
             ],
             "description": "Resource the roles apply to"
           },
-          "inherited_from": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/RoleBindings.Resource"
-              }
-            ],
-            "description": "Resource from which this role binding is inherited (only present when parent_role_bindings=true)"
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoleBindings.Resource"
+            },
+            "description": "Resources from which this role binding is sourced (direct or inherited)"
           }
         },
         "example": {
@@ -3625,11 +3683,13 @@
             "name": "Child Workspace",
             "type": "workspace"
           },
-          "inherited_from": {
-            "id": "550e8400-e29b-41d4-a716-446655440001",
-            "name": "Parent Workspace",
-            "type": "workspace"
-          }
+          "sources": [
+            {
+              "id": "550e8400-e29b-41d4-a716-446655440001",
+              "name": "Parent Workspace",
+              "type": "workspace"
+            }
+          ]
         }
       },
       "RoleBindings.UpdateRoleBindingsRequest": {

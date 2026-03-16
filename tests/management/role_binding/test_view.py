@@ -275,6 +275,7 @@ class RoleBindingListViewSetTest(IdentityRequest):
         - role: id only
         - subject: id and type
         - resource: id only
+        - sources: list with id only
         """
         url = self._get_list_url()
         response = self.client.get(f"{url}?limit=1", **self.headers)
@@ -284,10 +285,11 @@ class RoleBindingListViewSetTest(IdentityRequest):
 
         item = response.data["data"][0]
 
-        # Verify structure has role, subject, resource (no last_modified, no roles)
+        # Verify structure has role, subject, resource, sources (no last_modified, no roles)
         self.assertIn("role", item)
         self.assertIn("subject", item)
         self.assertIn("resource", item)
+        self.assertIn("sources", item)
         self.assertNotIn("last_modified", item)
         self.assertNotIn("roles", item)
 
@@ -304,6 +306,12 @@ class RoleBindingListViewSetTest(IdentityRequest):
         # Verify resource structure - only id by default
         resource = item["resource"]
         self.assertIn("id", resource)
+
+        # Verify sources structure - list with id only by default
+        sources = item["sources"]
+        self.assertIsInstance(sources, list)
+        self.assertEqual(len(sources), 1)
+        self.assertIn("id", sources[0])
 
     @patch(
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
@@ -534,6 +542,11 @@ class RoleBindingListViewSetTest(IdentityRequest):
                 "subject_group_name",
                 "subject(group.name)",
                 lambda item: ("group" in item["subject"] and "name" in item["subject"]["group"]),
+            ),
+            (
+                "sources_type",
+                "sources(type)",
+                lambda item: ("sources" in item and len(item["sources"]) > 0 and "type" in item["sources"][0]),
             ),
             (
                 "combined",
@@ -817,6 +830,214 @@ class RoleBindingListViewSetTest(IdentityRequest):
         seeded_items = [item for item in response.data["data"] if str(item["role"]["id"]) == str(seeded_role.uuid)]
         self.assertEqual(len(seeded_items), 1)
         self.assertEqual(seeded_items[0]["role"]["name"], "Detailed Seeded Role")
+
+    # --- Inherited role bindings (exclude_sources) ---
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_exclude_sources_indirect_returns_direct_only(self, mock_permission):
+        """Test that exclude_sources=indirect returns only direct bindings."""
+        url = self._get_list_url()
+        resource_id = str(self.workspace.id)
+
+        response = self.client.get(
+            f"{url}?resource_id={resource_id}&resource_type=workspace&exclude_sources=indirect&limit=100",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should return all 15 direct bindings
+        self.assertEqual(len(response.data["data"]), 15)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_without_exclude_sources_defaults_to_none(self, mock_permission):
+        """Test that omitting exclude_sources defaults to 'none'."""
+        url = self._get_list_url()
+        resource_id = str(self.workspace.id)
+
+        response = self.client.get(
+            f"{url}?resource_id={resource_id}&resource_type=workspace&limit=100",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should return all 15 direct bindings (Relations API not mocked, so no inherited)
+        self.assertEqual(len(response.data["data"]), 15)
+
+    @patch(
+        "management.role_binding.service.RoleBindingService._lookup_binding_uuids_via_relations",
+        return_value=None,
+    )
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_exclude_sources_direct_without_relations_server(self, mock_permission, mock_lookup):
+        """Test that exclude_sources=direct without RELATION_API_SERVER returns empty."""
+        url = self._get_list_url()
+        resource_id = str(self.workspace.id)
+
+        response = self.client.get(
+            f"{url}?resource_id={resource_id}&resource_type=workspace&exclude_sources=direct&limit=100",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Cannot determine inherited bindings without Relations API, return empty
+        self.assertEqual(len(response.data["data"]), 0)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    @patch("management.role_binding.service.RoleBindingService._lookup_binding_uuids_via_relations")
+    def test_list_exclude_sources_direct_shows_inherited_only(self, mock_lookup, mock_permission):
+        """Test that exclude_sources=direct shows only inherited bindings from Relations API."""
+        # Create a binding on parent workspace
+        parent_role = RoleV2.objects.create(
+            name="parent_role_list",
+            tenant=self.tenant,
+        )
+        parent_group = Group.objects.create(
+            name="parent_group_list",
+            tenant=self.tenant,
+        )
+        parent_binding = RoleBinding.objects.create(
+            role=parent_role,
+            resource_type="workspace",
+            resource_id=str(self.default_workspace.id),
+            tenant=self.tenant,
+        )
+        RoleBindingGroup.objects.create(
+            group=parent_group,
+            binding=parent_binding,
+        )
+
+        # Mock Relations API to return the parent binding UUID
+        mock_lookup.return_value = [str(parent_binding.uuid)]
+
+        url = self._get_list_url()
+        response = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&exclude_sources=direct&limit=100",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should include only the 1 inherited binding (direct are excluded)
+        self.assertEqual(len(response.data["data"]), 1)
+
+        # Verify the returned binding is the inherited one
+        item = response.data["data"][0]
+        self.assertEqual(str(item["role"]["id"]), str(parent_role.uuid))
+
+        # Verify sources shows the parent workspace (where the binding is attached)
+        self.assertIn("sources", item)
+        self.assertEqual(len(item["sources"]), 1)
+        self.assertEqual(item["sources"][0]["id"], str(self.default_workspace.id))
+
+        # Cleanup
+        RoleBindingGroup.objects.filter(binding=parent_binding).delete()
+        parent_binding.delete()
+        parent_group.delete()
+        parent_role.delete()
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    @patch("management.role_binding.service.RoleBindingService._lookup_binding_uuids_via_relations")
+    def test_list_exclude_sources_none_includes_both(self, mock_lookup, mock_permission):
+        """Test that exclude_sources=none includes both direct and inherited bindings."""
+        # Create a binding on parent workspace
+        parent_role = RoleV2.objects.create(
+            name="parent_role_both",
+            tenant=self.tenant,
+        )
+        parent_group = Group.objects.create(
+            name="parent_group_both",
+            tenant=self.tenant,
+        )
+        parent_binding = RoleBinding.objects.create(
+            role=parent_role,
+            resource_type="workspace",
+            resource_id=str(self.default_workspace.id),
+            tenant=self.tenant,
+        )
+        RoleBindingGroup.objects.create(
+            group=parent_group,
+            binding=parent_binding,
+        )
+
+        # Mock Relations API to return the parent binding UUID
+        mock_lookup.return_value = [str(parent_binding.uuid)]
+
+        url = self._get_list_url()
+        response = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&exclude_sources=none&limit=100",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should include 15 direct bindings + 1 inherited binding
+        self.assertEqual(len(response.data["data"]), 16)
+
+        # Verify parent role is in the response
+        returned_role_ids = [str(item["role"]["id"]) for item in response.data["data"]]
+        self.assertIn(str(parent_role.uuid), returned_role_ids)
+
+        # Find the inherited binding and verify its sources point to parent workspace
+        inherited_item = next(
+            item for item in response.data["data"] if str(item["role"]["id"]) == str(parent_role.uuid)
+        )
+        self.assertEqual(inherited_item["sources"][0]["id"], str(self.default_workspace.id))
+
+        # Find a direct binding and verify its sources point to current workspace
+        direct_item = next(
+            item for item in response.data["data"] if str(item["role"]["id"]) == str(self.roles[0].uuid)
+        )
+        self.assertEqual(direct_item["sources"][0]["id"], str(self.workspace.id))
+
+        # Cleanup
+        RoleBindingGroup.objects.filter(binding=parent_binding).delete()
+        parent_binding.delete()
+        parent_group.delete()
+        parent_role.delete()
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_exclude_sources_accepts_valid_values(self, mock_permission):
+        """Test that exclude_sources accepts 'direct', 'indirect', and 'none' values."""
+        url = self._get_list_url()
+        resource_id = str(self.workspace.id)
+
+        for value in ["direct", "indirect", "none"]:
+            response = self.client.get(
+                f"{url}?resource_id={resource_id}&resource_type=workspace&exclude_sources={value}",
+                **self.headers,
+            )
+            self.assertEqual(response.status_code, status.HTTP_200_OK, f"exclude_sources={value} should be accepted")
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_exclude_sources_rejects_invalid_value(self, mock_permission):
+        """Test that exclude_sources rejects invalid values."""
+        url = self._get_list_url()
+        resource_id = str(self.workspace.id)
+
+        response = self.client.get(
+            f"{url}?resource_id={resource_id}&resource_type=workspace&exclude_sources=invalid",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 
 @override_settings(V2_APIS_ENABLED=True)

@@ -26,7 +26,6 @@ from management.permissions.role_binding_access import (
     RoleBindingSystemUserAccessPermission,
 )
 from management.permissions.v2_edit_api_access import V2WriteRequiresWorkspacesEnabled
-from management.role_binding.model import RoleBinding
 from management.v2_mixins import AtomicOperationsMixin
 from rest_framework import status
 from rest_framework.decorators import action
@@ -91,36 +90,31 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
 
         Optional query parameters:
             - role_id: Filter by role ID (UUID)
-            - resource_id: Filter by resource ID (must be used with resource_type)
-            - resource_type: Filter by resource type (must be used with resource_id)
+            - resource_id: Filter by resource ID (must be used with resource_type for inherited bindings)
+            - resource_type: Filter by resource type (must be used with resource_id for inherited bindings)
             - subject_type: Filter by subject type (e.g., 'group')
             - subject_id: Filter by subject ID (UUID)
             - fields: Control which fields are included in the response
             - order_by: Sort by specified field(s), prefix with '-' for descending
+            - exclude_sources: 'none' (default) shows all, 'indirect' hides inherited, 'direct' hides direct
         """
         # Validate and parse query parameters using input serializer
         input_serializer = RoleBindingListInputSerializer(data=request.query_params)
         input_serializer.is_valid(raise_exception=True)
         validated_params = input_serializer.validated_data
 
-        queryset = RoleBinding.objects.for_tenant(request.tenant)
+        service = RoleBindingService(tenant=request.tenant)
+        queryset = service.get_role_bindings_for_list(validated_params)
 
-        role_id = validated_params.get("role_id")
-        if role_id:
-            queryset = queryset.for_role(role_id)
-
-        queryset = queryset.for_resource_filter(
-            resource_type=validated_params.get("resource_type"),
-            resource_id=validated_params.get("resource_id"),
-        ).for_subject(
-            subject_type=validated_params.get("subject_type"),
-            subject_id=validated_params.get("subject_id"),
-        )
+        resource_id = validated_params.get("resource_id")
+        resource_type = validated_params.get("resource_type")
 
         # Build context for output serializer
         context = {
             "request": request,
             "field_selection": validated_params.get("fields"),
+            "queried_resource_id": str(resource_id) if resource_id else None,
+            "queried_resource_type": resource_type,
         }
 
         page = self.paginate_queryset(queryset)

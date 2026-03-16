@@ -740,7 +740,7 @@ class RoleBindingListInputSerializerTest(TestCase):
         ]
         for label, value in valid_uuids:
             with self.subTest(label=label):
-                s = RoleBindingListInputSerializer(data={"resource_id": value})
+                s = RoleBindingListInputSerializer(data={"resource_id": value, "resource_type": "workspace"})
                 self.assertTrue(s.is_valid(), s.errors)
                 self.assertEqual(s.validated_data["resource_id"], uuid.UUID(value))
 
@@ -772,9 +772,10 @@ class RoleBindingListInputSerializerTest(TestCase):
             ("workspace", "workspace"),
             ("custom", "custom_type"),
         ]
+        resource_id = "550e8400-e29b-41d4-a716-446655440000"
         for label, value in cases:
             with self.subTest(label=label):
-                s = RoleBindingListInputSerializer(data={"resource_type": value})
+                s = RoleBindingListInputSerializer(data={"resource_type": value, "resource_id": resource_id})
                 self.assertTrue(s.is_valid(), s.errors)
                 self.assertEqual(s.validated_data["resource_type"], value)
 
@@ -852,20 +853,20 @@ class RoleBindingListInputSerializerTest(TestCase):
     def test_nul_bytes_stripped_from_all_string_params(self):
         """Test that NUL bytes are stripped from all string parameters."""
         test_cases = [
-            ("fields", "\x00role(name)\x00"),
-            ("order_by", "\x00role.name\x00"),
-            ("resource_type", "\x00workspace\x00"),
-            ("subject_type", "\x00group\x00"),
+            ("fields", "\x00role(name)\x00", {}),
+            ("order_by", "\x00role.name\x00", {}),
+            ("resource_type", "\x00workspace\x00", {"resource_id": "550e8400-e29b-41d4-a716-446655440000"}),
+            ("subject_type", "\x00group\x00", {}),
         ]
-        for label, raw in test_cases:
+        for label, raw, extra_params in test_cases:
             with self.subTest(label=label):
-                s = RoleBindingListInputSerializer(data={label: raw})
+                s = RoleBindingListInputSerializer(data={label: raw, **extra_params})
                 self.assertTrue(s.is_valid(), s.errors)
 
     def test_nul_bytes_stripped_from_resource_id(self):
         """Test that NUL bytes in resource_id are stripped before UUID validation."""
         valid_uuid = "550e8400-e29b-41d4-a716-446655440000"
-        s = RoleBindingListInputSerializer(data={"resource_id": f"\x00{valid_uuid}\x00"})
+        s = RoleBindingListInputSerializer(data={"resource_id": f"\x00{valid_uuid}\x00", "resource_type": "workspace"})
         self.assertTrue(s.is_valid(), s.errors)
 
     def test_nul_bytes_stripped_from_role_id(self):
