@@ -32,6 +32,7 @@ from management import v2_urls
 from management.audit_log.model import AuditLog
 from management.models import Permission
 from management.permission.scope_service import ImplicitResourceService, PermissionScopeCache
+from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.role.definer import seed_roles
 from management.role.v2_model import CustomRoleV2, PlatformRoleV2, RoleV2, SeededRoleV2
@@ -53,7 +54,7 @@ def _scope_cache(tenant_perms="", root_perms=""):
     return PermissionScopeCache(scope_service)
 
 
-@override_settings(V2_APIS_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
+@override_settings(V2_APIS_ENABLED=True, V2_EDIT_API_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
 class RoleV2RetrieveViewTest(IdentityRequest):
     """Test the RoleV2ViewSet retrieve endpoint."""
 
@@ -410,7 +411,7 @@ class RoleV2RetrieveViewTest(IdentityRequest):
         self.assertEqual(set(create_permissions), set(retrieve_permissions))
 
 
-@override_settings(V2_APIS_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
+@override_settings(V2_APIS_ENABLED=True, V2_EDIT_API_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
 class RoleV2ViewSetTests(IdentityRequest):
     """Test the RoleV2ViewSet."""
 
@@ -422,6 +423,8 @@ class RoleV2ViewSetTests(IdentityRequest):
         clear_url_caches()
 
         super().setUp()
+        # Bootstrap tenant so V2 writes (create/update/destroy) can run ensure_v2_write_activated
+        V2TenantBootstrapService(NoopReplicator()).bootstrap_tenant(self.tenant)
         self.client = APIClient()
         self.client.credentials(HTTP_X_RH_IDENTITY=self.headers.get("HTTP_X_RH_IDENTITY"))
         # URL for roles endpoint
@@ -943,6 +946,19 @@ class RoleV2ViewSetTests(IdentityRequest):
     # ==========================================================================
     # Tests for POST /api/v2/roles/ (create)
     # ==========================================================================
+
+    @patch("management.permissions.v2_edit_api_access.FEATURE_FLAGS.is_v2_edit_api_enabled", return_value=False)
+    def test_create_role_blocked_when_feature_flag_disabled(self, mock_is_v2_edit_enabled):
+        """Test that V2 role create returns 403 when workspaces feature flag is disabled for the org."""
+        data = {
+            "name": "Blocked Role",
+            "description": "Should be blocked",
+            "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
+        }
+        response = self.client.post(self.url, data, format="json")
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn("workspaces", str(response.data).lower())
+        mock_is_v2_edit_enabled.assert_called_once_with(self.customer_data["org_id"])
 
     def test_create_role_success(self):
         """Test creating a role via API returns 201"""

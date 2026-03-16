@@ -2955,6 +2955,7 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
     def setUp(self):
         """Set up the access view tests."""
         super().setUp()
+        V2TenantBootstrapService(replicator=NoopReplicator()).bootstrap_tenant(self.tenant)
         self.client = APIClient()
         self.customer = self.customer_data
         self.internal_request_context = self._create_request_context(self.customer, self.user_data, is_internal=True)
@@ -3013,17 +3014,15 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
         self.group.save()
         self.permission = Permission.objects.create(permission="app:*:*", tenant=self.tenant)
         Permission.objects.create(permission="app:foo:bar", tenant=self.tenant)
-        tenant_root_workspace = Workspace.objects.create(
-            name="root",
-            description="Root workspace",
+        tenant_root_workspace, _ = Workspace.objects.get_or_create(
             tenant=self.tenant,
             type=Workspace.Types.ROOT,
+            defaults={"name": "root", "description": "Root workspace"},
         )
-        Workspace.objects.create(
-            name="Tenant Default Workspace",
-            type=Workspace.Types.DEFAULT,
-            parent=tenant_root_workspace,
+        Workspace.objects.get_or_create(
             tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            defaults={"name": "Tenant Default Workspace", "parent": tenant_root_workspace},
         )
 
     def tearDown(self):
@@ -3610,8 +3609,9 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
             **self.internal_request.META,
         )
 
+        # self.tenant is bootstrapped in setUp; only test_tenant and tenant are pending
         expected_json = {
-            "org_ids": sorted([str(self.tenant.org_id), str(self.test_tenant.org_id), str(tenant.org_id)]),
+            "org_ids": sorted([str(self.test_tenant.org_id), str(tenant.org_id)]),
         }
 
         response_json = json.loads(response.content)

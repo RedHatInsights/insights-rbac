@@ -30,6 +30,8 @@ from datetime import timedelta
 
 from management.cache import TenantCache
 from management.models import Group, Permission, Principal, ResourceDefinition, Policy, Role, Access, Workspace
+from management.relation_replicator.noop_replicator import NoopReplicator
+from management.tenant_service.v2 import V2TenantBootstrapService
 from tests.identity_request import IdentityRequest
 
 
@@ -63,6 +65,9 @@ class AccessViewTests(IdentityRequest):
             tenant_name="acct1111111", account_id="1111111", org_id=test_tenant_org_id, ready=True
         )
         self.test_tenant.save()
+        bootstrap_service = V2TenantBootstrapService(replicator=NoopReplicator())
+        bootstrap_service.bootstrap_tenant(self.tenant)
+        bootstrap_service.bootstrap_tenant(self.test_tenant)
         self.test_principal = Principal(username="test_user", tenant=self.test_tenant)
         self.test_principal.save()
         self.test_group = Group(name="test_groupA", tenant=self.test_tenant)
@@ -77,14 +82,15 @@ class AccessViewTests(IdentityRequest):
         )
         request = request_context["request"]
         self.test_headers = request.META
-        test_tenant_root_workspace = Workspace.objects.create(
-            name="Test Tenant Root Workspace", type=Workspace.Types.ROOT, tenant=self.test_tenant
-        )
-        Workspace.objects.create(
-            name="Test Tenant Default Workspace",
-            type=Workspace.Types.DEFAULT,
-            parent=test_tenant_root_workspace,
+        test_tenant_root_workspace, _ = Workspace.objects.get_or_create(
             tenant=self.test_tenant,
+            type=Workspace.Types.ROOT,
+            defaults={"name": "Test Tenant Root Workspace"},
+        )
+        Workspace.objects.get_or_create(
+            tenant=self.test_tenant,
+            type=Workspace.Types.DEFAULT,
+            defaults={"name": "Test Tenant Default Workspace", "parent": test_tenant_root_workspace},
         )
 
         self.principal = Principal(username=user.username, tenant=self.tenant)
@@ -97,17 +103,15 @@ class AccessViewTests(IdentityRequest):
         self.group.save()
         self.permission = Permission.objects.create(permission="app:*:*", tenant=self.tenant)
         Permission.objects.create(permission="app:foo:bar", tenant=self.tenant)
-        tenant_root_workspace = Workspace.objects.create(
-            name="root",
-            description="Root workspace",
+        tenant_root_workspace, _ = Workspace.objects.get_or_create(
             tenant=self.tenant,
             type=Workspace.Types.ROOT,
+            defaults={"name": "root", "description": "Root workspace"},
         )
-        self.default_ws = Workspace.objects.create(
-            name="Tenant Default Workspace",
-            type=Workspace.Types.DEFAULT,
-            parent=tenant_root_workspace,
+        self.default_ws, _ = Workspace.objects.get_or_create(
             tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            defaults={"name": "Tenant Default Workspace", "parent": tenant_root_workspace},
         )
 
         customer_data = {
