@@ -818,6 +818,168 @@ class RoleBindingListViewSetTest(IdentityRequest):
         self.assertEqual(len(seeded_items), 1)
         self.assertEqual(seeded_items[0]["role"]["name"], "Detailed Seeded Role")
 
+    # --- Ordering tests for list endpoint ---
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_order_by_role_name_ascending(self, mock_permission):
+        """Test ordering by role.name ascending."""
+        url = self._get_list_url()
+        response = self.client.get(
+            f"{url}?order_by=role.name&fields=role(id,name),subject(id,type),resource(id)&limit=100",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+        self.assertGreater(len(data), 1)
+
+        names = [item["role"]["name"] for item in data]
+        self.assertEqual(names, sorted(names))
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_order_by_role_name_descending(self, mock_permission):
+        """Test ordering by role.name descending."""
+        url = self._get_list_url()
+        response = self.client.get(
+            f"{url}?order_by=-role.name&fields=role(id,name),subject(id,type),resource(id)&limit=100",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+        self.assertGreater(len(data), 1)
+
+        names = [item["role"]["name"] for item in data]
+        self.assertEqual(names, sorted(names, reverse=True))
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_order_by_role_created(self, mock_permission):
+        """Test ordering by role.created ascending."""
+        url = self._get_list_url()
+        response = self.client.get(
+            f"{url}?order_by=role.created&fields=role(id,name),subject(id,type),resource(id)&limit=100",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+        self.assertGreater(len(data), 1)
+
+        # Roles were created in order, so role_00 should come first
+        names = [item["role"]["name"] for item in data]
+        self.assertEqual(names[0], "list_test_role_00")
+        self.assertEqual(names[-1], "list_test_role_14")
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_order_by_role_modified_descending(self, mock_permission):
+        """Test ordering by role.modified descending."""
+        url = self._get_list_url()
+        response = self.client.get(
+            f"{url}?order_by=-role.modified&fields=role(id,name),subject(id,type),resource(id)&limit=100",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.data["data"]
+        self.assertGreater(len(data), 1)
+
+        # Verify role UUIDs are in descending modified order
+        role_uuids = [item["role"]["id"] for item in data]
+        roles = RoleV2.objects.filter(uuid__in=role_uuids)
+        role_modified_map = {str(r.uuid): r.modified for r in roles}
+        modified_times = [role_modified_map[str(uid)] for uid in role_uuids]
+        self.assertEqual(modified_times, sorted(modified_times, reverse=True))
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_order_by_resource_type(self, mock_permission):
+        """Test ordering by resource.type ascending."""
+        url = self._get_list_url()
+        response = self.client.get(
+            f"{url}?order_by=resource.type&limit=100",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_order_by_role_name_with_pagination(self, mock_permission):
+        """Test that cursor pagination maintains ordering across pages."""
+        url = self._get_list_url()
+
+        # Get first page (5 items)
+        response = self.client.get(
+            f"{url}?order_by=role.name&fields=role(id,name),subject(id,type),resource(id)&limit=5",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        page1_data = response.data["data"]
+        self.assertEqual(len(page1_data), 5)
+        self.assertIsNotNone(response.data["links"]["next"])
+
+        # Get second page via cursor
+        next_url = response.data["links"]["next"]
+        response = self.client.get(next_url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        page2_data = response.data["data"]
+        self.assertEqual(len(page2_data), 5)
+
+        # Verify ordering is maintained across pages
+        page1_names = [item["role"]["name"] for item in page1_data]
+        page2_names = [item["role"]["name"] for item in page2_data]
+        all_names = page1_names + page2_names
+        self.assertEqual(all_names, sorted(all_names))
+
+        # Verify no overlap between pages
+        self.assertEqual(len(set(page1_names) & set(page2_names)), 0)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_order_by_role_name_descending_with_pagination(self, mock_permission):
+        """Test that cursor pagination maintains descending ordering across pages."""
+        url = self._get_list_url()
+
+        # Get first page
+        response = self.client.get(
+            f"{url}?order_by=-role.name&fields=role(id,name),subject(id,type),resource(id)&limit=5",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        page1_data = response.data["data"]
+        self.assertEqual(len(page1_data), 5)
+
+        # Get second page via cursor
+        next_url = response.data["links"]["next"]
+        response = self.client.get(next_url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        page2_data = response.data["data"]
+        self.assertEqual(len(page2_data), 5)
+
+        # Verify descending ordering is maintained across pages
+        page1_names = [item["role"]["name"] for item in page1_data]
+        page2_names = [item["role"]["name"] for item in page2_data]
+        all_names = page1_names + page2_names
+        self.assertEqual(all_names, sorted(all_names, reverse=True))
+
 
 @override_settings(V2_APIS_ENABLED=True)
 class RoleBindingViewSetTest(IdentityRequest):
