@@ -129,6 +129,7 @@ class JWTManagerTest(TestCase):
 
         self.assertTrue(result, "Token with invalid JSON payload should be considered expired")
 
+    @patch("internal.jwt_utils.settings.REDHAT_SSO", "sso.example.com")
     def test_get_jwt_from_redis_with_cached_valid_token(self):
         """Test retrieving a valid token from cache."""
         cached_token = self._create_test_token(exp_offset=3600)
@@ -140,6 +141,7 @@ class JWTManagerTest(TestCase):
         self.jwt_cache.get_jwt_response.assert_called_once()
         self.jwt_provider.get_jwt_token.assert_not_called()
 
+    @patch("internal.jwt_utils.settings.REDHAT_SSO", "sso.example.com")
     def test_get_jwt_from_redis_with_cached_expired_token(self):
         """Test that expired cached token triggers new token fetch."""
         expired_token = self._create_test_token(exp_offset=-3600)
@@ -155,6 +157,7 @@ class JWTManagerTest(TestCase):
         self.jwt_provider.get_jwt_token.assert_called_once()
         self.jwt_cache.set_jwt_response.assert_called_once_with(new_token)
 
+    @patch("internal.jwt_utils.settings.REDHAT_SSO", "sso.example.com")
     def test_get_jwt_from_redis_with_no_cached_token(self):
         """Test fetching new token when cache is empty."""
         new_token = self._create_test_token(exp_offset=3600)
@@ -169,6 +172,7 @@ class JWTManagerTest(TestCase):
         self.jwt_provider.get_jwt_token.assert_called_once()
         self.jwt_cache.set_jwt_response.assert_called_once_with(new_token)
 
+    @patch("internal.jwt_utils.settings.REDHAT_SSO", "sso.example.com")
     def test_get_jwt_from_redis_handles_provider_failure(self):
         """Test that None is returned when token provider fails."""
         self.jwt_cache.get_jwt_response.return_value = None
@@ -179,6 +183,7 @@ class JWTManagerTest(TestCase):
         self.assertIsNone(result)
         self.jwt_cache.set_jwt_response.assert_not_called()
 
+    @patch("internal.jwt_utils.settings.REDHAT_SSO", "sso.example.com")
     def test_get_jwt_from_redis_handles_exception(self):
         """Test that exceptions are caught and None is returned."""
         self.jwt_cache.get_jwt_response.side_effect = Exception("Redis connection error")

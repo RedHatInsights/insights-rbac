@@ -1927,9 +1927,20 @@ class RoleBindingViewSetTest(IdentityRequest):
         # Should include only the 1 inherited binding (direct are excluded)
         self.assertEqual(len(response.data["data"]), 1)
 
-        # Verify parent_group is in the response
-        subject_ids = [item["subject"]["id"] for item in response.data["data"]]
-        self.assertIn(str(parent_group.uuid), [str(sid) for sid in subject_ids])
+        # Verify parent_group is in the response with non-empty roles
+        parent_group_item = response.data["data"][0]
+        self.assertEqual(str(parent_group_item["subject"]["id"]), str(parent_group.uuid))
+        self.assertIn("roles", parent_group_item)
+        self.assertGreater(
+            len(parent_group_item["roles"]),
+            0,
+            "Inherited-only response should have roles populated from parent binding",
+        )
+        self.assertEqual(
+            str(parent_group_item["roles"][0]["id"]),
+            str(parent_role.uuid),
+            "Inherited group should have the correct role from parent binding",
+        )
 
         # Cleanup
         RoleBindingGroup.objects.filter(binding=parent_binding).delete()
@@ -2035,6 +2046,22 @@ class RoleBindingViewSetTest(IdentityRequest):
         # Verify parent_group is in the response
         subject_ids = [str(item["subject"]["id"]) for item in response.data["data"]]
         self.assertIn(str(parent_group.uuid), subject_ids)
+
+        # Verify inherited group has non-empty roles (inherited from parent workspace)
+        parent_group_item = next(
+            item for item in response.data["data"] if str(item["subject"]["id"]) == str(parent_group.uuid)
+        )
+        self.assertIn("roles", parent_group_item)
+        self.assertGreater(
+            len(parent_group_item["roles"]),
+            0,
+            "Inherited group should have roles populated from parent workspace binding",
+        )
+        self.assertEqual(
+            str(parent_group_item["roles"][0]["id"]),
+            str(parent_role.uuid),
+            "Inherited group should have the correct role from parent binding",
+        )
 
         # Cleanup
         RoleBindingGroup.objects.filter(binding=parent_binding).delete()
@@ -2350,7 +2377,7 @@ class DefaultBindingsAPITests(TestCase):
         self.assertEqual(self._count_default_bindings(DefaultAccessType.ADMIN), 3)
 
 
-@override_settings(V2_APIS_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
+@override_settings(V2_APIS_ENABLED=True, V2_EDIT_API_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
 class BatchCreateViewTests(IdentityRequest):
     """Tests for the :batchCreate endpoint on RoleBindingViewSet."""
 
@@ -2359,19 +2386,11 @@ class BatchCreateViewTests(IdentityRequest):
         reload(urls)
         clear_url_caches()
         super().setUp()
+        bootstrapped = V2TenantBootstrapService(InMemoryRelationReplicator()).bootstrap_tenant(self.tenant)
+        self.root_workspace = bootstrapped.root_workspace
+        self.default_workspace = bootstrapped.default_workspace
         self.client = APIClient()
 
-        self.root_workspace = Workspace.objects.create(
-            name=Workspace.SpecialNames.ROOT,
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-        )
-        self.default_workspace = Workspace.objects.create(
-            name=Workspace.SpecialNames.DEFAULT,
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            parent=self.root_workspace,
-        )
         self.workspace = Workspace.objects.create(
             name="Test Workspace",
             tenant=self.tenant,
@@ -2747,7 +2766,7 @@ class BatchCreateViewTests(IdentityRequest):
         self._assert_problem_details(response, 404, f"workspace with id '{fake_ws_id}' not found", "detail")
 
 
-@override_settings(V2_APIS_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
+@override_settings(V2_APIS_ENABLED=True, V2_EDIT_API_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
 class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
     """Tests for PUT /role-bindings/by-subject/ endpoint."""
 
@@ -2756,20 +2775,12 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
         reload(urls)
         clear_url_caches()
         super().setUp()
+        bootstrapped = V2TenantBootstrapService(InMemoryRelationReplicator()).bootstrap_tenant(self.tenant)
+        self.root_workspace = bootstrapped.root_workspace
+        self.default_workspace = bootstrapped.default_workspace
         self.client = APIClient()
 
-        # Create workspace hierarchy
-        self.root_workspace = Workspace.objects.create(
-            name=Workspace.SpecialNames.ROOT,
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-        )
-        self.default_workspace = Workspace.objects.create(
-            name=Workspace.SpecialNames.DEFAULT,
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            parent=self.root_workspace,
-        )
+        # Create workspace hierarchy (root and default from bootstrap)
         self.workspace = Workspace.objects.create(
             name="Test Workspace",
             description="Test workspace description",

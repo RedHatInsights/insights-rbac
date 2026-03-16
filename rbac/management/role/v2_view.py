@@ -16,9 +16,11 @@
 #
 """View for RoleV2 management."""
 
-from management.atomic_transactions import atomic
+from management.atomic_transactions import atomic, atomic_block
+from management.audit_log.model import AuditLog
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions import RoleAccessPermission
+from management.permissions.v2_edit_api_access import V2WriteRequiresWorkspacesEnabled
 from management.role.v2_exceptions import CustomRoleRequiredError, RolesNotFoundError
 from management.role.v2_model import RoleV2
 from management.role.v2_serializer import (
@@ -48,7 +50,7 @@ class RoleV2CursorPagination(V2CursorPagination):
 class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
     """RoleV2 ViewSet."""
 
-    permission_classes = (RoleAccessPermission,)
+    permission_classes = (RoleAccessPermission, V2WriteRequiresWorkspacesEnabled)
     queryset = RoleV2.objects.exclude(type=RoleV2.Types.PLATFORM)
     serializer_class = RoleV2ResponseSerializer
     pagination_class = RoleV2CursorPagination
@@ -139,9 +141,13 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         # Validate and parse fields query parameter
         fields = self._parse_fields_param(request.query_params.get("fields"))
 
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        role = serializer.save()
+        with atomic_block():
+            serializer = self.get_serializer(data=request.data)
+            serializer.is_valid(raise_exception=True)
+            role = serializer.save()
+
+            audit_log = AuditLog()
+            audit_log.log_create(request=request, resource=AuditLog.ROLE_V2)
 
         # Build response with field selection and permission ordering
         input_permissions = request.data.get("permissions", [])
@@ -155,10 +161,15 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         # Validate and parse fields query parameter
         fields = self._parse_fields_param(request.query_params.get("fields"))
 
-        instance = self.get_object()
-        serializer = self.get_serializer(instance, data=request.data)
-        serializer.is_valid(raise_exception=True)
-        role = serializer.save()
+        with atomic_block():
+            instance = self.get_object()
+
+            audit_log = AuditLog()
+            audit_log.log_edit(request=request, resource=AuditLog.ROLE_V2, object=instance)
+
+            serializer = self.get_serializer(instance, data=request.data)
+            serializer.is_valid(raise_exception=True)
+            role = serializer.save()
 
         # Build response with field selection and permission ordering
         input_permissions = request.data.get("permissions", [])
@@ -178,7 +189,11 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         ids = set(serializer.validated_data["ids"])
 
         try:
-            service.bulk_delete(ids, from_tenant=self.request.tenant)
+            removed_roles = service.bulk_delete(ids, from_tenant=self.request.tenant)
+
+            for role in removed_roles:
+                audit_log = AuditLog()
+                audit_log.log_delete(request=request, resource=AuditLog.ROLE_V2, object=role)
         except RolesNotFoundError as e:
             return Response(
                 v2response_error_from_errors(
