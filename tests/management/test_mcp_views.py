@@ -17,14 +17,16 @@
 """Test the MCP views via _private/_a2s/ path."""
 
 import json
+import uuid
 from unittest.mock import patch
 
+from django.test import override_settings
 from rest_framework import status
 from rest_framework.test import APIClient
 
 from api.models import Tenant
 from management.mcp_views import ToolConfig
-from management.models import Access, Group, Permission, Policy, Principal, Role
+from management.models import Access, AuditLog, Group, Permission, Policy, Principal, Role
 from tests.identity_request import IdentityRequest
 
 
@@ -602,6 +604,274 @@ class MCPViewTests(IdentityRequest):
             self.assertEqual(response.status_code, status.HTTP_200_OK)
             data = response.json()
             self.assertEqual(data["id"], "abc-123")
+
+    # --- New read-only tools tests ---
+
+    def _call_tool(self, tool_name, arguments=None, use_auth=True):
+        """Helper to call an MCP tool and return the parsed response."""
+        body = {
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "id": 100,
+            "params": {"name": tool_name, "arguments": arguments or {}},
+        }
+        kwargs = {"data": json.dumps(body), "content_type": "application/json"}
+        if use_auth:
+            kwargs.update(self.headers)
+        return self.client.post(self.url, **kwargs)
+
+    def _get_tool_output(self, response):
+        """Extract tool output from MCP response."""
+        data = response.json()
+        return json.loads(data["result"]["content"][0]["text"])
+
+    def test_tools_list_includes_all_new_tools(self):
+        """Positive: tools/list includes all newly added read-only tools."""
+        body = {"jsonrpc": "2.0", "method": "tools/list", "id": 2, "params": {}}
+        response = self.client.post(self.url, data=json.dumps(body), content_type="application/json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_names = [t["name"] for t in response.json()["result"]["tools"]]
+        expected_tools = [
+            "get_status",
+            "list_permissions",
+            "list_audit_logs",
+            "list_roles_v2",
+            "get_role_v2",
+            "list_groups",
+            "get_group",
+            "list_group_principals",
+            "list_cross_account_requests",
+            "get_cross_account_request",
+            "list_workspaces",
+            "get_workspace",
+            "list_role_bindings",
+            "list_role_bindings_by_subject",
+        ]
+        for tool in expected_tools:
+            self.assertIn(tool, tool_names, f"Tool '{tool}' missing from tools/list")
+
+    # --- get_status ---
+
+    def test_get_status_returns_server_info(self):
+        """Positive: get_status returns server status with auth."""
+        response = self._call_tool("get_status")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertIn("api_version", tool_output)
+        self.assertIn("commit", tool_output)
+
+    # --- list_permissions ---
+
+    def test_list_permissions_success(self):
+        """Positive: list_permissions returns permission data."""
+        Permission.objects.create(
+            application="rbac",
+            resource_type="roles",
+            verb="read",
+            permission="rbac:roles:read",
+            tenant=self.tenant,
+        )
+        response = self._call_tool("list_permissions")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertIn("meta", tool_output)
+        self.assertIn("data", tool_output)
+
+    def test_list_permissions_without_auth_returns_error(self):
+        """Permission: list_permissions without auth returns auth error."""
+        response = self._call_tool("list_permissions", use_auth=False)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    # --- list_audit_logs ---
+
+    def test_list_audit_logs_success(self):
+        """Positive: list_audit_logs returns audit log data."""
+        response = self._call_tool("list_audit_logs")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertIn("meta", tool_output)
+        self.assertIn("data", tool_output)
+
+    def test_list_audit_logs_without_auth_returns_error(self):
+        """Permission: list_audit_logs without auth returns auth error."""
+        response = self._call_tool("list_audit_logs", use_auth=False)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    # --- list_groups / get_group / list_group_principals ---
+
+    def test_list_groups_success(self):
+        """Positive: list_groups returns group data."""
+        Group.objects.create(name="test_group", tenant=self.tenant)
+        response = self._call_tool("list_groups")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertIn("meta", tool_output)
+        self.assertIn("data", tool_output)
+
+    def test_list_groups_without_auth_returns_error(self):
+        """Permission: list_groups without auth returns auth error."""
+        response = self._call_tool("list_groups", use_auth=False)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    def test_get_group_success(self):
+        """Positive: get_group returns group detail."""
+        group = Group.objects.create(name="detail_group", tenant=self.tenant)
+        response = self._call_tool("get_group", {"group_uuid": str(group.uuid)})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["name"], "detail_group")
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [{"username": "test_user"}],
+        },
+    )
+    def test_list_group_principals_success(self, mock_request):
+        """Positive: list_group_principals returns principals in group."""
+        group = Group.objects.create(name="principals_group", tenant=self.tenant)
+        group.principals.add(self.principal)
+        response = self._call_tool("list_group_principals", {"group_uuid": str(group.uuid)})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertIn("data", tool_output)
+
+    # --- list_cross_account_requests / get_cross_account_request ---
+
+    def test_list_cross_account_requests_success(self):
+        """Positive: list_cross_account_requests returns request data."""
+        response = self._call_tool("list_cross_account_requests")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertIn("meta", tool_output)
+        self.assertIn("data", tool_output)
+
+    def test_list_cross_account_requests_without_auth_returns_error(self):
+        """Permission: list_cross_account_requests without auth returns auth error."""
+        response = self._call_tool("list_cross_account_requests", use_auth=False)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+
+@override_settings(V2_APIS_ENABLED=True)
+class MCPViewV2ToolsTests(IdentityRequest):
+    """Test the MCP V2 tools that require V2_APIS_ENABLED=True."""
+
+    def setUp(self):
+        """Set up the MCP V2 tool tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.principal = Principal.objects.create(username="test_user", tenant=self.tenant)
+
+    def tearDown(self):
+        """Tear down MCP V2 tool tests."""
+        Principal.objects.all().delete()
+        super().tearDown()
+
+    def _call_tool(self, tool_name, arguments=None, use_auth=True):
+        """Helper to call an MCP tool and return the parsed response."""
+        body = {
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "id": 100,
+            "params": {"name": tool_name, "arguments": arguments or {}},
+        }
+        kwargs = {"data": json.dumps(body), "content_type": "application/json"}
+        if use_auth:
+            kwargs.update(self.headers)
+        return self.client.post(self.url, **kwargs)
+
+    def _get_tool_output(self, response):
+        """Extract tool output from MCP response."""
+        data = response.json()
+        return json.loads(data["result"]["content"][0]["text"])
+
+    # --- list_roles_v2 / get_role_v2 ---
+
+    def test_list_roles_v2_without_auth_returns_error(self):
+        """Permission: list_roles_v2 without auth returns auth error."""
+        response = self._call_tool("list_roles_v2", use_auth=False)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    # --- list_workspaces / get_workspace ---
+
+    def test_list_workspaces_without_auth_returns_error(self):
+        """Permission: list_workspaces without auth returns auth error."""
+        response = self._call_tool("list_workspaces", use_auth=False)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    # --- list_role_bindings ---
+
+    def test_list_role_bindings_without_auth_returns_error(self):
+        """Permission: list_role_bindings without auth returns auth error."""
+        response = self._call_tool("list_role_bindings", use_auth=False)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    # --- list_role_bindings_by_subject ---
+
+    def test_list_role_bindings_by_subject_without_auth_returns_error(self):
+        """Permission: list_role_bindings_by_subject without auth returns auth error."""
+        response = self._call_tool(
+            "list_role_bindings_by_subject",
+            {"resource_id": "test-id", "resource_type": "workspace"},
+            use_auth=False,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
 
 
 class MCPViewNonAdminTests(IdentityRequest):
