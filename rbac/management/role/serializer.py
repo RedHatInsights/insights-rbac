@@ -138,6 +138,18 @@ class ResourceDefinitionSerializer(SerializerCreateOverrideMixin, serializers.Mo
         return is_resource_a_workspace(instance.application, instance.resource_type, instance.attributeFilter)
 
 
+class AccessListSerializer(serializers.ListSerializer):
+    """List serializer that filters out blocked permissions for v1 API."""
+
+    def to_representation(self, data):
+        """Filter blocked permissions before serializing the list."""
+        request = self.context.get("request")
+        if request:
+            iterable = data.all() if hasattr(data, "all") else data
+            data = [item for item in iterable if not is_permission_blocked_for_v1(item.permission.permission, request)]
+        return super().to_representation(data)
+
+
 class AccessSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer):
     """Serializer for the Access model."""
 
@@ -155,24 +167,12 @@ class AccessSerializer(SerializerCreateOverrideMixin, serializers.ModelSerialize
             raise serializers.ValidationError(error)
         return value
 
-    def to_representation(self, instance):
-        """Filter blocked permissions from access list for v1 API."""
-        request = self.context.get("request")
-
-        # Check if permission is blocked for v1 API (hide from v1, show in v2)
-        # This enables gradual migration of permissions from v1 to v2 UI
-        if request and is_permission_blocked_for_v1(instance.permission.permission, request):
-            # Return None to indicate this item should be skipped
-            # RoleSerializer.to_representation() will filter out these None values
-            return None
-
-        return super().to_representation(instance)
-
     class Meta:
         """Metadata for the serializer."""
 
         model = Access
         fields = ("resourceDefinitions", "permission")
+        list_serializer_class = AccessListSerializer
 
 
 class RoleSerializer(serializers.ModelSerializer):
@@ -193,16 +193,6 @@ class RoleSerializer(serializers.ModelSerializer):
     modified = serializers.DateTimeField(read_only=True)
     external_role_id = serializers.SerializerMethodField()
     external_tenant = serializers.SerializerMethodField()
-
-    def to_representation(self, instance):
-        """Filter out None access items (blocked permissions) from the response."""
-        data = super().to_representation(instance)
-
-        # Filter out None values from access list (blocked permissions)
-        if "access" in data and data["access"]:
-            data["access"] = [item for item in data["access"] if item is not None]
-
-        return data
 
     class Meta:
         """Metadata for the serializer."""
@@ -362,16 +352,6 @@ class RoleDynamicSerializer(DynamicFieldsModelSerializer):
     admin_default = serializers.BooleanField(read_only=True)
     external_role_id = serializers.SerializerMethodField()
     external_tenant = serializers.SerializerMethodField()
-
-    def to_representation(self, instance):
-        """Filter out None access items (blocked permissions) from the response."""
-        data = super().to_representation(instance)
-
-        # Filter out None values from access list (blocked permissions)
-        if "access" in data and data["access"]:
-            data["access"] = [item for item in data["access"] if item is not None]
-
-        return data
 
     class Meta:
         """Metadata for the serializer."""

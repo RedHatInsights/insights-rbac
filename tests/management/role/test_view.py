@@ -40,8 +40,10 @@ from management.models import (
     Workspace,
     BindingMapping,
 )
+from management.relation_replicator.noop_replicator import NoopReplicator
 from management.role.v2_model import CustomRoleV2
 from management.role_binding.model import RoleBinding
+from management.tenant_service.v2 import V2TenantBootstrapService
 from migration_tool.in_memory_tuples import (
     all_of,
     InMemoryRelationReplicator,
@@ -155,6 +157,7 @@ class RoleViewsetTests(IdentityRequest):
     def setUp(self):
         """Set up the role viewset tests."""
         super().setUp()
+        V2TenantBootstrapService(replicator=NoopReplicator()).bootstrap_tenant(self.tenant)
         sys_role_config = {
             "name": "system_role",
             "display_name": "system_display",
@@ -261,18 +264,15 @@ class RoleViewsetTests(IdentityRequest):
 
         self.access3 = Access.objects.create(permission=self.permission2, role=self.sysRole, tenant=self.tenant)
         Permission.objects.create(permission="cost-management:*:*", tenant=self.tenant)
-        self.root_workspace = Workspace.objects.create(
-            name="root",
-            description="Root workspace",
+        self.root_workspace, _ = Workspace.objects.get_or_create(
             tenant=self.tenant,
-            type="root",
+            type=Workspace.Types.ROOT,
+            defaults={"name": "root", "description": "Root workspace"},
         )
-        self.default_workspace = Workspace.objects.create(
-            name="default",
-            description="Default workspace",
+        self.default_workspace, _ = Workspace.objects.get_or_create(
             tenant=self.tenant,
-            parent=self.root_workspace,
-            type="default",
+            type=Workspace.Types.DEFAULT,
+            defaults={"name": "default", "description": "Default workspace", "parent": self.root_workspace},
         )
         self.child_workspace = Workspace.objects.create(
             name="child",
@@ -366,6 +366,16 @@ class RoleViewsetTests(IdentityRequest):
         test_data = {"principals": [{"username": username}]}
         response = client.post(url, test_data, format="json", **self.headers)
         return response
+
+    @patch("management.permissions.v2_edit_api_access.FEATURE_FLAGS.is_v2_edit_api_enabled", return_value=True)
+    def test_create_role_blocked_when_workspaces_enabled(self, mock_is_v2_edit_enabled):
+        """Test that V1 role create returns 403 when workspaces feature flag is enabled for the org."""
+        role_name = "BlockedV1Role"
+        access_data = [{"permission": "app:*:read", "resourceDefinitions": []}]
+        response = self.create_role(role_name, in_access_data=access_data)
+        self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+        self.assertIn("workspaces", str(response.data).lower())
+        mock_is_v2_edit_enabled.assert_called_once_with(self.customer_data["org_id"])
 
     @patch("core.kafka.RBACProducer.send_kafka_message")
     def test_create_role_success(self, send_kafka_message):
@@ -748,6 +758,30 @@ class RoleViewsetTests(IdentityRequest):
         client = APIClient()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+    @override_settings(V1_ROLE_PERMISSION_BLOCK_LIST=["test_app:resource:blocked_action"])
+    def test_read_role_access_filters_blocked_permissions(self):
+        """Test that blocked permissions are filtered from role access endpoint."""
+        blocked_permission = Permission.objects.create(
+            permission="test_app:resource:blocked_action", tenant=self.tenant
+        )
+        allowed_permission = Permission.objects.create(
+            permission="test_app:resource:allowed_action", tenant=self.tenant
+        )
+
+        role = Role.objects.create(name="test_role_block_list", tenant=self.tenant)
+        Access.objects.create(role=role, permission=blocked_permission, tenant=self.tenant)
+        Access.objects.create(role=role, permission=allowed_permission, tenant=self.tenant)
+
+        url = reverse("v1_management:role-access", kwargs={"uuid": role.uuid})
+        client = APIClient()
+        response = client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        permissions = [item["permission"] for item in response.data.get("data", [])]
+
+        self.assertNotIn("test_app:resource:blocked_action", permissions)
+        self.assertIn("test_app:resource:allowed_action", permissions)
 
     def test_read_role_list_success(self):
         """Test that we can read a list of roles."""
@@ -2544,6 +2578,7 @@ class RoleViewNonAdminTests(IdentityRequest):
     def setUp(self):
         """Set up the role viewset nonadmin tests."""
         super().setUp()
+        V2TenantBootstrapService(replicator=NoopReplicator()).bootstrap_tenant(self.tenant)
 
         platform_default_role_config = {
             "name": "platform_default_role",

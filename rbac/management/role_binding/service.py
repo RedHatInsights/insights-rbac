@@ -95,20 +95,23 @@ class RoleBindingService:
             self._replicator = NoopReplicator()
 
     def get_role_bindings_by_subject(self, params: dict) -> QuerySet:
-        """Get role bindings grouped by subject (group) from a dictionary of parameters.
+        """Get role bindings grouped by subject from a dictionary of parameters.
 
         Args:
             params: Dictionary of validated query parameters (from input serializer)
 
         Returns:
-            QuerySet of Group objects annotated with role binding information
+            QuerySet of Group or Principal objects annotated with role binding information,
+            depending on subject_type parameter.
 
         Note:
             Ordering is handled by V2CursorPagination.get_ordering() to ensure
             cursor pagination works correctly with the requested order_by parameter.
         """
+        subject_type = params.get("subject_type")
         resource_id = params["resource_id"]
         resource_type = params["resource_type"]
+        subject_id = params.get("subject_id")
         exclude_sources = params.get("exclude_sources", ExcludeSources.NONE)
 
         # Ensure default bindings exist (lazy creation)
@@ -121,10 +124,18 @@ class RoleBindingService:
         if include_inherited:
             binding_uuids = self._lookup_binding_uuids_via_relations(resource_type, resource_id)
 
-        queryset = self._build_base_queryset(resource_id, resource_type, binding_uuids, exclude_direct=exclude_direct)
-
-        # Apply subject filters
-        queryset = self._apply_subject_filters(queryset, params.get("subject_type"), params.get("subject_id"))
+        if subject_type == SubjectType.USER:
+            # Build user queryset
+            queryset = self._build_user_queryset(
+                resource_id, resource_type, binding_uuids, exclude_direct=exclude_direct
+            )
+            queryset = self._apply_user_filters(queryset, subject_id)
+        else:
+            # Default to group queryset (includes when subject_type is None or "group")
+            queryset = self._build_base_queryset(
+                resource_id, resource_type, binding_uuids, exclude_direct=exclude_direct
+            )
+            queryset = self._apply_subject_filters(queryset, subject_type, subject_id)
 
         return queryset
 
@@ -167,6 +178,7 @@ class RoleBindingService:
             "resource_type": resource_type,
             "resource_name": self.get_resource_name(resource_id, resource_type),
             "field_selection": params.get("fields"),
+            "subject_type": params.get("subject_type"),
         }
 
     @atomic
@@ -326,14 +338,20 @@ class RoleBindingService:
         )
 
         # Annotate with latest modified timestamp from roles
-        queryset = queryset.annotate(
-            latest_modified=Max(
-                "role_binding_entries__binding__role__modified",
-                filter=Q(
-                    role_binding_entries__binding__resource_type=resource_type,
-                    role_binding_entries__binding__resource_id=resource_id,
-                ),
+        # Include inherited bindings when binding_uuids is provided
+        if binding_uuids:
+            latest_modified_filter = Q(
+                role_binding_entries__binding__resource_type=resource_type,
+                role_binding_entries__binding__resource_id=resource_id,
+            ) | Q(role_binding_entries__binding__uuid__in=binding_uuids)
+        else:
+            latest_modified_filter = Q(
+                role_binding_entries__binding__resource_type=resource_type,
+                role_binding_entries__binding__resource_id=resource_id,
             )
+
+        queryset = queryset.annotate(
+            latest_modified=Max("role_binding_entries__binding__role__modified", filter=latest_modified_filter)
         )
 
         return queryset
@@ -344,22 +362,141 @@ class RoleBindingService:
         subject_type: Optional[str],
         subject_id: Optional[str],
     ) -> QuerySet:
-        """Apply subject type and ID filters to queryset.
+        """Apply subject type and ID filters to group queryset.
 
         Args:
-            queryset: Base queryset to filter
-            subject_type: Optional subject type filter (e.g., 'group', 'user')
+            queryset: Base queryset to filter (Group objects)
+            subject_type: Optional subject type filter (e.g., 'group')
             subject_id: Optional subject ID filter
 
         Returns:
             Filtered queryset
         """
         if subject_type:
-            # Currently only GROUP subject type is implemented
+            # For group queryset, only 'group' subject type is valid
+            # 'user' type is handled separately in _build_user_queryset
             if subject_type != SubjectType.GROUP:
                 # Filter out all results for unsupported subject types
                 return queryset.none()
 
+        if subject_id:
+            queryset = queryset.filter(uuid=subject_id)
+
+        return queryset
+
+    def _build_user_queryset(
+        self,
+        resource_id: str,
+        resource_type: str,
+        binding_uuids: Optional[Sequence[str]] = None,
+        exclude_direct: bool = False,
+    ) -> QuerySet:
+        """Build queryset of users (principals) with role bindings for a resource.
+
+        Users are queried directly via RoleBindingPrincipal, not through group memberships.
+
+        Args:
+            resource_id: The resource identifier
+            resource_type: The type of resource
+            binding_uuids: Optional list of binding UUIDs to include (for inherited bindings)
+            exclude_direct: If True, exclude direct bindings and only show inherited
+
+        Returns:
+            Annotated QuerySet of Principal objects (users only)
+        """
+        # Build filter for bindings based on exclude_direct and binding_uuids
+        if exclude_direct and binding_uuids is None:
+            # Relations API failed — cannot determine inherited bindings, return empty
+            return Principal.objects.none()
+        elif exclude_direct and binding_uuids is not None:
+            # Only inherited bindings by UUID (exclude direct)
+            binding_filter = Q(role_binding_entries__binding__uuid__in=binding_uuids)
+        elif binding_uuids is not None:
+            # Both direct and inherited bindings (exclude_sources=none)
+            binding_filter = Q(
+                role_binding_entries__binding__resource_type=resource_type,
+                role_binding_entries__binding__resource_id=resource_id,
+            ) | Q(role_binding_entries__binding__uuid__in=binding_uuids)
+        else:
+            # Only direct bindings (exclude_sources=indirect)
+            binding_filter = Q(
+                role_binding_entries__binding__resource_type=resource_type,
+                role_binding_entries__binding__resource_id=resource_id,
+            )
+
+        # Get users who have role bindings matching our filter
+        queryset = Principal.objects.filter(
+            binding_filter,
+            tenant=self.tenant,
+            type=Principal.Types.USER,
+        ).distinct()
+
+        # Prefetch role bindings for this resource
+        # Include inherited bindings when binding_uuids is provided
+        if binding_uuids:
+            binding_prefetch_filter = Q(resource_type=resource_type, resource_id=resource_id) | Q(
+                uuid__in=binding_uuids
+            )
+            join_table_filter = Q(binding__resource_type=resource_type, binding__resource_id=resource_id) | Q(
+                binding__uuid__in=binding_uuids
+            )
+        else:
+            binding_prefetch_filter = Q(resource_type=resource_type, resource_id=resource_id)
+            join_table_filter = Q(binding__resource_type=resource_type, binding__resource_id=resource_id)
+
+        binding_queryset = (
+            RoleBinding.objects.filter(binding_prefetch_filter)
+            .select_related("role")
+            .prefetch_related("role__children")
+        )
+
+        # Prefetch RoleBindingPrincipal entries with their bindings
+        rolebinding_principal_queryset = RoleBindingPrincipal.objects.filter(join_table_filter).prefetch_related(
+            Prefetch("binding", queryset=binding_queryset)
+        )
+
+        # Prefetch role_binding_entries on Principal
+        queryset = queryset.prefetch_related(
+            Prefetch(
+                "role_binding_entries",
+                queryset=rolebinding_principal_queryset,
+                to_attr="filtered_bindings",
+            )
+        )
+
+        # Annotate with latest modified timestamp from roles
+        # Include inherited bindings when binding_uuids is provided
+        if binding_uuids:
+            latest_modified_filter = Q(
+                role_binding_entries__binding__resource_type=resource_type,
+                role_binding_entries__binding__resource_id=resource_id,
+            ) | Q(role_binding_entries__binding__uuid__in=binding_uuids)
+        else:
+            latest_modified_filter = Q(
+                role_binding_entries__binding__resource_type=resource_type,
+                role_binding_entries__binding__resource_id=resource_id,
+            )
+
+        queryset = queryset.annotate(
+            latest_modified=Max("role_binding_entries__binding__role__modified", filter=latest_modified_filter)
+        )
+
+        return queryset
+
+    def _apply_user_filters(
+        self,
+        queryset: QuerySet,
+        subject_id: Optional[str],
+    ) -> QuerySet:
+        """Apply filters to user queryset.
+
+        Args:
+            queryset: Base queryset to filter (Principal objects)
+            subject_id: Optional subject ID filter (UUID)
+
+        Returns:
+            Filtered queryset
+        """
         if subject_id:
             queryset = queryset.filter(uuid=subject_id)
 

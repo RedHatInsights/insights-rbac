@@ -32,7 +32,7 @@ objects:
     - topicName: ${RBAC_KAFKA_CONSUMER_TOPIC}
       partitions: 1
       replicas: 3
-    optionalDependencies:
+    dependencies:
       - kessel-inventory
       - kessel-relations
     deployments:
@@ -654,6 +654,8 @@ objects:
             value: ${V2_APIS_ENABLED}
           - name: V2_READ_ONLY_API_MODE
             value: ${V2_READ_ONLY_API_MODE}
+          - name: V2_EDIT_API_ENABLED
+            value: ${V2_EDIT_API_ENABLED}
           - name: V1_ROLE_PERMISSION_BLOCK_LIST
             value: ${V1_ROLE_PERMISSION_BLOCK_LIST}
           - name: READ_ONLY_API_MODE
@@ -1692,6 +1694,9 @@ parameters:
 - name: V2_READ_ONLY_API_MODE
   description: Enforce GET only on RBAC v2 APIs only
   value: 'False'
+- name: V2_EDIT_API_ENABLED
+  description: Fallback for feature flag to enable v2 edit APIs and block v1 write APIs per org
+  value: 'False'
 - name: V1_ROLE_PERMISSION_BLOCK_LIST
   description: Comma-separated list of exact permission strings to hide from v1 API (e.g., rbac:role:read,rbac:group:write)
   value: 'rbac:workspaces:role_binding_view,rbac:workspaces:role_binding_grant,rbac:workspaces:role_binding_revoke'
@@ -1750,8 +1755,8 @@ parameters:
   description: The grant type for token generation
   value: 'client_credentials'
 - name: REDHAT_SSO
-  description: The SSO url for rbac environment
-  value: 'sso.stage.redhat.com'
+  description: The SSO url for rbac environment. Leave empty for ephemeral/local to skip JWT auth.
+  value: ''
 - name: SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
   description: The UUID for the role for default root workspace level
   value: ''
@@ -1787,7 +1792,7 @@ parameters:
   value: 'connect-relations-sink-connector'
 - name: RBAC_KAFKA_CONSUMER_REPLICAS
   description: The number of replicas for the RBAC Kafka consumer (set to 0 to disable)
-  value: '0'
+  value: '1'
 - name: RBAC_KAFKA_CUSTOM_CONSUMER_BROKER
   description: Custom Kafka broker URL for the RBAC Kafka consumer (if empty, uses default Clowder/localhost configuration)
   value: ''

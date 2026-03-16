@@ -533,7 +533,7 @@ UMB_PORT = ENVIRONMENT.get_value("UMB_PORT", default="61612")
 # Service account name
 SA_NAME = ENVIRONMENT.get_value("SA_NAME", default="nonprod-hcc-rbac")
 
-REDHAT_SSO = ENVIRONMENT.get_value("REDHAT_SSO", default="sso.stage.redhat.com")
+REDHAT_SSO = ENVIRONMENT.get_value("REDHAT_SSO", default="")
 OPENID_URL = ENVIRONMENT.get_value("OPENID_URL", default="/auth/realms/redhat-external/protocol/openid-connect/token")
 SCOPE = ENVIRONMENT.get_value("SCOPE", default="openid")
 TOKEN_GRANT_TYPE = ENVIRONMENT.get_value("TOKEN_GRANT_TYPE", default="client_credentials")
@@ -588,6 +588,7 @@ WORKSPACE_ACCESS_CHECK_V2_ENABLED = ENVIRONMENT.bool("WORKSPACE_ACCESS_CHECK_V2_
 # When True, use 'role_binding_view' permission; when False, use 'view' permission for role binding access
 USE_ROLE_BINDING_VIEW_PERMISSION = ENVIRONMENT.bool("USE_ROLE_BINDING_VIEW_PERMISSION", default=True)
 READ_ONLY_API_MODE = ENVIRONMENT.get_value("READ_ONLY_API_MODE", default=False)
+V2_EDIT_API_ENABLED = ENVIRONMENT.bool("V2_EDIT_API_ENABLED", default=False)
 V1_ROLE_PERMISSION_BLOCK_LIST = [
     permission.strip()
     for permission in ENVIRONMENT.get_value("V1_ROLE_PERMISSION_BLOCK_LIST", default="").split(",")

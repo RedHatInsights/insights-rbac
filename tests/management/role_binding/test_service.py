@@ -213,6 +213,27 @@ class FieldSelectionTests(TestCase):
             RoleBindingFieldSelection.parse("invalid_root_field")
         self.assertIn("Unknown field", str(context.exception))
 
+    def test_parse_user_username_field(self):
+        """Test parsing user.username field for user subjects."""
+        result = RoleBindingFieldSelection.parse("subject(user.username)")
+        self.assertIsNotNone(result)
+        self.assertIn("user.username", result.get_nested("subject"))
+
+    def test_parse_user_and_group_fields_together(self):
+        """Test parsing both user and group fields (for different subject types)."""
+        result = RoleBindingFieldSelection.parse("subject(user.username,group.name)")
+        self.assertIsNotNone(result)
+        self.assertIn("user.username", result.get_nested("subject"))
+        self.assertIn("group.name", result.get_nested("subject"))
+
+    def test_parse_user_field_with_other_objects(self):
+        """Test parsing user field with role and resource fields."""
+        result = RoleBindingFieldSelection.parse("subject(user.username),role(name),resource(type)")
+        self.assertIsNotNone(result)
+        self.assertIn("user.username", result.get_nested("subject"))
+        self.assertIn("name", result.get_nested("role"))
+        self.assertIn("type", result.get_nested("resource"))
+
 
 class RoleBindingServiceTests(IdentityRequest):
     """Tests for RoleBindingService."""
@@ -277,11 +298,18 @@ class RoleBindingServiceTests(IdentityRequest):
             group=self.group,
             binding=self.binding,
         )
+        # Create RoleBindingPrincipal for user-type queries
+        RoleBindingPrincipal.objects.create(
+            principal=self.principal,
+            binding=self.binding,
+            source="test",
+        )
 
         self.service = RoleBindingService(tenant=self.tenant)
 
     def tearDown(self):
         """Tear down test data."""
+        RoleBindingPrincipal.objects.all().delete()
         RoleBindingGroup.objects.all().delete()
         RoleBinding.objects.all().delete()
         self.group.principals.clear()
@@ -367,12 +395,90 @@ class RoleBindingServiceTests(IdentityRequest):
 
         self.assertEqual(queryset.count(), 1)
 
-    def test_get_role_bindings_by_subject_filters_by_unsupported_subject_type(self):
+    def test_get_role_bindings_by_subject_filters_by_user_subject_type(self):
+        """Test filtering by subject_type='user' returns users."""
+        params = {
+            "resource_id": str(self.workspace.id),
+            "resource_type": "workspace",
+            "subject_type": "user",
+        }
+        queryset = self.service.get_role_bindings_by_subject(params)
+
+        # Should return the principal (user) that has a RoleBindingPrincipal entry
+        self.assertEqual(queryset.count(), 1)
+        user = queryset.first()
+        self.assertEqual(user.username, "testuser")
+        self.assertEqual(user.type, Principal.Types.USER)
+
+    def test_get_role_bindings_by_subject_user_type_returns_only_users(self):
+        """Test that user subject type only returns users, not service accounts."""
+        # Create a service account in the group
+        service_account = Principal.objects.create(
+            username="service-account-1",
+            tenant=self.tenant,
+            type=Principal.Types.SERVICE_ACCOUNT,
+        )
+        self.group.principals.add(service_account)
+
+        params = {
+            "resource_id": str(self.workspace.id),
+            "resource_type": "workspace",
+            "subject_type": "user",
+        }
+        queryset = self.service.get_role_bindings_by_subject(params)
+
+        # Should only return the user, not the service account
+        self.assertEqual(queryset.count(), 1)
+        user = queryset.first()
+        self.assertEqual(user.type, Principal.Types.USER)
+
+        # Cleanup
+        self.group.principals.remove(service_account)
+        service_account.delete()
+
+    def test_get_role_bindings_by_subject_user_type_filters_by_subject_id(self):
+        """Test filtering user subject type by subject_id."""
+        # Create another user in the group
+        other_user = Principal.objects.create(
+            username="otheruser",
+            tenant=self.tenant,
+            type=Principal.Types.USER,
+        )
+        self.group.principals.add(other_user)
+
+        params = {
+            "resource_id": str(self.workspace.id),
+            "resource_type": "workspace",
+            "subject_type": "user",
+            "subject_id": str(self.principal.uuid),
+        }
+        queryset = self.service.get_role_bindings_by_subject(params)
+
+        # Should only return the filtered user
+        self.assertEqual(queryset.count(), 1)
+        self.assertEqual(queryset.first().uuid, self.principal.uuid)
+
+        # Cleanup
+        self.group.principals.remove(other_user)
+        other_user.delete()
+
+    def test_get_role_bindings_by_subject_user_type_empty_results(self):
+        """Test that non-existent resource returns empty queryset for user type."""
+        params = {
+            "resource_id": "00000000-0000-0000-0000-000000000000",
+            "resource_type": "workspace",
+            "subject_type": "user",
+        }
+        queryset = self.service.get_role_bindings_by_subject(params)
+
+        self.assertEqual(queryset.count(), 0)
+
+    def test_get_role_bindings_by_subject_unsupported_subject_type_returns_empty(self):
         """Test filtering by unsupported subject_type returns empty."""
         params = {
             "resource_id": str(self.workspace.id),
             "resource_type": "workspace",
-            "subject_type": "user",  # Not currently supported
+            "subject_type": "service-account",  # Not currently supported
         }
         queryset = self.service.get_role_bindings_by_subject(params)
 
@@ -465,6 +571,27 @@ class RoleBindingServiceTests(IdentityRequest):
 
         self.assertIsNotNone(context["field_selection"])
         self.assertIn("group.name", context["field_selection"].get_nested("subject"))
+
+    def test_build_context_with_subject_type(self):
+        """Test that subject_type is included in context."""
+        params = {
+            "resource_id": str(self.workspace.id),
+            "resource_type": "workspace",
+            "subject_type": "user",
+        }
+        context = self.service.build_context(params)
+
+        self.assertEqual(context["subject_type"], "user")
+
+    def test_build_context_without_subject_type(self):
+        """Test that subject_type is None when not provided."""
+        params = {
+            "resource_id": str(self.workspace.id),
+            "resource_type": "workspace",
+        }
+        context = self.service.build_context(params)
+
+        self.assertIsNone(context["subject_type"])
 
     def test_parse_resource_type_with_namespace(self):
         """Test parsing resource type with namespace prefix."""
