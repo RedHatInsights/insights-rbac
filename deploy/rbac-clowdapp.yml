@@ -1687,7 +1687,7 @@ parameters:
   value: "https://sso.stage.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token"
 - name: REPLICATION_TO_RELATION_ENABLED
   description: Enable replication to Relation API
-  value: "False"
+  value: "True"
 - name: V2_APIS_ENABLED
   description: Flag to explicitly enable v2 API endpoints
   value: 'True'
