@@ -684,6 +684,31 @@ class MCPViewTests(IdentityRequest):
         self.assertIn("meta", tool_output)
         self.assertIn("data", tool_output)
 
+    def test_list_permissions_filters_by_application(self):
+        """Positive: list_permissions filters results by application argument."""
+        Permission.objects.create(
+            application="rbac",
+            resource_type="roles",
+            verb="read",
+            permission="rbac:roles:read",
+            tenant=self.tenant,
+        )
+        Permission.objects.create(
+            application="cost-management",
+            resource_type="reports",
+            verb="read",
+            permission="cost-management:reports:read",
+            tenant=self.tenant,
+        )
+        response = self._call_tool("list_permissions", {"application": "rbac"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        permissions = tool_output["data"]
+        self.assertTrue(len(permissions) >= 1)
+        for perm in permissions:
+            self.assertTrue(perm["permission"].startswith("rbac:"))
+
     def test_list_permissions_without_auth_returns_error(self):
         """Permission: list_permissions without auth returns auth error."""
         response = self._call_tool("list_permissions", use_auth=False)
