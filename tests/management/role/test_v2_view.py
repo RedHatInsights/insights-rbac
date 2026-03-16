@@ -41,6 +41,7 @@ from management.tenant_service import V2TenantBootstrapService
 from management.utils import PRINCIPAL_CACHE, as_uuid
 from rbac import urls
 from tests.identity_request import IdentityRequest
+from tests.v2_util import bootstrap_tenant_for_v2_test
 
 CACHE_PATCH_TARGET = "management.role.v2_service.permission_scope_cache"
 
@@ -439,7 +440,7 @@ class RoleV2ViewSetTests(IdentityRequest):
 
         super().setUp()
         # Bootstrap tenant so V2 writes (create/update/destroy) can run ensure_v2_write_activated
-        V2TenantBootstrapService(NoopReplicator()).bootstrap_tenant(self.tenant)
+        bootstrap_tenant_for_v2_test(self.tenant)
         self.client = APIClient()
         self.client.credentials(HTTP_X_RH_IDENTITY=self.headers.get("HTTP_X_RH_IDENTITY"))
 

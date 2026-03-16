@@ -56,7 +56,7 @@ from migration_tool.in_memory_tuples import (
 
 from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
-from tests.v2_util import assert_v2_roles_consistent
+from tests.v2_util import assert_v2_roles_consistent, bootstrap_tenant_for_v2_test
 from unittest.mock import ANY, patch, call, Mock
 
 URL = reverse("v1_management:role-list")
@@ -157,7 +157,7 @@ class RoleViewsetTests(IdentityRequest):
     def setUp(self):
         """Set up the role viewset tests."""
         super().setUp()
-        V2TenantBootstrapService(replicator=NoopReplicator()).bootstrap_tenant(self.tenant)
+        bootstrap_tenant_for_v2_test(self.tenant)
         sys_role_config = {
             "name": "system_role",
             "display_name": "system_display",
@@ -2578,7 +2578,7 @@ class RoleViewNonAdminTests(IdentityRequest):
     def setUp(self):
         """Set up the role viewset nonadmin tests."""
         super().setUp()
-        V2TenantBootstrapService(replicator=NoopReplicator()).bootstrap_tenant(self.tenant)
+        bootstrap_tenant_for_v2_test(self.tenant)
 
         platform_default_role_config = {
             "name": "platform_default_role",

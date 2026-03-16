@@ -1,12 +1,16 @@
 from typing import Callable, Optional
 from unittest import TestCase
 
+from api.models import Tenant
 from management.group.platform import GlobalPolicyIdService, DefaultGroupNotAvailableError
 from management.models import BindingMapping, CustomRoleV2, Permission, Role, RoleBinding, RoleV2
 from management.permission.scope_service import Scope
+from management.relation_replicator.noop_replicator import NoopReplicator
 from management.role.platform import platform_v2_role_uuid_for
 from management.role.v2_model import SeededRoleV2
 from management.tenant_mapping.model import DefaultAccessType
+from management.tenant_service import V2TenantBootstrapService
+from management.tenant_service.tenant_service import BootstrappedTenant
 from migration_tool.in_memory_tuples import (
     resource,
     all_of,
@@ -15,6 +19,7 @@ from migration_tool.in_memory_tuples import (
     subject,
     resource_type,
     InMemoryTuples,
+    InMemoryRelationReplicator,
 )
 
 
@@ -331,3 +336,13 @@ def make_read_tuples_mock(tuples: InMemoryTuples) -> Callable[[str, str, str, st
         return result
 
     return read_tuples_fn
+
+
+def bootstrap_tenant_for_v2_test(tenant: Tenant, tuples: Optional[InMemoryTuples] = None) -> BootstrappedTenant:
+    """
+    Bootstrap a tenant for V2 testing.
+
+    Relation writes are sent to tuples, if provided, and are otherwise discarded.
+    """
+    replicator = InMemoryRelationReplicator(tuples) if tuples is not None else NoopReplicator()
+    return V2TenantBootstrapService(replicator=replicator).bootstrap_tenant(tenant, force=True)
