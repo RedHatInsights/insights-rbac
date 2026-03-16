@@ -28,9 +28,11 @@ in management/workspace/filters.py.
 """
 
 import logging
+import uuid
 
 from feature_flags import FEATURE_FLAGS
 from management.permissions.system_user_utils import SystemUserAccessResult, check_system_user_access
+from management.utils import validate_uuid
 from management.workspace.utils import (
     is_user_allowed_v1,
     is_user_allowed_v2,
@@ -118,18 +120,16 @@ class WorkspaceAccessPermission(permissions.BasePermission):
 
     def _has_permission_v2(self, request, view, perm, ws_id) -> bool:
         """
-        V2 permission check - coarse-grained for create/move, FilterBackend for detail/list.
-
-        The WorkspaceAccessFilterBackend handles access filtering for list/detail operations
-        via queryset. This ensures consistent 404 behavior for both non-existing and
-        inaccessible workspaces (prevents existence leakage).
+        V2 permission check using Inventory API.
 
         This permission class handles:
         - System user bypass/denial
         - Create operation: check 'create' permission on parent workspace
-        - Move operation: check 'create' permission on target workspace
+        - Move operation: check 'create' permission on target workspace + source access
+        - Detail operations (retrieve, update, partial_update, destroy): check access
+          and return 403 if denied (prevents leaking resource existence via 404)
 
-        For list/detail operations, allow the request to proceed and let the
+        For list operations, allow the request to proceed and let the
         FilterBackend handle access via queryset filtering.
         """
         # For system users (s2s communication), bypass v2 access checks and rely on user.admin
@@ -161,15 +161,26 @@ class WorkspaceAccessPermission(permissions.BasePermission):
             return True
 
         # For move operations, check target workspace access
-        # Source workspace access is handled by FilterBackend
+        # Source workspace access is checked below as a detail action
         if view.action == "move":
-            return self._check_move_target_access_v2(request)
+            if not self._check_move_target_access_v2(request):
+                return False
 
-        # For list/detail operations, allow request to proceed
+        # For detail operations, check access and return 403 if denied
+        # This prevents leaking resource existence via 404
+        if view.action in ("retrieve", "update", "partial_update", "destroy", "move"):
+            # Validate UUID before access check — raises ValidationError (400) for invalid UUIDs
+            # rather than bypassing the permission check entirely
+            if ws_id is not None:
+                validate_uuid(str(ws_id), "workspace uuid validation")
+            if not is_user_allowed_v2(request, perm, ws_id):
+                return False
+            return True
+
+        # For list operations, allow request to proceed
         # FilterBackend handles access filtering via queryset
-        # For list: users with no real workspace access get fallback workspaces
+        # Users with no real workspace access get fallback workspaces
         # (root, default, ungrouped) via FilterBackend instead of 403
-        # This ensures 404 for both non-existing and inaccessible workspaces
         return True
 
     def _has_permission_v1(self, request, view, ws_id) -> bool:
@@ -227,8 +238,6 @@ class WorkspaceAccessPermission(permissions.BasePermission):
         Returns:
             str: The valid UUID string, or None if missing/invalid (let validation handle it)
         """
-        import uuid
-
         # Only check request.data (POST body) - aligns with view's source of truth
         target_workspace_id = request.data.get("parent_id")
         if not target_workspace_id:
