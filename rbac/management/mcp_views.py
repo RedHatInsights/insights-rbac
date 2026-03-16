@@ -254,30 +254,26 @@ def _call_detail_view(
     return response.content.decode()
 
 
-# ┌──────────────────────────────────────────────────────────────────┐
-# │                   MCP Tool → API Endpoint Map                   │
-# ├──────────────────────────┬───────────────────────────────────────┤
-# │ MCP Tool                 │ API Endpoint(s)                      │
-# ├──────────────────────────┼───────────────────────────────────────┤
-# │ hello                    │ (none — in-process greeting)         │
-# │ list_principals          │ GET /api/v1/principals/              │
-# │ get_status               │ GET /api/v1/status/                  │
-# │ list_permissions         │ GET /api/v1/permissions/             │
-# │ list_audit_logs          │ GET /api/v1/auditlogs/               │
-# │ list_roles_v2            │ GET /api/v2/roles/                   │
-# │ get_role_v2              │ GET /api/v2/roles/{uuid}/            │
-# │ list_groups              │ GET /api/v1/groups/                  │
-# │ get_group                │ GET /api/v1/groups/{uuid}/           │
-# │ list_group_principals    │ GET /api/v1/groups/{uuid}/principals/│
-# │ list_cross_account_reqs  │ GET /api/v1/cross-account-requests/  │
-# │ get_cross_account_req    │ GET /api/v1/cross-account-requests/  │
-# │                          │     {uuid}/                          │
-# │ list_workspaces          │ GET /api/v2/workspaces/              │
-# │ get_workspace            │ GET /api/v2/workspaces/{uuid}/       │
-# │ list_role_bindings       │ GET /api/v2/role-bindings/           │
-# │ list_role_bindings_by_   │ GET /api/v2/role-bindings/by-subject/│
-# │   subject                │                                     │
-# └──────────────────────────┴───────────────────────────────────────┘
+# ┌─────────────────────────────────┬────────────────────────────────────────────┐
+# │ MCP Tool                        │ API Endpoint                               │
+# ├─────────────────────────────────┼────────────────────────────────────────────┤
+# │ hello                           │ (none — in-process greeting)               │
+# │ list_principals                 │ GET /api/v1/principals/                    │
+# │ get_status                      │ GET /api/v1/status/                        │
+# │ list_permissions                │ GET /api/v1/permissions/                   │
+# │ list_audit_logs                 │ GET /api/v1/auditlogs/                     │
+# │ list_roles_v2                   │ GET /api/v2/roles/                         │
+# │ get_role_v2                     │ GET /api/v2/roles/{uuid}/                  │
+# │ list_groups                     │ GET /api/v1/groups/                        │
+# │ get_group                       │ GET /api/v1/groups/{uuid}/                 │
+# │ list_group_principals           │ GET /api/v1/groups/{uuid}/principals/      │
+# │ list_cross_account_requests     │ GET /api/v1/cross-account-requests/        │
+# │ get_cross_account_request       │ GET /api/v1/cross-account-requests/{id}/   │
+# │ list_workspaces                 │ GET /api/v2/workspaces/                    │
+# │ get_workspace                   │ GET /api/v2/workspaces/{uuid}/             │
+# │ list_role_bindings              │ GET /api/v2/role-bindings/                 │
+# │ list_role_bindings_by_subject   │ GET /api/v2/role-bindings/by-subject/      │
+# └─────────────────────────────────┴────────────────────────────────────────────┘
 
 
 @register_tool(
@@ -290,11 +286,7 @@ def _call_detail_view(
 def get_status(request: HttpRequest) -> str:
     """Return server status by delegating to the status view."""
     path = reverse("v1_api:server-status")
-    view_request = _clone_request(request, path)
-    response = _status_view(view_request)
-    if hasattr(response, "data"):
-        return json.dumps(response.data, default=str)
-    return response.content.decode()
+    return _call_view(request, _status_view, path, {})
 
 
 @register_tool(
@@ -371,12 +363,15 @@ def list_roles_v2(
     *,
     limit: int = 10,
     offset: int = 0,
+    ordering: str = "",
 ) -> str:
     """List V2 roles by delegating to RoleV2ViewSet."""
     query_params: dict[str, str] = {
         "limit": str(limit),
         "offset": str(offset),
     }
+    if ordering:
+        query_params["ordering"] = ordering
     path = reverse("v2_management:roles-list")
     return _call_view(request, _role_v2_list_view, path, query_params)
 
@@ -460,11 +455,7 @@ def list_group_principals(
         query_params["principal_type"] = principal_type
 
     path = reverse("v1_management:group-principals", kwargs={"uuid": group_uuid})
-    view_request = _clone_request(request, path, data=query_params)
-    response = _group_principals_view(view_request, uuid=group_uuid)
-    if hasattr(response, "data"):
-        return json.dumps(response.data, default=str)
-    return response.content.decode()
+    return _call_detail_view(request, _group_principals_view, path, query_params, uuid=group_uuid)
 
 
 @register_tool(
