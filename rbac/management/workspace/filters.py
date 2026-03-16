@@ -60,9 +60,9 @@ class WorkspaceAccessFilterBackend(filters.BaseFilterBackend):
           - None: StreamedListObjects, sets request.permission_tuples
           - Specified: CheckForUpdate
 
-        This ensures consistent 404 behavior:
-        - If workspace doesn't exist: 404 (standard DRF behavior)
-        - If workspace exists but user can't access: 404 (prevents existence leakage)
+        For V2 detail actions, access is checked by WorkspaceAccessPermission
+        (returning 403 if denied), so this filter passes the queryset through.
+        For V2 list actions, this filter restricts the queryset to accessible workspaces.
         """
         # Skip filtering if V2 access check is disabled (fall back to v1 behavior)
         if not FEATURE_FLAGS.is_workspace_access_check_v2_enabled():
@@ -71,27 +71,25 @@ class WorkspaceAccessFilterBackend(filters.BaseFilterBackend):
         # Determine the relation/permission and workspace_id based on action
         relation = permission_from_request(request, view)
         action = getattr(view, "action", None)
-        workspace_id = str(view.kwargs.get("pk")) if action in self.DETAIL_ACTIONS else None
 
-        # Call is_user_allowed_v2 - handles both list and detail cases
-        # Side effect: when workspace_id is None (list actions), is_user_allowed_v2 sets
-        # request.permission_tuples with accessible workspace IDs, used for filtering below
+        # For detail actions, access is already checked by WorkspaceAccessPermission
+        # (returning 403 if denied). No need to re-check here.
+        if action in self.DETAIL_ACTIONS:
+            return queryset
+
+        # For list actions, call is_user_allowed_v2 to get accessible workspace IDs
+        # Side effect: is_user_allowed_v2 sets request.permission_tuples
         try:
-            has_access = is_user_allowed_v2(request, relation, workspace_id)
+            has_access = is_user_allowed_v2(request, relation, None)
         except Exception as e:
             logger.exception(
-                "Exception in is_user_allowed_v2: user=%s, org_id=%s, workspace_id=%s, relation=%s, error=%s",
+                "Exception in is_user_allowed_v2: user=%s, org_id=%s, relation=%s, error=%s",
                 getattr(request.user, "username", "unknown"),
                 getattr(request.user, "org_id", "unknown"),
-                workspace_id,
                 relation,
                 str(e),
             )
             return queryset.none()
-
-        # For detail actions: filter to specific workspace if access granted
-        if workspace_id:
-            return queryset.filter(id=workspace_id) if has_access else queryset.none()
 
         # For list actions: check access decision first, then filter by permission_tuples
         if not has_access:
