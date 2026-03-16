@@ -1725,6 +1725,43 @@ class RoleBindingViewSetTest(IdentityRequest):
         created_times = [role_created_map[str(item["roles"][0]["id"])] for item in data if item["roles"]]
         self.assertEqual(created_times, sorted(created_times))
 
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_by_subject_order_by_role_name_with_pagination(self, mock_permission):
+        """Test that cursor pagination maintains role.name ordering across pages."""
+        url = self._get_by_subject_url()
+
+        # Get first page (5 items)
+        response = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&order_by=role.name&limit=5",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        page1_data = response.data["data"]
+        self.assertEqual(len(page1_data), 5)
+        self.assertIsNotNone(response.data["links"]["next"])
+
+        # Get second page via cursor
+        next_url = response.data["links"]["next"]
+        response = self.client.get(next_url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        page2_data = response.data["data"]
+        self.assertEqual(len(page2_data), 5)
+
+        # Verify ordering is maintained across pages by looking up role names
+        def extract_role_names(data):
+            role_uuids = [item["roles"][0]["id"] for item in data if item["roles"]]
+            roles = RoleV2.objects.filter(uuid__in=role_uuids)
+            role_name_map = {str(r.uuid): r.name for r in roles}
+            return [role_name_map[str(item["roles"][0]["id"])] for item in data if item["roles"]]
+
+        page1_names = extract_role_names(page1_data)
+        page2_names = extract_role_names(page2_data)
+        all_names = page1_names + page2_names
+        self.assertEqual(all_names, sorted(all_names))
+
     # User subject type tests
 
     @patch(
