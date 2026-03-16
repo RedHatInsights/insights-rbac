@@ -968,6 +968,7 @@ class RoleBindingListViewSetTest(IdentityRequest):
         self.assertEqual(len(page1_data), 5)
 
         # Get second page via cursor
+        self.assertIsNotNone(response.data["links"]["next"])
         next_url = response.data["links"]["next"]
         response = self.client.get(next_url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)

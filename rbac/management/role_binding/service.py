@@ -355,14 +355,21 @@ class RoleBindingService:
             latest_modified=Max("role_binding_entries__binding__role__modified", filter=latest_modified_filter)
         )
 
-        # Annotate role fields for cursor pagination.
-        # CursorPagination uses getattr(instance, field) to extract cursor
-        # positions — ORM lookups like role_binding_entries__binding__role__name
-        # work in .order_by() but fail in getattr().
-        # Min is used because a group may have multiple bindings (multi-valued).
-        # UUID needs Cast to text because PostgreSQL has no MIN(uuid).
+        queryset = self._annotate_role_fields_for_cursor(queryset, latest_modified_filter)
+
+        return queryset
+
+    def _annotate_role_fields_for_cursor(self, queryset: QuerySet, latest_modified_filter: Q) -> QuerySet:
+        """Annotate role fields so CursorPagination can extract cursor positions.
+
+        DRF's CursorPagination uses getattr(instance, field) to build cursor
+        positions. ORM lookups like role_binding_entries__binding__role__name
+        work in .order_by() but fail in getattr(). Min is used because a
+        subject may have multiple bindings (multi-valued). UUID needs Cast
+        to text because PostgreSQL has no MIN(uuid).
+        """
         role_field_base = "role_binding_entries__binding__role__{}"
-        queryset = queryset.annotate(
+        return queryset.annotate(
             **{
                 f"role_binding_entries__binding__role__{field}": Min(
                     role_field_base.format(field), filter=latest_modified_filter
@@ -375,8 +382,6 @@ class RoleBindingService:
                 )
             },
         )
-
-        return queryset
 
     def _apply_subject_filters(
         self,
@@ -503,21 +508,7 @@ class RoleBindingService:
             latest_modified=Max("role_binding_entries__binding__role__modified", filter=latest_modified_filter)
         )
 
-        # Annotate role fields for cursor pagination (same reason as _build_base_queryset).
-        role_field_base = "role_binding_entries__binding__role__{}"
-        queryset = queryset.annotate(
-            **{
-                f"role_binding_entries__binding__role__{field}": Min(
-                    role_field_base.format(field), filter=latest_modified_filter
-                )
-                for field in ("name", "modified", "created")
-            },
-            **{
-                "role_binding_entries__binding__role__uuid": Min(
-                    Cast(role_field_base.format("uuid"), CharField()), filter=latest_modified_filter
-                )
-            },
-        )
+        queryset = self._annotate_role_fields_for_cursor(queryset, latest_modified_filter)
 
         return queryset
 
