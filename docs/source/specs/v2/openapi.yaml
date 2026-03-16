@@ -17,7 +17,8 @@ paths:
           in: query
           required: false
           schema:
-            $ref: '#/components/schemas/Limit'
+            allOf:
+              - $ref: '#/components/schemas/Limit'
             default: 10
           explode: false
         - name: cursor
@@ -51,9 +52,9 @@ paths:
         - name: subject_type
           in: query
           required: false
-          description: Filter by subject type (e.g., 'group')
+          description: Filter by subject type (e.g., 'group' or 'user')
           schema:
-            type: string
+            $ref: '#/components/schemas/RoleBindings.SubjectType'
           explode: false
         - name: subject_id
           in: query
@@ -67,7 +68,8 @@ paths:
           required: false
           description: Control which fields are included in the response to optimize payload size.
           schema:
-            $ref: '#/components/schemas/FieldMask'
+            allOf:
+              - $ref: '#/components/schemas/FieldMask'
             default: resource(id),role(id),subject(id,type)
           explode: false
         - name: order_by
@@ -75,7 +77,8 @@ paths:
           required: false
           description: Default sort is by the time the role was first created. Prefix with '-' for descending order.
           schema:
-            $ref: '#/components/schemas/OrderBy'
+            allOf:
+              - $ref: '#/components/schemas/OrderBy'
             default: role.id
           explode: false
       responses:
@@ -170,7 +173,8 @@ paths:
           in: query
           required: false
           schema:
-            $ref: '#/components/schemas/Limit'
+            allOf:
+              - $ref: '#/components/schemas/Limit'
             default: 10
           explode: false
         - name: cursor
@@ -199,7 +203,7 @@ paths:
           required: false
           description: Filter by subject type
           schema:
-            type: string
+            $ref: '#/components/schemas/RoleBindings.SubjectType'
           explode: false
         - name: subject_id
           in: query
@@ -212,7 +216,8 @@ paths:
           in: query
           required: false
           schema:
-            $ref: '#/components/schemas/ExcludeSources'
+            allOf:
+              - $ref: '#/components/schemas/ExcludeSources'
             default: none
           explode: false
         - name: fields
@@ -220,7 +225,8 @@ paths:
           required: false
           description: Control which fields are included in the response to optimize payload size and improve performance.
           schema:
-            $ref: '#/components/schemas/FieldMask'
+            allOf:
+              - $ref: '#/components/schemas/FieldMask'
             default: subject(group.name),roles(name),resource(name,type),last_modified
           explode: false
         - name: order_by
@@ -228,7 +234,8 @@ paths:
           required: false
           description: Sort by specified field(s), prefix with '-' for descending order
           schema:
-            $ref: '#/components/schemas/OrderBy'
+            allOf:
+              - $ref: '#/components/schemas/OrderBy'
             default: subject_name
           explode: false
       responses:
@@ -381,13 +388,14 @@ paths:
           required: true
           description: Identify the subject type for the set of role bindings to replace
           schema:
-            type: string
+            $ref: '#/components/schemas/RoleBindings.SubjectType'
           explode: false
         - name: fields
           in: query
           required: false
           schema:
-            $ref: '#/components/schemas/FieldMask'
+            allOf:
+              - $ref: '#/components/schemas/FieldMask'
             default: resource(id),subject(id),roles(id)
           explode: false
       responses:
@@ -493,7 +501,8 @@ paths:
           in: query
           required: false
           schema:
-            $ref: '#/components/schemas/FieldMask'
+            allOf:
+              - $ref: '#/components/schemas/FieldMask'
             default: resource(id),role(id),subject(id,type)
           explode: false
       responses:
@@ -609,7 +618,8 @@ paths:
           in: query
           required: false
           schema:
-            $ref: '#/components/schemas/Limit'
+            allOf:
+              - $ref: '#/components/schemas/Limit'
             default: 10
           explode: false
         - name: cursor
@@ -631,7 +641,8 @@ paths:
           required: false
           description: Control which fields are included in the response to optimize payload size.
           schema:
-            $ref: '#/components/schemas/FieldMask'
+            allOf:
+              - $ref: '#/components/schemas/FieldMask'
             default: id,name,description,last_modified
           explode: false
         - name: order_by
@@ -639,7 +650,8 @@ paths:
           required: false
           description: "Sort by specified field(s), prefix with '-' for descending order. Allowed fields: name, last_modified."
           schema:
-            $ref: '#/components/schemas/OrderBy'
+            allOf:
+              - $ref: '#/components/schemas/OrderBy'
             default: name
           explode: false
       responses:
@@ -859,7 +871,8 @@ paths:
           required: false
           description: Control which fields are included in the response to optimize payload size.
           schema:
-            $ref: '#/components/schemas/FieldMask'
+            allOf:
+              - $ref: '#/components/schemas/FieldMask'
             default: id,name,description,permissions,last_modified
           explode: false
       responses:
@@ -956,7 +969,8 @@ paths:
           required: false
           description: Control which fields are included in the response to optimize payload size.
           schema:
-            $ref: '#/components/schemas/FieldMask'
+            allOf:
+              - $ref: '#/components/schemas/FieldMask'
             default: id,name,description,permissions,last_modified
           explode: false
       responses:
@@ -1148,7 +1162,8 @@ paths:
           in: query
           required: false
           schema:
-            $ref: '#/components/schemas/Limit'
+            allOf:
+              - $ref: '#/components/schemas/Limit'
             default: 10
           explode: false
         - name: offset
@@ -1156,7 +1171,8 @@ paths:
           required: false
           description: Offset for offset-based pagination.
           schema:
-            $ref: '#/components/schemas/Offset'
+            allOf:
+              - $ref: '#/components/schemas/Offset'
             default: 0
           explode: false
         - name: type
@@ -1164,7 +1180,8 @@ paths:
           required: false
           description: Defaults to all when param is not supplied.
           schema:
-            $ref: '#/components/schemas/Workspaces.WorkspaceTypesQueryParam'
+            allOf:
+              - $ref: '#/components/schemas/Workspaces.WorkspaceTypesQueryParam'
             default: all
           explode: false
         - name: name
@@ -2206,10 +2223,8 @@ components:
                 - $ref: '#/components/schemas/UUID'
               description: UUID that uniquely identifies the subject
             type:
-              type: string
-              enum:
-                - user
-                - group
+              allOf:
+                - $ref: '#/components/schemas/RoleBindings.SubjectType'
               description: Type of subject
           required:
             - id
@@ -2357,6 +2372,12 @@ components:
           - id: 550e8400-e29b-41d4-a716-446655440001
             name: Parent Workspace
             type: workspace
+    RoleBindings.SubjectType:
+      type: string
+      enum:
+        - user
+        - group
+      description: Type of subject for role bindings
     RoleBindings.UpdateRoleBindingsRequest:
       type: object
       required:

@@ -311,16 +311,28 @@ class RoleBindingService:
 
         # Prefetch role bindings for this resource with their roles
         # Also prefetch children for platform roles (which will be returned instead of the platform role)
+        # Include inherited bindings when binding_uuids is provided
+        if binding_uuids:
+            binding_prefetch_filter = Q(resource_type=resource_type, resource_id=resource_id) | Q(
+                uuid__in=binding_uuids
+            )
+            join_table_filter = Q(binding__resource_type=resource_type, binding__resource_id=resource_id) | Q(
+                binding__uuid__in=binding_uuids
+            )
+        else:
+            binding_prefetch_filter = Q(resource_type=resource_type, resource_id=resource_id)
+            join_table_filter = Q(binding__resource_type=resource_type, binding__resource_id=resource_id)
+
         binding_queryset = (
-            RoleBinding.objects.filter(resource_type=resource_type, resource_id=resource_id)
+            RoleBinding.objects.filter(binding_prefetch_filter)
             .select_related("role")
             .prefetch_related("role__children")
         )
 
         # Prefetch the join table entries with the filtered bindings
-        rolebinding_group_queryset = RoleBindingGroup.objects.filter(
-            binding__resource_type=resource_type, binding__resource_id=resource_id
-        ).prefetch_related(Prefetch("binding", queryset=binding_queryset))
+        rolebinding_group_queryset = RoleBindingGroup.objects.filter(join_table_filter).prefetch_related(
+            Prefetch("binding", queryset=binding_queryset)
+        )
 
         queryset = queryset.prefetch_related(
             Prefetch(
@@ -331,14 +343,20 @@ class RoleBindingService:
         )
 
         # Annotate with latest modified timestamp from roles
-        queryset = queryset.annotate(
-            latest_modified=Max(
-                "role_binding_entries__binding__role__modified",
-                filter=Q(
-                    role_binding_entries__binding__resource_type=resource_type,
-                    role_binding_entries__binding__resource_id=resource_id,
-                ),
+        # Include inherited bindings when binding_uuids is provided
+        if binding_uuids:
+            latest_modified_filter = Q(
+                role_binding_entries__binding__resource_type=resource_type,
+                role_binding_entries__binding__resource_id=resource_id,
+            ) | Q(role_binding_entries__binding__uuid__in=binding_uuids)
+        else:
+            latest_modified_filter = Q(
+                role_binding_entries__binding__resource_type=resource_type,
+                role_binding_entries__binding__resource_id=resource_id,
             )
+
+        queryset = queryset.annotate(
+            latest_modified=Max("role_binding_entries__binding__role__modified", filter=latest_modified_filter)
         )
 
         return queryset
@@ -419,16 +437,28 @@ class RoleBindingService:
         ).distinct()
 
         # Prefetch role bindings for this resource
+        # Include inherited bindings when binding_uuids is provided
+        if binding_uuids:
+            binding_prefetch_filter = Q(resource_type=resource_type, resource_id=resource_id) | Q(
+                uuid__in=binding_uuids
+            )
+            join_table_filter = Q(binding__resource_type=resource_type, binding__resource_id=resource_id) | Q(
+                binding__uuid__in=binding_uuids
+            )
+        else:
+            binding_prefetch_filter = Q(resource_type=resource_type, resource_id=resource_id)
+            join_table_filter = Q(binding__resource_type=resource_type, binding__resource_id=resource_id)
+
         binding_queryset = (
-            RoleBinding.objects.filter(resource_type=resource_type, resource_id=resource_id)
+            RoleBinding.objects.filter(binding_prefetch_filter)
             .select_related("role")
             .prefetch_related("role__children")
         )
 
         # Prefetch RoleBindingPrincipal entries with their bindings
-        rolebinding_principal_queryset = RoleBindingPrincipal.objects.filter(
-            binding__resource_type=resource_type, binding__resource_id=resource_id
-        ).prefetch_related(Prefetch("binding", queryset=binding_queryset))
+        rolebinding_principal_queryset = RoleBindingPrincipal.objects.filter(join_table_filter).prefetch_related(
+            Prefetch("binding", queryset=binding_queryset)
+        )
 
         # Prefetch role_binding_entries on Principal
         queryset = queryset.prefetch_related(
@@ -440,14 +470,20 @@ class RoleBindingService:
         )
 
         # Annotate with latest modified timestamp from roles
-        queryset = queryset.annotate(
-            latest_modified=Max(
-                "role_binding_entries__binding__role__modified",
-                filter=Q(
-                    role_binding_entries__binding__resource_type=resource_type,
-                    role_binding_entries__binding__resource_id=resource_id,
-                ),
+        # Include inherited bindings when binding_uuids is provided
+        if binding_uuids:
+            latest_modified_filter = Q(
+                role_binding_entries__binding__resource_type=resource_type,
+                role_binding_entries__binding__resource_id=resource_id,
+            ) | Q(role_binding_entries__binding__uuid__in=binding_uuids)
+        else:
+            latest_modified_filter = Q(
+                role_binding_entries__binding__resource_type=resource_type,
+                role_binding_entries__binding__resource_id=resource_id,
             )
+
+        queryset = queryset.annotate(
+            latest_modified=Max("role_binding_entries__binding__role__modified", filter=latest_modified_filter)
         )
 
         return queryset
