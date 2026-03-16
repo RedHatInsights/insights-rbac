@@ -446,10 +446,10 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     def test_workspace_access_denied(self, mock_flag, mock_channel):
         """Test workspace access is denied when Inventory API returns not allowed.
 
-        Returns 404 (not 403) to prevent existence leakage - user cannot distinguish
-        between a non-existing workspace and one they don't have access to.
+        Returns 403 Forbidden when the user lacks permission to access the workspace.
+        The access check happens in WorkspaceAccessPermission before resource lookup.
         """
-        # Mock Inventory API - FilterBackend uses CheckForUpdate for detail actions
+        # Mock Inventory API - permission class uses CheckForUpdate for detail actions
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
@@ -474,8 +474,8 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             client = APIClient()
             response = client.get(url, format="json", **headers)
 
-            # Should return 404 (not 403) to prevent existence leakage
-            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+            # Should return 403 Forbidden when user lacks permission
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
             # Verify CheckForUpdate was called for detail action
             mock_stub.CheckForUpdate.assert_called()
@@ -863,10 +863,10 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     def test_workspace_update_access_denied(self, mock_flag, mock_channel):
         """Test workspace update is denied when Inventory API returns not allowed.
 
-        Returns 404 (not 403) to prevent existence leakage - user cannot distinguish
-        between a non-existing workspace and one they don't have access to.
+        Returns 403 Forbidden when the user lacks permission to update the workspace.
+        The access check happens in WorkspaceAccessPermission before resource lookup.
         """
-        # Mock Inventory API - FilterBackend uses CheckForUpdate for detail actions
+        # Mock Inventory API - permission class uses CheckForUpdate for detail actions
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
@@ -896,9 +896,8 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             client = APIClient()
             response = client.put(url, updated_data, format="json", **headers)
 
-            # Should return 404 (not 403) to prevent existence leakage
-            # User cannot tell if workspace doesn't exist or they lack access
-            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+            # Should return 403 Forbidden when user lacks permission
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
             # Verify CheckForUpdate was called for detail action
             mock_stub.CheckForUpdate.assert_called()
@@ -1038,8 +1037,8 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             client = APIClient()
             response = client.patch(url, updated_data, format="json", **headers)
 
-            # Should return 404 (not 403) to prevent existence leakage
-            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+            # Should return 403 Forbidden when user lacks permission
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
             # Verify CheckForUpdate was called for detail action
             mock_stub.CheckForUpdate.assert_called()
@@ -1104,10 +1103,10 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     def test_workspace_delete_access_denied(self, mock_flag, mock_channel):
         """Test workspace deletion is denied when user lacks permissions.
 
-        Returns 404 (not 403) to prevent existence leakage - user cannot distinguish
-        between a non-existing workspace and one they don't have access to.
+        Returns 403 Forbidden when the user lacks permission to delete the workspace.
+        The access check happens in WorkspaceAccessPermission before resource lookup.
         """
-        # Mock Inventory API - FilterBackend uses CheckForUpdate for detail actions
+        # Mock Inventory API - permission class uses CheckForUpdate for detail actions
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
@@ -1132,8 +1131,8 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             client = APIClient()
             response = client.delete(url, format="json", **headers)
 
-            # Should return 404 (not 403) to prevent existence leakage
-            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+            # Should return 403 Forbidden when user lacks permission
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
             # Verify CheckForUpdate was called for detail action
             mock_stub.CheckForUpdate.assert_called()

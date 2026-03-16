@@ -90,42 +90,42 @@ class WorkspaceAccessFilterBackendUnitTests(TransactionTestCase):
 
     @patch("management.workspace.filters.is_user_allowed_v2")
     @patch("management.workspace.filters.FEATURE_FLAGS")
-    def test_detail_action_uses_workspace_id(self, mock_flags, mock_is_user_allowed_v2):
-        """FilterBackend uses workspace_id for detail actions (CheckForUpdate)."""
+    def test_detail_action_skips_access_check(self, mock_flags, mock_is_user_allowed_v2):
+        """FilterBackend skips access check for detail actions (handled by permission class)."""
         mock_flags.is_workspace_access_check_v2_enabled.return_value = True
-        mock_is_user_allowed_v2.return_value = True
 
         request = Mock(tenant=Mock())
         request.method = "GET"
         queryset = Mock()
         view = Mock(action="retrieve", kwargs={"pk": "ws-123"})
 
-        self.filter_backend.filter_queryset(request, queryset, view)
+        result = self.filter_backend.filter_queryset(request, queryset, view)
 
-        # Should call is_user_allowed_v2 with specific workspace_id
-        mock_is_user_allowed_v2.assert_called_once()
-        call_args = mock_is_user_allowed_v2.call_args
-        self.assertEqual(call_args[0][2], "ws-123")  # target_workspace should be ws-123
+        # Should NOT call is_user_allowed_v2 — permission class handles detail access
+        mock_is_user_allowed_v2.assert_not_called()
 
-        # Should filter queryset to just that workspace
-        queryset.filter.assert_called_once()
+        # Should return queryset unchanged
+        self.assertEqual(result, queryset)
 
     @patch("management.workspace.filters.is_user_allowed_v2")
     @patch("management.workspace.filters.FEATURE_FLAGS")
-    def test_detail_action_returns_empty_when_access_denied(self, mock_flags, mock_is_user_allowed_v2):
-        """Detail action returns empty queryset when access is denied."""
+    def test_detail_action_skips_access_check_for_write_actions(self, mock_flags, mock_is_user_allowed_v2):
+        """FilterBackend skips access check for all detail actions (update, destroy, move)."""
         mock_flags.is_workspace_access_check_v2_enabled.return_value = True
-        mock_is_user_allowed_v2.return_value = False
 
-        request = Mock(tenant=Mock())
-        request.method = "GET"
-        queryset = Mock()
-        view = Mock(action="retrieve", kwargs={"pk": "ws-123"})
+        for action in ("retrieve", "update", "partial_update", "destroy", "move"):
+            mock_is_user_allowed_v2.reset_mock()
+            request = Mock(tenant=Mock())
+            request.method = "PUT"
+            queryset = Mock()
+            view = Mock(action=action, kwargs={"pk": "ws-123"})
 
-        self.filter_backend.filter_queryset(request, queryset, view)
+            result = self.filter_backend.filter_queryset(request, queryset, view)
 
-        # Should return empty queryset
-        queryset.none.assert_called_once()
+            # Should NOT call is_user_allowed_v2
+            mock_is_user_allowed_v2.assert_not_called()
+            # Should return queryset unchanged
+            self.assertEqual(result, queryset)
 
     @patch("management.workspace.filters.is_user_allowed_v2")
     @patch("management.workspace.filters.FEATURE_FLAGS")
@@ -207,10 +207,9 @@ class WorkspaceAccessFilterBackendUnitTests(TransactionTestCase):
 
     @patch("management.workspace.filters.is_user_allowed_v2")
     @patch("management.workspace.filters.FEATURE_FLAGS")
-    def test_detail_actions_include_all_detail_types(self, mock_flags, mock_is_user_allowed_v2):
-        """All detail action types use CheckForUpdate via is_user_allowed_v2 with workspace_id."""
+    def test_detail_actions_skip_filter_for_all_types(self, mock_flags, mock_is_user_allowed_v2):
+        """All detail action types skip FilterBackend access check (handled by permission class)."""
         mock_flags.is_workspace_access_check_v2_enabled.return_value = True
-        mock_is_user_allowed_v2.return_value = True
 
         detail_actions = ["retrieve", "update", "partial_update", "destroy", "move"]
 
@@ -222,15 +221,15 @@ class WorkspaceAccessFilterBackendUnitTests(TransactionTestCase):
             queryset = Mock()
             view = Mock(action=action, kwargs={"pk": "ws-456"})
 
-            self.filter_backend.filter_queryset(request, queryset, view)
+            result = self.filter_backend.filter_queryset(request, queryset, view)
 
-            # Should call is_user_allowed_v2 with workspace_id for all detail actions
-            mock_is_user_allowed_v2.assert_called_once()
-            call_args = mock_is_user_allowed_v2.call_args
+            # Should NOT call is_user_allowed_v2 — permission class handles detail access
+            mock_is_user_allowed_v2.assert_not_called()
+            # Should return queryset unchanged
             self.assertEqual(
-                call_args[0][2],
-                "ws-456",
-                f"Action {action} should pass workspace_id to is_user_allowed_v2",
+                result,
+                queryset,
+                f"Action {action} should return queryset unchanged",
             )
 
 
@@ -336,8 +335,8 @@ class WorkspaceFilterBackendIntegrationTests(TransactionIdentityRequest):
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
         return_value=True,
     )
-    def test_detail_returns_404_for_inaccessible_workspace(self, mock_flag, mock_channel):
-        """Test that detail endpoint returns 404 for inaccessible workspace (no existence leak)."""
+    def test_detail_returns_403_for_inaccessible_workspace(self, mock_flag, mock_channel):
+        """Test that detail endpoint returns 403 for inaccessible workspace."""
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
 
@@ -360,9 +359,9 @@ class WorkspaceFilterBackendIntegrationTests(TransactionIdentityRequest):
             client = APIClient()
             response = client.get(url, format="json", **headers)
 
-            # Should return 404 (not 403) to prevent existence leakage
-            # User cannot distinguish between non-existing and inaccessible workspaces
-            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+            # Should return 403 Forbidden when user lacks permission
+            # Access check happens in WorkspaceAccessPermission before resource lookup
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
             # Verify CheckForUpdate was called (not StreamedListObjects)
             mock_stub.CheckForUpdate.assert_called()
