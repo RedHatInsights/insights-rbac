@@ -838,6 +838,17 @@ class MCPViewV2ToolsTests(MCPToolTestMixin, IdentityRequest):
 
     # --- list_roles_v2 / get_role_v2 ---
 
+    def test_list_roles_v2_success(self):
+        """Positive: list_roles_v2 returns role data."""
+        response = self._call_tool("list_roles_v2")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertIn("meta", tool_output)
+        self.assertIn("data", tool_output)
+
     def test_list_roles_v2_without_auth_returns_error(self):
         """Permission: list_roles_v2 without auth returns auth error."""
         response = self._call_tool("list_roles_v2", use_auth=False)
@@ -849,6 +860,17 @@ class MCPViewV2ToolsTests(MCPToolTestMixin, IdentityRequest):
 
     # --- list_workspaces / get_workspace ---
 
+    def test_list_workspaces_success(self):
+        """Positive: list_workspaces returns workspace data."""
+        response = self._call_tool("list_workspaces")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertIn("meta", tool_output)
+        self.assertIn("data", tool_output)
+
     def test_list_workspaces_without_auth_returns_error(self):
         """Permission: list_workspaces without auth returns auth error."""
         response = self._call_tool("list_workspaces", use_auth=False)
@@ -859,6 +881,17 @@ class MCPViewV2ToolsTests(MCPToolTestMixin, IdentityRequest):
         self.assertEqual(data["error"]["code"], -32000)
 
     # --- list_role_bindings ---
+
+    def test_list_role_bindings_success(self):
+        """Positive: list_role_bindings returns role binding data."""
+        response = self._call_tool("list_role_bindings")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertIn("meta", tool_output)
+        self.assertIn("data", tool_output)
 
     def test_list_role_bindings_without_auth_returns_error(self):
         """Permission: list_role_bindings without auth returns auth error."""

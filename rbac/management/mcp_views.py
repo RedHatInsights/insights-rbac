@@ -219,12 +219,7 @@ def list_principals(
     }
 
     path = reverse("v1_management:principals")
-    view_request = _clone_request(request, path, data=query_params)
-    response = _principal_view(view_request)
-
-    if hasattr(response, "data"):
-        return json.dumps(response.data, default=str)
-    return response.content.decode()
+    return _call_view(request, _principal_view, path, query_params)
 
 
 def _call_view(
@@ -234,15 +229,18 @@ def _call_view(
     query_params: dict[str, str],
     **view_kwargs: str,
 ) -> str:
-    """Call a Django view with cloned request and return the response as a JSON string.
+    """Call a Django view with cloned request and return the response body.
 
     For detail views, pass the lookup kwarg as a keyword argument,
     e.g. ``_call_view(request, view, path, {}, pk=value)``.
+
+    DRF responses are rendered via their configured renderer so the
+    output matches exactly what the API would return.
     """
     view_request = _clone_request(request, path, data=query_params)
     response = view(view_request, **view_kwargs)
-    if hasattr(response, "data"):
-        return json.dumps(response.data, default=str)
+    if hasattr(response, "render"):
+        response = response.render()
     return response.content.decode()
 
 
@@ -542,12 +540,12 @@ def get_workspace(
     request: HttpRequest,
     *,
     workspace_uuid: str,
-    include_ancestry: str = "false",
+    include_ancestry: bool = False,
 ) -> str:
     """Get a single workspace by delegating to WorkspaceViewSet."""
     query_params: dict[str, str] = {}
-    if include_ancestry and include_ancestry != "false":
-        query_params["include_ancestry"] = include_ancestry
+    if include_ancestry:
+        query_params["include_ancestry"] = "true"
 
     path = reverse("v2_management:workspace-detail", kwargs={"pk": workspace_uuid})
     return _call_view(request, _workspace_detail_view, path, query_params, pk=workspace_uuid)
