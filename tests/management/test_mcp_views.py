@@ -30,7 +30,29 @@ from management.models import Access, AuditLog, Group, Permission, Policy, Princ
 from tests.identity_request import IdentityRequest
 
 
-class MCPViewTests(IdentityRequest):
+class MCPToolTestMixin:
+    """Shared helpers for calling MCP tools in tests."""
+
+    def _call_tool(self, tool_name, arguments=None, use_auth=True):
+        """Helper to call an MCP tool and return the parsed response."""
+        body = {
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "id": 100,
+            "params": {"name": tool_name, "arguments": arguments or {}},
+        }
+        kwargs = {"data": json.dumps(body), "content_type": "application/json"}
+        if use_auth:
+            kwargs.update(self.headers)
+        return self.client.post(self.url, **kwargs)
+
+    def _get_tool_output(self, response):
+        """Extract tool output from MCP response."""
+        data = response.json()
+        return json.loads(data["result"]["content"][0]["text"])
+
+
+class MCPViewTests(MCPToolTestMixin, IdentityRequest):
     """Test the MCP endpoint at /_private/_a2s/mcp/ (agent-to-service with public auth)."""
 
     def setUp(self):
@@ -607,24 +629,6 @@ class MCPViewTests(IdentityRequest):
 
     # --- New read-only tools tests ---
 
-    def _call_tool(self, tool_name, arguments=None, use_auth=True):
-        """Helper to call an MCP tool and return the parsed response."""
-        body = {
-            "jsonrpc": "2.0",
-            "method": "tools/call",
-            "id": 100,
-            "params": {"name": tool_name, "arguments": arguments or {}},
-        }
-        kwargs = {"data": json.dumps(body), "content_type": "application/json"}
-        if use_auth:
-            kwargs.update(self.headers)
-        return self.client.post(self.url, **kwargs)
-
-    def _get_tool_output(self, response):
-        """Extract tool output from MCP response."""
-        data = response.json()
-        return json.loads(data["result"]["content"][0]["text"])
-
     def test_tools_list_includes_all_new_tools(self):
         """Positive: tools/list includes all newly added read-only tools."""
         body = {"jsonrpc": "2.0", "method": "tools/list", "id": 2, "params": {}}
@@ -817,7 +821,7 @@ class MCPViewTests(IdentityRequest):
 
 
 @override_settings(V2_APIS_ENABLED=True)
-class MCPViewV2ToolsTests(IdentityRequest):
+class MCPViewV2ToolsTests(MCPToolTestMixin, IdentityRequest):
     """Test the MCP V2 tools that require V2_APIS_ENABLED=True."""
 
     def setUp(self):
@@ -831,24 +835,6 @@ class MCPViewV2ToolsTests(IdentityRequest):
         """Tear down MCP V2 tool tests."""
         Principal.objects.all().delete()
         super().tearDown()
-
-    def _call_tool(self, tool_name, arguments=None, use_auth=True):
-        """Helper to call an MCP tool and return the parsed response."""
-        body = {
-            "jsonrpc": "2.0",
-            "method": "tools/call",
-            "id": 100,
-            "params": {"name": tool_name, "arguments": arguments or {}},
-        }
-        kwargs = {"data": json.dumps(body), "content_type": "application/json"}
-        if use_auth:
-            kwargs.update(self.headers)
-        return self.client.post(self.url, **kwargs)
-
-    def _get_tool_output(self, response):
-        """Extract tool output from MCP response."""
-        data = response.json()
-        return json.loads(data["result"]["content"][0]["text"])
 
     # --- list_roles_v2 / get_role_v2 ---
 
