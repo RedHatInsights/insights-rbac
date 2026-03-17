@@ -17,7 +17,6 @@
 """Test the MCP views via _private/_a2s/ path."""
 
 import json
-import uuid
 from unittest.mock import patch
 
 from django.test import override_settings
@@ -26,7 +25,7 @@ from rest_framework.test import APIClient
 
 from api.models import Tenant
 from management.mcp_views import ToolConfig
-from management.models import Access, AuditLog, Group, Permission, Policy, Principal, Role
+from management.models import Access, Group, Permission, Policy, Principal, Role
 from tests.identity_request import IdentityRequest
 
 
