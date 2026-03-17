@@ -45,6 +45,7 @@ from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBin
 from management.role_binding.util import lookup_binding_subjects
 from management.subject import Subject, SubjectType
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
+from management.tenant_mapping.v2_activation import ensure_v2_write_activated
 from management.workspace.model import Workspace
 
 from api.models import Tenant
@@ -185,6 +186,8 @@ class RoleBindingService:
     @atomic
     def batch_create(self, requests: list[CreateBindingRequest]) -> list[dict]:
         """Create multiple role bindings."""
+        ensure_v2_write_activated(self.tenant)
+
         roles = self._get_roles(list({req.role_id for req in requests}))
         roles_by_uuid = {str(r.uuid): r for r in roles}
         roles_by_id = {r.id: r for r in roles}
@@ -827,6 +830,7 @@ class RoleBindingService:
             InvalidFieldError: If one or more roles cannot be found
         """
         self._validate_resource(resource_type, resource_id)
+        ensure_v2_write_activated(self.tenant)
 
         roles = self._get_roles(role_ids)
 

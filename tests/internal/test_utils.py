@@ -36,6 +36,7 @@ from management.role.v2_model import RoleV2
 from management.role.v2_service import RoleV2Service
 from management.role_binding.model import RoleBinding, RoleBindingGroup
 from management.role_binding.service import RoleBindingService, CreateBindingRequest
+from management.tenant_service import V2TenantBootstrapService
 from migration_tool.in_memory_tuples import (
     InMemoryTuples,
     InMemoryRelationReplicator,
@@ -52,7 +53,7 @@ from internal.utils import (
 )
 from migration_tool.models import V2role, V2rolebinding
 from tests.management.role.test_dual_write import DualWriteTestCase
-from tests.v2_util import seed_v2_role_from_v1
+from tests.v2_util import seed_v2_role_from_v1, bootstrap_tenant_for_v2_test
 
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)
@@ -62,22 +63,15 @@ class ReplicateMissingBindingTuplesTest(TestCase):
     def setUp(self):
         """Set up test data."""
         self.tenant = Tenant.objects.create(tenant_name="test_tenant", org_id="12345")
+
         self.public_tenant = Tenant.objects.get(tenant_name="public")
-
-        # Create workspace hierarchy
-        self.root_ws = Workspace.objects.create(
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-            name="Root Workspace",
-        )
-        self.default_ws = Workspace.objects.create(
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            name="Default Workspace",
-            parent=self.root_ws,
-        )
-
         self.tuples = InMemoryTuples()
+
+        # Bootstrap without replicating tuples because various tests do not expect them.
+        bootstrap_result = bootstrap_tenant_for_v2_test(tenant=self.tenant)
+
+        self.root_ws = bootstrap_result.root_workspace
+        self.default_ws = bootstrap_result.default_workspace
 
     @override_settings(REPLICATION_TO_RELATION_ENABLED=True, ROOT_SCOPE_PERMISSIONS="test:resource:read")
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
