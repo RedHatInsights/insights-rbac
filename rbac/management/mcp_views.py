@@ -227,25 +227,17 @@ def list_principals(
     return response.content.decode()
 
 
-def _call_view(request: HttpRequest, view: Callable[..., Any], path: str, query_params: dict[str, str]) -> str:
-    """Call a Django view with cloned request and return the response as a JSON string."""
-    view_request = _clone_request(request, path, data=query_params)
-    response = view(view_request)
-    if hasattr(response, "data"):
-        return json.dumps(response.data, default=str)
-    return response.content.decode()
-
-
-def _call_detail_view(
+def _call_view(
     request: HttpRequest,
     view: Callable[..., Any],
     path: str,
     query_params: dict[str, str],
     **view_kwargs: str,
 ) -> str:
-    """Call a Django detail view with cloned request and return the response as a JSON string.
+    """Call a Django view with cloned request and return the response as a JSON string.
 
-    Pass the lookup kwarg as a keyword argument, e.g. ``pk=value`` or ``uuid=value``.
+    For detail views, pass the lookup kwarg as a keyword argument,
+    e.g. ``_call_view(request, view, path, {}, pk=value)``.
     """
     view_request = _clone_request(request, path, data=query_params)
     response = view(view_request, **view_kwargs)
@@ -387,7 +379,7 @@ def get_role_v2(
 ) -> str:
     """Get a single V2 role by delegating to RoleV2ViewSet."""
     path = reverse("v2_management:roles-detail", kwargs={"uuid": role_uuid})
-    return _call_detail_view(request, _role_v2_detail_view, path, {}, uuid=role_uuid)
+    return _call_view(request, _role_v2_detail_view, path, {}, uuid=role_uuid)
 
 
 @register_tool(
@@ -431,7 +423,7 @@ def get_group(
 ) -> str:
     """Get a single group by delegating to GroupViewSet."""
     path = reverse("v1_management:group-detail", kwargs={"uuid": group_uuid})
-    return _call_detail_view(request, _group_detail_view, path, {}, uuid=group_uuid)
+    return _call_view(request, _group_detail_view, path, {}, uuid=group_uuid)
 
 
 @register_tool(
@@ -455,7 +447,7 @@ def list_group_principals(
         query_params["principal_type"] = principal_type
 
     path = reverse("v1_management:group-principals", kwargs={"uuid": group_uuid})
-    return _call_detail_view(request, _group_principals_view, path, query_params, uuid=group_uuid)
+    return _call_view(request, _group_principals_view, path, query_params, uuid=group_uuid)
 
 
 @register_tool(
@@ -508,7 +500,7 @@ def get_cross_account_request(
 ) -> str:
     """Get a single cross-account request by delegating to CrossAccountRequestViewSet."""
     path = reverse("v1_api:cross-detail", kwargs={"pk": request_id})
-    return _call_detail_view(request, _cross_account_detail_view, path, {}, pk=request_id)
+    return _call_view(request, _cross_account_detail_view, path, {}, pk=request_id)
 
 
 @register_tool(
@@ -558,7 +550,7 @@ def get_workspace(
         query_params["include_ancestry"] = include_ancestry
 
     path = reverse("v2_management:workspace-detail", kwargs={"pk": workspace_uuid})
-    return _call_detail_view(request, _workspace_detail_view, path, query_params, pk=workspace_uuid)
+    return _call_view(request, _workspace_detail_view, path, query_params, pk=workspace_uuid)
 
 
 @register_tool(
