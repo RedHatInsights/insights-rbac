@@ -639,8 +639,8 @@ class MCPViewTests(MCPToolTestMixin, IdentityRequest):
             "get_status",
             "list_permissions",
             "list_audit_logs",
-            "list_roles_v2",
-            "get_role_v2",
+            "list_roles",
+            "get_role",
             "list_groups",
             "get_group",
             "list_group_principals",
@@ -835,11 +835,11 @@ class MCPViewV2ToolsTests(MCPToolTestMixin, IdentityRequest):
         Principal.objects.all().delete()
         super().tearDown()
 
-    # --- list_roles_v2 / get_role_v2 ---
+    # --- list_roles / get_role ---
 
-    def test_list_roles_v2_success(self):
-        """Positive: list_roles_v2 returns role data."""
-        response = self._call_tool("list_roles_v2")
+    def test_list_roles_success(self):
+        """Positive: list_roles returns role data."""
+        response = self._call_tool("list_roles")
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.json()
@@ -848,9 +848,9 @@ class MCPViewV2ToolsTests(MCPToolTestMixin, IdentityRequest):
         self.assertIn("meta", tool_output)
         self.assertIn("data", tool_output)
 
-    def test_list_roles_v2_without_auth_returns_error(self):
-        """Permission: list_roles_v2 without auth returns auth error."""
-        response = self._call_tool("list_roles_v2", use_auth=False)
+    def test_list_roles_without_auth_returns_error(self):
+        """Permission: list_roles without auth returns auth error."""
+        response = self._call_tool("list_roles", use_auth=False)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.json()

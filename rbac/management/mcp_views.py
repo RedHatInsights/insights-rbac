@@ -252,8 +252,8 @@ def _call_view(
 # │ get_status                      │ GET /api/v1/status/                        │
 # │ list_permissions                │ GET /api/v1/permissions/                   │
 # │ list_audit_logs                 │ GET /api/v1/auditlogs/                     │
-# │ list_roles_v2                   │ GET /api/v2/roles/                         │
-# │ get_role_v2                     │ GET /api/v2/roles/{uuid}/                  │
+# │ list_roles                   │ GET /api/v2/roles/                         │
+# │ get_role                     │ GET /api/v2/roles/{uuid}/                  │
 # │ list_groups                     │ GET /api/v1/groups/                        │
 # │ get_group                       │ GET /api/v1/groups/{uuid}/                 │
 # │ list_group_principals           │ GET /api/v1/groups/{uuid}/principals/      │
@@ -348,7 +348,7 @@ def list_audit_logs(
     ),
     requires_auth=True,
 )
-def list_roles_v2(
+def list_roles(
     request: HttpRequest,
     *,
     limit: int = 10,
@@ -370,7 +370,7 @@ def list_roles_v2(
     description="Get details of a specific role by UUID (V2 API). Calls: GET /api/v2/roles/{uuid}/",
     requires_auth=True,
 )
-def get_role_v2(
+def get_role(
     request: HttpRequest,
     *,
     role_uuid: str,
