@@ -47,7 +47,7 @@ from tests.api.cross_access.fixtures import CrossAccountRequestTest
 from django.test.utils import override_settings
 from functools import partial
 
-from tests.v2_util import assert_v2_system_role_bindings_consistent
+from tests.util import assert_v1_v2_locally_consistent
 
 URL_LIST = reverse("v1_api:cross-list")
 
@@ -57,7 +57,7 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
 
     def tearDown(self):
         with self.subTest(msg="tuple consistency"):
-            assert_v2_system_role_bindings_consistent(test=self, tuples=None)
+            assert_v1_v2_locally_consistent(test=self)
 
         super().tearDown()
 

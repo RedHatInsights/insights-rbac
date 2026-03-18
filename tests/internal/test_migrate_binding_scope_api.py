@@ -51,7 +51,8 @@ from migration_tool.migrate_binding_scope import (
 from migration_tool.utils import create_relationship
 from api.models import Tenant
 from tests.management.role.test_dual_write import DualWriteTestCase, RbacFixture
-from tests.v2_util import seed_v2_role_from_v1, assert_v2_roles_consistent
+from tests.util import assert_v1_v2_locally_consistent, assert_v1_v2_tuples_fully_consistent
+from tests.v2_util import seed_v2_role_from_v1, bootstrap_tenant_for_v2_test
 
 
 class BindingScopeMigrationAPITest(TestCase):
@@ -97,7 +98,7 @@ class BindingScopeMigrationAPITest(TestCase):
 
     def tearDown(self):
         with self.subTest(msg="V2 consistency"):
-            assert_v2_roles_consistent(test=self, tuples=None)
+            assert_v1_v2_locally_consistent(test=self)
 
         super().tearDown()
 
@@ -175,7 +176,7 @@ class BindingScopeMigrationReplicatorTest(TestCase):
 
     def tearDown(self):
         with self.subTest(msg="V2 consistency"):
-            assert_v2_roles_consistent(test=self, tuples=None)
+            assert_v1_v2_locally_consistent(test=self)
 
         super().tearDown()
 
@@ -269,7 +270,7 @@ class BindingScopeMigrationTupleVerificationTest(TestCase):
     def tearDown(self):
         # Not all tests use self.tuples
         with self.subTest(msg="V2 consistency"):
-            assert_v2_roles_consistent(test=self, tuples=None)
+            assert_v1_v2_locally_consistent(test=self)
 
         super().tearDown()
 
@@ -516,7 +517,7 @@ class SystemRoleBindingMigrationTest(TestCase):
     def tearDown(self):
         # Not all tests actually use self.tuples.
         with self.subTest(msg="V2 consistency"):
-            assert_v2_roles_consistent(self, tuples=None)
+            assert_v1_v2_locally_consistent(test=self)
 
         super().tearDown()
 
@@ -568,7 +569,7 @@ class SystemRoleBindingMigrationTest(TestCase):
             workspace.type, Workspace.Types.ROOT, "System role with ROOT scope should be at root workspace"
         )
 
-        assert_v2_roles_consistent(self, tuples=self.tuples)
+        assert_v1_v2_tuples_fully_consistent(test=self, tuples=self.tuples)
 
     @override_settings(
         ROOT_SCOPE_PERMISSIONS="rbac:*:*",
@@ -733,7 +734,7 @@ class SystemRoleBindingMigrationTest(TestCase):
         self.assertIn(str(groupA.uuid), group_uuids_in_tuples, "GroupA UUID should be in tuples")
         self.assertIn(str(groupB.uuid), group_uuids_in_tuples, "GroupB UUID should be in tuples")
 
-        assert_v2_roles_consistent(self, tuples=self.tuples)
+        assert_v1_v2_tuples_fully_consistent(test=self, tuples=self.tuples)
 
     @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="", REPLICATION_TO_RELATION_ENABLED=True)
     def test_migration_creates_bindings_for_roles_with_no_bindings(self):
@@ -836,7 +837,7 @@ class CrossAccountRequestMigrationTest(DualWriteTestCase):
 
     def tearDown(self):
         with self.subTest(msg="V2 consistency"):
-            assert_v2_roles_consistent(test=self, tuples=None)
+            assert_v1_v2_locally_consistent(test=self)
 
         super().tearDown()
 
@@ -969,7 +970,7 @@ class ComprehensiveBootstrapMigrationTest(DualWriteTestCase):
 
     def tearDown(self):
         with self.subTest(msg="V2 consistency"):
-            assert_v2_roles_consistent(test=self, tuples=None)
+            assert_v1_v2_locally_consistent(test=self)
 
         super().tearDown()
 
