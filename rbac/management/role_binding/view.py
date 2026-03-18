@@ -115,6 +115,7 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
             "field_selection": validated_params.get("fields"),
             "queried_resource_id": str(resource_id) if resource_id else None,
             "queried_resource_type": resource_type,
+            "service": service,
         }
 
         page = self.paginate_queryset(queryset)

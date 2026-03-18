@@ -134,8 +134,8 @@ class RoleBindingListViewSetTest(IdentityRequest):
 
     def tearDown(self):
         """Tear down test data."""
-        RoleBindingGroup.objects.all().delete()
-        RoleBinding.objects.all().delete()
+        RoleBindingGroup.objects.filter(binding__tenant=self.tenant).delete()
+        RoleBinding.objects.filter(tenant=self.tenant).delete()
         for group in self.groups:
             group.principals.clear()
         Group.objects.filter(tenant=self.tenant).delete()
@@ -227,8 +227,8 @@ class RoleBindingListViewSetTest(IdentityRequest):
     )
     def test_list_empty_results(self, mock_permission):
         """Test that empty results return valid structure."""
-        # Delete all bindings
-        RoleBindingGroup.objects.all().delete()
+        # Delete all bindings for this tenant
+        RoleBindingGroup.objects.filter(binding__tenant=self.tenant).delete()
         RoleBinding.objects.filter(tenant=self.tenant).delete()
 
         url = self._get_list_url()
@@ -1126,8 +1126,8 @@ class RoleBindingViewSetTest(IdentityRequest):
 
     def tearDown(self):
         """Tear down test data."""
-        RoleBindingGroup.objects.all().delete()
-        RoleBinding.objects.all().delete()
+        RoleBindingGroup.objects.filter(binding__tenant=self.tenant).delete()
+        RoleBinding.objects.filter(tenant=self.tenant).delete()
         for group in self.groups:
             group.principals.clear()
         Principal.objects.filter(tenant=self.tenant).delete()
@@ -2328,6 +2328,7 @@ class BatchCreateViewTests(IdentityRequest):
         reload(urls)
         clear_url_caches()
         super().setUp()
+
         bootstrapped = V2TenantBootstrapService(InMemoryRelationReplicator()).bootstrap_tenant(self.tenant)
         self.root_workspace = bootstrapped.root_workspace
         self.default_workspace = bootstrapped.default_workspace
@@ -2363,8 +2364,8 @@ class BatchCreateViewTests(IdentityRequest):
 
     def tearDown(self):
         """Tear down test data."""
-        RoleBindingGroup.objects.all().delete()
-        RoleBinding.objects.all().delete()
+        RoleBindingGroup.objects.filter(binding__tenant=self.tenant).delete()
+        RoleBinding.objects.filter(tenant=self.tenant).delete()
         Principal.objects.filter(tenant=self.tenant).delete()
         Group.objects.filter(tenant=self.tenant).delete()
         RoleV2.objects.filter(tenant=self.tenant).delete()
@@ -2717,6 +2718,7 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
         reload(urls)
         clear_url_caches()
         super().setUp()
+
         bootstrapped = V2TenantBootstrapService(InMemoryRelationReplicator()).bootstrap_tenant(self.tenant)
         self.root_workspace = bootstrapped.root_workspace
         self.default_workspace = bootstrapped.default_workspace
@@ -2766,8 +2768,8 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
 
     def tearDown(self):
         """Tear down test data."""
-        RoleBindingGroup.objects.all().delete()
-        RoleBinding.objects.all().delete()
+        RoleBindingGroup.objects.filter(binding__tenant=self.tenant).delete()
+        RoleBinding.objects.filter(tenant=self.tenant).delete()
         Principal.objects.filter(tenant=self.tenant).delete()
         Group.objects.filter(tenant=self.tenant).delete()
         RoleV2.objects.filter(tenant=self.tenant).delete()

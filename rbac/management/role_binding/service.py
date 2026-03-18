@@ -180,7 +180,7 @@ class RoleBindingService:
         # Handle edge case: exclude_direct but no inherited bindings available
         if exclude_direct and binding_uuids is None:
             # Relations API failed or not configured — cannot determine inherited bindings
-            return RoleBinding.objects.none()
+            return RoleBinding.objects.for_tenant(self.tenant).none()
 
         queryset = RoleBinding.objects.for_tenant(self.tenant)
 

@@ -25,7 +25,6 @@ from typing import Optional
 
 from management.models import Group
 from management.role.v2_model import RoleV2
-from management.workspace.model import Workspace
 from management.role.v2_serializer import RoleIdSerializer
 from management.role_binding.model import RoleBinding
 from management.role_binding.service import CreateBindingRequest, ExcludeSources, RoleBindingService
@@ -109,7 +108,7 @@ class RoleBindingListInputSerializer(RoleBindingInputSerializerMixin, serializer
     )
 
     def validate(self, data):
-        """Validate that resource_id and resource_type are both provided when using inherited binding features."""
+        """Validate that resource_id and resource_type are both provided for inherited binding lookups."""
         exclude_sources = data.get("exclude_sources", ExcludeSources.NONE)
         resource_id = data.get("resource_id")
         resource_type = data.get("resource_type")
@@ -119,12 +118,16 @@ class RoleBindingListInputSerializer(RoleBindingInputSerializerMixin, serializer
             if resource_id and not resource_type:
                 raise serializers.ValidationError(
                     {
-                        "resource_type": "resource_type is required when resource_id is specified with inherited bindings."
+                        "resource_type": "resource_type is required when resource_id is specified "
+                        "for inherited bindings."
                     }
                 )
             if resource_type and not resource_id:
                 raise serializers.ValidationError(
-                    {"resource_id": "resource_id is required when resource_type is specified with inherited bindings."}
+                    {
+                        "resource_id": "resource_id is required when resource_type is specified "
+                        "for inherited bindings."
+                    }
                 )
 
         return data
@@ -612,33 +615,14 @@ class RoleBindingListOutputSerializer(RoleBindingOutputSerializerMixin, serializ
             if "type" in source_fields:
                 source_data["type"] = obj.resource_type
             if "name" in source_fields:
-                # Try to get name from workspace if it's a workspace resource
-                source_data["name"] = self._get_resource_name(obj.resource_type, obj.resource_id)
+                # Use the service's get_resource_name to look up the name
+                service = self.context.get("service")
+                if service:
+                    source_data["name"] = service.get_resource_name(obj.resource_id, obj.resource_type)
+                else:
+                    source_data["name"] = None
 
         return [source_data]
-
-    def _get_resource_name(self, resource_type: str, resource_id: str) -> Optional[str]:
-        """Get the name of a resource by type and ID.
-
-        Args:
-            resource_type: The type of resource (e.g., 'workspace', 'tenant')
-            resource_id: The resource identifier
-
-        Returns:
-            Resource name or None if not found
-        """
-        if resource_type == "workspace":
-            try:
-                request = self.context.get("request")
-                tenant = request.tenant if request else None
-                if tenant:
-                    workspace = Workspace.objects.get(id=resource_id, tenant=tenant)
-                else:
-                    workspace = Workspace.objects.get(id=resource_id)
-                return workspace.name
-            except (Workspace.DoesNotExist, ValueError):
-                return None
-        return None
 
 
 class ResourceInputSerializer(serializers.Serializer):
