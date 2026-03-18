@@ -141,7 +141,8 @@ class V2CursorPagination(CursorPagination):
     - role.name, role.uuid, role.created, role.modified
 
     Available ordering fields (for list endpoint, RoleBinding model):
-    - Custom ordering not yet supported; default is by role creation time (UUIDv7).
+    - role.name, role.uuid, role.id, role.created, role.modified
+    - resource.id, resource.type
     """
 
     page_size = 10
@@ -178,17 +179,16 @@ class V2CursorPagination(CursorPagination):
     }
 
     # For role binding list endpoint, the queryset is on RoleBinding model.
-    # TODO: Custom ordering is not yet supported for the list endpoint.
-    # The default ordering is by role creation time (UUIDv7).
-    # This mapping will be redesigned when custom ordering support is added.
+    # Values map to annotations defined in RoleBindingQuerySet.for_tenant()
+    # so that CursorPagination can extract cursor positions via getattr().
     ROLE_BINDING_FIELD_MAPPING = {
-        # Role fields (direct access from RoleBinding)
-        "role.id": "role__uuid",
-        "role.name": "role__name",
-        "role.uuid": "role__uuid",
-        "role.modified": "role__modified",
-        "role.created": "role_created",  # Annotated for cursor pagination
-        # Resource fields
+        # Role fields (annotated in RoleBindingQuerySet.for_tenant)
+        "role.id": "role_uuid",
+        "role.name": "role_name",
+        "role.uuid": "role_uuid",
+        "role.modified": "role_modified",
+        "role.created": "role_created",
+        # Resource fields (direct model attributes)
         "resource.id": "resource_id",
         "resource.type": "resource_type",
     }
