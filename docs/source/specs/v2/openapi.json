@@ -80,9 +80,9 @@
             "name": "subject_type",
             "in": "query",
             "required": false,
-            "description": "Filter by subject type (e.g., 'group')",
+            "description": "Filter by subject type (e.g., 'group' or 'user')",
             "schema": {
-              "type": "string"
+              "$ref": "#/components/schemas/RoleBindings.SubjectType"
             },
             "explode": false
           },
@@ -314,7 +314,7 @@
             "required": false,
             "description": "Filter by subject type",
             "schema": {
-              "type": "string"
+              "$ref": "#/components/schemas/RoleBindings.SubjectType"
             },
             "explode": false
           },
@@ -329,13 +329,16 @@
             "explode": false
           },
           {
-            "name": "parent_role_bindings",
+            "name": "exclude_sources",
             "in": "query",
             "required": false,
-            "description": "Include role bindings inherited from parent resources",
             "schema": {
-              "type": "boolean",
-              "default": false
+              "allOf": [
+                {
+                  "$ref": "#/components/schemas/ExcludeSources"
+                }
+              ],
+              "default": "none"
             },
             "explode": false
           },
@@ -350,7 +353,7 @@
                   "$ref": "#/components/schemas/FieldMask"
                 }
               ],
-              "default": "subject(group.name),role(name),resource(name,type),last_modified"
+              "default": "subject(group.name),roles(name),resource(name,type),last_modified"
             },
             "explode": false
           },
@@ -404,7 +407,7 @@
                         "limit": 10
                       },
                       "links": {
-                        "next": "http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?limit=10&parent_role_bindings=true&cursor=xyz",
+                        "next": "http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?limit=10&exclude_sources=direct&cursor=xyz",
                         "previous": null
                       },
                       "data": [
@@ -430,11 +433,13 @@
                             "name": "Child Workspace",
                             "type": "workspace"
                           },
-                          "inherited_from": {
-                            "id": "550e8400-e29b-41d4-a716-446655440001",
-                            "name": "Parent Workspace",
-                            "type": "workspace"
-                          }
+                          "sources": [
+                            {
+                              "id": "550e8400-e29b-41d4-a716-446655440001",
+                              "name": "Parent Workspace",
+                              "type": "workspace"
+                            }
+                          ]
                         }
                       ]
                     }
@@ -597,7 +602,7 @@
             "required": true,
             "description": "Identify the subject type for the set of role bindings to replace",
             "schema": {
-              "type": "string"
+              "$ref": "#/components/schemas/RoleBindings.SubjectType"
             },
             "explode": false
           },
@@ -611,7 +616,7 @@
                   "$ref": "#/components/schemas/FieldMask"
                 }
               ],
-              "default": "resource(id),subject(id),roles(id),last_modified"
+              "default": "resource(id),subject(id),roles(id)"
             },
             "explode": false
           }
@@ -625,7 +630,6 @@
                   "$ref": "#/components/schemas/RoleBindings.RoleBindingBySubject"
                 },
                 "example": {
-                  "last_modified": "2024-08-04T12:00:00Z",
                   "subject": {
                     "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
                     "type": "group",
@@ -2885,6 +2889,15 @@
           }
         }
       },
+      "ExcludeSources": {
+        "type": "string",
+        "enum": [
+          "direct",
+          "indirect",
+          "none"
+        ],
+        "description": "Exclude bindings by source type: 'none' (default) shows all, 'indirect' excludes inherited, 'direct' excludes direct"
+      },
       "FieldMask": {
         "type": "string",
         "description": "Field mask used by the `fields` query parameter to control which fields\nare included in the response.\n\n**Syntax:**\n- Use comma to separate multiple fields: `id,name,description`\n- Use parentheses for nested objects: `subject(id,name),resource(type)`\n\n**Examples:**\n- `id,name`\n- `subject(group.name),role(name)`"
@@ -3387,10 +3400,10 @@
                 "description": "UUID that uniquely identifies the subject"
               },
               "type": {
-                "type": "string",
-                "enum": [
-                  "user",
-                  "group"
+                "allOf": [
+                  {
+                    "$ref": "#/components/schemas/RoleBindings.SubjectType"
+                  }
                 ],
                 "description": "Type of subject"
               }
@@ -3594,13 +3607,12 @@
             ],
             "description": "Resource the roles apply to"
           },
-          "inherited_from": {
-            "allOf": [
-              {
-                "$ref": "#/components/schemas/RoleBindings.Resource"
-              }
-            ],
-            "description": "Resource from which this role binding is inherited (only present when parent_role_bindings=true)"
+          "sources": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/RoleBindings.Resource"
+            },
+            "description": "Resources from which this role binding is sourced (direct or inherited)"
           }
         },
         "example": {
@@ -3625,12 +3637,22 @@
             "name": "Child Workspace",
             "type": "workspace"
           },
-          "inherited_from": {
-            "id": "550e8400-e29b-41d4-a716-446655440001",
-            "name": "Parent Workspace",
-            "type": "workspace"
-          }
+          "sources": [
+            {
+              "id": "550e8400-e29b-41d4-a716-446655440001",
+              "name": "Parent Workspace",
+              "type": "workspace"
+            }
+          ]
         }
+      },
+      "RoleBindings.SubjectType": {
+        "type": "string",
+        "enum": [
+          "user",
+          "group"
+        ],
+        "description": "Type of subject for role bindings"
       },
       "RoleBindings.UpdateRoleBindingsRequest": {
         "type": "object",
@@ -3740,7 +3762,8 @@
         "properties": {
           "name": {
             "type": "string",
-            "description": "A human readable name for the role. Must be unique within a tenant."
+            "pattern": "^[^*]+$",
+            "description": "A human readable name for the role. Must be unique within a tenant. Asterisks (*) are not allowed."
           },
           "description": {
             "type": "string",

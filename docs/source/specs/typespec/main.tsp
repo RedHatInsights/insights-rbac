@@ -715,6 +715,11 @@ namespace Workspaces {
 namespace RoleBindings {
     const DefaultRoleBindingBySubjectFieldMask: FieldMask = "resource(id),subject(id),roles(id)";
 
+    @doc("Type of subject for role bindings")
+    enum SubjectType {
+        user,
+        group,
+    }
 
     @discriminator("type")
     model BaseSubject {
@@ -769,7 +774,7 @@ namespace RoleBindings {
     @doc("Request body for creating role bindings")
     @example(#{
         resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
-        subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
+        subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: SubjectType.group },
         role: #{ id: "550e8400-e29b-41d4-a716-446655440002" }
     })
     model CreateRoleBindingsRequest {
@@ -786,7 +791,7 @@ namespace RoleBindings {
             @doc("UUID that uniquely identifies the subject")
             id: UUID;
             @doc("Type of subject")
-            type: "user" | "group";
+            type: SubjectType;
         };
         @doc("Role to assign")
         role: {
@@ -800,12 +805,12 @@ namespace RoleBindings {
         requests: #[
             #{
                 resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
-                subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
+                subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: SubjectType.group },
                 role: #{ id: "550e8400-e29b-41d4-a716-446655440002" }
             },
             #{
                 resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
-                subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: "user" },
+                subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: SubjectType.user },
                 role: #{ id: "550e8400-e29b-41d4-a716-446655440003" }
             }
         ]
@@ -999,8 +1004,8 @@ namespace RoleBindings {
         @example(ResourceType.workspace)
         @query resource_type: ResourceType;
         @doc("Filter by subject type")
-        @example("group")
-        @query subject_type?: string;
+        @example(SubjectType.group)
+        @query subject_type?: SubjectType;
         @doc("Filter by subject ID")
         @example("550e8400-e29b-41d4-a716-446655440004")
         @query subject_id?: string;
@@ -1024,12 +1029,12 @@ namespace RoleBindings {
                 requests: #[
                     #{
                         resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
-                        subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: "group" },
+                        subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: SubjectType.group },
                         role: #{ id: "550e8400-e29b-41d4-a716-446655440002" }
                     },
                     #{
                         resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
-                        subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: "user" },
+                        subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: SubjectType.user },
                         role: #{ id: "550e8400-e29b-41d4-a716-446655440003" }
                     }
                 ]
@@ -1080,7 +1085,7 @@ namespace RoleBindings {
             resource_id: "550e8400-e29b-41d4-a716-446655440001",
             resource_type: ResourceType.workspace,
             subject_id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-            subject_type: "group",
+            subject_type: SubjectType.group,
             body: #{
                 roles: #[
                     #{ id: "550e8400-e29b-41d4-a716-446655440002" },
@@ -1112,8 +1117,8 @@ namespace RoleBindings {
         @query subject_id: string;
 
         @doc("Identify the subject type for the set of role bindings to replace")
-        @example("group")
-        @query subject_type: string;
+        @example(SubjectType.group)
+        @query subject_type: SubjectType;
 
         @body body: UpdateRoleBindingsRequest;
 
@@ -1232,9 +1237,9 @@ namespace RoleBindings {
         @example("workspace")
         @query resource_type?: string;
 
-        @doc("Filter by subject type (e.g., 'group')")
-        @example("group")
-        @query subject_type?: string;
+        @doc("Filter by subject type (e.g., 'group' or 'user')")
+        @example(SubjectType.group)
+        @query subject_type?: SubjectType;
 
         @doc("Filter by subject ID")
         @example("3fa85f64-5717-4562-b3fc-2c963f66afa6")
@@ -1269,7 +1274,8 @@ namespace Roles {
         ]
     })
     model CreateOrUpdateRoleRequest {
-        @doc("A human readable name for the role. Must be unique within a tenant.")
+        @doc("A human readable name for the role. Must be unique within a tenant. Asterisks (*) are not allowed.")
+        @pattern("^[^*]+$")
         name: string;
         @doc("A description of the role to help clarify its purpose. Does not need to be unique.")
         description?: string;

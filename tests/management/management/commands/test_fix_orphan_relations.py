@@ -21,7 +21,7 @@ from tests.management.role.test_dual_write import DualWriteTestCase
 
 from django.test.utils import override_settings
 
-from tests.v2_util import assert_v2_roles_consistent, make_read_tuples_mock
+from tests.v2_util import assert_v2_roles_consistent, make_read_tuples_mock, bootstrap_tenant_for_v2_test
 
 
 @override_settings(
@@ -46,9 +46,7 @@ class TestRemoveOrphanRelations(DualWriteTestCase):
         super().setUp()
 
         # The orphan removal script requires a proper workspace hierarchy.
-        V2TenantBootstrapService(replicator=InMemoryRelationReplicator(self.tuples)).bootstrap_tenant(
-            self.tenant, force=True
-        )
+        bootstrap_tenant_for_v2_test(self.tenant, tuples=self.tuples)
 
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     def test_fix_incorrect_scope_binding(self, replicate):

@@ -41,6 +41,7 @@ from management.tenant_service import V2TenantBootstrapService
 from management.utils import PRINCIPAL_CACHE, as_uuid
 from rbac import urls
 from tests.identity_request import IdentityRequest
+from tests.v2_util import bootstrap_tenant_for_v2_test
 
 CACHE_PATCH_TARGET = "management.role.v2_service.permission_scope_cache"
 
@@ -64,6 +65,18 @@ class RoleV2RetrieveViewTest(IdentityRequest):
         clear_url_caches()
         super().setUp()
         self.client = APIClient()
+
+        self._principal_patcher = patch(
+            "management.permissions.role_v2_access.get_kessel_principal_id",
+            return_value="localhost/test-user-id",
+        )
+        self._principal_patcher.start()
+
+        self._access_patcher = patch(
+            "management.permissions.role_v2_access.WorkspaceInventoryAccessChecker.check_resource_access",
+            return_value=True,
+        )
+        self.mock_check_access = self._access_patcher.start()
 
         # Create permissions
         self.permission1 = Permission.objects.create(
@@ -97,6 +110,8 @@ class RoleV2RetrieveViewTest(IdentityRequest):
 
     def tearDown(self):
         """Tear down test data."""
+        self._access_patcher.stop()
+        self._principal_patcher.stop()
         RoleV2.objects.filter(tenant=self.tenant).delete()
         Permission.objects.filter(tenant=self.tenant).delete()
         super().tearDown()
@@ -306,15 +321,16 @@ class RoleV2RetrieveViewTest(IdentityRequest):
         self.assertEqual(data["id"], str(self.custom_role.uuid))
         self.assertEqual(data["name"], "Test Custom Role")
 
-    @patch("management.permissions.RoleAccessPermission.has_permission")
-    def test_retrieve_role_permission_denied(self, mock_permission):
+    def test_retrieve_role_permission_denied(self):
         """Test retrieving a role when user lacks permission."""
-        mock_permission.return_value = False
+        self.mock_check_access.return_value = False
 
         url = self._get_role_url(self.custom_role.uuid)
         response = self.client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+        self.mock_check_access.return_value = True
 
     def test_retrieve_role_with_special_characters_in_name(self):
         """Test retrieving a role with special characters in name and description."""
@@ -424,9 +440,21 @@ class RoleV2ViewSetTests(IdentityRequest):
 
         super().setUp()
         # Bootstrap tenant so V2 writes (create/update/destroy) can run ensure_v2_write_activated
-        V2TenantBootstrapService(NoopReplicator()).bootstrap_tenant(self.tenant)
+        bootstrap_tenant_for_v2_test(self.tenant)
         self.client = APIClient()
         self.client.credentials(HTTP_X_RH_IDENTITY=self.headers.get("HTTP_X_RH_IDENTITY"))
+
+        self._principal_patcher = patch(
+            "management.permissions.role_v2_access.get_kessel_principal_id",
+            return_value="localhost/test-user-id",
+        )
+        self._principal_patcher.start()
+
+        self._access_patcher = patch(
+            "management.permissions.role_v2_access.WorkspaceInventoryAccessChecker.check_resource_access",
+            return_value=True,
+        )
+        self.mock_check_access = self._access_patcher.start()
         # URL for roles endpoint
         self.url = reverse("v2_management:roles-list")
         self.list_url = f"{self.url}?resource_type=workspace"
@@ -462,6 +490,8 @@ class RoleV2ViewSetTests(IdentityRequest):
 
     def tearDown(self):
         """Tear down RoleV2ViewSet tests."""
+        self._access_patcher.stop()
+        self._principal_patcher.stop()
         RoleV2.objects.all().delete()
         Permission.objects.filter(tenant=self.tenant).delete()
 
@@ -1220,6 +1250,22 @@ class RoleV2ViewSetTests(IdentityRequest):
         # Should still succeed but ignore invalid field
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
 
+    def test_create_role_with_asterisk_in_name_returns_400(self):
+        """Test that creating a role with '*' in the name returns 400."""
+        data = {
+            "name": "role_*_admin",
+            "description": "Should be rejected",
+            "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
+        }
+
+        response = self.client.post(self.url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["detail"], "Role name must not contain asterisks (*).")
+        self.assertIn("errors", response.data)
+        self.assertGreater(len(response.data["errors"]), 0)
+        self.assertEqual(response.data["errors"][0]["field"], "name")
+
     # ==========================================================================
     # Tests for PUT /api/v2/roles/{uuid}/ (update)
     # ==========================================================================
@@ -1475,6 +1521,30 @@ class RoleV2ViewSetTests(IdentityRequest):
         # Default should include permissions per spec
         self.assertIn("permissions", response.data)
         self.assertEqual(len(response.data["permissions"]), 1)
+
+    def test_update_role_with_asterisk_in_name_returns_400(self):
+        """Test that updating a role name to include '*' returns 400."""
+        role = CustomRoleV2.objects.create(
+            name="Original Role For Star Test",
+            description="Original description",
+            tenant=self.tenant,
+        )
+        role.permissions.add(self.permission1)
+
+        update_url = reverse("v2_management:roles-detail", kwargs={"uuid": str(role.uuid)})
+        data = {
+            "name": "Updated*Role",
+            "description": "Should be rejected",
+            "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
+        }
+
+        response = self.client.put(update_url, data, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data["detail"], "Role name must not contain asterisks (*).")
+        self.assertIn("errors", response.data)
+        self.assertGreater(len(response.data["errors"]), 0)
+        self.assertEqual(response.data["errors"][0]["field"], "name")
 
     def test_update_platform_role_returns_404(self):
         """Test that attempting to update a platform role returns 404."""
