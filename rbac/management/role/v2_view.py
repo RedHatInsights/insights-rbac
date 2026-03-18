@@ -93,7 +93,6 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
                     # Re-raise with field attribution for proper error formatting
                     raise ValidationError({"fields": e.detail})
             context["fields"] = self.request._validated_fields
-
         return context
 
     def get_serializer_class(self):
