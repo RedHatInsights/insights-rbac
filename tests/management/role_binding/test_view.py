@@ -579,10 +579,11 @@ class RoleBindingListViewSetTest(IdentityRequest):
             ("matching_resource", f"resource_id={resource_id}&resource_type=workspace", 15),
             ("non_matching_id", f"resource_id={uuid.uuid4()}&resource_type=workspace", 0),
             ("non_matching_type", f"resource_id={resource_id}&resource_type=other", 0),
-            ("resource_type_only", "resource_type=workspace", 15),
-            ("resource_type_only_no_match", "resource_type=other", 0),
-            ("resource_id_only", f"resource_id={resource_id}", 15),
-            ("resource_id_only_no_match", f"resource_id={uuid.uuid4()}", 0),
+            # Single-field filters require exclude_sources=indirect (no inherited lookup)
+            ("resource_type_only", "resource_type=workspace&exclude_sources=indirect", 15),
+            ("resource_type_only_no_match", "resource_type=other&exclude_sources=indirect", 0),
+            ("resource_id_only", f"resource_id={resource_id}&exclude_sources=indirect", 15),
+            ("resource_id_only_no_match", f"resource_id={uuid.uuid4()}&exclude_sources=indirect", 0),
         ]
         for label, query, expected_count in cases:
             with self.subTest(label=label):
@@ -711,7 +712,7 @@ class RoleBindingListViewSetTest(IdentityRequest):
             ("group_order_by", f"{url}?order_by=group.name", "order_by"),
             ("unknown_fields_object", f"{url}?fields=bogus(nope)", "fields"),
             ("invalid_role_field", f"{url}?fields=role(nonexistent)", "fields"),
-            ("invalid_resource_id", f"{url}?resource_id=not-a-uuid", "resource_id"),
+            ("invalid_resource_id", f"{url}?resource_id=not-a-uuid&resource_type=workspace", "resource_id"),
             ("invalid_subject_id", f"{url}?subject_id=not-a-uuid", "subject_id"),
         ]
         for label, request_url, expected_field in error_cases:

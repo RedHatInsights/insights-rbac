@@ -112,20 +112,23 @@ class RoleBindingListInputSerializer(RoleBindingInputSerializerMixin, serializer
         resource_id = data.get("resource_id")
         resource_type = data.get("resource_type")
 
-        # For inherited bindings (exclude_sources != indirect), we need both resource_id and resource_type
-        if exclude_sources != ExcludeSources.INDIRECT:
+        # Inherited binding lookups require both resource_id and resource_type.
+        # This applies when exclude_sources is 'none' (include all) or 'direct' (inherited only).
+        # When exclude_sources is 'indirect', only direct bindings are returned, so no lookup needed.
+        needs_inherited_lookup = exclude_sources in (ExcludeSources.NONE, ExcludeSources.DIRECT)
+        if needs_inherited_lookup:
             if resource_id and not resource_type:
                 raise serializers.ValidationError(
                     {
                         "resource_type": "resource_type is required when resource_id is specified "
-                        "for inherited bindings."
+                        "and exclude_sources is not 'indirect'."
                     }
                 )
             if resource_type and not resource_id:
                 raise serializers.ValidationError(
                     {
                         "resource_id": "resource_id is required when resource_type is specified "
-                        "for inherited bindings."
+                        "and exclude_sources is not 'indirect'."
                     }
                 )
 
