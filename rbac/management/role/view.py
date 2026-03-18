@@ -604,7 +604,7 @@ class RoleViewSet(
         except (Role.DoesNotExist, ValidationError):
             raise Http404()
 
-        access = AccessSerializer(role.access, many=True).data
+        access = AccessSerializer(role.access, many=True, context={"request": request}).data
         page = self.paginate_queryset(access)
         return self.get_paginated_response(page)
 

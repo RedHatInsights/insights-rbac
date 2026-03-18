@@ -199,6 +199,12 @@ class RoleV2RequestSerializer(serializers.ModelSerializer):
         model = RoleV2
         fields = ("id", "name", "description", "permissions")
 
+    def validate_name(self, value):
+        """Reject names containing '*' which conflicts with glob/wildcard search syntax."""
+        if isinstance(value, str) and "*" in value:
+            raise serializers.ValidationError("Role name must not contain asterisks (*).")
+        return value
+
     @property
     def service(self):
         """Return the service instance from context or create a new one."""

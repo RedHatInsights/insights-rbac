@@ -24,6 +24,7 @@ from django.test import TestCase, override_settings
 from management.principal.model import Principal as PrincipalModel
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import RelationReplicator, ReplicationEventType
+from management.tenant_mapping.v2_activation import assert_v1_write_allowed, is_v2_write_activated
 from migration_tool.in_memory_tuples import (
     InMemoryRelationReplicator,
     InMemoryTuples,
@@ -44,6 +45,7 @@ from management.role_binding.util import parse_resource_type
 from management.tenant_mapping.model import TenantMapping
 from management.utils import FieldSelectionValidationError
 from tests.identity_request import IdentityRequest
+from tests.v2_util import bootstrap_tenant_for_v2_test
 
 
 class _ReplicationTracker(RelationReplicator):
@@ -213,6 +215,27 @@ class FieldSelectionTests(TestCase):
             RoleBindingFieldSelection.parse("invalid_root_field")
         self.assertIn("Unknown field", str(context.exception))
 
+    def test_parse_user_username_field(self):
+        """Test parsing user.username field for user subjects."""
+        result = RoleBindingFieldSelection.parse("subject(user.username)")
+        self.assertIsNotNone(result)
+        self.assertIn("user.username", result.get_nested("subject"))
+
+    def test_parse_user_and_group_fields_together(self):
+        """Test parsing both user and group fields (for different subject types)."""
+        result = RoleBindingFieldSelection.parse("subject(user.username,group.name)")
+        self.assertIsNotNone(result)
+        self.assertIn("user.username", result.get_nested("subject"))
+        self.assertIn("group.name", result.get_nested("subject"))
+
+    def test_parse_user_field_with_other_objects(self):
+        """Test parsing user field with role and resource fields."""
+        result = RoleBindingFieldSelection.parse("subject(user.username),role(name),resource(type)")
+        self.assertIsNotNone(result)
+        self.assertIn("user.username", result.get_nested("subject"))
+        self.assertIn("name", result.get_nested("role"))
+        self.assertIn("type", result.get_nested("resource"))
+
 
 class RoleBindingServiceTests(IdentityRequest):
     """Tests for RoleBindingService."""
@@ -277,11 +300,18 @@ class RoleBindingServiceTests(IdentityRequest):
             group=self.group,
             binding=self.binding,
         )
+        # Create RoleBindingPrincipal for user-type queries
+        RoleBindingPrincipal.objects.create(
+            principal=self.principal,
+            binding=self.binding,
+            source="test",
+        )
 
         self.service = RoleBindingService(tenant=self.tenant)
 
     def tearDown(self):
         """Tear down test data."""
+        RoleBindingPrincipal.objects.all().delete()
         RoleBindingGroup.objects.all().delete()
         RoleBinding.objects.all().delete()
         self.group.principals.clear()
@@ -367,12 +397,90 @@ class RoleBindingServiceTests(IdentityRequest):
 
         self.assertEqual(queryset.count(), 1)
 
-    def test_get_role_bindings_by_subject_filters_by_unsupported_subject_type(self):
+    def test_get_role_bindings_by_subject_filters_by_user_subject_type(self):
+        """Test filtering by subject_type='user' returns users."""
+        params = {
+            "resource_id": str(self.workspace.id),
+            "resource_type": "workspace",
+            "subject_type": "user",
+        }
+        queryset = self.service.get_role_bindings_by_subject(params)
+
+        # Should return the principal (user) that has a RoleBindingPrincipal entry
+        self.assertEqual(queryset.count(), 1)
+        user = queryset.first()
+        self.assertEqual(user.username, "testuser")
+        self.assertEqual(user.type, Principal.Types.USER)
+
+    def test_get_role_bindings_by_subject_user_type_returns_only_users(self):
+        """Test that user subject type only returns users, not service accounts."""
+        # Create a service account in the group
+        service_account = Principal.objects.create(
+            username="service-account-1",
+            tenant=self.tenant,
+            type=Principal.Types.SERVICE_ACCOUNT,
+        )
+        self.group.principals.add(service_account)
+
+        params = {
+            "resource_id": str(self.workspace.id),
+            "resource_type": "workspace",
+            "subject_type": "user",
+        }
+        queryset = self.service.get_role_bindings_by_subject(params)
+
+        # Should only return the user, not the service account
+        self.assertEqual(queryset.count(), 1)
+        user = queryset.first()
+        self.assertEqual(user.type, Principal.Types.USER)
+
+        # Cleanup
+        self.group.principals.remove(service_account)
+        service_account.delete()
+
+    def test_get_role_bindings_by_subject_user_type_filters_by_subject_id(self):
+        """Test filtering user subject type by subject_id."""
+        # Create another user in the group
+        other_user = Principal.objects.create(
+            username="otheruser",
+            tenant=self.tenant,
+            type=Principal.Types.USER,
+        )
+        self.group.principals.add(other_user)
+
+        params = {
+            "resource_id": str(self.workspace.id),
+            "resource_type": "workspace",
+            "subject_type": "user",
+            "subject_id": str(self.principal.uuid),
+        }
+        queryset = self.service.get_role_bindings_by_subject(params)
+
+        # Should only return the filtered user
+        self.assertEqual(queryset.count(), 1)
+        self.assertEqual(queryset.first().uuid, self.principal.uuid)
+
+        # Cleanup
+        self.group.principals.remove(other_user)
+        other_user.delete()
+
+    def test_get_role_bindings_by_subject_user_type_empty_results(self):
+        """Test that non-existent resource returns empty queryset for user type."""
+        params = {
+            "resource_id": "00000000-0000-0000-0000-000000000000",
+            "resource_type": "workspace",
+            "subject_type": "user",
+        }
+        queryset = self.service.get_role_bindings_by_subject(params)
+
+        self.assertEqual(queryset.count(), 0)
+
+    def test_get_role_bindings_by_subject_unsupported_subject_type_returns_empty(self):
         """Test filtering by unsupported subject_type returns empty."""
         params = {
             "resource_id": str(self.workspace.id),
             "resource_type": "workspace",
-            "subject_type": "user",  # Not currently supported
+            "subject_type": "service-account",  # Not currently supported
         }
         queryset = self.service.get_role_bindings_by_subject(params)
 
@@ -465,6 +573,27 @@ class RoleBindingServiceTests(IdentityRequest):
 
         self.assertIsNotNone(context["field_selection"])
         self.assertIn("group.name", context["field_selection"].get_nested("subject"))
+
+    def test_build_context_with_subject_type(self):
+        """Test that subject_type is included in context."""
+        params = {
+            "resource_id": str(self.workspace.id),
+            "resource_type": "workspace",
+            "subject_type": "user",
+        }
+        context = self.service.build_context(params)
+
+        self.assertEqual(context["subject_type"], "user")
+
+    def test_build_context_without_subject_type(self):
+        """Test that subject_type is None when not provided."""
+        params = {
+            "resource_id": str(self.workspace.id),
+            "resource_type": "workspace",
+        }
+        context = self.service.build_context(params)
+
+        self.assertIsNone(context["subject_type"])
 
     def test_parse_resource_type_with_namespace(self):
         """Test parsing resource type with namespace prefix."""
@@ -942,17 +1071,11 @@ class BatchCreateRoleBindingTests(IdentityRequest):
         """Set up test data using services."""
         super().setUp()
 
-        self.root_workspace = Workspace.objects.create(
-            name=Workspace.SpecialNames.ROOT,
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-        )
-        self.default_workspace = Workspace.objects.create(
-            name=Workspace.SpecialNames.DEFAULT,
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            parent=self.root_workspace,
-        )
+        bootstrap_result = bootstrap_tenant_for_v2_test(self.tenant)
+
+        self.default_workspace = bootstrap_result.default_workspace
+        self.root_workspace = bootstrap_result.root_workspace
+
         self.workspace = Workspace.objects.create(
             name="Test Workspace",
             description="Test workspace description",
@@ -1050,6 +1173,8 @@ class BatchCreateRoleBindingTests(IdentityRequest):
         self.assertEqual(result["resource_id"], str(self.workspace.id))
         self.assertEqual(result["resource_name"], "Test Workspace")
 
+        self.assertTrue(is_v2_write_activated(self.tenant))
+
     def test_batch_create_multiple_bindings(self):
         """Create two bindings in one call with different roles and subject types."""
         results = self.service.batch_create(
@@ -1068,6 +1193,8 @@ class BatchCreateRoleBindingTests(IdentityRequest):
         self.assertEqual(results[1]["role"], self.role2)
         self.assertEqual(results[1]["subject"], self.principal)
         self.assertEqual(results[1]["subject_type"], "user")
+
+        self.assertTrue(is_v2_write_activated(self.tenant))
 
     def test_batch_create_raises_roles_not_found(self):
         """Pass a non-existent role UUID."""
@@ -1088,6 +1215,8 @@ class BatchCreateRoleBindingTests(IdentityRequest):
         self.assertEqual(ctx.exception.field, "roles")
         self.assertIn(fake_role_id, str(ctx.exception))
 
+        self.assertFalse(is_v2_write_activated(self.tenant))
+
     def test_batch_create_raises_subjects_not_found_group(self):
         """Pass a non-existent group UUID."""
         fake_group_id = str(uuid.uuid4())
@@ -1101,6 +1230,8 @@ class BatchCreateRoleBindingTests(IdentityRequest):
         self.assertEqual(ctx.exception.resource_type, "group")
         self.assertIn(fake_group_id, str(ctx.exception))
 
+        self.assertFalse(is_v2_write_activated(self.tenant))
+
     def test_batch_create_raises_subjects_not_found_user(self):
         """Pass a non-existent principal UUID."""
         fake_user_id = str(uuid.uuid4())
@@ -1113,6 +1244,8 @@ class BatchCreateRoleBindingTests(IdentityRequest):
 
         self.assertEqual(ctx.exception.resource_type, "user")
         self.assertIn(fake_user_id, str(ctx.exception))
+
+        self.assertFalse(is_v2_write_activated(self.tenant))
 
     def test_batch_create_idempotent_same_subject(self):
         """Granting the same role to the same subject twice is idempotent."""
@@ -1200,6 +1333,8 @@ class BatchCreateRoleBindingTests(IdentityRequest):
         self.assertEqual(ctx.exception.field, "roles")
         self.assertIn(str(platform.uuid), str(ctx.exception))
 
+        self.assertFalse(is_v2_write_activated(self.tenant))
+
     def test_batch_create_fails_fast_when_one_role_missing(self):
         """Batch with valid role1 and non-existent role2 fails before any DB writes."""
         fake_role_id = str(uuid.uuid4())
@@ -1225,6 +1360,8 @@ class BatchCreateRoleBindingTests(IdentityRequest):
             ).exists()
         )
 
+        self.assertFalse(is_v2_write_activated(self.tenant))
+
     def test_batch_create_fails_fast_when_one_subject_missing(self):
         """Batch with valid group and non-existent group fails before any DB writes."""
         fake_group_id = str(uuid.uuid4())
@@ -1242,6 +1379,8 @@ class BatchCreateRoleBindingTests(IdentityRequest):
             RoleBinding.objects.filter(resource_id=str(self.workspace.id), resource_type="workspace").exists()
         )
 
+        self.assertFalse(is_v2_write_activated(self.tenant))
+
     def test_batch_create_rejects_user_without_user_id(self):
         """A principal without user_id is rejected."""
         unsynced = Principal.objects.create(
@@ -1250,8 +1389,11 @@ class BatchCreateRoleBindingTests(IdentityRequest):
             user_id=None,
             type=Principal.Types.USER,
         )
+
         with self.assertRaises(InvalidFieldError):
             self.service.batch_create([self._make_request(self.role1, "user", unsynced.uuid)])
+
+        self.assertFalse(is_v2_write_activated(self.tenant))
 
     def test_batch_create_shared_binding_two_groups(self):
         """Same role+resource with two different groups shares one RoleBinding."""
@@ -1712,17 +1854,11 @@ class UpdateRoleBindingsForSubjectTests(_ReplicationAssertionsMixin, IdentityReq
         super().setUp()
 
         # Create workspace hierarchy
-        self.root_workspace = Workspace.objects.create(
-            name=Workspace.SpecialNames.ROOT,
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-        )
-        self.default_workspace = Workspace.objects.create(
-            name=Workspace.SpecialNames.DEFAULT,
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            parent=self.root_workspace,
-        )
+        bootstrap_result = bootstrap_tenant_for_v2_test(self.tenant)
+
+        self.default_workspace = bootstrap_result.default_workspace
+        self.root_workspace = bootstrap_result.root_workspace
+
         self.workspace = Workspace.objects.create(
             name="Test Workspace",
             description="Test workspace description",
@@ -1810,6 +1946,8 @@ class UpdateRoleBindingsForSubjectTests(_ReplicationAssertionsMixin, IdentityReq
         }
         self.assertEqual(actual, expected)
 
+        self.assertTrue(is_v2_write_activated(self.tenant))
+
     def test_update_role_bindings_for_principal(self):
         """Test updating role bindings for a principal."""
         result = self.service.update_role_bindings_for_subject(
@@ -1835,6 +1973,8 @@ class UpdateRoleBindingsForSubjectTests(_ReplicationAssertionsMixin, IdentityReq
             "role_uuids": {r.uuid for r in result.roles},
         }
         self.assertEqual(actual, expected)
+
+        self.assertTrue(is_v2_write_activated(self.tenant))
 
     def test_update_replaces_existing_bindings(self):
         """Test that update replaces existing bindings."""
@@ -1872,6 +2012,8 @@ class UpdateRoleBindingsForSubjectTests(_ReplicationAssertionsMixin, IdentityReq
             "role_uuids": {r.uuid for r in result.roles},
         }
         self.assertEqual(actual, expected)
+
+        self.assertTrue(is_v2_write_activated(self.tenant))
 
     def test_update_replicates_tuples_for_group(self):
         """Test that updating role bindings replicates correct tuples for a group."""
@@ -1980,6 +2122,8 @@ class UpdateRoleBindingsForSubjectTests(_ReplicationAssertionsMixin, IdentityReq
                 self.assertEqual(context.exception.resource_id, expected_resource_id)
                 self.assertIn(expected_resource_id, str(context.exception))
 
+                self.assertFalse(is_v2_write_activated(self.tenant))
+
     def test_update_raises_error_for_invalid_role(self):
         """Test that update raises InvalidFieldError for non-existent role."""
         import uuid
@@ -1998,6 +2142,8 @@ class UpdateRoleBindingsForSubjectTests(_ReplicationAssertionsMixin, IdentityReq
 
         self.assertEqual(context.exception.field, "roles")
         self.assertIn(fake_uuid, str(context.exception))
+
+        self.assertFalse(is_v2_write_activated(self.tenant))
 
     def test_update_raises_error_for_unsupported_subject_type(self):
         """Test that update raises UnsupportedSubjectTypeError for invalid subject type."""
@@ -2022,6 +2168,8 @@ class UpdateRoleBindingsForSubjectTests(_ReplicationAssertionsMixin, IdentityReq
                 self.assertEqual(context.exception.subject_type, subject_type)
                 self.assertIn("group", context.exception.supported)
                 self.assertIn("user", context.exception.supported)
+
+                self.assertFalse(is_v2_write_activated(self.tenant))
 
     def test_update_raises_error_for_missing_required_fields(self):
         """Test that update raises RequiredFieldError for missing required fields."""
@@ -2084,6 +2232,7 @@ class UpdateRoleBindingsForSubjectTests(_ReplicationAssertionsMixin, IdentityReq
                     self.service.update_role_bindings_for_subject(**params)
 
                 self.assertEqual(context.exception.field_name, expected_field)
+                self.assertFalse(is_v2_write_activated(self.tenant))
 
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)

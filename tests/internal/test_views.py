@@ -76,7 +76,7 @@ from kessel.inventory.v1beta2.check_request_pb2 import CheckRequest
 from tests.identity_request import IdentityRequest
 from tests.management.role.test_dual_write import RbacFixture
 from tests.rbac.test_middleware import EnvironmentVarGuard
-from tests.v2_util import seed_v2_role_from_v1
+from tests.v2_util import seed_v2_role_from_v1, bootstrap_tenant_for_v2_test
 
 
 class BaseInternalViewsetTests(IdentityRequest):
@@ -2764,7 +2764,7 @@ class FixMissingBindingBaseTuplesTests(BaseInternalViewsetTests):
         seed_v2_role_from_v1(role)
 
         # Bootstrap the tenant to create workspace hierarchy (without replicating, since we don't need the tuples).
-        V2TenantBootstrapService(replicator=NoopReplicator()).bootstrap_tenant(self.tenant)
+        bootstrap_tenant_for_v2_test(self.tenant)
 
         # Create binding WITHOUT replication (simulating pre-V2 state - missing base tuples)
         RelationApiDualWriteGroupHandler(
@@ -2955,7 +2955,7 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
     def setUp(self):
         """Set up the access view tests."""
         super().setUp()
-        V2TenantBootstrapService(replicator=NoopReplicator()).bootstrap_tenant(self.tenant)
+        bootstrap_tenant_for_v2_test(self.tenant)
         self.client = APIClient()
         self.customer = self.customer_data
         self.internal_request_context = self._create_request_context(self.customer, self.user_data, is_internal=True)
