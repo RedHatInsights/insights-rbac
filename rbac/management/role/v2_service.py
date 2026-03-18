@@ -145,6 +145,7 @@ class RoleV2Service:
             )
 
             # Attach resolved permissions to avoid extra query in serializer
+            # It solves stale prefetch cache issue, do not remove it
             role._resolved_permissions = permissions
 
             return role

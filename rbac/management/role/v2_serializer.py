@@ -28,14 +28,6 @@ from management.role.v2_service import RoleV2Service
 from management.utils import FieldSelection, FieldSelectionValidationError, UUIDStringField
 from rest_framework import serializers
 
-# Centralized mapping from domain exceptions to API error fields
-ERROR_MAPPING = {
-    InvalidRolePermissionsError: "permissions",
-    PermissionsNotFoundError: "permissions",
-    RoleAlreadyExistsError: "name",
-    RoleDatabaseError: "detail",
-}
-
 
 class PermissionSerializer(serializers.Serializer):
     """Serializer for permission data."""
@@ -115,19 +107,21 @@ class RoleFieldSelection(FieldSelection):
     VALID_ROOT_FIELDS = set(RoleV2ResponseSerializer.Meta.fields)
 
 
-def _validate_fields_parameter(value: str, default_fields: set) -> set:
+def validate_fields_parameter(value: str, default_fields: set, strict: bool = False) -> set:
     """
     Validate and parse the fields parameter for role endpoints.
 
     Args:
         value: The raw fields parameter value from request
         default_fields: The default fields to return when value is empty
+        strict: If True, raise ValidationError for invalid fields (write operations per AIP-161).
+                If False, silently filter invalid fields (read operations per AIP-161).
 
     Returns:
         Set of field names to include in response
 
     Raises:
-        ValidationError: If fields parameter has invalid syntax
+        ValidationError: If fields parameter has invalid syntax or (when strict=True) invalid field names
     """
     if not value:
         return default_fields
@@ -140,7 +134,18 @@ def _validate_fields_parameter(value: str, default_fields: set) -> set:
     if not field_selection:
         return default_fields
 
-    resolved = field_selection.root_fields & set(RoleV2ResponseSerializer.Meta.fields)
+    valid_fields = set(RoleV2ResponseSerializer.Meta.fields)
+    requested = field_selection.root_fields
+
+    if strict:
+        invalid = requested - valid_fields
+        if invalid:
+            raise serializers.ValidationError(
+                f"Invalid field(s): {', '.join(sorted(invalid))}. "
+                f"Valid fields are: {', '.join(sorted(valid_fields))}"
+            )
+
+    resolved = requested & valid_fields
     return resolved or default_fields
 
 
@@ -173,7 +178,7 @@ class RoleV2ListSerializer(serializers.Serializer):
 
     def validate_fields(self, value):
         """Parse, validate, and resolve fields parameter into a set of field names."""
-        return _validate_fields_parameter(value, RoleV2Service.DEFAULT_LIST_FIELDS)
+        return validate_fields_parameter(value, RoleV2Service.DEFAULT_LIST_FIELDS)
 
     def validate(self, data):
         """Cross-field validation: resource_id requires resource_type."""
@@ -182,52 +187,6 @@ class RoleV2ListSerializer(serializers.Serializer):
                 {"resource_id": "resource_type is required when resource_id is provided."}
             )
         return data
-
-
-class RoleV2WriteQueryParamsSerializer(serializers.Serializer):
-    """Input serializer for RoleV2 create/update query parameters."""
-
-    fields = serializers.CharField(required=False, default="", allow_blank=True, help_text="Control included fields")
-
-    def _resolve_write_fields(self, raw_value: str, default_fields: set[str]) -> set[str]:
-        """Parse and resolve write fields, raising FieldSelectionValidationError or ValueError."""
-        if not raw_value:
-            return set(default_fields)
-
-        field_selection = RoleFieldSelection.parse(raw_value)
-        if not field_selection:
-            return set(default_fields)
-
-        valid_fields = set(RoleV2ResponseSerializer.Meta.fields)
-        requested = field_selection.root_fields
-        invalid = requested - valid_fields
-        if invalid:
-            # Domain-level error; serializer will adapt to ValidationError
-            raise ValueError(
-                f"Invalid field(s): {', '.join(sorted(invalid))}. "
-                f"Valid fields are: {', '.join(sorted(valid_fields))}"
-            )
-
-        resolved = requested & valid_fields
-        return resolved or set(default_fields)
-
-    def validate_fields(self, value):
-        """
-        Parse, validate, and resolve fields parameter for write operations.
-
-        For write operations (create/update), strictly validate field names following
-        Google API Design Guide recommendations to prevent user confusion.
-
-        Raises:
-            ValidationError: If fields parameter contains invalid field names
-        """
-        default_fields = self.context.get("default_fields", RoleV2Service.DEFAULT_RETRIEVE_FIELDS)
-        try:
-            return self._resolve_write_fields(value, default_fields)
-        except FieldSelectionValidationError as e:
-            raise serializers.ValidationError(e.message)
-        except ValueError as e:
-            raise serializers.ValidationError(str(e))
 
 
 class RoleIdSerializer(serializers.Serializer):
@@ -283,9 +242,12 @@ class RoleV2RequestSerializer(serializers.ModelSerializer):
             )
         except RequiredFieldError as e:
             raise serializers.ValidationError({e.field_name: str(e)})
-        except tuple(ERROR_MAPPING.keys()) as e:
-            field = ERROR_MAPPING[type(e)]
-            raise serializers.ValidationError({field: str(e)})
+        except (InvalidRolePermissionsError, PermissionsNotFoundError) as e:
+            raise serializers.ValidationError({"permissions": str(e)})
+        except RoleAlreadyExistsError as e:
+            raise serializers.ValidationError({"name": str(e)})
+        except RoleDatabaseError as e:
+            raise serializers.ValidationError({"detail": str(e)})
 
     def update(self, instance, validated_data):
         """Update an existing RoleV2 using the service layer."""
@@ -302,9 +264,12 @@ class RoleV2RequestSerializer(serializers.ModelSerializer):
             )
         except RequiredFieldError as e:
             raise serializers.ValidationError({e.field_name: str(e)})
-        except tuple(ERROR_MAPPING.keys()) as e:
-            field = ERROR_MAPPING[type(e)]
-            raise serializers.ValidationError({field: str(e)})
+        except (InvalidRolePermissionsError, PermissionsNotFoundError) as e:
+            raise serializers.ValidationError({"permissions": str(e)})
+        except RoleAlreadyExistsError as e:
+            raise serializers.ValidationError({"name": str(e)})
+        except RoleDatabaseError as e:
+            raise serializers.ValidationError({"detail": str(e)})
 
 
 class RoleV2BulkDeleteRequestSerializer(serializers.Serializer):

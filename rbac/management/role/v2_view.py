@@ -28,13 +28,13 @@ from management.role.v2_serializer import (
     RoleV2ListSerializer,
     RoleV2RequestSerializer,
     RoleV2ResponseSerializer,
-    RoleV2WriteQueryParamsSerializer,
-    _validate_fields_parameter,
+    validate_fields_parameter,
 )
 from management.role.v2_service import RoleV2Service
 from management.utils import v2response_error_from_errors
 from management.v2_mixins import AtomicOperationsMixin
 from rest_framework import status
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from api.common.pagination import V2CursorPagination
@@ -76,15 +76,23 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         """Add validated fields parameter to serializer context."""
         context = super().get_serializer_context()
 
+        fields_param = self.request.query_params.get("fields", "").replace("\x00", "")
+
         if self.action == "retrieve":
-            # Lenient validation for read operations (silently filters invalid fields)
-            fields_param = self.request.query_params.get("fields", "").replace("\x00", "")
-            context["fields"] = _validate_fields_parameter(fields_param, RoleV2Service.DEFAULT_RETRIEVE_FIELDS)
+            # Lenient validation for read operations (silently filters invalid fields per AIP-161)
+            context["fields"] = validate_fields_parameter(fields_param, RoleV2Service.DEFAULT_RETRIEVE_FIELDS)
         elif self.action in ("create", "update"):
-            # Strict validation for write operations (errors on invalid fields)
-            query_params_serializer = RoleV2WriteQueryParamsSerializer(data=self.request.query_params)
-            query_params_serializer.is_valid(raise_exception=True)
-            context["fields"] = query_params_serializer.validated_data.get("fields")
+            # Strict validation for write operations (errors on invalid fields per AIP-161)
+            # Cache the result to avoid validating twice (once in get_serializer, once in save)
+            if not hasattr(self.request, "_validated_fields"):
+                try:
+                    self.request._validated_fields = validate_fields_parameter(
+                        fields_param, self.DEFAULT_CREATE_UPDATE_FIELDS, strict=True
+                    )
+                except ValidationError as e:
+                    # Re-raise with field attribution for proper error formatting
+                    raise ValidationError({"fields": e.detail})
+            context["fields"] = self.request._validated_fields
 
         return context
 
