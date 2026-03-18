@@ -64,6 +64,8 @@ class RoleV2RetrieveViewTest(IdentityRequest):
         reload(urls)
         clear_url_caches()
         super().setUp()
+        # Bootstrap tenant so V2 writes (create/update/destroy) can run ensure_v2_write_activated
+        bootstrap_tenant_for_v2_test(self.tenant)
         self.client = APIClient()
 
         self._principal_patcher = patch(
@@ -1755,3 +1757,85 @@ class RoleV2ViewSetTests(IdentityRequest):
 
                 self.assertIn("errors", response.data)
                 self.assertEqual(response.data["errors"], [{"message": "Must be a valid UUID.", "field": "ids.0"}])
+
+
+_SENTINEL = RuntimeError("_atomic_action sentinel")
+_ATOMIC_ACTION_PATH = "management.v2_mixins.AtomicOperationsMixin._atomic_action"
+
+
+@override_settings(V2_APIS_ENABLED=True, V2_EDIT_API_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
+class RoleV2ViewSetAtomicWiringTests(IdentityRequest):
+    """Verify RoleV2ViewSet write endpoints delegate to _atomic_action."""
+
+    def setUp(self):
+        reload(v2_urls)
+        reload(urls)
+        clear_url_caches()
+        super().setUp()
+        bootstrap_tenant_for_v2_test(self.tenant)
+        self.client = APIClient()
+        self.client.credentials(HTTP_X_RH_IDENTITY=self.headers.get("HTTP_X_RH_IDENTITY"))
+
+        self._principal_patcher = patch(
+            "management.permissions.role_v2_access.get_kessel_principal_id",
+            return_value="localhost/test-user-id",
+        )
+        self._principal_patcher.start()
+
+        self._access_patcher = patch(
+            "management.permissions.role_v2_access.WorkspaceInventoryAccessChecker.check_resource_access",
+            return_value=True,
+        )
+        self._access_patcher.start()
+
+        Permission.objects.create(permission="app:resource:read", tenant=self.tenant)
+        self.role = RoleV2.objects.create(name="wiring_role", tenant=self.tenant)
+
+    def tearDown(self):
+        self._access_patcher.stop()
+        self._principal_patcher.stop()
+        RoleV2.objects.filter(tenant=self.tenant).delete()
+        Permission.objects.filter(tenant=self.tenant).delete()
+        super().tearDown()
+
+    @patch(_ATOMIC_ACTION_PATH, side_effect=_SENTINEL)
+    def test_create_delegates_to_atomic_action(self, _mock):
+        url = reverse("v2_management:roles-list")
+        with self.assertRaises(RuntimeError, msg="_atomic_action sentinel"):
+            self.client.post(
+                url,
+                {
+                    "name": "x",
+                    "permissions": [{"application": "app", "resource_type": "resource", "operation": "read"}],
+                },
+                format="json",
+                **self.headers,
+            )
+        _mock.assert_called_once()
+
+    @patch(_ATOMIC_ACTION_PATH, side_effect=_SENTINEL)
+    def test_update_delegates_to_atomic_action(self, _mock):
+        url = reverse("v2_management:roles-detail", kwargs={"uuid": str(self.role.uuid)})
+        with self.assertRaises(RuntimeError, msg="_atomic_action sentinel"):
+            self.client.put(
+                url,
+                {
+                    "name": "x",
+                    "permissions": [{"application": "app", "resource_type": "resource", "operation": "read"}],
+                },
+                format="json",
+                **self.headers,
+            )
+        _mock.assert_called_once()
+
+    @patch(_ATOMIC_ACTION_PATH, side_effect=_SENTINEL)
+    def test_bulk_destroy_delegates_to_atomic_action(self, _mock):
+        url = reverse("v2_management:roles-bulk-destroy")
+        with self.assertRaises(RuntimeError, msg="_atomic_action sentinel"):
+            self.client.post(
+                url,
+                {"ids": [str(self.role.uuid)]},
+                format="json",
+                **self.headers,
+            )
+        _mock.assert_called_once()
