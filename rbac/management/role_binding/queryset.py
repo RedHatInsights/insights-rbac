@@ -24,12 +24,24 @@ class RoleBindingQuerySet(QuerySet):
     """Custom QuerySet for RoleBinding with domain-aware query methods."""
 
     def for_tenant(self, tenant):
-        """Return role bindings for a tenant with related data eagerly loaded."""
+        """Return role bindings for a tenant with related data eagerly loaded.
+
+        Annotates cross-relation fields so they are available as attributes
+        on each RoleBinding instance.  This is required by DRF's
+        CursorPagination which uses ``getattr(instance, field)`` to build
+        cursor positions — plain ORM lookups (``role__name``) only work in
+        ``.order_by()`` but not in ``getattr``.
+        """
         return (
             self.filter(tenant=tenant)
             .select_related("role")
             .prefetch_related("group_entries__group", "principal_entries__principal")
-            .annotate(role_created=F("role__created"))
+            .annotate(
+                role_created=F("role__created"),
+                role_name=F("role__name"),
+                role_uuid=F("role__uuid"),
+                role_modified=F("role__modified"),
+            )
         )
 
     def for_role(self, role_id):

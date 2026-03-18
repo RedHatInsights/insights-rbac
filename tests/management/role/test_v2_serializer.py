@@ -595,3 +595,26 @@ class RoleV2RequestSerializerTests(IdentityRequest):
             serializer.save()
 
         self.assertIn("name", cm.exception.detail)
+
+    def test_serializer_rejects_name_with_asterisk(self):
+        """Test that a name containing '*' is rejected at validation time."""
+        data = {
+            "name": "role_*_admin",
+            "description": "Should fail validation",
+            "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
+        }
+        serializer = RoleV2RequestSerializer(data=data, context={"request": self.mock_request})
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("name", serializer.errors)
+
+    def test_serializer_accepts_name_with_other_special_chars(self):
+        """Test that names with non-asterisk special characters are accepted."""
+        data = {
+            "name": "Role with Special Chars: @#$%",
+            "description": "Should pass validation",
+            "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
+        }
+        serializer = RoleV2RequestSerializer(data=data, context={"request": self.mock_request})
+
+        self.assertTrue(serializer.is_valid(), serializer.errors)
