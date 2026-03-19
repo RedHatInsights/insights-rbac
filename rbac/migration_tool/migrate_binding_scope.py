@@ -26,6 +26,7 @@ from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import RelationReplicator, ReplicationEventType
 from management.role.model import Role
 from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
+from management.tenant_mapping.v2_activation import V1WriteBlockedError, assert_v1_write_allowed
 
 from api.cross_access.model import CrossAccountRequest
 from api.cross_access.relation_api_dual_write_cross_access_handler import RelationApiDualWriteCrossAccessHandler
@@ -195,10 +196,18 @@ def migrate_all_role_bindings(
         custom_roles_checked += 1
 
         with transaction.atomic():
-            role: Optional[Role] = Role.objects.select_for_update().filter(pk=raw_role.pk).first()
+            role: Optional[Role] = (
+                Role.objects.select_for_update().select_related("tenant").filter(pk=raw_role.pk).first()
+            )
 
             if role is None:
                 logger.warning(f"Role vanished before it could be migrated: pk={raw_role.pk!r}")
+                continue
+
+            try:
+                assert_v1_write_allowed(role.tenant)
+            except V1WriteBlockedError:
+                logger.info(f"Skipping role with pk={role.pk!r}; tenant (pk={role.tenant.pk!r}) has migrated to V2")
                 continue
 
             try:
@@ -246,6 +255,12 @@ def migrate_all_role_bindings(
                 continue
 
             try:
+                assert_v1_write_allowed(group.tenant)
+            except V1WriteBlockedError:
+                logger.info(f"Skipping group with pk={group.pk!r}; tenant (pk={group.tenant.pk!r}) has migrated to V2")
+                continue
+
+            try:
                 migrated = migrate_system_role_bindings_for_group(group, replicator)
                 if migrated > 0:
                     groups_migrated += 1
@@ -284,6 +299,9 @@ def migrate_all_role_bindings(
             if car is None:
                 logger.warning(f"Cross-account request vanished before it could be migrated: pk={raw_car.pk!r}")
                 continue
+
+            # We do not need to check for V1-writability here. The V2 API should not affect role bindings from CARs
+            # (see RHCLOUD-45849).
 
             try:
                 migrated = _migrate_car_bindings(car=car, replicator=replicator)
