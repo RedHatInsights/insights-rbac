@@ -68,17 +68,19 @@ class RoleV2RetrieveViewTest(IdentityRequest):
         bootstrap_tenant_for_v2_test(self.tenant)
         self.client = APIClient()
 
-        self._principal_patcher = patch(
-            "management.permissions.role_v2_access.get_kessel_principal_id",
-            return_value="localhost/test-user-id",
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.get_kessel_principal_id",
+                return_value="localhost/test-user-id",
+            )
         )
-        self._principal_patcher.start()
 
-        self._access_patcher = patch(
-            "management.permissions.role_v2_access.WorkspaceInventoryAccessChecker.check_resource_access",
-            return_value=True,
+        self.mock_check_access = self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.WorkspaceInventoryAccessChecker.check_resource_access",
+                return_value=True,
+            )
         )
-        self.mock_check_access = self._access_patcher.start()
 
         # Create permissions
         self.permission1 = Permission.objects.create(
@@ -112,8 +114,6 @@ class RoleV2RetrieveViewTest(IdentityRequest):
 
     def tearDown(self):
         """Tear down test data."""
-        self._access_patcher.stop()
-        self._principal_patcher.stop()
         RoleV2.objects.filter(tenant=self.tenant).delete()
         Permission.objects.filter(tenant=self.tenant).delete()
         super().tearDown()
@@ -446,17 +446,20 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.client = APIClient()
         self.client.credentials(HTTP_X_RH_IDENTITY=self.headers.get("HTTP_X_RH_IDENTITY"))
 
-        self._principal_patcher = patch(
-            "management.permissions.role_v2_access.get_kessel_principal_id",
-            return_value="localhost/test-user-id",
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.get_kessel_principal_id",
+                return_value="localhost/test-user-id",
+            )
         )
-        self._principal_patcher.start()
 
-        self._access_patcher = patch(
-            "management.permissions.role_v2_access.WorkspaceInventoryAccessChecker.check_resource_access",
-            return_value=True,
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.WorkspaceInventoryAccessChecker.check_resource_access",
+                return_value=True,
+            )
         )
-        self.mock_check_access = self._access_patcher.start()
+
         # URL for roles endpoint
         self.url = reverse("v2_management:roles-list")
         self.list_url = f"{self.url}?resource_type=workspace"
@@ -492,8 +495,6 @@ class RoleV2ViewSetTests(IdentityRequest):
 
     def tearDown(self):
         """Tear down RoleV2ViewSet tests."""
-        self._access_patcher.stop()
-        self._principal_patcher.stop()
         RoleV2.objects.all().delete()
         Permission.objects.filter(tenant=self.tenant).delete()
 
@@ -1776,24 +1777,24 @@ class RoleV2ViewSetAtomicWiringTests(IdentityRequest):
         self.client = APIClient()
         self.client.credentials(HTTP_X_RH_IDENTITY=self.headers.get("HTTP_X_RH_IDENTITY"))
 
-        self._principal_patcher = patch(
-            "management.permissions.role_v2_access.get_kessel_principal_id",
-            return_value="localhost/test-user-id",
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.get_kessel_principal_id",
+                return_value="localhost/test-user-id",
+            )
         )
-        self._principal_patcher.start()
 
-        self._access_patcher = patch(
-            "management.permissions.role_v2_access.WorkspaceInventoryAccessChecker.check_resource_access",
-            return_value=True,
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.WorkspaceInventoryAccessChecker.check_resource_access",
+                return_value=True,
+            )
         )
-        self._access_patcher.start()
 
         Permission.objects.create(permission="app:resource:read", tenant=self.tenant)
         self.role = RoleV2.objects.create(name="wiring_role", tenant=self.tenant)
 
     def tearDown(self):
-        self._access_patcher.stop()
-        self._principal_patcher.stop()
         RoleV2.objects.filter(tenant=self.tenant).delete()
         Permission.objects.filter(tenant=self.tenant).delete()
         super().tearDown()
