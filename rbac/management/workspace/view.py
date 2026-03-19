@@ -204,7 +204,7 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
         if type_field != all_types:
             queryset = queryset.filter(type=type_field)
         if name:
-            queryset = queryset.filter(name__iexact=name.lower())
+            queryset = queryset.filter(name__startswith=name)
         if parent_id:
             queryset = queryset.filter(parent_id=parent_id)
 
