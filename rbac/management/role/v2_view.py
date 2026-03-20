@@ -16,7 +16,6 @@
 #
 """View for RoleV2 management."""
 
-from management.atomic_transactions import atomic, atomic_block
 from management.audit_log.model import AuditLog
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions.role_v2_access import RoleV2KesselAccessPermission
@@ -136,18 +135,17 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         serializer = RoleV2ResponseSerializer(page, many=True, context=context)
         return self.get_paginated_response(serializer.data)
 
-    def create(self, request, *args, **kwargs):
+    def perform_atomic_create(self, request, *args, **kwargs):
         """Create a role and return the full response representation."""
         # Validate and parse fields query parameter
         fields = self._parse_fields_param(request.query_params.get("fields"))
 
-        with atomic_block():
-            serializer = self.get_serializer(data=request.data)
-            serializer.is_valid(raise_exception=True)
-            role = serializer.save()
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        role = serializer.save()
 
-            audit_log = AuditLog()
-            audit_log.log_create(request=request, resource=AuditLog.ROLE_V2)
+        audit_log = AuditLog()
+        audit_log.log_create(request=request, resource=AuditLog.ROLE_V2)
 
         # Build response with field selection and permission ordering
         input_permissions = request.data.get("permissions", [])
@@ -156,20 +154,19 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         )
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
-    def update(self, request, *args, **kwargs):
+    def perform_atomic_update(self, request, *args, **kwargs):
         """Update a role and return the full response representation."""
         # Validate and parse fields query parameter
         fields = self._parse_fields_param(request.query_params.get("fields"))
 
-        with atomic_block():
-            instance = self.get_object()
+        instance = self.get_object()
 
-            audit_log = AuditLog()
-            audit_log.log_edit(request=request, resource=AuditLog.ROLE_V2, object=instance)
+        audit_log = AuditLog()
+        audit_log.log_edit(request=request, resource=AuditLog.ROLE_V2, object=instance)
 
-            serializer = self.get_serializer(instance, data=request.data)
-            serializer.is_valid(raise_exception=True)
-            role = serializer.save()
+        serializer = self.get_serializer(instance, data=request.data)
+        serializer.is_valid(raise_exception=True)
+        role = serializer.save()
 
         # Build response with field selection and permission ordering
         input_permissions = request.data.get("permissions", [])
@@ -178,9 +175,12 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         )
         return Response(response_serializer.data, status=status.HTTP_200_OK)
 
-    @atomic
     def bulk_destroy(self, request, *args, **kwargs):
         """Delete multiple roles atomically."""
+        return self._atomic_action(self._perform_bulk_destroy, "bulk_destroy", request, *args, **kwargs)
+
+    def _perform_bulk_destroy(self, request, *args, **kwargs):
+        """Core bulk destroy logic."""
         service = RoleV2Service(tenant=request.tenant)
 
         serializer = self.get_serializer(data=request.data)
