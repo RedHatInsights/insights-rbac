@@ -18,7 +18,6 @@
 
 import logging
 
-from django.db import OperationalError
 from management.base_viewsets import BaseV2ViewSet
 from management.group.model import Group
 from management.permissions.role_binding_access import (
@@ -129,13 +128,7 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
 
     def batch_create(self, request, *args, **kwargs):
         """Grant access to a resource to a set of subjects with a set of roles."""
-        try:
-            return self._run_atomic(self._perform_batch_create, request, *args, **kwargs)
-        except OperationalError as e:
-            response = self._handle_concurrency_error(e, "batch_create")
-            if response:
-                return response
-            raise
+        return self._atomic_action(self._perform_batch_create, "batch_create", request, *args, **kwargs)
 
     def _perform_batch_create(self, request, *args, **kwargs):
         """Core batch create logic."""
@@ -196,6 +189,10 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
 
     def _update_by_subject(self, request):
         """Update role bindings for a specific subject on a resource."""
+        return self._atomic_action(self._perform_update_by_subject, "update_by_subject", request)
+
+    def _perform_update_by_subject(self, request):
+        """Core update-by-subject logic."""
         data = {**request.query_params.dict(), **request.data}
 
         serializer = UpdateRoleBindingRequestSerializer(data=data, context={"request": request})
