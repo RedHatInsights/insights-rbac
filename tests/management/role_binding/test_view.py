@@ -2200,7 +2200,7 @@ class RoleBindingViewSetTest(IdentityRequest):
         self.assertEqual(len(response.data["data"]), 1)
 
         # Verify only inherited_group is returned
-        returned_subject_ids = [item["subject"]["id"] for item in response.data["data"]]
+        returned_subject_ids = [str(item["subject"]["id"]) for item in response.data["data"]]
         self.assertIn(str(inherited_group.uuid), returned_subject_ids)
 
         # Verify direct binding's group is NOT returned
@@ -2265,7 +2265,7 @@ class RoleBindingViewSetTest(IdentityRequest):
         self.assertEqual(len(response.data["data"]), 1)
 
         # Verify only inherited_user is returned
-        returned_subject_ids = [item["subject"]["id"] for item in response.data["data"]]
+        returned_subject_ids = [str(item["subject"]["id"]) for item in response.data["data"]]
         self.assertIn(str(inherited_user.uuid), returned_subject_ids)
 
         # Cleanup
