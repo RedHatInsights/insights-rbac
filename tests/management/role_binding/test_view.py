@@ -3165,7 +3165,7 @@ class BatchCreateViewTests(IdentityRequest):
     def test_batch_create_invalid_user_returns_404(self, mock_permission):
         """Non-existent user UUID returns 404."""
         url = self._get_batch_create_url()
-        fake_user_id = str(uuid.uuid4())
+        fake_user_id = "1234567890"
         payload = {
             "requests": [
                 {

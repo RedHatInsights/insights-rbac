@@ -231,8 +231,8 @@ class RoleBindingQuerySetTest(IdentityRequest):
             principal.delete()
 
     def test_subject_type_user_with_subject_id(self):
-        """Test filtering by subject_type=user and subject_id (principal UUID)."""
-        principal = Principal.objects.create(username="test_user", tenant=self.tenant, user_id="user-456")
+        """Test filtering by subject_type=user and subject_id (user_id only)."""
+        principal = Principal.objects.create(username="test_user", tenant=self.tenant, user_id="123456")
         role_c = RoleV2.objects.create(name="role_c", tenant=self.tenant)
         binding_c = RoleBinding.objects.create(
             role=role_c, resource_type="workspace", resource_id="res-3", tenant=self.tenant
@@ -241,8 +241,8 @@ class RoleBindingQuerySetTest(IdentityRequest):
 
         try:
             cases = [
-                ("match", principal.uuid, 1, {binding_c}),
-                ("no_match", uuid.uuid4(), 0, set()),
+                ("match_by_user_id", "123456", 1, {binding_c}),
+                ("no_match", "999999", 0, set()),
             ]
             for label, sid, expected_count, expected_set in cases:
                 with self.subTest(label=label):
@@ -256,8 +256,8 @@ class RoleBindingQuerySetTest(IdentityRequest):
             principal.delete()
 
     def test_subject_id_without_type_searches_both(self):
-        """Test that subject_id without subject_type searches groups and principals."""
-        principal = Principal.objects.create(username="test_user", tenant=self.tenant, user_id="user-789")
+        """Test that subject_id without subject_type: UUID searches groups, numeric searches principals."""
+        principal = Principal.objects.create(username="test_user", tenant=self.tenant, user_id="789012")
         role_c = RoleV2.objects.create(name="role_c", tenant=self.tenant)
         binding_c = RoleBinding.objects.create(
             role=role_c, resource_type="workspace", resource_id="res-3", tenant=self.tenant
@@ -265,12 +265,12 @@ class RoleBindingQuerySetTest(IdentityRequest):
         RoleBindingPrincipal.objects.create(principal=principal, binding=binding_c, source="default")
 
         try:
-            # subject_id matching a group
-            qs = RoleBinding.objects.for_tenant(self.tenant).for_subject(subject_id=self.group.uuid)
+            # UUID matches groups only
+            qs = RoleBinding.objects.for_tenant(self.tenant).for_subject(subject_id=str(self.group.uuid))
             self.assertEqual(qs.count(), 2)
 
-            # subject_id matching a principal
-            qs = RoleBinding.objects.for_tenant(self.tenant).for_subject(subject_id=principal.uuid)
+            # Numeric user_id matches principals only
+            qs = RoleBinding.objects.for_tenant(self.tenant).for_subject(subject_id="789012")
             self.assertEqual(qs.count(), 1)
             self.assertEqual(set(qs), {binding_c})
         finally:
@@ -282,10 +282,10 @@ class RoleBindingQuerySetTest(IdentityRequest):
     def test_subject_type_mismatch_returns_empty(self):
         """Test that subject_type narrows the search to the correct relation table.
 
-        A group UUID passed with subject_type='user' should return nothing (and vice versa),
-        because the type constrains which relation table is queried.
+        A group UUID with subject_type='user' searches by user_id, finds nothing.
+        A user_id with subject_type='group' searches by group uuid, finds nothing.
         """
-        principal = Principal.objects.create(username="mismatch_user", tenant=self.tenant, user_id="user-mismatch")
+        principal = Principal.objects.create(username="mismatch_user", tenant=self.tenant, user_id="111111")
         role_c = RoleV2.objects.create(name="role_c", tenant=self.tenant)
         binding_c = RoleBinding.objects.create(
             role=role_c, resource_type="workspace", resource_id="res-3", tenant=self.tenant
@@ -293,16 +293,14 @@ class RoleBindingQuerySetTest(IdentityRequest):
         RoleBindingPrincipal.objects.create(principal=principal, binding=binding_c, source="default")
 
         try:
-            # group UUID with subject_type='user' — searches principal_entries, finds nothing
+            # group UUID with subject_type='user' — searches by user_id, finds nothing
             qs = RoleBinding.objects.for_tenant(self.tenant).for_subject(
-                subject_type="user", subject_id=self.group.uuid
+                subject_type="user", subject_id=str(self.group.uuid)
             )
             self.assertEqual(qs.count(), 0)
 
-            # principal UUID with subject_type='group' — searches group_entries, finds nothing
-            qs = RoleBinding.objects.for_tenant(self.tenant).for_subject(
-                subject_type="group", subject_id=principal.uuid
-            )
+            # user_id with subject_type='group' — searches by group uuid, finds nothing
+            qs = RoleBinding.objects.for_tenant(self.tenant).for_subject(subject_type="group", subject_id="111111")
             self.assertEqual(qs.count(), 0)
         finally:
             RoleBindingPrincipal.objects.filter(binding=binding_c).delete()

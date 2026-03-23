@@ -16,7 +16,7 @@
 #
 """QuerySet for RoleBinding lookups."""
 
-from django.db.models import Count, F, OuterRef, Q, QuerySet, Subquery
+from django.db.models import Count, F, OuterRef, QuerySet, Subquery
 from django.db.models.fields import UUIDField
 from django.db.models.functions import Cast
 from management.subject import SubjectType
@@ -62,24 +62,29 @@ class RoleBindingQuerySet(QuerySet):
     def for_subject(self, subject_type=None, subject_id=None):
         """Filter by subject type and/or subject ID.
 
-        When subject_type is 'group', filters by group; when 'user', by principal.
-        An unsupported subject_type returns an empty queryset.
-        When subject_id is provided without subject_type, searches both groups and principals.
+        When subject_type is 'group', filters by group UUID.
+        When subject_type is 'user', filters by principal user_id (numeric).
+        When subject_id is provided without subject_type: UUID searches groups,
+        numeric searches principals.
         """
+        from management.utils import is_valid_uuid
+
         if subject_type == SubjectType.GROUP:
             if subject_id:
+                if not is_valid_uuid(subject_id):
+                    return self.none()  # group subject_id must be UUID
                 return self.filter(group_entries__group__uuid=subject_id)
             return self.filter(group_entries__isnull=False).distinct()
         elif subject_type == SubjectType.USER:
             if subject_id:
-                return self.filter(principal_entries__principal__uuid=subject_id)
+                return self.filter(principal_entries__principal__user_id=subject_id)
             return self.filter(principal_entries__isnull=False).distinct()
         elif subject_type:
             return self.none()
         elif subject_id:
-            return self.filter(
-                Q(group_entries__group__uuid=subject_id) | Q(principal_entries__principal__uuid=subject_id)
-            ).distinct()
+            if is_valid_uuid(subject_id):
+                return self.filter(group_entries__group__uuid=subject_id)
+            return self.filter(principal_entries__principal__user_id=subject_id)
         return self
 
     def with_resource_names(self):

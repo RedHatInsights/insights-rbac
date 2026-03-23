@@ -38,7 +38,7 @@ class SubjectQuerySet:
 
         Args:
             type: The subject type ('group' or 'user')
-            id: The subject UUID
+            id: For groups the UUID; for users the numeric user_id (maps to domain/user_id)
 
         Returns:
             Subject wrapping the Group or Principal
@@ -90,10 +90,10 @@ class SubjectQuerySet:
             raise NotFoundError(SubjectType.GROUP, id)
 
     def user(self, id: str) -> "Subject":
-        """Get a user subject by UUID.
+        """Get a user subject by user_id.
 
         Args:
-            id: The user/principal UUID
+            id: The numeric user_id (maps to domain/user_id in the access graph)
 
         Returns:
             Subject wrapping the Principal
@@ -104,7 +104,7 @@ class SubjectQuerySet:
         from management.subject.model import Subject, SubjectType
 
         try:
-            entity = Principal.objects.get(uuid=id)
+            entity = Principal.objects.get(user_id=id)
         except Principal.DoesNotExist:
             raise NotFoundError(SubjectType.USER, id)
 
@@ -131,24 +131,22 @@ class SubjectQuerySet:
             return {}
         return {str(g.uuid): g for g in Group.objects.filter(uuid__in=uuids)}
 
-    def users(self, uuids: set[str]) -> dict[str, Principal]:
-        """Resolve multiple user UUIDs to Principal objects.
-
-        Validates that every resolved Principal has a ``user_id``,
-        matching the single-lookup check in ``user()``.
+    def users(self, user_ids: set[str]) -> dict[str, Principal]:
+        """Resolve multiple user_ids to Principal objects.
 
         Args:
-            uuids: Set of principal UUID strings to resolve
+            user_ids: Set of numeric user_id strings
 
         Returns:
-            Dict mapping UUID string to Principal instance
+            Dict mapping user_id to Principal instance
 
         Raises:
             InvalidFieldError: If any resolved Principal has no user_id
         """
-        if not uuids:
+        if not user_ids:
             return {}
-        result = {str(p.uuid): p for p in Principal.objects.filter(uuid__in=uuids)}
+        result = {p.user_id: p for p in Principal.objects.filter(user_id__in=user_ids)}
+
         unsynced = [uid for uid, p in result.items() if p.user_id is None]
         if unsynced:
             raise InvalidFieldError(

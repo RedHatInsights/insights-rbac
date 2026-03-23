@@ -286,6 +286,7 @@ class RoleBindingServiceTests(IdentityRequest):
         self.principal = Principal.objects.create(
             username="testuser",
             tenant=self.tenant,
+            user_id="10001",
             type=Principal.Types.USER,
         )
         self.group.principals.add(self.principal)
@@ -455,7 +456,7 @@ class RoleBindingServiceTests(IdentityRequest):
             "resource_id": str(self.workspace.id),
             "resource_type": "workspace",
             "subject_type": "user",
-            "subject_id": str(self.principal.uuid),
+            "subject_id": str(self.principal.user_id),
         }
         queryset = self.service.get_role_bindings_by_subject(params)
 
@@ -1217,7 +1218,7 @@ class BatchCreateRoleBindingTests(IdentityRequest):
         """Create a single binding with a user subject."""
         results = self.service.batch_create(
             [
-                self._make_request(self.role1, "user", self.principal.uuid),
+                self._make_request(self.role1, "user", self.principal.user_id),
             ]
         )
 
@@ -1237,7 +1238,7 @@ class BatchCreateRoleBindingTests(IdentityRequest):
         results = self.service.batch_create(
             [
                 self._make_request(self.role1, "group", self.group.uuid),
-                self._make_request(self.role2, "user", self.principal.uuid),
+                self._make_request(self.role2, "user", self.principal.user_id),
             ]
         )
 
@@ -1330,7 +1331,7 @@ class BatchCreateRoleBindingTests(IdentityRequest):
         self.service.batch_create(
             [
                 self._make_request(self.role1, "group", self.group.uuid),
-                self._make_request(self.role1, "user", self.principal.uuid),
+                self._make_request(self.role1, "user", self.principal.user_id),
             ]
         )
 
@@ -1361,7 +1362,7 @@ class BatchCreateRoleBindingTests(IdentityRequest):
 
         self.service.batch_create(
             [
-                self._make_request(self.role1, "user", self.principal.uuid),
+                self._make_request(self.role1, "user", self.principal.user_id),
             ]
         )
 
@@ -1439,16 +1440,19 @@ class BatchCreateRoleBindingTests(IdentityRequest):
         self.assertFalse(is_v2_write_activated(self.tenant))
 
     def test_batch_create_rejects_user_without_user_id(self):
-        """A principal without user_id is rejected."""
-        unsynced = Principal.objects.create(
+        """Principals without user_id cannot be targeted; unknown user_id raises NotFoundError."""
+        Principal.objects.create(
             username="unsynced_user",
             tenant=self.tenant,
             user_id=None,
             type=Principal.Types.USER,
         )
 
-        with self.assertRaises(InvalidFieldError):
-            self.service.batch_create([self._make_request(self.role1, "user", unsynced.uuid)])
+        with self.assertRaises(NotFoundError) as ctx:
+            self.service.batch_create([self._make_request(self.role1, "user", "777777777")])
+
+        self.assertEqual(ctx.exception.resource_type, "user")
+        self.assertIn("777777777", str(ctx.exception))
 
         self.assertFalse(is_v2_write_activated(self.tenant))
 
@@ -1525,7 +1529,7 @@ class BatchCreateRoleBindingTests(IdentityRequest):
             for i in range(100)
         ]
 
-        requests = [self._make_request(self.role1, "user", user.uuid) for user in users]
+        requests = [self._make_request(self.role1, "user", user.user_id) for user in users]
 
         results = self.service.batch_create(requests)
         self.assertEqual(len(results), 100)
@@ -1582,7 +1586,7 @@ class BatchCreateRoleBindingTests(IdentityRequest):
         store = InMemoryTuples()
         service = RoleBindingService(tenant=self.tenant, replicator=InMemoryRelationReplicator(store))
 
-        service.batch_create([self._make_request(self.role1, "user", self.principal.uuid)])
+        service.batch_create([self._make_request(self.role1, "user", self.principal.user_id)])
 
         self.assertEqual(len(store), 3)
 
@@ -1647,7 +1651,7 @@ class BatchCreateRoleBindingTests(IdentityRequest):
         service.batch_create(
             [
                 self._make_request(self.role1, "group", self.group.uuid),
-                self._make_request(self.role1, "user", self.principal.uuid),
+                self._make_request(self.role1, "user", self.principal.user_id),
             ]
         )
 
@@ -2063,7 +2067,7 @@ class UpdateRoleBindingsForSubjectTests(_ReplicationAssertionsMixin, IdentityReq
             resource_type="workspace",
             resource_id=str(self.workspace.id),
             subject_type="user",
-            subject_id=str(self.principal.uuid),
+            subject_id=str(self.principal.user_id),
             role_ids=[str(self.role1.uuid)],
         )
 
@@ -2202,7 +2206,7 @@ class UpdateRoleBindingsForSubjectTests(_ReplicationAssertionsMixin, IdentityReq
             resource_type="workspace",
             resource_id=str(self.workspace.id),
             subject_type="user",
-            subject_id=str(self.principal.uuid),
+            subject_id=str(self.principal.user_id),
             role_ids=[str(self.role1.uuid)],
         )
 

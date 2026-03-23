@@ -21,6 +21,7 @@ This module contains:
 - Output serializers: For serializing response data
 """
 
+import re
 from typing import Optional
 
 from management.models import Group
@@ -30,7 +31,7 @@ from management.role.v2_serializer import RoleIdSerializer
 from management.role_binding.model import RoleBinding
 from management.role_binding.service import CreateBindingRequest, ExcludeSources, RoleBindingService
 from management.subject import SubjectType
-from management.utils import FieldSelection, FieldSelectionValidationError
+from management.utils import FieldSelection, FieldSelectionValidationError, is_valid_uuid
 from rest_framework import serializers
 
 _SUBJECT_TYPE_GROUP = "group"
@@ -84,6 +85,36 @@ class RoleBindingInputSerializerMixin:
         return value or None
 
 
+def _validate_subject_id(value: str, subject_type: Optional[str] = None) -> Optional[str]:
+    """Validate subject_id: UUID for groups, numeric user_id for principals.
+
+    When subject_type is omitted, accepts both (for "search both" case).
+    Returns None for empty.
+    """
+    if not value or not value.strip():
+        return None
+    if subject_type == SubjectType.GROUP:
+        if not is_valid_uuid(value):
+            raise serializers.ValidationError(
+                {"subject_id": "subject_id must be a valid UUID for subject_type 'group'."}
+            )
+        return str(value)
+    if subject_type == SubjectType.USER:
+        if not re.match(r"^\d+$", value):
+            raise serializers.ValidationError(
+                {"subject_id": "subject_id must be a numeric user_id for subject_type 'user'."}
+            )
+        return value
+    # subject_type omitted: accept both for search-both case
+    if is_valid_uuid(value):
+        return str(value)
+    if re.match(r"^\d+$", value):
+        return value
+    raise serializers.ValidationError(
+        {"subject_id": "subject_id must be a valid UUID (group) or a numeric user_id (principal)."}
+    )
+
+
 class RoleBindingListInputSerializer(RoleBindingInputSerializerMixin, serializers.Serializer):
     """Input serializer for role binding list endpoint query parameters.
 
@@ -94,9 +125,23 @@ class RoleBindingListInputSerializer(RoleBindingInputSerializerMixin, serializer
     resource_id = serializers.UUIDField(required=False, help_text="Filter by resource ID")
     resource_type = serializers.CharField(required=False, help_text="Filter by resource type")
     subject_type = serializers.CharField(required=False, help_text="Filter by subject type")
-    subject_id = serializers.UUIDField(required=False, help_text="Filter by subject ID")
+    subject_id = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Filter by subject ID (UUID for group, numeric user_id for user)",
+    )
     fields = serializers.CharField(required=False, help_text="Control which fields are included")
     order_by = serializers.CharField(required=False, help_text="Sort by specified field(s)")
+
+    def validate(self, attrs):
+        """Cross-validate subject_id against subject_type."""
+        subject_type = attrs.get("subject_type")
+        subject_id = attrs.get("subject_id")
+        if subject_id is not None and subject_id != "":
+            attrs["subject_id"] = _validate_subject_id(subject_id, subject_type)
+        elif subject_id == "":
+            attrs["subject_id"] = None
+        return attrs
 
 
 class RoleBindingInputSerializer(serializers.Serializer):
@@ -108,7 +153,11 @@ class RoleBindingInputSerializer(serializers.Serializer):
     resource_id = serializers.CharField(required=True, help_text="Filter by resource ID")
     resource_type = serializers.CharField(required=True, help_text="Filter by resource type")
     subject_type = serializers.CharField(required=False, allow_blank=True, help_text="Filter by subject type")
-    subject_id = serializers.CharField(required=False, allow_blank=True, help_text="Filter by subject ID (UUID)")
+    subject_id = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Filter by subject ID (UUID for group, numeric user_id for user)",
+    )
     fields = serializers.CharField(required=False, allow_blank=True, help_text="Control which fields are included")
     order_by = serializers.CharField(required=False, allow_blank=True, help_text="Sort by specified field(s)")
     exclude_sources = serializers.ChoiceField(
@@ -143,9 +192,15 @@ class RoleBindingInputSerializer(serializers.Serializer):
         """Return None for empty values."""
         return value or None
 
-    def validate_subject_id(self, value):
-        """Return None for empty values."""
-        return value or None
+    def validate(self, attrs):
+        """Cross-validate subject_id against subject_type."""
+        subject_type = attrs.get("subject_type")
+        subject_id = attrs.get("subject_id")
+        if subject_id is not None and subject_id != "":
+            attrs["subject_id"] = _validate_subject_id(subject_id, subject_type) or None
+        elif subject_id == "":
+            attrs["subject_id"] = None
+        return attrs
 
     def validate_fields(self, value):
         """Parse and validate fields parameter using by-subject selection."""
@@ -624,8 +679,18 @@ class ResourceInputSerializer(serializers.Serializer):
 class SubjectInputSerializer(serializers.Serializer):
     """Validates the subject portion of a role binding request."""
 
-    id = serializers.UUIDField(help_text="UUID of the subject")
+    id = serializers.CharField(help_text="UUID for group, numeric user_id for user")
     type = serializers.ChoiceField(choices=["user", "group"], help_text="Type of subject")
+
+    def validate(self, attrs):
+        """Validate id matches type: UUID for group, numeric user_id for user."""
+        id_val = attrs.get("id")
+        type_val = attrs.get("type")
+        if id_val and type_val:
+            result = _validate_subject_id(id_val, type_val)
+            if result is not None:
+                attrs["id"] = result
+        return attrs
 
 
 class CreateRoleBindingItemSerializer(serializers.Serializer):
@@ -833,7 +898,9 @@ class UpdateRoleBindingRequestSerializer(RoleBindingInputSerializerMixin, serial
     # Query parameters
     resource_id = serializers.CharField(required=True, help_text="Resource ID to update bindings for")
     resource_type = serializers.CharField(required=True, help_text="Resource type (e.g., 'workspace')")
-    subject_id = serializers.CharField(required=True, help_text="Subject ID (UUID)")
+    subject_id = serializers.CharField(
+        required=True, help_text="Subject ID (UUID for group, numeric user_id for user)"
+    )
     subject_type = serializers.CharField(required=True, help_text="Subject type (e.g., 'group')")
     fields = serializers.CharField(
         required=False, default="", allow_blank=True, help_text="Control which fields are included"
@@ -857,6 +924,14 @@ class UpdateRoleBindingRequestSerializer(RoleBindingInputSerializerMixin, serial
             supported = ", ".join(SubjectType.values())
             raise serializers.ValidationError(f"Unsupported subject type: '{value}'. Supported types: {supported}")
         return value
+
+    def validate_subject_id(self, value):
+        """Validate subject_id: UUID for groups, numeric user_id for principals."""
+        subject_type = self.initial_data.get("subject_type")
+        result = _validate_subject_id(value, subject_type)
+        if result is None:
+            raise serializers.ValidationError("subject_id is required.")
+        return result
 
     def save(self):
         """Execute the update via the service layer and return the result.

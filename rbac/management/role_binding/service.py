@@ -244,19 +244,19 @@ class RoleBindingService:
     def _resolve_subjects(self, requests: list[CreateBindingRequest]) -> dict[str, Group | Principal]:
         """Batch-resolve all subjects, raising NotFoundError for any missing."""
         group_uuids = {r.subject_id for r in requests if r.subject_type == SubjectType.GROUP}
-        user_uuids = {r.subject_id for r in requests if r.subject_type == SubjectType.USER}
+        user_ids = {r.subject_id for r in requests if r.subject_type == SubjectType.USER}
 
         groups_by_uuid = Subject.objects.groups(group_uuids)
         missing = group_uuids - set(groups_by_uuid.keys())
         if missing:
             raise NotFoundError(SubjectType.GROUP, ", ".join(missing))
 
-        principals_by_uuid = Subject.objects.users(user_uuids)
-        missing = user_uuids - set(principals_by_uuid.keys())
+        principals_by_user_id = Subject.objects.users(user_ids)
+        missing = user_ids - set(principals_by_user_id.keys())
         if missing:
             raise NotFoundError(SubjectType.USER, ", ".join(missing))
 
-        return {**groups_by_uuid, **principals_by_uuid}
+        return {**groups_by_uuid, **principals_by_user_id}
 
     @staticmethod
     def _group_by_subject_resource(
@@ -540,13 +540,10 @@ class RoleBindingService:
 
         Args:
             queryset: Base queryset to filter (Principal objects)
-            subject_id: Optional subject ID filter (UUID)
-
-        Returns:
-            Filtered queryset
+            subject_id: Optional user_id filter (numeric)
         """
         if subject_id:
-            queryset = queryset.filter(uuid=subject_id)
+            queryset = queryset.filter(user_id=subject_id)
 
         return queryset
 

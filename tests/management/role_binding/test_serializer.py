@@ -816,30 +816,36 @@ class RoleBindingListInputSerializerTest(TestCase):
     # --- subject_id ---
 
     def test_subject_id_valid_inputs(self):
-        """Test that valid UUID formats are accepted for subject_id."""
-        valid_uuids = [
-            ("standard", "550e8400-e29b-41d4-a716-446655440000"),
-            ("zeros", "00000000-0000-0000-0000-000000000000"),
-            ("generated", str(uuid.uuid4())),
+        """Test subject_id: UUID for group, numeric user_id for user, both when type omitted."""
+        valid_values = [
+            ("group_uuid", "group", "550e8400-e29b-41d4-a716-446655440000"),
+            ("user_user_id", "user", "12345"),
+            ("no_type_uuid", None, "550e8400-e29b-41d4-a716-446655440000"),
+            ("no_type_user_id", None, "12345"),
         ]
-        for label, value in valid_uuids:
+        for label, subject_type, subject_id in valid_values:
             with self.subTest(label=label):
-                s = RoleBindingListInputSerializer(data={"subject_id": value})
+                data = {"subject_id": subject_id}
+                if subject_type:
+                    data["subject_type"] = subject_type
+                s = RoleBindingListInputSerializer(data=data)
                 self.assertTrue(s.is_valid(), s.errors)
-                self.assertEqual(s.validated_data["subject_id"], uuid.UUID(value))
+                self.assertEqual(s.validated_data["subject_id"], subject_id)
 
     def test_subject_id_invalid_inputs(self):
-        """Test that non-UUID values are rejected for subject_id."""
+        """Test that invalid formats are rejected for subject_id."""
         invalid_values = [
-            ("not-a-uuid", "not-a-uuid"),
-            ("integer", "12345"),
-            ("empty", ""),
-            ("spaces", "   "),
+            ("user_rejects_uuid", "user", "550e8400-e29b-41d4-a716-446655440000"),
+            ("group_rejects_numeric", "group", "12345"),
+            ("no_type_rejects_alphanumeric", None, "abc123"),
         ]
-        for label, value in invalid_values:
+        for label, subject_type, subject_id in invalid_values:
             with self.subTest(label=label):
-                s = RoleBindingListInputSerializer(data={"subject_id": value})
-                self.assertFalse(s.is_valid())
+                data = {"subject_id": subject_id}
+                if subject_type:
+                    data["subject_type"] = subject_type
+                s = RoleBindingListInputSerializer(data=data)
+                self.assertFalse(s.is_valid(), f"Expected invalid: {label}")
                 self.assertIn("subject_id", s.errors)
 
     def test_subject_id_omitted_is_valid(self):
@@ -1397,7 +1403,7 @@ class UpdateRoleBindingRequestSerializerTests(IdentityRequest):
         """Test various valid inputs pass validation."""
         cases = [
             ("group subject type", {}),
-            ("user subject type", {"subject_type": "user"}),
+            ("user subject type", {"subject_type": "user", "subject_id": "12345"}),
             (
                 "multiple roles",
                 {

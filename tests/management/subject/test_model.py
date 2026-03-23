@@ -119,19 +119,19 @@ class UserLookupTests(SubjectManagerTests):
 
     def test_user_returns_subject_wrapping_principal(self):
         """Test that user() returns a Subject wrapping the Principal."""
-        result = Subject.objects.user(id=str(self.principal.uuid))
+        result = Subject.objects.user(id=self.principal.user_id)
 
         expected = Subject(type=SubjectType.USER, entity=self.principal)
         self.assertEqual(result, expected)
 
-    def test_user_raises_not_found_for_invalid_uuid(self):
+    def test_user_raises_not_found_for_invalid_user_id(self):
         """Test that user() raises NotFoundError for non-existent principal."""
-        fake_uuid = str(uuid.uuid4())
+        fake_user_id = "nonexistent_999999"
 
         with self.assertRaises(NotFoundError) as context:
-            Subject.objects.user(id=fake_uuid)
+            Subject.objects.user(id=fake_user_id)
 
-        expected = NotFoundError("user", fake_uuid)
+        expected = NotFoundError("user", fake_user_id)
         self.assertEqual(str(context.exception), str(expected))
 
 
@@ -147,7 +147,7 @@ class ByTypeLookupTests(SubjectManagerTests):
 
     def test_by_type_returns_subject_for_user_type(self):
         """Test that by_type returns a Subject for type='user'."""
-        result = Subject.objects.by_type(type="user", id=str(self.principal.uuid))
+        result = Subject.objects.by_type(type="user", id=self.principal.user_id)
 
         expected = Subject(type=SubjectType.USER, entity=self.principal)
         self.assertEqual(result, expected)
@@ -176,12 +176,12 @@ class ByTypeLookupTests(SubjectManagerTests):
 
     def test_by_type_raises_not_found_for_invalid_principal(self):
         """Test that by_type raises NotFoundError for non-existent principal."""
-        fake_uuid = str(uuid.uuid4())
+        fake_user_id = "nonexistent_user_id"
 
         with self.assertRaises(NotFoundError) as context:
-            Subject.objects.by_type(type="user", id=fake_uuid)
+            Subject.objects.by_type(type="user", id=fake_user_id)
 
-        expected = NotFoundError("user", fake_uuid)
+        expected = NotFoundError("user", fake_user_id)
         self.assertEqual(str(context.exception), str(expected))
 
 
@@ -203,7 +203,7 @@ class SubjectPropertiesTests(SubjectManagerTests):
 
     def test_is_user_returns_true_for_users(self):
         """Test that is_user returns True for user subjects."""
-        subject = Subject.objects.user(id=str(self.principal.uuid))
+        subject = Subject.objects.user(id=self.principal.user_id)
 
         self.assertTrue(subject.is_user)
         self.assertFalse(subject.is_group)

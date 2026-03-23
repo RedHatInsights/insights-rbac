@@ -93,7 +93,7 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
             - resource_id: Filter by resource ID (must be used with resource_type)
             - resource_type: Filter by resource type (must be used with resource_id)
             - subject_type: Filter by subject type (e.g., 'group')
-            - subject_id: Filter by subject ID (UUID)
+            - subject_id: Filter by subject ID (UUID for groups, UUID or numeric user_id for principals)
             - fields: Control which fields are included in the response
             - order_by: Sort by specified field(s), prefix with '-' for descending
         """
@@ -167,7 +167,7 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
 
         Optional query parameters:
             - subject_type: Filter by subject type (e.g., 'group')
-            - subject_id: Filter by subject ID (UUID)
+            - subject_id: Filter by subject ID (UUID for groups, UUID or numeric user_id for principals)
             - fields: Control which fields are included in the response
             - order_by: Sort by specified field(s), prefix with '-' for descending
         """
