@@ -56,7 +56,8 @@ from migration_tool.in_memory_tuples import (
 
 from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
-from tests.v2_util import assert_v2_roles_consistent, bootstrap_tenant_for_v2_test
+from tests.util import assert_v1_v2_tuples_fully_consistent, assert_v1_v2_locally_consistent
+from tests.v2_util import bootstrap_tenant_for_v2_test
 from unittest.mock import ANY, patch, call, Mock
 
 URL = reverse("v1_management:role-list")
@@ -285,7 +286,7 @@ class RoleViewsetTests(IdentityRequest):
     def tearDown(self):
         """Tear down role viewset tests."""
         with self.subTest(msg="V2 consistency"):
-            self._assert_v2_consistent()
+            assert_v1_v2_locally_consistent(test=self)
 
         Group.objects.all().delete()
         Principal.objects.all().delete()
@@ -308,9 +309,6 @@ class RoleViewsetTests(IdentityRequest):
 
         PRINCIPAL_CACHE.delete_all_principals_for_tenant("100001")
         PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
-
-    def _assert_v2_consistent(self, tuples: Optional[InMemoryTuples] = None):
-        assert_v2_roles_consistent(test=self, tuples=tuples)
 
     def create_role(self, role_name, role_display="", in_access_data=None):
         """Create a role."""
@@ -1805,7 +1803,7 @@ class RoleViewsetTests(IdentityRequest):
         # The role should now have been migrated.
         v2_role = CustomRoleV2.objects.get(v1_source=v1_role)
         self.assertEqual("inventory:groups:read", v2_role.permissions.get().permission)
-        self._assert_v2_consistent(tuples)
+        assert_v1_v2_tuples_fully_consistent(test=self, tuples=tuples)
 
     @override_settings(
         ROLE_CREATE_ALLOW_LIST="inventory", REPLICATION_TO_RELATION_ENABLED=True, REMOVE_NULL_VALUE=True
@@ -2700,7 +2698,7 @@ class RoleViewNonAdminTests(IdentityRequest):
         PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
 
     def _assert_v2_consistent(self):
-        assert_v2_roles_consistent(test=self, tuples=None)
+        assert_v1_v2_locally_consistent(test=self)
 
     @staticmethod
     def _create_group_with_user_access_admin_role(tenant):

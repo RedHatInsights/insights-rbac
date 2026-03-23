@@ -18,6 +18,7 @@
 
 import datetime
 import uuid
+from typing import Optional
 from unittest.mock import patch
 from django.test import TestCase, override_settings
 
@@ -36,6 +37,7 @@ from management.role.v2_model import RoleV2
 from management.role.v2_service import RoleV2Service
 from management.role_binding.model import RoleBinding, RoleBindingGroup
 from management.role_binding.service import RoleBindingService, CreateBindingRequest
+from management.tenant_mapping.v2_activation import ensure_v2_write_activated
 from management.tenant_service import V2TenantBootstrapService
 from migration_tool.in_memory_tuples import (
     InMemoryTuples,
@@ -51,7 +53,7 @@ from internal.utils import (
     clean_invalid_workspace_resource_definitions,
     remove_unassigned_system_binding_mappings,
 )
-from migration_tool.models import V2role, V2rolebinding
+from migration_tool.models import V2role, V2rolebinding, V2boundresource
 from tests.management.role.test_dual_write import DualWriteTestCase
 from tests.v2_util import seed_v2_role_from_v1, bootstrap_tenant_for_v2_test
 
@@ -602,7 +604,10 @@ class ReplicateMissingBindingTuplesTest(TestCase):
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)
 class RemoveOrphanBindingMappingsTest(DualWriteTestCase):
-    def _create_empty_binding_mapping(self) -> tuple[Role, BindingMapping]:
+    def _create_empty_binding_mapping(self, resource: Optional[V2boundresource] = None) -> tuple[Role, BindingMapping]:
+        if resource is None:
+            resource = self.default_workspace_resource()
+
         role = self.given_v1_system_role(name="system role", permissions=["rbac:*:*"])
 
         # There's no intended way to create a BindingMapping for a system role with no subjects, so we have to do it
@@ -611,7 +616,7 @@ class RemoveOrphanBindingMappingsTest(DualWriteTestCase):
             V2rolebinding(
                 id=str(uuid.uuid4()),
                 role=V2role.for_system_role(str(role.uuid)),
-                resource=self.default_workspace_resource(),
+                resource=resource,
                 groups=[],
                 users={},
             ),
@@ -649,6 +654,19 @@ class RemoveOrphanBindingMappingsTest(DualWriteTestCase):
 
         self.assertEqual(BindingMapping.objects.filter(role=custom_role).count(), 1)
         self.assertEqual(RoleBinding.objects.filter(role__v1_source=custom_role).count(), 1)
+
+    def test_remove_tenant(self):
+        role, binding_mapping = self._create_empty_binding_mapping(resource=self.tenant_resource())
+
+        for tuple in binding_mapping.as_tuples():
+            self.assertIn(tuple, self.tuples)
+
+        self._do_remove_empty()
+
+        for tuple in binding_mapping.as_tuples():
+            self.assertNotIn(tuple, self.tuples)
+
+        self.assertFalse(BindingMapping.objects.filter(pk=binding_mapping.pk).exists())
 
     def test_remove_with_role_binding(self):
         role, binding_mapping = self._create_empty_binding_mapping()
@@ -704,4 +722,24 @@ class RemoveOrphanBindingMappingsTest(DualWriteTestCase):
         with self.assertRaises(AssertionError):
             self._do_remove_empty()
 
+        self.assertEqual(set(self.tuples), tuples_before)
+
+    def test_no_remove_unexpected_type(self):
+        role, binding_mapping = self._create_empty_binding_mapping(V2boundresource(("rbac", "whatever"), "some_id"))
+        tuples_before = set(self.tuples)
+
+        self._do_remove_empty()
+
+        self.assertTrue(BindingMapping.objects.filter(pk=binding_mapping.pk).exists())
+        self.assertEqual(set(self.tuples), tuples_before)
+
+    def test_no_remove_v2_tenant(self):
+        role, binding_mapping = self._create_empty_binding_mapping()
+        tuples_before = set(self.tuples)
+
+        ensure_v2_write_activated(self.tenant)
+
+        self._do_remove_empty()
+
+        self.assertTrue(BindingMapping.objects.filter(pk=binding_mapping.pk).exists())
         self.assertEqual(set(self.tuples), tuples_before)

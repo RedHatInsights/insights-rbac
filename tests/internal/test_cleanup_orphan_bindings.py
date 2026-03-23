@@ -43,7 +43,8 @@ from internal.migrations.remove_orphan_relations import (
 )
 from internal.utils import rebuild_tenant_workspace_relations
 from tests.management.role.test_dual_write import DualWriteTestCase
-from tests.v2_util import assert_v2_roles_consistent, make_read_tuples_mock
+from tests.util import assert_v1_v2_tuples_fully_consistent
+from tests.v2_util import make_read_tuples_mock
 
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)
@@ -62,7 +63,7 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         )
 
     def _expect_v2_consistent(self):
-        assert_v2_roles_consistent(test=self, tuples=self.tuples)
+        assert_v1_v2_tuples_fully_consistent(test=self, tuples=self.tuples)
 
     def _create_kessel_read_tuples_mock(self):
         """Create a mock function that reads tuples from our InMemoryTuples store."""
@@ -835,7 +836,7 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
         self.given_roles_assigned_to_group(g1, [r])
         self.given_roles_assigned_to_group(g2, [r])
 
-        assert_v2_roles_consistent(test=self, tuples=self.tuples)
+        assert_v1_v2_tuples_fully_consistent(test=self, tuples=self.tuples)
 
         cleanup_tenant_orphan_bindings(
             org_id=self.tenant.org_id,
@@ -843,7 +844,7 @@ class CleanupOrphanBindingsTest(DualWriteTestCase):
             read_tuples_fn=self._create_kessel_read_tuples_mock(),
         )
 
-        assert_v2_roles_consistent(test=self, tuples=self.tuples)
+        assert_v1_v2_tuples_fully_consistent(test=self, tuples=self.tuples)
 
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     def test_miscellaneous_unchanged(self, replicate):

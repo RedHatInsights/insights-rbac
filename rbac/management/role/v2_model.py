@@ -105,6 +105,10 @@ class RoleV2(TenantAwareModel):
 
         raise ValueError(f"Unexpected type of role: {self.type} for {self}")
 
+    def v2_permissions(self) -> set[str]:
+        """Get the set of V2 strings for the permissions of this role."""
+        return set(p.v2_string() for p in self.permissions.all())
+
 
 class TypedRoleV2Manager(models.Manager):
     """Manager for RoleV2 with a specific type."""

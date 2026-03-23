@@ -21,7 +21,8 @@ from tests.management.role.test_dual_write import DualWriteTestCase
 
 from django.test.utils import override_settings
 
-from tests.v2_util import assert_v2_roles_consistent, make_read_tuples_mock, bootstrap_tenant_for_v2_test
+from tests.util import assert_v1_v2_tuples_fully_consistent
+from tests.v2_util import make_read_tuples_mock, bootstrap_tenant_for_v2_test
 
 
 @override_settings(
@@ -40,7 +41,7 @@ class TestRemoveOrphanRelations(DualWriteTestCase):
             call_command("fix_orphan_relations", *args)
 
     def _expect_v2_consistent(self):
-        assert_v2_roles_consistent(test=self, tuples=self.tuples)
+        assert_v1_v2_tuples_fully_consistent(test=self, tuples=self.tuples)
 
     def setUp(self):
         super().setUp()

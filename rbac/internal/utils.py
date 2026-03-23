@@ -50,7 +50,9 @@ from management.relation_replicator.relations_api_replicator import RelationsApi
 from management.role.v2_model import CustomRoleV2, RoleV2
 from management.role_binding.model import RoleBinding
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
+from management.tenant_mapping.v2_activation import V1WriteBlockedError, assert_v1_write_allowed
 from management.tenant_service.relations import default_role_binding_tuples
+from management.tenant_service.v2 import TenantNotBootstrappedError
 from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspaceHandler
 from migration_tool.utils import create_relationship
 
@@ -990,6 +992,46 @@ def remove_unassigned_system_binding_mappings(replicator: Optional[RelationRepli
                     f"BindingMapping for system role is inconsistent: "
                     f"pk={mapping.pk!r}, mappings={mapping.mappings}"
                 )
+
+            if not (
+                (mapping.resource_type_namespace == "rbac") and (mapping.resource_type_name in ("tenant", "workspace"))
+            ):
+                logger.warning(
+                    f"Unexpected role binding resource type: "
+                    f"{mapping.resource_type_namespace}/{mapping.resource_type_name}"
+                )
+
+                continue
+
+            tenant: Tenant | None = None
+
+            if mapping.resource_type_name == "workspace":
+                workspace = Workspace.objects.filter(id=mapping.resource_id).first()
+
+                if workspace is None:
+                    logger.warning(f"Unknown workspace ID for binding: {mapping.resource_id}")
+                    continue
+
+                tenant = workspace.tenant
+            elif mapping.resource_type_name == "tenant":
+                org_id = Tenant.tenant_resource_id_to_org_id(mapping.resource_id)
+                tenant = Tenant.objects.filter(org_id=org_id).first()
+
+                if tenant is None:
+                    logger.warning(f"Unknown tenant resource ID for binding: {mapping.resource_id}")
+                    continue
+
+            if tenant is None:
+                raise AssertionError("Tenant should have been found")
+
+            try:
+                assert_v1_write_allowed(tenant)
+            except V1WriteBlockedError:
+                logger.info(f"Not processing BindingMapping for V2 tenant: pk={mapping.pk!r}, tenant pk={tenant.pk!r}")
+                continue
+            except TenantNotBootstrappedError:
+                logger.warning(f"Tenant not bootstrapped: pk={tenant.pk!r}. Not processing BindingMapping.")
+                continue
 
             # Because a BindingMapping exists for this role binding, and BindingMappings for system roles are always
             # locked for update, we know that this binding cannot be concurrently updated by V1 code.

@@ -3419,3 +3419,95 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
             tenant=self.tenant,
         ).count()
         self.assertEqual(binding_count, 1)
+
+
+_SENTINEL = RuntimeError("_atomic_action sentinel")
+_ATOMIC_ACTION_PATH = "management.v2_mixins.AtomicOperationsMixin._atomic_action"
+
+
+@override_settings(V2_APIS_ENABLED=True, V2_EDIT_API_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
+class RoleBindingViewSetAtomicWiringTests(IdentityRequest):
+    """Verify RoleBindingViewSet write endpoints delegate to _atomic_action."""
+
+    def setUp(self):
+        reload(urls)
+        clear_url_caches()
+        super().setUp()
+        bootstrapped = V2TenantBootstrapService(InMemoryRelationReplicator()).bootstrap_tenant(self.tenant)
+        self.root_workspace = bootstrapped.root_workspace
+        self.default_workspace = bootstrapped.default_workspace
+        self.client = APIClient()
+
+        self.workspace = Workspace.objects.create(
+            name="Test Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.default_workspace,
+        )
+
+        Permission.objects.create(permission="app:resource:read", tenant=self.tenant)
+        role_service = RoleV2Service()
+        self.role = role_service.create(
+            name="wiring_role",
+            description="Test",
+            permission_data=[{"application": "app", "resource_type": "resource", "operation": "read"}],
+            tenant=self.tenant,
+        )
+
+        self.group = Group.objects.create(name="wiring_group", description="Test", tenant=self.tenant)
+        self.principal = Principal.objects.create(
+            username="wiring_user", tenant=self.tenant, user_id="wiring_user", type=Principal.Types.USER
+        )
+
+    def tearDown(self):
+        RoleBindingGroup.objects.all().delete()
+        RoleBinding.objects.all().delete()
+        Principal.objects.filter(tenant=self.tenant).delete()
+        Group.objects.filter(tenant=self.tenant).delete()
+        RoleV2.objects.filter(tenant=self.tenant).delete()
+        Permission.objects.filter(tenant=self.tenant).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.STANDARD).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.DEFAULT).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.ROOT).delete()
+        super().tearDown()
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    @patch(_ATOMIC_ACTION_PATH, side_effect=_SENTINEL)
+    def test_batch_create_delegates_to_atomic_action(self, mock_atomic, _mock_permission):
+        url = reverse("v2_management:role-bindings-batch-create")
+        with self.assertRaises(RuntimeError, msg="_atomic_action sentinel"):
+            self.client.post(
+                url,
+                {
+                    "requests": [
+                        {
+                            "resource": {"id": str(self.workspace.id), "type": "workspace"},
+                            "subject": {"id": str(self.group.uuid), "type": "group"},
+                            "role": {"id": str(self.role.uuid)},
+                        }
+                    ]
+                },
+                format="json",
+                **self.headers,
+            )
+        mock_atomic.assert_called_once()
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    @patch(_ATOMIC_ACTION_PATH, side_effect=_SENTINEL)
+    def test_update_by_subject_delegates_to_atomic_action(self, mock_atomic, _mock_permission):
+        url = reverse("v2_management:role-bindings-by-subject")
+        with self.assertRaises(RuntimeError, msg="_atomic_action sentinel"):
+            self.client.put(
+                f"{url}?resource_id={self.workspace.id}&resource_type=workspace"
+                f"&subject_id={self.group.uuid}&subject_type=group",
+                data={"roles": [{"id": str(self.role.uuid)}]},
+                format="json",
+                **self.headers,
+            )
+        mock_atomic.assert_called_once()

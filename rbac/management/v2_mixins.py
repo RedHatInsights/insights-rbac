@@ -31,13 +31,31 @@ logger = logging.getLogger(__name__)
 
 
 class AtomicOperationsMixin:
-    """
-    Mixin providing atomic create/update/destroy with SERIALIZABLE isolation.
+    """Mixin providing atomic create/update/destroy with SERIALIZABLE isolation.
+
+    Subclasses should NOT override create/update/destroy directly. Instead, override
+    the perform_atomic_* hooks which run inside the SERIALIZABLE transaction with
+    automatic retries and concurrency error handling.
 
     Set ATOMIC_RETRY_DISABLED=True in settings to skip the transaction wrapper entirely.
     """
 
+    # Prevent subclasses from accidentally overriding core atomic methods;
+    # enforce overrides must go through the 'perform_atomic_*' hooks instead.
+    _GUARDED_METHODS = frozenset(("create", "update", "destroy"))
+
     atomic_retry = 3
+
+    def __init_subclass__(cls, **kwargs):
+        """Initialize the subclass and check for accidental method overrides."""
+        super().__init_subclass__(**kwargs)
+        for method in AtomicOperationsMixin._GUARDED_METHODS:
+            if method in cls.__dict__:
+                raise TypeError(
+                    f"{cls.__name__} must not override '{method}()'. "
+                    f"Override 'perform_atomic_{method}()' instead to run "
+                    f"inside the SERIALIZABLE transaction."
+                )
 
     def _handle_concurrency_error(self, e, operation_name):
         if hasattr(e, "__cause__"):
@@ -67,32 +85,36 @@ class AtomicOperationsMixin:
 
         return atomic_operation()
 
-    def create(self, request, *args, **kwargs):
-        """Create with atomic transaction and concurrency handling."""
+    def _atomic_action(self, operation, operation_name, request, *args, **kwargs):
+        """Run an operation inside a SERIALIZABLE transaction with concurrency error handling."""
         try:
-            return self._run_atomic(super().create, request, *args, **kwargs)
+            return self._run_atomic(operation, request, *args, **kwargs)
         except OperationalError as e:
-            response = self._handle_concurrency_error(e, "create")
+            response = self._handle_concurrency_error(e, operation_name)
             if response:
                 return response
             raise
+
+    def create(self, request, *args, **kwargs):
+        """Create with atomic transaction and concurrency handling. Override perform_atomic_create instead."""
+        return self._atomic_action(self.perform_atomic_create, "create", request, *args, **kwargs)
+
+    def perform_atomic_create(self, request, *args, **kwargs):
+        """Override to customize create logic. Runs inside a SERIALIZABLE transaction."""
+        return super().create(request, *args, **kwargs)
 
     def update(self, request, *args, **kwargs):
-        """Update with atomic transaction and concurrency handling."""
-        try:
-            return self._run_atomic(super().update, request, *args, **kwargs)
-        except OperationalError as e:
-            response = self._handle_concurrency_error(e, "update")
-            if response:
-                return response
-            raise
+        """Update with atomic transaction and concurrency handling. Override perform_atomic_update instead."""
+        return self._atomic_action(self.perform_atomic_update, "update", request, *args, **kwargs)
+
+    def perform_atomic_update(self, request, *args, **kwargs):
+        """Override to customize update logic. Runs inside a SERIALIZABLE transaction."""
+        return super().update(request, *args, **kwargs)
 
     def destroy(self, request, *args, **kwargs):
-        """Destroy with atomic transaction and concurrency handling."""
-        try:
-            return self._run_atomic(super().destroy, request, *args, **kwargs)
-        except OperationalError as e:
-            response = self._handle_concurrency_error(e, "destroy")
-            if response:
-                return response
-            raise
+        """Destroy with atomic transaction and concurrency handling. Override perform_atomic_destroy instead."""
+        return self._atomic_action(self.perform_atomic_destroy, "destroy", request, *args, **kwargs)
+
+    def perform_atomic_destroy(self, request, *args, **kwargs):
+        """Override to customize destroy logic. Runs inside a SERIALIZABLE transaction."""
+        return super().destroy(request, *args, **kwargs)
