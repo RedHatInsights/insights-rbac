@@ -135,10 +135,12 @@ class V2CursorPagination(CursorPagination):
     - group.name, group.description, group.user_count, group.uuid,
       group.created, group.modified
     - role.name, role.uuid, role.created, role.modified
+    - last_modified (max RoleBindingGroup/RoleBindingPrincipal created for the resource)
 
     Available ordering fields (for subject_type=user):
     - user.username, user.uuid
     - role.name, role.uuid, role.created, role.modified
+    - last_modified (max RoleBindingGroup/RoleBindingPrincipal created for the resource)
 
     Available ordering fields (for list endpoint, RoleBinding model):
     - role.name, role.uuid, role.id, role.created, role.modified
@@ -188,6 +190,8 @@ class V2CursorPagination(CursorPagination):
         "role.uuid": "role_binding_entries__binding__role__uuid",
         "role.modified": "role_binding_entries__binding__role__modified",
         "role.created": "role_binding_entries__binding__role__created",
+        # Annotated in RoleBindingService (assignment time for this resource)
+        "last_modified": "latest_modified",
     }
 
     # Mapping of dot notation fields to Django ORM fields for Principal (user) queryset
@@ -199,6 +203,7 @@ class V2CursorPagination(CursorPagination):
         "role.uuid": "role_binding_entries__binding__role__uuid",
         "role.modified": "role_binding_entries__binding__role__modified",
         "role.created": "role_binding_entries__binding__role__created",
+        "last_modified": "latest_modified",
     }
 
     # For role binding list endpoint, the queryset is on RoleBinding model.
