@@ -16,6 +16,7 @@
 #
 """View for RoleV2 management."""
 
+from management.atomic_transactions import atomic_block
 from management.audit_log.model import AuditLog
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions.role_v2_access import RoleV2KesselAccessPermission
@@ -82,7 +83,7 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
             context["fields"] = validate_fields_parameter(fields_param, RoleV2Service.DEFAULT_RETRIEVE_FIELDS)
         elif self.action in ("create", "update"):
             # Strict validation for write operations (errors on invalid fields per AIP-161)
-            # Cache the result to avoid validating twice (once in get_serializer, once in save)
+            # Cache the result to avoid validating twice
             if not hasattr(self.request, "_validated_fields"):
                 try:
                     self.request._validated_fields = validate_fields_parameter(
@@ -126,15 +127,9 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
             serializer = self.get_serializer(data=request.data)
             serializer.is_valid(raise_exception=True)
             role = serializer.save()
-        # Validate and parse fields query parameter
-        fields = self._parse_fields_param(request.query_params.get("fields"))
 
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        role = serializer.save()
-
-        audit_log = AuditLog()
-        audit_log.log_create(request=request, resource=AuditLog.ROLE_V2)
+            audit_log = AuditLog()
+            audit_log.log_create(request=request, resource=AuditLog.ROLE_V2)
 
         # Build response with field selection (from context) and permission ordering
         input_permissions = request.data.get("permissions", [])
@@ -147,17 +142,13 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         """Update a role and return the full response representation."""
         with atomic_block():
             instance = self.get_object()
-        # Validate and parse fields query parameter
-        fields = self._parse_fields_param(request.query_params.get("fields"))
 
-        instance = self.get_object()
+            audit_log = AuditLog()
+            audit_log.log_edit(request=request, resource=AuditLog.ROLE_V2, object=instance)
 
-        audit_log = AuditLog()
-        audit_log.log_edit(request=request, resource=AuditLog.ROLE_V2, object=instance)
-
-        serializer = self.get_serializer(instance, data=request.data)
-        serializer.is_valid(raise_exception=True)
-        role = serializer.save()
+            serializer = self.get_serializer(instance, data=request.data)
+            serializer.is_valid(raise_exception=True)
+            role = serializer.save()
 
         # Build response with field selection (from context) and permission ordering
         input_permissions = request.data.get("permissions", [])
