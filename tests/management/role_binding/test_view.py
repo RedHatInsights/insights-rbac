@@ -2222,7 +2222,7 @@ class RoleBindingViewSetTest(IdentityRequest):
         """Test that exclude_sources=direct excludes direct bindings for user subject type.
 
         This tests the fix for a bug where the Relations API returns both direct and inherited
-        binding UUIDs, but exclude_sources=direct should only show inherited bindings.
+        binding UUIDs, but exclude_sources=direct showed both binding types.
         """
         # Create an inherited binding on parent workspace with a user
         inherited_role = RoleV2.objects.create(
