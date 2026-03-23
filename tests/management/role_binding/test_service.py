@@ -2212,18 +2212,6 @@ class UpdateRoleBindingsForSubjectTests(_ReplicationAssertionsMixin, IdentityReq
                 },
                 "subject_id",
             ),
-            # Empty roles list - caught by model validation
-            (
-                "empty_roles",
-                {
-                    "resource_type": "workspace",
-                    "resource_id": str(self.workspace.id),
-                    "subject_type": "group",
-                    "subject_id": str(self.group.uuid),
-                    "role_ids": [],
-                },
-                "roles",
-            ),
         ]
 
         for description, params, expected_field in test_cases:
@@ -2343,6 +2331,27 @@ class ReplaceRoleBindingsTests(_ReplicationAssertionsMixin, IdentityRequest):
         binding = self._get_binding(self.role3)
         self.assertTuplesAdded(set(binding.binding_tuples()) | {binding.subject_tuple(self.user1)})
         self.assertTuplesRemoved(set())
+
+    # -- 1b. Empty roles removes all bindings -------------------------------
+
+    def test_empty_roles_removes_all_bindings(self):
+        """Empty roles list removes all bindings for the subject."""
+        # Given: user1 linked to RoleBinding(ws, role1), only subject
+        self._update_access(self.user1, [self.role1])
+        self.assertTrue(self._binding_exists(self.role1))
+        old_binding = self._get_binding(self.role1)
+        self.tracker.clear()
+
+        # When: PUT roles=[]
+        self._update_access(self.user1, [])
+
+        # Then — removed: user1 unlinked, binding deleted (orphaned)
+        self.assertFalse(self._binding_exists(self.role1))
+        self.assertEqual(self._roles_for_principal(self.user1), set())
+
+        # Then — replication: old binding fully removed
+        self.assertTuplesAdded(set())
+        self.assertTuplesRemoved(set(old_binding.binding_tuples()) | {old_binding.subject_tuple(self.user1)})
 
     # -- 2. Complete replacement, old binding orphaned --------------------
 
