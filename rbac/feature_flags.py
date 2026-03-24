@@ -37,6 +37,8 @@ class FeatureFlags:
     TOGGLE_V2_API_READONLY = "rbac.v2-api-readonly-mode.enabled"
     # Enable read-your-writes wait for workspace operations
     TOGGLE_READ_YOUR_WRITES_WORKSPACE = "rbac.read-your-writes.workspace.enabled"
+    # Enable read-your-writes wait for role binding batch create operations
+    TOGGLE_READ_YOUR_WRITES_ROLE_BINDING = "rbac.read-your-writes.role-binding.enabled"
     # Enables Inventory API access check v2 for workspace permissions.
     TOGGLE_WORKSPACE_ACCESS_CHECK_V2 = "rbac.workspace-access-check-v2.enabled"
     # When enabled, use 'role_binding_view' permission; when disabled, use 'view' permission for role binding access.
@@ -144,6 +146,20 @@ class FeatureFlags:
         return self.is_enabled(
             feature_name=self.TOGGLE_READ_YOUR_WRITES_WORKSPACE,
             fallback_function=lambda ignored_toggle_name, ignored_context: settings.READ_YOUR_WRITES_WORKSPACE_ENABLED,
+        )
+
+    def is_read_your_writes_role_binding_enabled(self):
+        """Check whether read-your-writes for role binding batch create is enabled.
+
+        Falls back to reading the environment variable if any error occurs.
+        """
+
+        def _fallback(ignored_toggle_name, ignored_context):
+            return settings.READ_YOUR_WRITES_ROLE_BINDING_ENABLED
+
+        return self.is_enabled(
+            feature_name=self.TOGGLE_READ_YOUR_WRITES_ROLE_BINDING,
+            fallback_function=_fallback,
         )
 
     def is_workspace_access_check_v2_enabled(self):
