@@ -358,6 +358,40 @@ class OutboxReplicatorTest(TestCase):
         self.assertEqual(context["org_id"], "")
         self.assertEqual(context["event_type"], ReplicationEventType.CREATE_GROUP.value)
 
+    def test_resource_context_for_batch_create_role_binding(self):
+        """Test that BATCH_CREATE_ROLE_BINDING includes batch_id as resource_id."""
+        relation = create_relationship(("rbac", "role_binding"), "rb1", ("rbac", "role"), "r1", "role")
+
+        event = ReplicationEvent(
+            add=[relation],
+            remove=[],
+            event_type=ReplicationEventType.BATCH_CREATE_ROLE_BINDING,
+            info={"org_id": "123456", "batch_id": "test-batch-uuid"},
+            partition_key=PartitionKey.byEnvironment(),
+        )
+
+        context = event.resource_context()
+        self.assertIsNotNone(context)
+        self.assertEqual(context["org_id"], "123456")
+        self.assertEqual(context["event_type"], "batch_create_role_binding")
+        self.assertEqual(context["resource_type"], "RoleBinding")
+        self.assertEqual(context["resource_id"], "test-batch-uuid")
+
+    def test_resource_context_returns_none_for_batch_create_role_binding_without_batch_id(self):
+        """Test that BATCH_CREATE_ROLE_BINDING without batch_id returns None."""
+        relation = create_relationship(("rbac", "role_binding"), "rb1", ("rbac", "role"), "r1", "role")
+
+        event = ReplicationEvent(
+            add=[relation],
+            remove=[],
+            event_type=ReplicationEventType.BATCH_CREATE_ROLE_BINDING,
+            info={"org_id": "123456"},  # Missing batch_id
+            partition_key=PartitionKey.byEnvironment(),
+        )
+
+        context = event.resource_context()
+        self.assertIsNone(context)
+
     def test_replicate_empty_event_warns_instead_of_saving(self):
         """Test replicate with empty event warns."""
         event = ReplicationEvent(

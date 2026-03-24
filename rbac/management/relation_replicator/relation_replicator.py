@@ -132,6 +132,20 @@ class ReplicationEvent:
             )
             return context.to_json()
 
+        elif self.event_type == ReplicationEventType.BATCH_CREATE_ROLE_BINDING:
+            if "batch_id" not in self.event_info:
+                logger.warning(f"Missing batch_id for BATCH_CREATE_ROLE_BINDING event. event_info: {self.event_info}")
+                return None
+
+            resource_id = str(self.event_info["batch_id"])
+            context = ReplicationEventResourceContext(
+                resource_type="RoleBinding",
+                resource_id=resource_id,
+                org_id=org_id,
+                event_type=self.event_type.value,
+            )
+            return context.to_json()
+
         else:
             context = ReplicationEventResourceContext(
                 org_id=org_id,
