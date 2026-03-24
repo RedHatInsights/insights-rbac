@@ -315,20 +315,20 @@ class RoleBindingService:
 
         # Prefetch role bindings for this resource with their roles
         # Also prefetch children for platform roles (which will be returned instead of the platform role)
-        # When binding_uuids is provided (inherited bindings), include those bindings in the prefetch
-        # so groups with only inherited roles get their roles populated correctly
-        binding_filter_q = Q(resource_type=resource_type, resource_id=resource_id)
-        if binding_uuids:
-            binding_filter_q = binding_filter_q | Q(uuid__in=binding_uuids)
+        # When exclude_direct: only prefetch inherited (binding_uuids). Otherwise include both.
+        if exclude_direct and binding_uuids:
+            binding_filter_q = Q(uuid__in=binding_uuids)
+            rolebinding_group_filter = Q(binding__uuid__in=binding_uuids)
+        else:
+            binding_filter_q = Q(resource_type=resource_type, resource_id=resource_id)
+            if binding_uuids:
+                binding_filter_q = binding_filter_q | Q(uuid__in=binding_uuids)
+            rolebinding_group_filter = Q(binding__resource_type=resource_type, binding__resource_id=resource_id)
+            if binding_uuids:
+                rolebinding_group_filter = rolebinding_group_filter | Q(binding__uuid__in=binding_uuids)
         binding_queryset = (
             RoleBinding.objects.filter(binding_filter_q).select_related("role").prefetch_related("role__children")
         )
-
-        # Prefetch the join table entries with the filtered bindings
-        # Include both direct bindings and inherited bindings (when binding_uuids provided)
-        rolebinding_group_filter = Q(binding__resource_type=resource_type, binding__resource_id=resource_id)
-        if binding_uuids:
-            rolebinding_group_filter = rolebinding_group_filter | Q(binding__uuid__in=binding_uuids)
         rolebinding_group_queryset = RoleBindingGroup.objects.filter(rolebinding_group_filter).prefetch_related(
             Prefetch("binding", queryset=binding_queryset)
         )
@@ -342,8 +342,10 @@ class RoleBindingService:
         )
 
         # Annotate with latest modified timestamp from roles
-        # Include inherited bindings when binding_uuids is provided
-        if binding_uuids:
+        # When exclude_direct: only consider inherited bindings
+        if exclude_direct and binding_uuids:
+            latest_modified_filter = Q(role_binding_entries__binding__uuid__in=binding_uuids)
+        elif binding_uuids:
             latest_modified_filter = Q(
                 role_binding_entries__binding__resource_type=resource_type,
                 role_binding_entries__binding__resource_id=resource_id,
@@ -462,8 +464,11 @@ class RoleBindingService:
         ).distinct()
 
         # Prefetch role bindings for this resource
-        # Include inherited bindings when binding_uuids is provided
-        if binding_uuids:
+        # When exclude_direct: only prefetch inherited (binding_uuids). Otherwise include both.
+        if exclude_direct and binding_uuids:
+            binding_prefetch_filter = Q(uuid__in=binding_uuids)
+            join_table_filter = Q(binding__uuid__in=binding_uuids)
+        elif binding_uuids:
             binding_prefetch_filter = Q(resource_type=resource_type, resource_id=resource_id) | Q(
                 uuid__in=binding_uuids
             )
@@ -495,8 +500,10 @@ class RoleBindingService:
         )
 
         # Annotate with latest modified timestamp from roles
-        # Include inherited bindings when binding_uuids is provided
-        if binding_uuids:
+        # When exclude_direct: only consider inherited bindings
+        if exclude_direct and binding_uuids:
+            latest_modified_filter = Q(role_binding_entries__binding__uuid__in=binding_uuids)
+        elif binding_uuids:
             latest_modified_filter = Q(
                 role_binding_entries__binding__resource_type=resource_type,
                 role_binding_entries__binding__resource_id=resource_id,

@@ -2153,6 +2153,80 @@ class RoleBindingViewSetTest(IdentityRequest):
         return_value=True,
     )
     @patch("management.role_binding.service.RoleBindingService._lookup_binding_uuids_via_relations")
+    def test_by_subject_exclude_sources_direct_excludes_direct_when_subject_has_both(
+        self, mock_lookup, mock_permission
+    ):
+        """Test that exclude_sources=direct excludes direct bindings when a subject has both direct and inherited.
+
+        This catches the bug where prefetch included both direct and inherited bindings, causing
+        direct bindings to leak into the response despite exclude_sources=direct.
+        """
+        # Use an existing group that already has a direct binding on self.workspace (from setUp)
+        group_with_both = self.groups[0]
+        direct_role = self.roles[1]  # test_role_0
+        direct_binding = self.bindings[0]
+
+        # Add an inherited binding: parent binding on default_workspace (affects child workspace)
+        parent_role = RoleV2.objects.create(
+            name="inherited_role_for_exclude_direct_test",
+            tenant=self.tenant,
+        )
+        parent_binding = RoleBinding.objects.create(
+            role=parent_role,
+            resource_type="workspace",
+            resource_id=str(self.default_workspace.id),
+            tenant=self.tenant,
+        )
+        RoleBindingGroup.objects.create(
+            group=group_with_both,
+            binding=parent_binding,
+        )
+
+        # Mock Relations API to return only the inherited (parent) binding UUID
+        mock_lookup.return_value = [str(parent_binding.uuid)]
+
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&exclude_sources=direct"
+            f"&subject_id={group_with_both.uuid}&limit=100",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+
+        group_item = response.data["data"][0]
+        self.assertEqual(str(group_item["subject"]["id"]), str(group_with_both.uuid))
+        role_ids = [str(r["id"]) for r in group_item["roles"]]
+
+        # Must show ONLY the inherited role, not the direct one
+        self.assertIn(
+            str(parent_role.uuid),
+            role_ids,
+            "Inherited role should appear in response",
+        )
+        self.assertNotIn(
+            str(direct_role.uuid),
+            role_ids,
+            "Direct role must be excluded when exclude_sources=direct; "
+            "subject has both direct and inherited bindings",
+        )
+        self.assertEqual(
+            len(role_ids),
+            1,
+            "Should have exactly 1 role (inherited only), not 2 (direct + inherited)",
+        )
+
+        # Cleanup
+        RoleBindingGroup.objects.filter(binding=parent_binding).delete()
+        parent_binding.delete()
+        parent_role.delete()
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    @patch("management.role_binding.service.RoleBindingService._lookup_binding_uuids_via_relations")
     def test_by_subject_exclude_sources_direct_with_empty_inherited(self, mock_lookup, mock_permission):
         """Test that exclude_sources=direct with no inherited bindings returns empty."""
         # Mock Relations API to return empty list
