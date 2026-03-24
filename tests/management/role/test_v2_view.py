@@ -760,6 +760,9 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]), 2)
 
+        returned_names = {role["name"] for role in response.data["data"]}
+        self.assertEqual(returned_names, {"Test_Role", "test_role"})
+
     def test_list_roles_with_permissions_field(self):
         """Test that requesting permissions field returns permissions array."""
         url = f"{self.list_url}&fields=id,name,permissions"
