@@ -17,69 +17,25 @@
 """Service for workspace management."""
 
 import logging
-import select
-import time
 import uuid
-from collections import deque
 from itertools import groupby
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import connection, transaction
+from django.db import transaction
 from django.db.models import Q
 from feature_flags import FEATURE_FLAGS
 from internal.utils import get_workspace_ids_from_resource_definition, is_resource_a_workspace
 from management.models import ResourceDefinition, Role, Workspace
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
+from management.ryw import wait_for_ryw_notify
 from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspaceHandler
-from prometheus_client import Counter, Histogram
-from psycopg2 import sql
 from rest_framework import serializers
 
 from api.models import Tenant
 
-# Module-level constants for performance optimization
 logger = logging.getLogger(__name__)
-READ_YOUR_WRITES_CHANNEL = settings.READ_YOUR_WRITES_CHANNEL
-
-
-def _generate_ryw_histogram_buckets(timeout_seconds: int) -> tuple:
-    """Generate histogram buckets based on the configured timeout.
-
-    Creates buckets at 1%, 2.5%, 5%, 10%, 25%, 50%, 75%, and 100% of the timeout.
-    """
-    percentages = [0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 0.75, 1.0]
-    return tuple(round(timeout_seconds * p, 2) for p in percentages)
-
-
-# Prometheus metrics for read-your-writes consistency monitoring
-ryw_wait_total = Counter(
-    "ryw_wait_total",
-    "Total number of read-your-writes consistency checks",
-    ["result"],
-)
-ryw_wait_duration_seconds = Histogram(
-    "ryw_wait_duration_seconds",
-    "Duration of read-your-writes consistency checks in seconds",
-    ["result"],
-    buckets=_generate_ryw_histogram_buckets(settings.READ_YOUR_WRITES_TIMEOUT_SECONDS),
-)
-
-
-def _record_ryw_metrics(duration: float, result: str) -> None:
-    """Record RYW metrics for both counter and histogram.
-
-    Args:
-        duration: The duration of the RYW wait in seconds.
-        result: The outcome of the wait ('success' or 'timeout').
-    """
-    ryw_wait_duration_seconds.labels(result=result).observe(duration)
-    ryw_wait_total.labels(result=result).inc()
-
-
-LISTEN_SQL = sql.SQL("LISTEN {};").format(sql.Identifier(READ_YOUR_WRITES_CHANNEL))
-UNLISTEN_SQL = sql.SQL("UNLISTEN {};").format(sql.Identifier(READ_YOUR_WRITES_CHANNEL))
 
 
 def update_roles_for_removed_workspace(workspace_id: uuid.UUID) -> int:
@@ -272,7 +228,8 @@ class WorkspaceService:
                 # After the outbox message is created & committed, LISTEN for a NOTIFY
 
                 if FEATURE_FLAGS.is_read_your_writes_workspace_enabled() and settings.REPLICATION_TO_RELATION_ENABLED:
-                    transaction.on_commit(lambda: self._wait_for_notify_post_commit(workspace.id))
+                    ws_id = str(workspace.id)
+                    transaction.on_commit(lambda: wait_for_ryw_notify(ws_id, "workspace"))
 
                 return workspace
             except ValidationError as e:
@@ -416,97 +373,3 @@ class WorkspaceService:
         """Prevent moving workspace under own descendant."""
         if instance.descendants().filter(id=new_parent_id):
             raise serializers.ValidationError({"parent_id": "Cannot move workspace under one of its own descendants."})
-
-    def _wait_for_notify_post_commit(self, workspace_id: uuid.UUID) -> None:
-        """Wait for a NOTIFY on the configured channel for the given workspace id.
-
-        Intended for use as a transaction.on_commit callback.
-        """
-        try:
-            connection.ensure_connection()
-            conn = connection.connection
-            timeout_seconds = settings.READ_YOUR_WRITES_TIMEOUT_SECONDS
-
-            # Early exit if misconfigured
-            if timeout_seconds is None or timeout_seconds <= 0:
-                logger.debug(
-                    "[Service] RYW skipped waiting due to non-positive timeout for channel='%s' workspace_id='%s'",
-                    READ_YOUR_WRITES_CHANNEL,
-                    str(workspace_id),
-                )
-                return
-
-            with connection.cursor() as cursor:
-                cursor.execute(LISTEN_SQL)
-
-            logger.info(
-                "[Service] RYW waiting for NOTIFY channel='%s' workspace_id='%s' timeout=%ss",
-                READ_YOUR_WRITES_CHANNEL,
-                str(workspace_id),
-                timeout_seconds,
-            )
-
-            # Use monotonic clock and a strict deadline to avoid overshooting
-            started = time.monotonic()
-            deadline = started + float(timeout_seconds)
-            workspace_id_str = str(workspace_id)
-
-            # Clear any stale notifications from before LISTEN was issued
-            try:
-                conn.poll()  # bring any pending into conn.notifies
-                if getattr(conn, "notifies", None):
-                    conn.notifies.clear()
-            except Exception:
-                logger.debug("Failed to clear stale notifications before LISTEN, continuing anyway")
-
-            fd = conn.fileno() if hasattr(conn, "fileno") else conn
-
-            while True:
-                remaining = deadline - time.monotonic()
-                if remaining <= 0:
-                    break
-
-                readable, _, _ = select.select([fd], [], [], min(1.0, remaining))
-                if not readable:
-                    continue
-
-                conn.poll()
-                notifies = getattr(conn, "notifies", None)
-                if notifies:
-                    q = deque(notifies)
-                    notifies.clear()
-                    while q:
-                        n = q.popleft()
-                        payload = (getattr(n, "payload", "") or "").strip()
-                        if n.channel == READ_YOUR_WRITES_CHANNEL and payload == workspace_id_str:
-                            duration = time.monotonic() - started
-                            logger.info(
-                                "[Service] RYW received NOTIFY channel='%s' workspace_id='%s' after %.3fs",
-                                n.channel,
-                                payload,
-                                duration,
-                            )
-                            _record_ryw_metrics(duration, "success")
-                            return
-
-            duration = time.monotonic() - started
-            logger.error(
-                "[Service] RYW timed out waiting for NOTIFY channel='%s' workspace_id='%s' after %ss",
-                READ_YOUR_WRITES_CHANNEL,
-                str(workspace_id),
-                timeout_seconds,
-            )
-            _record_ryw_metrics(duration, "timeout")
-            raise TimeoutError(
-                f"Read-your-writes consistency check timed out after {timeout_seconds}s for workspace {workspace_id}"
-            )
-        except Exception:
-            logger.exception("Error while waiting for NOTIFY after workspace create")
-            raise
-        finally:
-            try:
-                with connection.cursor() as cursor:
-                    cursor.execute(UNLISTEN_SQL)
-            except Exception:
-                # Best-effort cleanup
-                pass

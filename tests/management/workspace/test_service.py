@@ -22,7 +22,7 @@ from unittest.mock import Mock, call, patch
 
 from django.test import TestCase
 
-from management.workspace.service import WorkspaceService
+from management.ryw import wait_for_ryw_notify
 
 
 @dataclass
@@ -31,15 +31,14 @@ class FakeNotify:
     payload: str
 
 
-class WorkspaceServiceTest(TestCase):
-    """Tests for WorkspaceService._wait_for_notify_post_commit."""
+class RywNotifyTest(TestCase):
+    """Tests for wait_for_ryw_notify (shared RYW utility)."""
 
-    @patch("management.workspace.service.select.select")
-    @patch("management.workspace.service.connection")
-    def test_wait_for_notify_post_commit_listen_unlisten(self, mock_connection, mock_select):
+    @patch("management.ryw.select.select")
+    @patch("management.ryw.connection")
+    def test_wait_for_ryw_notify_listen_unlisten(self, mock_connection, mock_select):
         # Arrange
         mock_conn = Mock()
-        # Start with no notifications; they'll arrive after LISTEN
         mock_conn.notifies = deque()
         mock_conn.poll.side_effect = lambda: None
 
@@ -49,26 +48,23 @@ class WorkspaceServiceTest(TestCase):
         mock_cursor = Mock()
         mock_connection.cursor.return_value.__enter__.return_value = mock_cursor
 
-        # Make select.select indicate readability and inject a notification just-in-time
         def select_side_effect(*args, **kwargs):
             mock_conn.notifies = deque([FakeNotify("READ_YOUR_WRITES_CHANNEL", "42")])
             return ([mock_conn], [], [])
 
         mock_select.side_effect = select_side_effect
 
-        service = WorkspaceService()
-
         # Act
-        service._wait_for_notify_post_commit(workspace_id="42")
+        wait_for_ryw_notify("42", "workspace")
 
         # Assert LISTEN/UNLISTEN executed
         executed_sql_calls = [args[0] for args, _ in mock_cursor.execute.call_args_list]
         self.assertTrue(any("LISTEN" in str(c) for c in executed_sql_calls))
         self.assertTrue(any("UNLISTEN" in str(c) for c in executed_sql_calls))
 
-    @patch("management.workspace.service.select.select")
-    @patch("management.workspace.service.connection")
-    def test_wait_for_notify_post_commit_payload_trimmed(self, mock_connection, mock_select):
+    @patch("management.ryw.select.select")
+    @patch("management.ryw.connection")
+    def test_wait_for_ryw_notify_payload_trimmed(self, mock_connection, mock_select):
         # Arrange: notification payload contains extra spaces; should still match
         mock_conn = Mock()
         mock_conn.notifies = deque()
@@ -86,19 +82,17 @@ class WorkspaceServiceTest(TestCase):
 
         mock_select.side_effect = select_side_effect
 
-        service = WorkspaceService()
-
         # Act
-        service._wait_for_notify_post_commit(workspace_id="42")
+        wait_for_ryw_notify("42", "workspace")
 
         # Assert LISTEN/UNLISTEN executed
         executed_sql_calls = [args[0] for args, _ in mock_cursor.execute.call_args_list]
         self.assertTrue(any("LISTEN" in str(c) for c in executed_sql_calls))
         self.assertTrue(any("UNLISTEN" in str(c) for c in executed_sql_calls))
 
-    @patch("management.workspace.service.select.select")
-    @patch("management.workspace.service.connection")
-    def test_wait_for_notify_post_commit_timeout(self, mock_connection, mock_select):
+    @patch("management.ryw.select.select")
+    @patch("management.ryw.connection")
+    def test_wait_for_ryw_notify_timeout(self, mock_connection, mock_select):
         # Arrange: no readability, so we loop until timeout and then exit
         mock_conn = Mock()
         mock_conn.notifies = deque()
@@ -110,15 +104,11 @@ class WorkspaceServiceTest(TestCase):
         mock_cursor = Mock()
         mock_connection.cursor.return_value.__enter__.return_value = mock_cursor
 
-        # select.select returns no readable until the loop times out
         mock_select.return_value = ([], [], [])
 
-        service = WorkspaceService()
-
-        with patch("management.workspace.service.settings.READ_YOUR_WRITES_TIMEOUT_SECONDS", 0.01):
-            # Act & Assert - should raise TimeoutError
+        with patch("management.ryw.settings.READ_YOUR_WRITES_TIMEOUT_SECONDS", 0.01):
             with self.assertRaises(TimeoutError) as context:
-                service._wait_for_notify_post_commit(workspace_id="999")
+                wait_for_ryw_notify("999", "workspace")
 
             self.assertIn("Read-your-writes consistency check timed out", str(context.exception))
 
