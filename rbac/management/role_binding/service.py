@@ -221,7 +221,11 @@ class RoleBindingService:
             extra_info={"batch_id": batch_id},
         )
 
-        if FEATURE_FLAGS.is_read_your_writes_role_binding_enabled() and settings.REPLICATION_TO_RELATION_ENABLED:
+        if (
+            all_tuples_to_add
+            and FEATURE_FLAGS.is_read_your_writes_role_binding_enabled()
+            and settings.REPLICATION_TO_RELATION_ENABLED
+        ):
             transaction.on_commit(lambda: wait_for_ryw_notify(batch_id, "role binding batch"))
 
         resource_names = self._compute_resource_names(requests)

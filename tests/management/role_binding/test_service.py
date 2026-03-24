@@ -1523,6 +1523,28 @@ class BatchCreateRoleBindingTests(IdentityRequest):
         mock_flags.is_read_your_writes_role_binding_enabled.assert_called_once()
         mock_ryw_wait.assert_not_called()
 
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    @patch("management.role_binding.service.wait_for_ryw_notify")
+    @patch("management.role_binding.service.FEATURE_FLAGS")
+    @patch.object(OutboxReplicator, "replicate")
+    def test_batch_create_skips_ryw_when_no_tuples_to_replicate(self, mock_replicate, mock_flags, mock_ryw_wait):
+        """Test that RYW wait is not registered when there are no tuples to replicate."""
+        mock_flags.is_read_your_writes_role_binding_enabled.return_value = True
+        self.service = RoleBindingService(tenant=self.tenant)
+
+        # Call batch_create twice with the same request — the second call
+        # will produce tuples (due to subject linking), so we need to mock
+        # at a lower level. Instead, we patch _replicate_tuples and
+        # RoleBinding.replication_tuples to return empty tuples.
+        with patch.object(RoleBinding, "replication_tuples", return_value=([], [])):
+            self.service.batch_create(
+                [
+                    self._make_request(self.role1, "group", self.group.uuid),
+                ]
+            )
+
+        mock_ryw_wait.assert_not_called()
+
     def test_batch_create_max_items_limit(self):
         """Test creating 100 bindings at once handles max bounds successfully."""
         users = [
