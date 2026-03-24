@@ -19,7 +19,6 @@
 import logging
 import select
 import time
-from collections import deque
 
 from django.conf import settings
 from django.db import connection
@@ -40,29 +39,31 @@ def _generate_ryw_histogram_buckets(timeout_seconds: int) -> tuple:
     return tuple(round(timeout_seconds * p, 2) for p in percentages)
 
 
-# Prometheus metrics for read-your-writes consistency monitoring
+# Prometheus metrics for read-your-writes consistency monitoring.
+# The `entity` label distinguishes RYW contexts (e.g. "workspace", "role_binding_batch").
 ryw_wait_total = Counter(
     "ryw_wait_total",
     "Total number of read-your-writes consistency checks",
-    ["result"],
+    ["entity", "result"],
 )
 ryw_wait_duration_seconds = Histogram(
     "ryw_wait_duration_seconds",
     "Duration of read-your-writes consistency checks in seconds",
-    ["result"],
+    ["entity", "result"],
     buckets=_generate_ryw_histogram_buckets(settings.READ_YOUR_WRITES_TIMEOUT_SECONDS),
 )
 
 
-def _record_ryw_metrics(duration: float, result: str) -> None:
+def _record_ryw_metrics(duration: float, entity: str, result: str) -> None:
     """Record RYW metrics for both counter and histogram.
 
     Args:
         duration: The duration of the RYW wait in seconds.
+        entity: The RYW context (e.g. "workspace", "role_binding_batch").
         result: The outcome of the wait ('success' or 'timeout').
     """
-    ryw_wait_duration_seconds.labels(result=result).observe(duration)
-    ryw_wait_total.labels(result=result).inc()
+    ryw_wait_duration_seconds.labels(entity=entity, result=result).observe(duration)
+    ryw_wait_total.labels(entity=entity, result=result).inc()
 
 
 LISTEN_SQL = sql.SQL("LISTEN {};").format(sql.Identifier(READ_YOUR_WRITES_CHANNEL))
@@ -131,10 +132,9 @@ def wait_for_ryw_notify(identifier: str, entity_description: str) -> None:
             conn.poll()
             notifies = getattr(conn, "notifies", None)
             if notifies:
-                q = deque(notifies)
+                pending = list(notifies)
                 notifies.clear()
-                while q:
-                    n = q.popleft()
+                for n in pending:
                     payload = (getattr(n, "payload", "") or "").strip()
                     if n.channel == READ_YOUR_WRITES_CHANNEL and payload == identifier_str:
                         duration = time.monotonic() - started
@@ -145,7 +145,7 @@ def wait_for_ryw_notify(identifier: str, entity_description: str) -> None:
                             payload,
                             duration,
                         )
-                        _record_ryw_metrics(duration, "success")
+                        _record_ryw_metrics(duration, entity_description, "success")
                         return
 
         duration = time.monotonic() - started
@@ -156,7 +156,7 @@ def wait_for_ryw_notify(identifier: str, entity_description: str) -> None:
             identifier,
             timeout_seconds,
         )
-        _record_ryw_metrics(duration, "timeout")
+        _record_ryw_metrics(duration, entity_description, "timeout")
         raise TimeoutError(
             f"Read-your-writes consistency check timed out after {timeout_seconds}s "
             f"for {entity_description} {identifier}"
