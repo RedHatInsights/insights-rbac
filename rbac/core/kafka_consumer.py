@@ -1329,10 +1329,11 @@ class RBACKafkaConsumer:
                     f"aggregateid: {debezium_msg.aggregateid}"
                 )
 
-            # Send NOTIFY for workspace creation events (Read-Your-Writes support)
-            if event_type == "create_workspace" and resource_id:
+            # Send NOTIFY for events that support Read-Your-Writes consistency
+            if event_type in ("create_workspace", "batch_create_role_binding") and resource_id:
                 logger.info(
-                    "Workspace create event processed - org_id=%s, workspace_id=%s, consistency_token=%s",
+                    "RYW event processed - event_type=%s, org_id=%s, resource_id=%s, consistency_token=%s",
+                    event_type,
                     org_id,
                     resource_id,
                     token,
@@ -1346,13 +1347,14 @@ class RBACKafkaConsumer:
                         # and parameterized query (%s) for resource_id
                         cursor.execute(notify_sql, [resource_id])
                     logger.info(
-                        f"Sent NOTIFY on channel '{notify_channel}' for workspace_id '{resource_id}' "
-                        f"after successful replication"
+                        f"Sent NOTIFY on channel '{notify_channel}' for event_type='{event_type}' "
+                        f"resource_id='{resource_id}' after successful replication"
                     )
                 except Exception as e:
                     # Log error but don't fail the processing - NOTIFY is best-effort
                     logger.error(
-                        f"Failed to send NOTIFY for workspace_id '{resource_id}' on channel '{notify_channel}': {e}"
+                        f"Failed to send NOTIFY for event_type='{event_type}' "
+                        f"resource_id='{resource_id}' on channel '{notify_channel}': {e}"
                     )
 
             # Calculate and emit replication latency metric
