@@ -636,7 +636,7 @@ class RoleV2ServiceListTests(IdentityRequest):
         self.assertEqual(names, {"role_one", "role_two"})
 
     def test_list_filters_by_exact_name(self):
-        """Test that name param filters using case-sensitive exact match."""
+        """Test that name param filters using case-insensitive exact match."""
         queryset = self.service.list({"resource_type": "workspace", "name": "role_one"})
 
         self.assertEqual(queryset.count(), 1)
