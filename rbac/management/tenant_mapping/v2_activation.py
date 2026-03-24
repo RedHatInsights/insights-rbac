@@ -141,7 +141,7 @@ def assert_v1_write_allowed(tenant: Tenant):
     concurrent V2 activation (which needs FOR UPDATE) from converting the tenant while
     this V1 write is in progress. Concurrent V1 writes are not blocked by each other.
     """
-    # We could just use lock_tenant_version here, but we instead do the check correctly in order to give a better error
+    # We could just use lock_tenant_version here, but we instead do the check directly in order to give a better error
     # message.
 
     _pk, v2_activated = _lock_for_share(tenant)
