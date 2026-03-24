@@ -17,6 +17,7 @@
 """Service layer for role binding management."""
 
 import logging
+import uuid
 from dataclasses import dataclass
 from typing import Optional, Sequence
 
@@ -24,6 +25,7 @@ from django.conf import settings
 from django.db import transaction
 from django.db.models import CharField, Count, Max, Min, Prefetch, Q, QuerySet, TextChoices
 from django.db.models.functions import Cast
+from feature_flags import FEATURE_FLAGS
 from management.atomic_transactions import atomic
 from management.exceptions import InvalidFieldError, NotFoundError, RequiredFieldError
 from management.group.model import Group
@@ -43,6 +45,7 @@ from management.role.platform import platform_v2_role_uuid_for
 from management.role.v2_model import PlatformRoleV2, RoleV2
 from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
 from management.role_binding.util import lookup_binding_subjects
+from management.ryw import wait_for_ryw_notify
 from management.subject import Subject, SubjectType
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
 from management.tenant_mapping.v2_activation import ensure_v2_write_activated
@@ -210,7 +213,16 @@ class RoleBindingService:
             )
             all_tuples_to_add.extend(tuples_add)
 
-        self._replicate_tuples(all_tuples_to_add, [], ReplicationEventType.BATCH_CREATE_ROLE_BINDING)
+        batch_id = str(uuid.uuid4())
+        self._replicate_tuples(
+            all_tuples_to_add,
+            [],
+            ReplicationEventType.BATCH_CREATE_ROLE_BINDING,
+            extra_info={"batch_id": batch_id},
+        )
+
+        if FEATURE_FLAGS.is_read_your_writes_role_binding_enabled() and settings.REPLICATION_TO_RELATION_ENABLED:
+            transaction.on_commit(lambda: wait_for_ryw_notify(batch_id, "role binding batch"))
 
         resource_names = self._compute_resource_names(requests)
         result = [
@@ -1080,6 +1092,7 @@ class RoleBindingService:
         tuples_to_add: list[RelationTuple],
         tuples_to_remove: list[RelationTuple],
         event_type: ReplicationEventType,
+        extra_info: dict[str, object] | None = None,
     ) -> None:
         """Replicate relation tuple changes to SpiceDB via the outbox.
 
@@ -1093,14 +1106,19 @@ class RoleBindingService:
             tuples_to_add: Relation tuples to add.
             tuples_to_remove: Relation tuples to remove.
             event_type: The replication event type.
+            extra_info: Additional info to include in the replication event.
         """
         if not tuples_to_add and not tuples_to_remove:
             return
 
+        info: dict[str, object] = {"org_id": str(self.tenant.org_id)}
+        if extra_info:
+            info.update(extra_info)
+
         self._replicator.replicate(
             ReplicationEvent(
                 event_type=event_type,
-                info={"org_id": str(self.tenant.org_id)},
+                info=info,
                 partition_key=PartitionKey.byEnvironment(),
                 add=tuples_to_add,
                 remove=tuples_to_remove,

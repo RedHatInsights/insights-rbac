@@ -1456,6 +1456,73 @@ class BatchCreateRoleBindingTests(IdentityRequest):
         self.assertEqual(event.event_info["org_id"], str(self.tenant.org_id))
         self.assertGreaterEqual(len(event.add), 1)
 
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    @patch.object(OutboxReplicator, "replicate")
+    def test_batch_create_includes_batch_id_in_replication_event(self, mock_replicate):
+        """Test that batch_create passes a batch_id in the replication event info."""
+        self.service = RoleBindingService(tenant=self.tenant)
+        self.service.batch_create(
+            [
+                self._make_request(self.role1, "group", self.group.uuid),
+            ]
+        )
+
+        event = mock_replicate.call_args[0][0]
+        self.assertIn("batch_id", event.event_info)
+        # batch_id should be a valid UUID
+        uuid.UUID(event.event_info["batch_id"])
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    @patch.object(OutboxReplicator, "replicate")
+    def test_batch_create_resource_context_includes_batch_id(self, mock_replicate):
+        """Test that the replication event resource_context contains batch_id as resource_id."""
+        self.service = RoleBindingService(tenant=self.tenant)
+        self.service.batch_create(
+            [
+                self._make_request(self.role1, "group", self.group.uuid),
+            ]
+        )
+
+        event = mock_replicate.call_args[0][0]
+        context = event.resource_context()
+        self.assertIsNotNone(context)
+        self.assertEqual(context["resource_id"], event.event_info["batch_id"])
+        self.assertEqual(context["resource_type"], "RoleBinding")
+        self.assertEqual(context["event_type"], "batch_create_role_binding")
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    @patch("management.role_binding.service.wait_for_ryw_notify")
+    @patch("management.role_binding.service.FEATURE_FLAGS")
+    @patch.object(OutboxReplicator, "replicate")
+    def test_batch_create_checks_ryw_flag_when_replication_enabled(self, mock_replicate, mock_flags, mock_ryw_wait):
+        """Test that batch_create checks the RYW feature flag when replication is enabled."""
+        mock_flags.is_read_your_writes_role_binding_enabled.return_value = True
+        self.service = RoleBindingService(tenant=self.tenant)
+        self.service.batch_create(
+            [
+                self._make_request(self.role1, "group", self.group.uuid),
+            ]
+        )
+
+        mock_flags.is_read_your_writes_role_binding_enabled.assert_called_once()
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    @patch("management.role_binding.service.wait_for_ryw_notify")
+    @patch("management.role_binding.service.FEATURE_FLAGS")
+    @patch.object(OutboxReplicator, "replicate")
+    def test_batch_create_does_not_call_ryw_when_flag_disabled(self, mock_replicate, mock_flags, mock_ryw_wait):
+        """Test that wait_for_ryw_notify is not invoked when the feature flag is disabled."""
+        mock_flags.is_read_your_writes_role_binding_enabled.return_value = False
+        self.service = RoleBindingService(tenant=self.tenant)
+        self.service.batch_create(
+            [
+                self._make_request(self.role1, "group", self.group.uuid),
+            ]
+        )
+
+        mock_flags.is_read_your_writes_role_binding_enabled.assert_called_once()
+        mock_ryw_wait.assert_not_called()
+
     def test_batch_create_max_items_limit(self):
         """Test creating 100 bindings at once handles max bounds successfully."""
         users = [
