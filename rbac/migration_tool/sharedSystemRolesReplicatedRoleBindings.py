@@ -20,7 +20,6 @@ import logging
 from typing import Any, Iterable, Optional, Tuple, Union
 
 import uuid_utils.compat as uuid
-from django.conf import settings
 from django.db.models import F
 from feature_flags import FEATURE_FLAGS
 from management.models import BindingMapping, Workspace
@@ -127,9 +126,6 @@ def v1_role_to_v2_bindings(
     # Group V2 permissions by target resource
     for access in v1_role.access.all():
         permission: Permission = access.permission
-
-        if not is_for_enabled_app(permission):
-            continue
 
         default = True
         for resource_def in access.resourceDefinitions.all():
@@ -352,11 +348,6 @@ def permission_groupings_to_v2_role_bindings(
         binding_mappings=tuple(latest_binding_mappings),
         role_bindings=tuple(latest_role_bindings),
     )
-
-
-def is_for_enabled_app(perm: Permission):
-    """Return true if the permission is for an app that should migrate."""
-    return perm.application not in settings.V2_MIGRATION_APP_EXCLUDE_LIST
 
 
 def values_from_attribute_filter(attribute_filter: dict[str, Any]) -> list[str]:

@@ -1488,9 +1488,9 @@ parameters:
 - description: Application allow list for role creation in RBAC
   name: ROLE_CREATE_ALLOW_LIST
   value: cost-management,remediations,inventory,policies,advisor,vulnerability,compliance,automation-analytics,notifications,patch,integrations,ros,staleness,config-manager,idmsvc,subscriptions
-- description: Application exclude list for v2 migration (all permissions)
+- description: Comma-separated apps excluded from v2 migration; same list filters the v2 roles list API only
   name: V2_MIGRATION_APP_EXCLUDE_LIST
-  value: approval
+  value: cost-management,ocm
 - description: Whether or not to bootstrap tenants using V2 logic (i.e. creating workspaces and relations).
   name: V2_BOOTSTRAP_TENANT
   value: 'True'
