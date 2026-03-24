@@ -289,7 +289,10 @@ class RoleBindingService:
             return Group.objects.none()
         elif exclude_direct and binding_uuids is not None:
             # Only inherited bindings by UUID (exclude direct)
-            binding_filter = Q(role_binding_entries__binding__uuid__in=binding_uuids)
+            binding_filter = Q(role_binding_entries__binding__uuid__in=binding_uuids) & ~Q(
+                role_binding_entries__binding__resource_type=resource_type,
+                role_binding_entries__binding__resource_id=resource_id,
+            )
         elif binding_uuids is not None:
             # Both direct and inherited bindings (exclude_sources=none)
             binding_filter = Q(
@@ -440,7 +443,10 @@ class RoleBindingService:
             return Principal.objects.none()
         elif exclude_direct and binding_uuids is not None:
             # Only inherited bindings by UUID (exclude direct)
-            binding_filter = Q(role_binding_entries__binding__uuid__in=binding_uuids)
+            binding_filter = Q(role_binding_entries__binding__uuid__in=binding_uuids) & ~Q(
+                role_binding_entries__binding__resource_type=resource_type,
+                role_binding_entries__binding__resource_id=resource_id,
+            )
         elif binding_uuids is not None:
             # Both direct and inherited bindings (exclude_sources=none)
             binding_filter = Q(
