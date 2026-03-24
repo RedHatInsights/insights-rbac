@@ -118,7 +118,7 @@ def wait_for_ryw_notify(identifier: str, entity_description: str) -> None:
         except Exception:
             logger.debug("Failed to clear stale notifications before LISTEN, continuing anyway")
 
-        fd = conn.fileno() if hasattr(conn, "fileno") else conn
+        fd = conn.fileno()
 
         while True:
             remaining = deadline - time.monotonic()
