@@ -1,3 +1,4 @@
+import itertools
 import uuid
 from typing import Optional
 from unittest.mock import patch
@@ -13,8 +14,16 @@ from management.role.model import BindingMapping
 from management.role.platform import platform_v2_role_uuid_for
 from management.role_binding.service import RoleBindingService, CreateBindingRequest
 from management.tenant_mapping.model import TenantMapping, DefaultAccessType
+from management.tenant_mapping.v2_activation import ensure_v2_write_activated
 from management.tenant_service import V2TenantBootstrapService
-from migration_tool.in_memory_tuples import InMemoryRelationReplicator, all_of, resource, relation, subject
+from migration_tool.in_memory_tuples import (
+    InMemoryRelationReplicator,
+    all_of,
+    resource,
+    relation,
+    subject,
+    resource_type,
+)
 from migration_tool.migrate_binding_scope import migrate_all_role_bindings
 from migration_tool.models import V2role, V2rolebinding
 from tests.management.role.test_dual_write import DualWriteTestCase
@@ -251,8 +260,9 @@ class TestRemoveOrphanRelations(DualWriteTestCase):
 
         system_role = self.given_v1_system_role("system role", ["rbac:*:*"])
         group, _ = self.given_group("group", ["p1"])
-
         service = RoleBindingService(tenant=self.tenant, replicator=InMemoryRelationReplicator(self.tuples))
+
+        ensure_v2_write_activated(self.tenant)
 
         service.batch_create(
             [
@@ -279,4 +289,95 @@ class TestRemoveOrphanRelations(DualWriteTestCase):
         # We should not have removed the role binding, despite there not being a BindingMapping for it.
         self.expect_1_role_binding_to_workspace(
             self.default_workspace(), for_v2_roles=[str(system_role.uuid)], for_groups=[str(group.uuid)]
+        )
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="")
+    def test_v2_role_binding_deleted(self, replicate):
+        replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
+
+        target_role = self.given_v1_system_role("target role", ["rbac:*:*"])
+        alternate_role = self.given_v1_system_role("alternate role", ["rbac:*:*"])
+        group, _ = self.given_group("group", ["p1"])
+
+        self.given_roles_assigned_to_group(group, [target_role])
+
+        # We are going to test the scenario where, for a given role binding X, a BindingMapping model exists for X,
+        # and X exists in Kessel, but no RoleBinding model exists for X.
+        #
+        # This could happen in the following scenario:
+        # * A role binding X is created for a V1 tenant (also creating BindingMapping and RoleBinding models).
+        # * The tenant is converted to V2.
+        # * X is deleted (deleting the RoleBinding model but not the BindingMapping model).
+        # * The removal of X has not yet replicated to Kessel.
+        # * The migration runs, finding X in Kessel and a BindingMapping model for X, but no RoleBinding model.
+        #
+        # To replicate this scenario in a test, we will simply drop the replication event for its removal with
+        # NoopReplicator.
+
+        service = RoleBindingService(tenant=self.tenant, replicator=NoopReplicator())
+        ensure_v2_write_activated(self.tenant)
+
+        def assert_role_bindings(v1_count: int, v2_count: int, tuples_count: int):
+            self.assertEqual(v1_count, BindingMapping.objects.filter(role=target_role).count())
+
+            self.assertEqual(
+                v2_count,
+                len(
+                    {
+                        b.binding
+                        for b in itertools.chain.from_iterable(
+                            [
+                                s.role_binding_entries.all()
+                                for s in service.get_role_bindings_by_subject(
+                                    {
+                                        "resource_type": "workspace",
+                                        "resource_id": self.default_workspace(),
+                                        "subject_type": "group",
+                                        "subject_id": str(group.uuid),
+                                    }
+                                )
+                            ]
+                        )
+                        if b.binding.role.v1_source == target_role
+                    }
+                ),
+            )
+
+            self.expect_role_bindings_to_workspace(
+                num=tuples_count,
+                workspace=self.default_workspace(),
+                for_v2_roles=[str(target_role.uuid)],
+                for_groups=[str(group.uuid)],
+            )
+
+        assert_role_bindings(v1_count=1, v2_count=1, tuples_count=1)
+
+        # We can't simply remove the role because RoleBindingService does not currently permit updating to an empty set
+        # of roles (see RHCLOUD-46139).
+        service.update_role_bindings_for_subject(
+            resource_type="workspace",
+            resource_id=self.default_workspace(),
+            subject_type="group",
+            subject_id=str(group.uuid),
+            role_ids=[str(alternate_role.uuid)],
+        )
+
+        assert_role_bindings(v1_count=1, v2_count=0, tuples_count=1)
+
+        self._do_fix_orphans()
+
+        # We should have removed the tuples for the orphaned role binding.
+        assert_role_bindings(v1_count=1, v2_count=0, tuples_count=0)
+
+        # We should also have replicated the dropped role binding for the new role.
+        self.assertEqual(
+            1,
+            self.tuples.count_tuples(
+                all_of(
+                    resource_type("rbac", "role_binding"),
+                    relation("role"),
+                    subject("rbac", "role", str(alternate_role.uuid)),
+                )
+            ),
         )
