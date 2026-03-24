@@ -1494,17 +1494,29 @@ class BatchCreateRoleBindingTests(IdentityRequest):
     @patch("management.role_binding.service.wait_for_ryw_notify")
     @patch("management.role_binding.service.FEATURE_FLAGS")
     @patch.object(OutboxReplicator, "replicate")
-    def test_batch_create_checks_ryw_flag_when_replication_enabled(self, mock_replicate, mock_flags, mock_ryw_wait):
-        """Test that batch_create checks the RYW feature flag when replication is enabled."""
+    def test_batch_create_registers_ryw_with_correct_args(self, mock_replicate, mock_flags, mock_ryw_wait):
+        """Test that batch_create registers wait_for_ryw_notify with correct batch_id and description."""
         mock_flags.is_read_your_writes_role_binding_enabled.return_value = True
-        self.service = RoleBindingService(tenant=self.tenant)
-        self.service.batch_create(
-            [
-                self._make_request(self.role1, "group", self.group.uuid),
-            ]
-        )
+        on_commit_callbacks = []
+
+        with patch("management.role_binding.service.transaction.on_commit", side_effect=on_commit_callbacks.append):
+            self.service = RoleBindingService(tenant=self.tenant)
+            self.service.batch_create(
+                [
+                    self._make_request(self.role1, "group", self.group.uuid),
+                ]
+            )
 
         mock_flags.is_read_your_writes_role_binding_enabled.assert_called_once()
+        # Execute the captured on_commit callback to verify wait_for_ryw_notify args
+        self.assertEqual(len(on_commit_callbacks), 1)
+        on_commit_callbacks[0]()
+        mock_ryw_wait.assert_called_once()
+        call_args = mock_ryw_wait.call_args
+        # First arg should be a valid UUID string (batch_id)
+        uuid.UUID(call_args[0][0])
+        # Second arg should be the entity description
+        self.assertEqual(call_args[0][1], "role binding batch")
 
     @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
     @patch("management.role_binding.service.wait_for_ryw_notify")

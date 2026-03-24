@@ -117,6 +117,23 @@ class RywNotifyTest(TestCase):
         self.assertTrue(any("LISTEN" in str(c) for c in executed_sql_calls))
         self.assertTrue(any("UNLISTEN" in str(c) for c in executed_sql_calls))
 
+    @patch("management.ryw.connection")
+    def test_wait_for_ryw_notify_skips_when_timeout_non_positive(self, mock_connection):
+        """Test that wait_for_ryw_notify returns early without LISTEN when timeout is non-positive."""
+        mock_conn = Mock()
+        mock_connection.ensure_connection = lambda: None
+        mock_connection.connection = mock_conn
+
+        mock_cursor = Mock()
+        mock_connection.cursor.return_value.__enter__.return_value = mock_cursor
+
+        with patch("management.ryw.settings.READ_YOUR_WRITES_TIMEOUT_SECONDS", 0):
+            wait_for_ryw_notify("42", "workspace")
+
+        # No LISTEN should have been issued (UNLISTEN in finally block may still run)
+        executed_sql_calls = [str(args[0]) for args, _ in mock_cursor.execute.call_args_list]
+        self.assertFalse(any("LISTEN" in c and "UNLISTEN" not in c for c in executed_sql_calls))
+
 
 #
 # Copyright 2025 Red Hat, Inc.
