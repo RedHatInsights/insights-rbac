@@ -540,8 +540,8 @@ class RoleV2RequestSerializerTests(IdentityRequest):
         self.assertEqual(updated_role.description, "Updated description")
 
     def test_serializer_update_nonexistent_role_raises_not_found(self):
-        """Test that updating a nonexistent role raises NotFound."""
-        from rest_framework.exceptions import NotFound
+        """Test that updating a nonexistent role raises NotFoundError."""
+        from management.exceptions import NotFoundError
 
         role = CustomRoleV2.objects.create(
             name="Original Role",
@@ -565,7 +565,7 @@ class RoleV2RequestSerializerTests(IdentityRequest):
         serializer = RoleV2RequestSerializer(instance=mock_instance, data=data, context={"request": self.mock_request})
 
         self.assertTrue(serializer.is_valid())
-        with self.assertRaises(NotFound):
+        with self.assertRaises(NotFoundError):
             serializer.save()
 
     def test_serializer_update_duplicate_name_raises_validation_error(self):

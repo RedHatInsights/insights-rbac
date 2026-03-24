@@ -26,7 +26,7 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from django.db.models import QuerySet
 from management.atomic_transactions import atomic
-from management.exceptions import RequiredFieldError
+from management.exceptions import NotFoundError, RequiredFieldError
 from management.permission.exceptions import InvalidPermissionDataError
 from management.permission.model import PermissionValue
 from management.permission.scope_service import Scope, permission_scope_cache, scopes_for_resource_type
@@ -144,6 +144,10 @@ class RoleV2Service:
                 tenant.org_id,
             )
 
+            # Attach resolved permissions to avoid extra query in serializer
+            # It solves stale prefetch cache issue, do not remove it
+            role._resolved_permissions = permissions
+
             return role
 
         except ValidationError as e:
@@ -180,7 +184,7 @@ class RoleV2Service:
                 .first()
             )
             if not role:
-                raise RolesNotFoundError([role_uuid])
+                raise NotFoundError("role", role_uuid)
 
             # Capture current state before update for outbox replication
             # The permissions are already loaded from prefetch_related above
@@ -211,10 +215,11 @@ class RoleV2Service:
                 tenant.org_id,
             )
 
+            # Attach resolved permissions to avoid extra query in serializer
+            role._resolved_permissions = permissions
+
             return role
 
-        except RolesNotFoundError:
-            raise
         except ValidationError as e:
             error_msg = str(e)
             if "name" in error_msg.lower() and "already exists" in error_msg.lower():
