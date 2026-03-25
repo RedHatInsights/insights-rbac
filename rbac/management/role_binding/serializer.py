@@ -538,7 +538,10 @@ class RoleBindingListOutputSerializer(RoleBindingOutputSerializerMixin, serializ
     Field selection syntax:
     - subject(group.name, group.description) - accesses obj.name, obj.description
     - role(name) - accesses role.name
-    - resource(type) - accesses resource type from the binding
+    - resource(name, type) -
+        display name for the binding's resource (workspace name, tenant ``tenant_name``, …)
+        via context on ``by_subject`` or ``RoleBindingService.get_resource_name`` otherwise;
+        type comes from the binding
     """
 
     subject = serializers.SerializerMethodField()
@@ -591,6 +594,10 @@ class RoleBindingListOutputSerializer(RoleBindingOutputSerializerMixin, serializ
         field_selection = self._get_field_selection()
         return self._build_role_data(obj.role, field_selection)
 
+    def _resource_display_name(self, obj: RoleBinding) -> Optional[str]:
+        """Resolve resource display name for list output."""
+        return RoleBindingService(tenant=obj.tenant).get_resource_name(obj.resource_id, obj.resource_type)
+
     def get_resource(self, obj: RoleBinding):
         """Extract resource information from the RoleBinding.
 
@@ -602,8 +609,11 @@ class RoleBindingListOutputSerializer(RoleBindingOutputSerializerMixin, serializ
         resource_data = {"id": obj.resource_id}
 
         if field_selection is not None:
-            if "type" in field_selection.get_nested("resource"):
+            nested_resource = field_selection.get_nested("resource")
+            if "type" in nested_resource:
                 resource_data["type"] = obj.resource_type
+            if "name" in nested_resource:
+                resource_data["name"] = self._resource_display_name(obj)
 
         return resource_data
 
