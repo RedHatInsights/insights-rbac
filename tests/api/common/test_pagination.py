@@ -613,3 +613,84 @@ class V2CursorPaginationTest(TestCase):
         request = Request(self.factory.get("/api/rbac/v2/roles/"))
         ordering = paginator.get_ordering(request, self.queryset, None)
         self.assertEqual(ordering, ("name",))
+
+    @patch.object(V2CursorPagination, "_get_default_ordering", return_value="-date_joined")
+    def test_no_limit_returns_all_results(self, mock_ordering):
+        """Test that limit=-1 returns all results without pagination."""
+        request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?limit=-1"))
+        request.META[PATH_INFO] = "/api/rbac/v2/role-bindings/by-subject/"
+        paginated_queryset = self.paginator.paginate_queryset(self.queryset, request)
+        response = self.paginator.get_paginated_response([{"id": i} for i in range(len(paginated_queryset))])
+
+        # Should return all items
+        self.assertEqual(len(paginated_queryset), self.queryset.count())
+        # Meta limit should equal total count
+        self.assertEqual(response.data["meta"]["limit"], self.queryset.count())
+        # No pagination links
+        self.assertIsNone(response.data["links"]["next"])
+        self.assertIsNone(response.data["links"]["previous"])
+
+    @patch.object(V2CursorPagination, "_get_default_ordering", return_value="-date_joined")
+    def test_no_limit_empty_queryset(self, mock_ordering):
+        """Test that limit=-1 handles empty queryset correctly."""
+        request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?limit=-1"))
+        request.META[PATH_INFO] = "/api/rbac/v2/role-bindings/by-subject/"
+        empty_queryset = User.objects.none()
+
+        paginated_queryset = self.paginator.paginate_queryset(empty_queryset, request)
+        response = self.paginator.get_paginated_response([])
+
+        # Should return no items
+        self.assertEqual(len(paginated_queryset), 0)
+        # Meta limit should be 0
+        self.assertEqual(response.data["meta"]["limit"], 0)
+        # No pagination links
+        self.assertIsNone(response.data["links"]["next"])
+        self.assertIsNone(response.data["links"]["previous"])
+
+    @patch.object(V2CursorPagination, "_get_default_ordering", return_value="-date_joined")
+    def test_normal_limit_5_still_works(self, mock_ordering):
+        """Test that limit=5 still works with normal pagination."""
+        request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?limit=5"))
+        request.META[PATH_INFO] = "/api/rbac/v2/role-bindings/by-subject/"
+        paginated_queryset = self.paginator.paginate_queryset(self.queryset, request)
+        response = self.paginator.get_paginated_response([{"id": i} for i in range(len(paginated_queryset))])
+
+        # Should return only 5 items (uses normal cursor pagination)
+        self.assertEqual(len(paginated_queryset), 5)
+        # Meta limit should be 5
+        self.assertEqual(response.data["meta"]["limit"], 5)
+        # Should have pagination links (next link exists since we have 25 total)
+        self.assertIsNotNone(response.data["links"]["next"])
+        # Previous should be None on first page
+        self.assertIsNone(response.data["links"]["previous"])
+
+    @patch.object(V2CursorPagination, "_get_default_ordering", return_value="-date_joined")
+    def test_normal_limit_20_still_works(self, mock_ordering):
+        """Test that limit=20 still works with normal pagination."""
+        request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?limit=20"))
+        request.META[PATH_INFO] = "/api/rbac/v2/role-bindings/by-subject/"
+        paginated_queryset = self.paginator.paginate_queryset(self.queryset, request)
+        response = self.paginator.get_paginated_response([{"id": i} for i in range(len(paginated_queryset))])
+
+        # Should return 20 items
+        self.assertEqual(len(paginated_queryset), 20)
+        # Meta limit should be 20
+        self.assertEqual(response.data["meta"]["limit"], 20)
+        # Should have next link since we have 25 total
+        self.assertIsNotNone(response.data["links"]["next"])
+
+    @patch.object(V2CursorPagination, "_get_default_ordering", return_value="-date_joined")
+    def test_default_limit_still_works(self, mock_ordering):
+        """Test that default limit (no limit param) still works."""
+        request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/"))
+        request.META[PATH_INFO] = "/api/rbac/v2/role-bindings/by-subject/"
+        paginated_queryset = self.paginator.paginate_queryset(self.queryset, request)
+        response = self.paginator.get_paginated_response([{"id": i} for i in range(len(paginated_queryset))])
+
+        # Should return default page size (10)
+        self.assertEqual(len(paginated_queryset), 10)
+        # Meta limit should be 10
+        self.assertEqual(response.data["meta"]["limit"], 10)
+        # Should have next link since we have 25 total
+        self.assertIsNotNone(response.data["links"]["next"])

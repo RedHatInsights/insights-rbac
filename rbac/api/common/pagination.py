@@ -150,6 +150,19 @@ class V2CursorPagination(CursorPagination):
     max_page_size = 1000
     ordering = "-modified"
     cursor_query_param = "cursor"
+    NO_LIMIT_ENFORCED_VALUE = "-1"
+
+    def paginate_queryset(self, queryset, request, view=None):
+        """Override paginate_queryset to support limit=-1 for no pagination."""
+        request_limit = request.query_params.get(self.page_size_query_param)
+        if request_limit == self.NO_LIMIT_ENFORCED_VALUE:
+            # Return all results without pagination
+            # Set request so get_paginated_response can access it
+            self.request = request
+            self.page = list(queryset)
+            return self.page
+
+        return super().paginate_queryset(queryset, request, view)
 
     # Mapping of dot notation fields to Django ORM fields for Group queryset
     GROUP_FIELD_MAPPING = {
@@ -393,6 +406,21 @@ class V2CursorPagination(CursorPagination):
 
     def get_paginated_response(self, data):
         """Override pagination output to match V2 API spec."""
+        request_limit = self.request.query_params.get(self.page_size_query_param)
+
+        # When limit=-1, return all results without pagination links
+        if request_limit == self.NO_LIMIT_ENFORCED_VALUE:
+            return Response(
+                {
+                    "meta": {"limit": len(data)},
+                    "links": {
+                        "next": None,
+                        "previous": None,
+                    },
+                    "data": data,
+                }
+            )
+
         return Response(
             {
                 "meta": {"limit": self.get_page_size(self.request)},
