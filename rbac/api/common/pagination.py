@@ -153,15 +153,25 @@ class V2CursorPagination(CursorPagination):
     NO_LIMIT_ENFORCED_VALUE = "-1"
 
     def paginate_queryset(self, queryset, request, view=None):
-        """Override paginate_queryset to support limit=-1 for no pagination."""
+        """Override paginate_queryset to support limit=-1 for no pagination.
+
+        Only overrides default behavior when limit=-1 is explicitly requested.
+        All other cases (no limit, limit=0, limit=10, etc.) use standard pagination.
+        """
         request_limit = request.query_params.get(self.page_size_query_param)
+
+        # Only disable pagination when limit=-1 is explicitly requested
+        # If no limit is provided (None), falls through to default pagination
         if request_limit == self.NO_LIMIT_ENFORCED_VALUE:
-            # Return all results without pagination
-            # Set request so get_paginated_response can access it
             self.request = request
+            # Apply ordering before converting to list
+            ordering = self.get_ordering(request, queryset, view)
+            if ordering:
+                queryset = queryset.order_by(*ordering)
             self.page = list(queryset)
             return self.page
 
+        # Use default cursor pagination for all other cases
         return super().paginate_queryset(queryset, request, view)
 
     # Mapping of dot notation fields to Django ORM fields for Group queryset
@@ -405,10 +415,15 @@ class V2CursorPagination(CursorPagination):
         return V2CursorPagination.link_rewrite(self.request, previous_link)
 
     def get_paginated_response(self, data):
-        """Override pagination output to match V2 API spec."""
+        """Override pagination output to match V2 API spec.
+
+        Returns different response format only when limit=-1 is explicitly requested.
+        All other cases (no limit, limit=10, etc.) use standard V2 pagination format.
+        """
         request_limit = self.request.query_params.get(self.page_size_query_param)
 
-        # When limit=-1, return all results without pagination links
+        # Special case: when limit=-1 is explicitly requested, return all results
+        # with meta.limit set to actual count and no pagination links
         if request_limit == self.NO_LIMIT_ENFORCED_VALUE:
             return Response(
                 {
@@ -421,6 +436,7 @@ class V2CursorPagination(CursorPagination):
                 }
             )
 
+        # Default V2 API pagination response for all other cases
         return Response(
             {
                 "meta": {"limit": self.get_page_size(self.request)},
