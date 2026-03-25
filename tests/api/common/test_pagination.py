@@ -819,19 +819,29 @@ class V2CursorPaginationTest(TestCase):
 
     def test_ordering_applied_with_limit_minus_one_multiple_fields(self):
         """Test that multiple order_by fields are applied when limit=-1."""
-        # Create users with same first name prefix but different suffixes
+        # Create users to test multiple field ordering
+        # Secondary sort only applies when primary field values are equal
         now = timezone.now()
 
-        # Same prefix, different dates
-        user1 = User.objects.create(username="order_multi_alice_1", date_joined=now - timedelta(days=3))
-        user2 = User.objects.create(username="order_multi_alice_2", date_joined=now - timedelta(days=1))
-        user3 = User.objects.create(username="order_multi_bob_1", date_joined=now - timedelta(days=2))
+        # Create users where first name is same, last name differs
+        # We'll use email as a tie-breaker since username must be unique
+        user1 = User.objects.create(
+            username="order_multi_user1", email="alice@example.com", date_joined=now - timedelta(days=3)
+        )
+        user2 = User.objects.create(
+            username="order_multi_user2",
+            email="alice@example.com",  # Same email
+            date_joined=now - timedelta(days=1),  # Newer
+        )
+        user3 = User.objects.create(
+            username="order_multi_user3", email="bob@example.com", date_joined=now - timedelta(days=2)
+        )
 
         queryset = User.objects.filter(username__startswith="order_multi_")
 
-        # Test with multiple ordering fields
+        # Test with multiple ordering fields: email asc, then date_joined desc
         paginator = V2CursorPagination()
-        paginator.FIELD_MAPPING = {"name": "username", "last_modified": "date_joined"}
+        paginator.FIELD_MAPPING = {"name": "email", "last_modified": "date_joined"}
         request = Request(self.factory.get("/api/rbac/v2/roles/?limit=-1&order_by=name,-last_modified"))
         request.META[PATH_INFO] = "/api/rbac/v2/roles/"
 
@@ -840,11 +850,11 @@ class V2CursorPaginationTest(TestCase):
         # Should return all 3 users
         self.assertEqual(len(paginated_queryset), 3)
 
-        # Should be ordered by username asc, then date_joined desc
-        # alice_2 (newer) before alice_1 (older) because of -last_modified
-        self.assertEqual(paginated_queryset[0].id, user2.id)  # order_multi_alice_2 (newer)
-        self.assertEqual(paginated_queryset[1].id, user1.id)  # order_multi_alice_1 (older)
-        self.assertEqual(paginated_queryset[2].id, user3.id)  # order_multi_bob_1
+        # Should be ordered by email asc, then date_joined desc
+        # For same email (alice@example.com), newer user2 comes before older user1
+        self.assertEqual(paginated_queryset[0].id, user2.id)  # alice, newer (1 day ago)
+        self.assertEqual(paginated_queryset[1].id, user1.id)  # alice, older (3 days ago)
+        self.assertEqual(paginated_queryset[2].id, user3.id)  # bob
 
         # Cleanup
         User.objects.filter(username__startswith="order_multi_").delete()
