@@ -749,17 +749,19 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]), 2)
 
-    def test_list_roles_name_filter_is_case_sensitive(self):
-        """Test that name filter is case sensitive exact match."""
+    def test_list_roles_name_filter_is_case_insensitive(self):
+        """Test that name filter is case insensitive."""
         RoleV2.objects.create(name="Test_Role", description="Uppercase", tenant=self.tenant)
 
-        # Should not match "test_role" (lowercase from setUp)
+        # Should match both "Test_Role" and "test_role" (from setUp)
         url = f"{self.list_url}&name=Test_Role"
         response = self.client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data["data"]), 1)
-        self.assertEqual(response.data["data"][0]["name"], "Test_Role")
+        self.assertEqual(len(response.data["data"]), 2)
+
+        returned_names = {role["name"] for role in response.data["data"]}
+        self.assertEqual(returned_names, {"Test_Role", "test_role"})
 
     def test_list_roles_with_permissions_field(self):
         """Test that requesting permissions field returns permissions array."""

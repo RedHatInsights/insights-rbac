@@ -636,8 +636,8 @@ class RoleV2ServiceListTests(IdentityRequest):
         self.assertEqual(names, {"role_one", "role_two"})
 
     def test_list_filters_by_exact_name(self):
-        """Test that name param filters using case-sensitive exact match."""
-        queryset = self.service.list({"resource_type": "workspace", "name": "role_one"})
+        """Test that name param filters using case-insensitive exact match."""
+        queryset = self.service.list({"resource_type": "workspace", "name": "ROLE_ONE"})
 
         self.assertEqual(queryset.count(), 1)
         self.assertEqual(queryset.first().name, "role_one")
@@ -651,6 +651,13 @@ class RoleV2ServiceListTests(IdentityRequest):
     def test_list_filters_by_name_wildcard_prefix(self):
         """Test that name=role_o* matches names starting with 'role_o'."""
         queryset = self.service.list({"name": "role_o*"})
+
+        self.assertEqual(queryset.count(), 1)
+        self.assertEqual(queryset.first().name, "role_one")
+
+    def test_list_filters_by_name_wildcard_case_insensitive(self):
+        """Test that wildcard name filtering is case-insensitive."""
+        queryset = self.service.list({"name": "ROLE_O*"})
 
         self.assertEqual(queryset.count(), 1)
         self.assertEqual(queryset.first().name, "role_one")
