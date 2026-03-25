@@ -2617,10 +2617,10 @@ class WorkspaceTestsList(WorkspaceViewTests):
         self.assertType(payload, "root")
 
     def test_workspace_list_filter_by_name(self):
-        """List workspaces filtered by name using case-sensitive prefix matching."""
-        ws_name_1 = "Workspace Alpha"
-        ws_name_2 = "Workspace Beta"
-        ws_name_3 = "Other Workspace"
+        """List workspaces filtered by name using case-insensitive substring matching."""
+        ws_name_1 = "Sales Team Alpha"
+        ws_name_2 = "Sales Team Beta"
+        ws_name_3 = "Engineering Squad"
         Workspace.objects.bulk_create(
             [
                 Workspace(
@@ -2647,25 +2647,57 @@ class WorkspaceTestsList(WorkspaceViewTests):
         url = reverse("v2_management:workspace-list")
         client = APIClient()
 
-        # Prefix "Workspace" matches Workspace Alpha and Workspace Beta (not Other Workspace)
-        response = client.get(f"{url}?name=Workspace", None, format="json", **self.headers)
+        # Substring "Sales" matches Sales Team Alpha and Sales Team Beta
+        response = client.get(f"{url}?name=Sales", None, format="json", **self.headers)
         payload = response.data
         self.assertSuccessfulList(response, payload)
         self.assertEqual(payload.get("meta").get("count"), 2)
 
-        # Prefix "Workspace Alpha" matches only Workspace Alpha
-        response = client.get(f"{url}?name=Workspace Alpha", None, format="json", **self.headers)
+        # Substring "Alpha" matches only Sales Team Alpha
+        response = client.get(f"{url}?name=Alpha", None, format="json", **self.headers)
         payload = response.data
         self.assertSuccessfulList(response, payload)
         self.assertEqual(payload.get("meta").get("count"), 1)
         self.assertEqual(payload.get("data")[0]["name"], ws_name_1)
 
-        # Prefix "Other" matches only Other Workspace
-        response = client.get(f"{url}?name=Other", None, format="json", **self.headers)
+        # Substring "Squad" matches only Engineering Squad
+        response = client.get(f"{url}?name=Squad", None, format="json", **self.headers)
         payload = response.data
         self.assertSuccessfulList(response, payload)
         self.assertEqual(payload.get("meta").get("count"), 1)
         self.assertEqual(payload.get("data")[0]["name"], ws_name_3)
+
+        # Middle substring "Team" matches both Sales Team workspaces
+        response = client.get(f"{url}?name=Team", None, format="json", **self.headers)
+        payload = response.data
+        self.assertSuccessfulList(response, payload)
+        self.assertEqual(payload.get("meta").get("count"), 2)
+
+    def test_workspace_list_filter_by_name_is_case_insensitive(self):
+        """Test that name filter is case-insensitive substring matching."""
+        Workspace.objects.create(
+            name="Sales Team Alpha",
+            tenant=self.tenant,
+            type="standard",
+            parent_id=self.default_workspace.id,
+        )
+
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+
+        # Lowercase substring should match "Sales Team Alpha"
+        response = client.get(f"{url}?name=sales", None, format="json", **self.headers)
+        payload = response.data
+        self.assertSuccessfulList(response, payload)
+        self.assertEqual(payload.get("meta").get("count"), 1)
+        self.assertEqual(payload.get("data")[0]["name"], "Sales Team Alpha")
+
+        # Uppercase substring should also match
+        response = client.get(f"{url}?name=SALES", None, format="json", **self.headers)
+        payload = response.data
+        self.assertSuccessfulList(response, payload)
+        self.assertEqual(payload.get("meta").get("count"), 1)
+        self.assertEqual(payload.get("data")[0]["name"], "Sales Team Alpha")
 
     def test_workspace_list_filter_by_name_empty_string(self):
         """Test that filtering by empty name string returns all workspaces."""
