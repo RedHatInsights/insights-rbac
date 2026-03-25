@@ -188,6 +188,9 @@ class RoleBindingService:
         """Create multiple role bindings."""
         ensure_v2_write_activated(self.tenant)
 
+        if len(requests) == 0:
+            raise RequiredFieldError("requests")
+
         roles = self._get_roles(list({req.role_id for req in requests}))
         roles_by_uuid = {str(r.uuid): r for r in roles}
         roles_by_id = {r.id: r for r in roles}

@@ -37,7 +37,7 @@ from migration_tool.in_memory_tuples import (
 from management.models import Group, Permission, Principal, Workspace
 from management.role.v2_model import PlatformRoleV2, RoleV2, SeededRoleV2
 from management.role.v2_service import RoleV2Service
-from management.exceptions import InvalidFieldError, NotFoundError
+from management.exceptions import InvalidFieldError, NotFoundError, RequiredFieldError
 from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
 from management.role_binding.serializer import RoleBindingByGroupSerializer, RoleBindingFieldSelection
 from management.role_binding.service import CreateBindingRequest, RoleBindingService
@@ -1138,6 +1138,12 @@ class BatchCreateRoleBindingTests(IdentityRequest):
             subject_type=subject_type,
             subject_id=str(subject_id),
         )
+
+    def test_batch_create_empty(self):
+        with self.assertRaises(RequiredFieldError) as error:
+            self.service.batch_create([])
+
+        self.assertEqual(error.exception.field_name, "requests")
 
     def test_batch_create_for_group(self):
         """Create a single binding with a group subject."""
