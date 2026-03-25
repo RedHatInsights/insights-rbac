@@ -16,15 +16,16 @@
 #
 """Test the API pagination module."""
 
+from datetime import timedelta
 from unittest.mock import Mock, patch
 from urllib.parse import parse_qs, urlparse
 
-from django.test import TestCase
 from django.contrib.auth.models import User
-from rest_framework.test import APIRequestFactory
-from rest_framework.request import Request
-
+from django.test import TestCase
+from django.utils import timezone
 from rest_framework.exceptions import ValidationError
+from rest_framework.request import Request
+from rest_framework.test import APIRequestFactory
 
 from api.common.pagination import PATH_INFO, StandardResultsSetPagination, V2CursorPagination, V2ResultsSetPagination
 
@@ -727,20 +728,17 @@ class V2CursorPaginationTest(TestCase):
     def test_ordering_applied_with_limit_minus_one_default(self):
         """Test that default ordering is applied when limit=-1."""
         # Create users with specific date_joined values to test ordering
-        User.objects.filter(username__startswith="cursor_user_").delete()
-        from django.utils import timezone
-        from datetime import timedelta
-
+        User.objects.filter(username__startswith="order_default_").delete()
         now = timezone.now()
 
         # Create 5 users with different join dates
-        user1 = User.objects.create(username="cursor_user_oldest", date_joined=now - timedelta(days=5))
-        user2 = User.objects.create(username="cursor_user_old", date_joined=now - timedelta(days=3))
-        user3 = User.objects.create(username="cursor_user_middle", date_joined=now - timedelta(days=2))
-        user4 = User.objects.create(username="cursor_user_new", date_joined=now - timedelta(days=1))
-        user5 = User.objects.create(username="cursor_user_newest", date_joined=now)
+        user1 = User.objects.create(username="order_default_oldest", date_joined=now - timedelta(days=5))
+        user2 = User.objects.create(username="order_default_old", date_joined=now - timedelta(days=3))
+        user3 = User.objects.create(username="order_default_middle", date_joined=now - timedelta(days=2))
+        user4 = User.objects.create(username="order_default_new", date_joined=now - timedelta(days=1))
+        user5 = User.objects.create(username="order_default_newest", date_joined=now)
 
-        queryset = User.objects.filter(username__startswith="cursor_user_")
+        queryset = User.objects.filter(username__startswith="order_default_")
 
         # Test with default ordering (should use -date_joined from _get_default_ordering)
         paginator = V2CursorPagination()
@@ -760,16 +758,17 @@ class V2CursorPaginationTest(TestCase):
         self.assertEqual(paginated_queryset[3].id, user2.id)
         self.assertEqual(paginated_queryset[4].id, user1.id)  # oldest
 
+        # Cleanup
+        User.objects.filter(username__startswith="order_default_").delete()
+
     def test_ordering_applied_with_limit_minus_one_custom_ascending(self):
         """Test that custom ascending ordering is applied when limit=-1."""
         # Create users with specific usernames to test ordering
-        User.objects.filter(username__startswith="order_test_").delete()
+        user_c = User.objects.create(username="order_asc_charlie")
+        user_a = User.objects.create(username="order_asc_alice")
+        user_b = User.objects.create(username="order_asc_bob")
 
-        user_c = User.objects.create(username="order_test_charlie")
-        user_a = User.objects.create(username="order_test_alice")
-        user_b = User.objects.create(username="order_test_bob")
-
-        queryset = User.objects.filter(username__startswith="order_test_")
+        queryset = User.objects.filter(username__startswith="order_asc_")
 
         # Test with custom ascending ordering
         paginator = V2CursorPagination()
@@ -787,16 +786,17 @@ class V2CursorPaginationTest(TestCase):
         self.assertEqual(paginated_queryset[1].id, user_b.id)  # bob
         self.assertEqual(paginated_queryset[2].id, user_c.id)  # charlie
 
+        # Cleanup
+        User.objects.filter(username__startswith="order_asc_").delete()
+
     def test_ordering_applied_with_limit_minus_one_custom_descending(self):
         """Test that custom descending ordering is applied when limit=-1."""
         # Create users with specific usernames to test ordering
-        User.objects.filter(username__startswith="desc_test_").delete()
+        user_c = User.objects.create(username="order_desc_charlie")
+        user_a = User.objects.create(username="order_desc_alice")
+        user_b = User.objects.create(username="order_desc_bob")
 
-        user_c = User.objects.create(username="desc_test_charlie")
-        user_a = User.objects.create(username="desc_test_alice")
-        user_b = User.objects.create(username="desc_test_bob")
-
-        queryset = User.objects.filter(username__startswith="desc_test_")
+        queryset = User.objects.filter(username__startswith="order_desc_")
 
         # Test with custom descending ordering
         paginator = V2CursorPagination()
@@ -814,21 +814,20 @@ class V2CursorPaginationTest(TestCase):
         self.assertEqual(paginated_queryset[1].id, user_b.id)  # bob
         self.assertEqual(paginated_queryset[2].id, user_a.id)  # alice
 
+        # Cleanup
+        User.objects.filter(username__startswith="order_desc_").delete()
+
     def test_ordering_applied_with_limit_minus_one_multiple_fields(self):
         """Test that multiple order_by fields are applied when limit=-1."""
         # Create users with same first name prefix but different suffixes
-        User.objects.filter(username__startswith="multi_").delete()
-        from django.utils import timezone
-        from datetime import timedelta
-
         now = timezone.now()
 
         # Same prefix, different dates
-        user1 = User.objects.create(username="multi_alice_1", date_joined=now - timedelta(days=3))
-        user2 = User.objects.create(username="multi_alice_2", date_joined=now - timedelta(days=1))
-        user3 = User.objects.create(username="multi_bob_1", date_joined=now - timedelta(days=2))
+        user1 = User.objects.create(username="order_multi_alice_1", date_joined=now - timedelta(days=3))
+        user2 = User.objects.create(username="order_multi_alice_2", date_joined=now - timedelta(days=1))
+        user3 = User.objects.create(username="order_multi_bob_1", date_joined=now - timedelta(days=2))
 
-        queryset = User.objects.filter(username__startswith="multi_")
+        queryset = User.objects.filter(username__startswith="order_multi_")
 
         # Test with multiple ordering fields
         paginator = V2CursorPagination()
@@ -843,6 +842,9 @@ class V2CursorPaginationTest(TestCase):
 
         # Should be ordered by username asc, then date_joined desc
         # alice_2 (newer) before alice_1 (older) because of -last_modified
-        self.assertEqual(paginated_queryset[0].id, user2.id)  # multi_alice_2 (newer)
-        self.assertEqual(paginated_queryset[1].id, user1.id)  # multi_alice_1 (older)
-        self.assertEqual(paginated_queryset[2].id, user3.id)  # multi_bob_1
+        self.assertEqual(paginated_queryset[0].id, user2.id)  # order_multi_alice_2 (newer)
+        self.assertEqual(paginated_queryset[1].id, user1.id)  # order_multi_alice_1 (older)
+        self.assertEqual(paginated_queryset[2].id, user3.id)  # order_multi_bob_1
+
+        # Cleanup
+        User.objects.filter(username__startswith="order_multi_").delete()
