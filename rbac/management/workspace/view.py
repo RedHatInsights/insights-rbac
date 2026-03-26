@@ -135,7 +135,10 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         except OperationalError as e:
-            return self._handle_operational_error(e, "creation")
+            response = self._handle_operational_error(e, "creation")
+            if response is not None:
+                return response
+            raise
         except ValidationError as e:
             message = ""
             for field, error_message in flatten_validation_error(e):
@@ -244,7 +247,10 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
             response_data = self._move_atomic(request)
             return Response(response_data, status=status.HTTP_200_OK)
         except OperationalError as e:
-            return self._handle_operational_error(e, "movement", ws_id=kwargs.get("pk"))
+            response = self._handle_operational_error(e, "movement", ws_id=kwargs.get("pk"))
+            if response is not None:
+                return response
+            raise
         except Workspace.DoesNotExist:
             logger.exception("Target Workspace not found during operation, ws id: %s", kwargs.get("pk"))
             return Response(
@@ -262,12 +268,17 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
                     break
             raise serializers.ValidationError(message)
 
-    def _handle_operational_error(self, error: OperationalError, operation: str, ws_id: str | None = None) -> Response:
+    def _handle_operational_error(
+        self, error: OperationalError, operation: str, ws_id: str | None = None
+    ) -> Response | None:
         """Handle OperationalError from pgtransaction after retries are exhausted.
 
         When this method is called, pgtransaction has already retried the transaction
         up to 3 times. This is the final error handler for serialization conflicts
         and deadlocks that persist despite retries.
+
+        Returns a Response for known error types, or None if the error is unrecognized
+        (caller should re-raise with bare ``raise`` to preserve the original traceback).
         """
         ws_context = f", ws_id='{ws_id}'" if ws_id else ""
         if hasattr(error, "__cause__"):
@@ -296,7 +307,7 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
                     {"detail": "Internal server error in concurrent updates. Please try again later."},
                     status=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 )
-        raise error
+        return None
 
     @staticmethod
     def _parent_id_query_param_validation(request: Request) -> uuid.UUID:
