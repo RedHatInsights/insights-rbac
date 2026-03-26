@@ -188,6 +188,9 @@ class RoleBindingService:
         """Create multiple role bindings."""
         ensure_v2_write_activated(self.tenant)
 
+        if len(requests) == 0:
+            raise RequiredFieldError("requests")
+
         roles = self._get_roles(list({req.role_id for req in requests}))
         roles_by_uuid = {str(r.uuid): r for r in roles}
         roles_by_id = {r.id: r for r in roles}
@@ -906,13 +909,13 @@ class RoleBindingService:
 
         Uses RoleV2.objects.assignable() to filter to roles that can be
         assigned to bindings (custom + seeded, not platform).
+        Empty role_ids is valid and returns [] to support removing all bindings.
 
         Raises:
-            RequiredFieldError: If role_ids is empty
             InvalidFieldError: If any requested role UUIDs don't exist or aren't assignable
         """
         if not role_ids:
-            raise RequiredFieldError("roles")
+            return []
 
         roles = list(RoleV2.objects.filter(uuid__in=role_ids).assignable())
 

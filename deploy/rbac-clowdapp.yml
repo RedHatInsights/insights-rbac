@@ -32,7 +32,7 @@ objects:
     - topicName: ${RBAC_KAFKA_CONSUMER_TOPIC}
       partitions: 1
       replicas: 3
-    dependencies:
+    optionalDependencies:
       - kessel-inventory
       - kessel-relations
     deployments:
