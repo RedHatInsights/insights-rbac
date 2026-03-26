@@ -548,19 +548,6 @@ class RoleBindingServiceTests(IdentityRequest):
         name = self.service.get_resource_name("localhost/other-org-12345", "tenant")
         self.assertIsNone(name)
 
-    def test_batch_get_resource_names(self):
-        """Batch resolves workspace and tenant display names in few queries."""
-        tenant_rid = self.tenant.tenant_resource_id()
-        keys = {
-            ("workspace", str(self.workspace.id)),
-            ("tenant", tenant_rid),
-            ("workspace", "00000000-0000-0000-0000-000000000000"),
-        }
-        out = self.service.batch_get_resource_names(keys)
-        self.assertEqual(out[("workspace", str(self.workspace.id))], "Test Workspace")
-        self.assertEqual(out[("tenant", tenant_rid)], self.tenant.tenant_name)
-        self.assertIsNone(out[("workspace", "00000000-0000-0000-0000-000000000000")])
-
     def test_build_context(self):
         """Test building serializer context."""
         params = {

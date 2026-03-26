@@ -18,7 +18,7 @@
 
 import logging
 from dataclasses import dataclass
-from typing import Iterable, Optional, Sequence
+from typing import Optional, Sequence
 
 from django.conf import settings
 from django.db import transaction
@@ -151,35 +151,16 @@ class RoleBindingService:
         Returns:
             Resource name or None if not found
         """
-        name = RoleBinding.bound_resource_display_name(self.tenant, resource_id, resource_type)
-        if name is None and resource_type == "workspace":
-            logger.warning("Workspace %s not found for tenant %s", resource_id, self.tenant)
-        return name
-
-    def batch_get_resource_names(
-        self, resource_keys: Iterable[tuple[str, str]]
-    ) -> dict[tuple[str, str], Optional[str]]:
-        """Resolve display names for many resources with minimal queries (list pages, batch flows)."""
-        unique_keys = frozenset(resource_keys)
-        result: dict[tuple[str, str], Optional[str]] = {}
-
-        tenant_rid = self.tenant.tenant_resource_id()
-        workspace_ids: list[str] = []
-        for resource_type, resource_id in unique_keys:
-            if resource_type == "tenant" and tenant_rid is not None and resource_id == tenant_rid:
-                result[(resource_type, resource_id)] = self.tenant.tenant_name
-            elif resource_type == "workspace":
-                workspace_ids.append(resource_id)
-
-        if workspace_ids:
-            unique_ws_ids = list(dict.fromkeys(workspace_ids))
-            workspaces = Workspace.objects.filter(tenant=self.tenant, id__in=unique_ws_ids).values("id", "name")
-            ws_map = {str(w["id"]): w["name"] for w in workspaces}
-            for resource_type, resource_id in unique_keys:
-                if resource_type == "workspace":
-                    result[(resource_type, resource_id)] = ws_map.get(str(resource_id))
-
-        return result
+        if resource_type == "workspace":
+            try:
+                workspace = Workspace.objects.get(id=resource_id, tenant=self.tenant)
+                return workspace.name
+            except Workspace.DoesNotExist:
+                logger.warning(f"Workspace {resource_id} not found for tenant {self.tenant}")
+                return None
+        if resource_type == "tenant" and resource_id == self.tenant.tenant_resource_id():
+            return self.tenant.tenant_name
+        return None
 
     def build_context(self, params: dict) -> dict:
         """Build serializer context with resource information from a dictionary.
@@ -281,7 +262,12 @@ class RoleBindingService:
 
     def _compute_resource_names(self, requests: list[CreateBindingRequest]) -> dict[tuple[str, str], str | None]:
         """Resolve display names for each unique resource."""
-        return self.batch_get_resource_names({(r.resource_type, r.resource_id) for r in requests})
+        result: dict[tuple[str, str], str | None] = {}
+        for req in requests:
+            key = (req.resource_type, req.resource_id)
+            if key not in result:
+                result[key] = self.get_resource_name(req.resource_id, req.resource_type)
+        return result
 
     def _build_base_queryset(
         self,

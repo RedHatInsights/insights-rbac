@@ -25,11 +25,10 @@ from management.group.model import Group
 from management.principal.model import Principal
 from management.relation_replicator.types import ObjectReference, ObjectType, RelationTuple, SubjectReference
 from management.role_binding.queryset import RoleBindingQuerySet
-from management.workspace.model import Workspace
 from migration_tool.models import V2boundresource, V2rolebinding
 from uuid_utils.compat import UUID, uuid7
 
-from api.models import Tenant, TenantAwareModel
+from api.models import TenantAwareModel
 
 
 class RoleBinding(TenantAwareModel):
@@ -42,20 +41,6 @@ class RoleBinding(TenantAwareModel):
 
     resource_type = models.CharField(max_length=256, null=False)
     resource_id = models.CharField(max_length=256, null=False)
-
-    @staticmethod
-    def bound_resource_display_name(tenant: Tenant, resource_id: str, resource_type: str) -> Optional[str]:
-        """Return the display name for a bound resource, or None if unknown or not found."""
-        if resource_type == "workspace":
-            try:
-                return Workspace.objects.get(id=resource_id, tenant=tenant).name
-            except Workspace.DoesNotExist:
-                return None
-        if resource_type == "tenant":
-            tenant_rid = tenant.tenant_resource_id()
-            if tenant_rid is not None and resource_id == tenant_rid:
-                return tenant.tenant_name
-        return None
 
     # ── Relation tuple generation ────────────────────────────────────
     #
