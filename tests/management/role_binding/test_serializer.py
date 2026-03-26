@@ -1369,6 +1369,7 @@ class UpdateRoleBindingRequestSerializerTests(IdentityRequest):
                     ]
                 },
             ),
+            ("empty roles list removes all bindings", {"roles": []}),
             ("fields param parsed", {"fields": "subject(group.name)"}),
             ("fields omitted", {"fields": _REMOVE}),
             ("fields blank string", {"fields": ""}),
@@ -1441,12 +1442,6 @@ class UpdateRoleBindingRequestSerializerTests(IdentityRequest):
         """Test various invalid inputs are rejected with correct error fields and messages."""
         cases = [
             # (description, overrides, error_field, expected_message_substring)
-            (
-                "empty roles list",
-                {"roles": []},
-                "roles",
-                "At least one role is required.",
-            ),
             (
                 "invalid subject type",
                 {"subject_type": "invalid_type"},

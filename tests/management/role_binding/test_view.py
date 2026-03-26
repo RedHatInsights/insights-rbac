@@ -3196,6 +3196,32 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
     )
+    def test_empty_roles_removes_all_bindings(self, mock_permission):
+        """Test that empty roles list removes all bindings for the subject."""
+        url = self._get_by_subject_url()
+        # First assign roles
+        self.client.put(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace"
+            f"&subject_id={self.group.uuid}&subject_type=group",
+            data={"roles": [{"id": str(self.role1.uuid)}]},
+            format="json",
+            **self.headers,
+        )
+        # Then remove all with empty roles
+        response = self.client.put(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace"
+            f"&subject_id={self.group.uuid}&subject_type=group",
+            data={"roles": []},
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["roles"], [])
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
     def test_success_for_principal(self, mock_permission):
         """Test successful update for a principal/user subject."""
         url = self._get_by_subject_url()
@@ -3318,12 +3344,6 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
 
         # Each case: (body, expected_field, expected_message)
         test_cases = [
-            # Empty roles list
-            (
-                {"roles": []},
-                "roles",
-                "At least one role is required.",
-            ),
             # Missing roles key
             (
                 {},

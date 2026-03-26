@@ -845,17 +845,6 @@ class UpdateRoleBindingRequestSerializer(RoleBindingInputSerializerMixin, serial
         except FieldSelectionValidationError as e:
             raise serializers.ValidationError(e.message)
 
-    def validate_roles(self, value):
-        """Validate that at least one role is provided.
-
-        Custom validator instead of allow_empty=False so the error surfaces as
-        field="roles" with a clear message, rather than DRF's default
-        field="roles.non_field_errors" / "This list may not be empty."
-        """
-        if not value:
-            raise serializers.ValidationError("At least one role is required.")
-        return value
-
     def validate_subject_type(self, value):
         """Validate subject_type is a supported enum value."""
         if not SubjectType.is_valid(value):

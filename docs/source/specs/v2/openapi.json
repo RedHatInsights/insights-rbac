@@ -3678,8 +3678,7 @@
                 "id"
               ]
             },
-            "minItems": 1,
-            "description": "Roles to assign (replaces existing roles for the target binding)"
+            "description": "Roles to assign (replaces existing roles for the target binding). Empty array removes all bindings."
           }
         },
         "description": "Request body for updating role bindings - contains the new roles to assign",
