@@ -54,6 +54,7 @@ from management.role.relation_api_dual_write_handler import (
 from management.role.v2_model import CustomRoleV2, RoleV2, SeededRoleV2
 from management.role_binding.model import RoleBinding
 from management.tenant_mapping.model import TenantMapping, DefaultAccessType
+from management.tenant_mapping.v2_activation import ensure_v2_write_activated
 from management.tenant_service.tenant_service import BootstrappedTenant
 from management.tenant_service.v2 import V2TenantBootstrapService
 from management.tenant_service.tenant_service import TenantBootstrapService
@@ -81,7 +82,7 @@ from unittest.mock import patch
 
 from migration_tool.models import V2boundresource
 from tests.util import assert_v1_v2_locally_consistent, assert_v1_v2_tuples_fully_consistent
-from tests.v2_util import seed_v2_role_from_v1
+from tests.v2_util import seed_v2_role_from_v1, bootstrap_tenant_for_v2_test
 
 
 @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
@@ -2524,6 +2525,7 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
         )
 
 
+@override_settings(ATOMIC_RETRY_DISABLED=True)
 class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
     user_id: str
     user: Principal
@@ -2624,7 +2626,7 @@ class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
             for_principals=[self.user_id],
         )
 
-    def test_scope_assignment(self):
+    def _do_test_scope_assignment(self):
         system_role = self.given_v1_system_role("test", permissions=["app:resource:verb"])
 
         with self.settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS=""):
@@ -2654,7 +2656,14 @@ class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
 
             self.given_car_expired(car)
 
-    def test_scope_removal(self):
+    def test_scope_assignment(self):
+        self._do_test_scope_assignment()
+
+    def test_v2_scope_assignment(self):
+        ensure_v2_write_activated(self.tenant)
+        self._do_test_scope_assignment()
+
+    def _do_test_scope_removal(self):
         system_role = self.given_v1_system_role("test", permissions=["app:resource:verb"])
 
         with self.settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="app:resource:verb"):
@@ -2665,6 +2674,28 @@ class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
         with self.settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS=""):
             self.given_car_expired(car)
             self._expect_user_root_count(0, system_role)
+
+    def test_scope_removal(self):
+        self._do_test_scope_removal()
+
+    def test_v2_scope_removal(self):
+        ensure_v2_write_activated(self.tenant)
+        self._do_test_scope_removal()
+
+    def test_v1_assignment_with_v2_removal(self):
+        """Test that a CAR created in a V1 tenant can be expired after that tenant migrates to V2."""
+        system_role = self.given_v1_system_role("test", permissions=["app:resource:verb"])
+
+        with self.settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS=""):
+            car = self.given_car(self.user_id, [system_role])
+            self._expect_user_default_count(1, system_role)
+
+        ensure_v2_write_activated(self.tenant)
+
+        # We deliberately test removal in a different scope in order to ensure that doesn't break.
+        with self.settings(ROOT_SCOPE_PERMISSIONS="app:resource:verb", TENANT_SCOPE_PERMISSIONS=""):
+            self.given_car_expired(car)
+            self._expect_user_default_count(0, system_role)
 
 
 class RbacFixture:
