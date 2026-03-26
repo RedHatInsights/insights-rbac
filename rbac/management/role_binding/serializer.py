@@ -538,10 +538,8 @@ class RoleBindingListOutputSerializer(RoleBindingOutputSerializerMixin, serializ
     Field selection syntax:
     - subject(group.name, group.description) - accesses obj.name, obj.description
     - role(name) - accesses role.name
-    - resource(name, type) -
-        display name for the binding's resource (workspace name, tenant ``tenant_name``, …)
-        via context on ``by_subject`` or ``RoleBindingService.get_resource_name`` otherwise;
-        type comes from the binding
+    - resource(name, type) - display name from ``resource_names_by_key`` context when present
+      (list endpoint avoids N+1), else ``RoleBinding.bound_resource_display_name``; type from the binding
     """
 
     subject = serializers.SerializerMethodField()
@@ -595,8 +593,11 @@ class RoleBindingListOutputSerializer(RoleBindingOutputSerializerMixin, serializ
         return self._build_role_data(obj.role, field_selection)
 
     def _resource_display_name(self, obj: RoleBinding) -> Optional[str]:
-        """Resolve resource display name for list output."""
-        return RoleBindingService(tenant=obj.tenant).get_resource_name(obj.resource_id, obj.resource_type)
+        """Resolve resource display name; prefer batched map from list view to avoid N+1."""
+        cached = self.context.get("resource_names_by_key")
+        if cached is not None:
+            return cached.get((obj.resource_type, obj.resource_id))
+        return RoleBinding.bound_resource_display_name(obj.tenant, obj.resource_id, obj.resource_type)
 
     def get_resource(self, obj: RoleBinding):
         """Extract resource information from the RoleBinding.
