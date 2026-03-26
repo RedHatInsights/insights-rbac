@@ -655,6 +655,7 @@ class RoleDefinerTests(IdentityRequest):
         root_platform_default_uuid = UUID(settings.SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID)
         tenant_platform_default_uuid = UUID(settings.SYSTEM_DEFAULT_TENANT_ROLE_UUID)
         tenant_admin_default_uuid = UUID(settings.SYSTEM_ADMIN_TENANT_ROLE_UUID)
+        root_admin_default_uuid = UUID(settings.SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID)
 
         initial_count = len(tuples)
 
@@ -676,12 +677,13 @@ class RoleDefinerTests(IdentityRequest):
         )
         self._assert_child(
             tuples,
-            parent_uuid=default_admin_default_uuid,
+            parent_uuid=root_admin_default_uuid,
             child_uuid=inventory_role.uuid,
         )
 
         # Force updating the existing relationships even though the role version numbers have not changed.
-        # This puts approval_role in root scope and inventory_role in tenant scope.
+        # This puts approval_role in root scope; inventory permissions become tenant-scoped, but
+        # Inventory Groups Administrator stays under the admin ROOT platform role (not permission-derived scope).
         with self.settings(
             ROOT_SCOPE_PERMISSIONS="approval:actions:create",
             TENANT_SCOPE_PERMISSIONS="inventory:*:*",
@@ -713,6 +715,11 @@ class RoleDefinerTests(IdentityRequest):
         )
         self._assert_child(
             tuples,
+            parent_uuid=root_admin_default_uuid,
+            child_uuid=inventory_role.uuid,
+        )
+        self._assert_not_child(
+            tuples,
             parent_uuid=tenant_admin_default_uuid,
             child_uuid=inventory_role.uuid,
         )
@@ -724,7 +731,7 @@ class RoleDefinerTests(IdentityRequest):
         )
 
         # Check that we can also move roles between non-default scopes.
-        # This puts both approval_role and inventory_role in tenant scope.
+        # This puts both approval_role and inventory_role permissions in tenant scope.
         with self.settings(
             ROOT_SCOPE_PERMISSIONS="",
             TENANT_SCOPE_PERMISSIONS="approval:actions:create,inventory:*:*",
@@ -750,6 +757,11 @@ class RoleDefinerTests(IdentityRequest):
             child_uuid=approval_role.uuid,
         )
         self._assert_child(
+            tuples,
+            parent_uuid=root_admin_default_uuid,
+            child_uuid=inventory_role.uuid,
+        )
+        self._assert_not_child(
             tuples,
             parent_uuid=tenant_admin_default_uuid,
             child_uuid=inventory_role.uuid,
