@@ -1022,3 +1022,570 @@ class RoleBindingServiceAccountTests(RoleBindingAccessTestMixin, TransactionIden
 
         self.assertFalse(result)
         mock_checker_class.assert_not_called()
+
+
+@override_settings(V2_APIS_ENABLED=True)
+class RoleBindingBatchCreatePermissionTests(RoleBindingAccessTestMixin, TransactionIdentityRequest):
+    """Tests for batch_create action Kessel access checks."""
+
+    def _make_batch_request(self, resources):
+        """Build a mock request with batch create body."""
+        mock_request = Mock()
+        mock_request.user.system = False
+        mock_request.user.admin = False
+        mock_request.query_params = {}
+        mock_request.data = {
+            "requests": [
+                {
+                    "resource": {"id": str(r["id"]), "type": r["type"]},
+                    "subject": {"id": "some-group-id", "type": "group"},
+                    "role": {"id": "some-role-id"},
+                }
+                for r in resources
+            ]
+        }
+        return mock_request
+
+    def _make_batch_view(self):
+        """Build a mock view with batch_create action."""
+        mock_view = Mock()
+        mock_view.action = "batch_create"
+        return mock_view
+
+    @patch("management.permissions.role_binding_access.FEATURE_FLAGS")
+    @patch("management.permissions.role_binding_access.get_kessel_principal_id")
+    @patch("management.permissions.role_binding_access.WorkspaceInventoryAccessChecker")
+    def test_batch_create_uses_create_relation_when_flag_disabled(
+        self, mock_checker_class, mock_get_principal_id, mock_feature_flags
+    ):
+        """batch_create should use 'create' relation when feature flag is disabled (MVP)."""
+        permission = RoleBindingKesselAccessPermission()
+        mock_feature_flags.is_use_role_binding_view_permission_enabled.return_value = False
+        mock_get_principal_id.return_value = "localhost/test-user-123"
+
+        mock_checker = MagicMock()
+        mock_checker.check_resource_access.return_value = True
+        mock_checker_class.return_value = mock_checker
+
+        mock_request = self._make_batch_request([{"id": self.workspace.id, "type": "workspace"}])
+
+        result = permission.has_permission(mock_request, self._make_batch_view())
+
+        self.assertTrue(result)
+        mock_checker.check_resource_access.assert_called_once()
+        call_kwargs = mock_checker.check_resource_access.call_args[1]
+        self.assertEqual(call_kwargs["relation"], "create")
+
+    @patch("management.permissions.role_binding_access.FEATURE_FLAGS")
+    @patch("management.permissions.role_binding_access.get_kessel_principal_id")
+    @patch("management.permissions.role_binding_access.WorkspaceInventoryAccessChecker")
+    def test_batch_create_uses_role_binding_grant_when_flag_enabled(
+        self, mock_checker_class, mock_get_principal_id, mock_feature_flags
+    ):
+        """batch_create should use 'role_binding_grant' relation when feature flag is enabled (POST-MVP)."""
+        permission = RoleBindingKesselAccessPermission()
+        mock_feature_flags.is_use_role_binding_view_permission_enabled.return_value = True
+        mock_get_principal_id.return_value = "localhost/test-user-123"
+
+        mock_checker = MagicMock()
+        mock_checker.check_resource_access.return_value = True
+        mock_checker_class.return_value = mock_checker
+
+        mock_request = self._make_batch_request([{"id": self.workspace.id, "type": "workspace"}])
+
+        result = permission.has_permission(mock_request, self._make_batch_view())
+
+        self.assertTrue(result)
+        call_kwargs = mock_checker.check_resource_access.call_args[1]
+        self.assertEqual(call_kwargs["relation"], "role_binding_grant")
+
+    @patch("management.permissions.role_binding_access.FEATURE_FLAGS")
+    @patch("management.permissions.role_binding_access.get_kessel_principal_id")
+    @patch("management.permissions.role_binding_access.WorkspaceInventoryAccessChecker")
+    def test_batch_create_checks_each_unique_resource(
+        self, mock_checker_class, mock_get_principal_id, mock_feature_flags
+    ):
+        """batch_create should check each unique resource and deduplicate."""
+        permission = RoleBindingKesselAccessPermission()
+        mock_feature_flags.is_use_role_binding_view_permission_enabled.return_value = False
+        mock_get_principal_id.return_value = "localhost/test-user-123"
+
+        mock_checker = MagicMock()
+        mock_checker.check_resource_access.return_value = True
+        mock_checker_class.return_value = mock_checker
+
+        # Two items targeting the same workspace — should only check once
+        mock_request = self._make_batch_request(
+            [
+                {"id": self.workspace.id, "type": "workspace"},
+                {"id": self.workspace.id, "type": "workspace"},
+            ]
+        )
+
+        result = permission.has_permission(mock_request, self._make_batch_view())
+
+        self.assertTrue(result)
+        self.assertEqual(mock_checker.check_resource_access.call_count, 1)
+
+    @patch("management.permissions.role_binding_access.FEATURE_FLAGS")
+    @patch("management.permissions.role_binding_access.get_kessel_principal_id")
+    @patch("management.permissions.role_binding_access.WorkspaceInventoryAccessChecker")
+    def test_batch_create_checks_multiple_distinct_resources(
+        self, mock_checker_class, mock_get_principal_id, mock_feature_flags
+    ):
+        """batch_create should check each distinct resource separately."""
+        permission = RoleBindingKesselAccessPermission()
+        mock_feature_flags.is_use_role_binding_view_permission_enabled.return_value = False
+        mock_get_principal_id.return_value = "localhost/test-user-123"
+
+        mock_checker = MagicMock()
+        mock_checker.check_resource_access.return_value = True
+        mock_checker_class.return_value = mock_checker
+
+        second_workspace = Workspace.objects.create(
+            name="Second Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.default_workspace,
+        )
+
+        mock_request = self._make_batch_request(
+            [
+                {"id": self.workspace.id, "type": "workspace"},
+                {"id": second_workspace.id, "type": "workspace"},
+            ]
+        )
+
+        result = permission.has_permission(mock_request, self._make_batch_view())
+
+        self.assertTrue(result)
+        self.assertEqual(mock_checker.check_resource_access.call_count, 2)
+
+        second_workspace.delete()
+
+    @patch("management.permissions.role_binding_access.FEATURE_FLAGS")
+    @patch("management.permissions.role_binding_access.get_kessel_principal_id")
+    @patch("management.permissions.role_binding_access.WorkspaceInventoryAccessChecker")
+    def test_batch_create_denied_when_any_resource_fails(
+        self, mock_checker_class, mock_get_principal_id, mock_feature_flags
+    ):
+        """batch_create should deny entire batch if any resource check fails."""
+        permission = RoleBindingKesselAccessPermission()
+        mock_feature_flags.is_use_role_binding_view_permission_enabled.return_value = False
+        mock_get_principal_id.return_value = "localhost/test-user-123"
+
+        mock_checker = MagicMock()
+        # First resource allowed, second denied
+        mock_checker.check_resource_access.side_effect = [True, False]
+        mock_checker_class.return_value = mock_checker
+
+        second_workspace = Workspace.objects.create(
+            name="Second Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.default_workspace,
+        )
+
+        mock_request = self._make_batch_request(
+            [
+                {"id": self.workspace.id, "type": "workspace"},
+                {"id": second_workspace.id, "type": "workspace"},
+            ]
+        )
+
+        result = permission.has_permission(mock_request, self._make_batch_view())
+
+        self.assertFalse(result)
+
+        second_workspace.delete()
+
+    def test_batch_create_denied_when_body_missing_requests(self):
+        """batch_create should deny when request body has no 'requests' key."""
+        permission = RoleBindingKesselAccessPermission()
+
+        mock_request = Mock()
+        mock_request.data = {}
+        mock_request.query_params = {}
+
+        result = permission.has_permission(mock_request, self._make_batch_view())
+
+        self.assertFalse(result)
+
+    def test_batch_create_denied_when_requests_empty(self):
+        """batch_create should deny when 'requests' is empty."""
+        permission = RoleBindingKesselAccessPermission()
+
+        mock_request = Mock()
+        mock_request.data = {"requests": []}
+        mock_request.query_params = {}
+
+        result = permission.has_permission(mock_request, self._make_batch_view())
+
+        self.assertFalse(result)
+
+    def test_batch_create_denied_when_resource_missing_id(self):
+        """batch_create should deny when a resource item is missing id."""
+        permission = RoleBindingKesselAccessPermission()
+
+        mock_request = Mock()
+        mock_request.data = {"requests": [{"resource": {"type": "workspace"}, "subject": {}, "role": {}}]}
+        mock_request.query_params = {}
+
+        result = permission.has_permission(mock_request, self._make_batch_view())
+
+        self.assertFalse(result)
+
+    def test_batch_create_denied_when_resource_missing_type(self):
+        """batch_create should deny when a resource item is missing type."""
+        permission = RoleBindingKesselAccessPermission()
+
+        mock_request = Mock()
+        mock_request.data = {"requests": [{"resource": {"id": str(self.workspace.id)}, "subject": {}, "role": {}}]}
+        mock_request.query_params = {}
+
+        result = permission.has_permission(mock_request, self._make_batch_view())
+
+        self.assertFalse(result)
+
+    @patch("management.permissions.role_binding_access.get_kessel_principal_id")
+    @patch("management.permissions.role_binding_access.WorkspaceInventoryAccessChecker")
+    def test_batch_create_denied_for_unknown_resource_type(self, mock_checker_class, mock_get_principal_id):
+        """batch_create should deny for unknown resource types."""
+        permission = RoleBindingKesselAccessPermission()
+        mock_get_principal_id.return_value = "localhost/test-user-123"
+
+        mock_request = self._make_batch_request([{"id": "some-id", "type": "unknown_type"}])
+
+        result = permission.has_permission(mock_request, self._make_batch_view())
+
+        self.assertFalse(result)
+        # Principal is resolved eagerly, but Kessel checker is never called
+        mock_checker_class.return_value.check_resource_access.assert_not_called()
+
+    def test_batch_create_tenant_resource_requires_org_admin(self):
+        """batch_create with tenant resource should require org admin."""
+        permission = RoleBindingKesselAccessPermission()
+
+        tenant_resource_id = self.tenant.tenant_resource_id()
+        mock_request = Mock()
+        mock_request.user.system = False
+        mock_request.user.admin = False
+        mock_request.query_params = {}
+        mock_request.data = {
+            "requests": [
+                {
+                    "resource": {"id": tenant_resource_id, "type": "tenant"},
+                    "subject": {"id": "some-group-id", "type": "group"},
+                    "role": {"id": "some-role-id"},
+                }
+            ]
+        }
+        mock_request.tenant = self.tenant
+
+        result = permission.has_permission(mock_request, self._make_batch_view())
+
+        self.assertFalse(result)
+
+    def test_batch_create_tenant_resource_allowed_for_org_admin(self):
+        """batch_create with tenant resource should allow org admin."""
+        permission = RoleBindingKesselAccessPermission()
+
+        tenant_resource_id = self.tenant.tenant_resource_id()
+        mock_request = Mock()
+        mock_request.user.system = False
+        mock_request.user.admin = True
+        mock_request.query_params = {}
+        mock_request.data = {
+            "requests": [
+                {
+                    "resource": {"id": tenant_resource_id, "type": "tenant"},
+                    "subject": {"id": "some-group-id", "type": "group"},
+                    "role": {"id": "some-role-id"},
+                }
+            ]
+        }
+        mock_request.tenant = self.tenant
+
+        result = permission.has_permission(mock_request, self._make_batch_view())
+
+        self.assertTrue(result)
+
+    @patch("management.permissions.role_binding_access.get_kessel_principal_id")
+    @patch("management.permissions.role_binding_access.WorkspaceInventoryAccessChecker")
+    def test_batch_create_tenant_only_does_not_call_kessel(self, mock_checker_class, mock_get_principal_id):
+        """Tenant-only batch should short-circuit without invoking Kessel."""
+        permission = RoleBindingKesselAccessPermission()
+
+        tenant_resource_id = self.tenant.tenant_resource_id()
+        mock_request = Mock()
+        mock_request.user.system = False
+        mock_request.user.admin = True
+        mock_request.query_params = {}
+        mock_request.data = {
+            "requests": [
+                {
+                    "resource": {"id": tenant_resource_id, "type": "tenant"},
+                    "subject": {"id": "some-group-id", "type": "group"},
+                    "role": {"id": "some-role-id"},
+                }
+            ]
+        }
+        mock_request.tenant = self.tenant
+
+        result = permission.has_permission(mock_request, self._make_batch_view())
+
+        self.assertTrue(result)
+        mock_get_principal_id.assert_not_called()
+        mock_checker_class.assert_not_called()
+
+    def test_batch_create_denied_when_body_is_list(self):
+        """batch_create should deny when request body is a list instead of dict."""
+        permission = RoleBindingKesselAccessPermission()
+
+        mock_request = Mock()
+        mock_request.data = [{"resource": {"id": "ws-1", "type": "workspace"}}]
+        mock_request.query_params = {}
+
+        result = permission.has_permission(mock_request, self._make_batch_view())
+
+        self.assertFalse(result)
+
+
+@override_settings(V2_APIS_ENABLED=True)
+class RoleBindingBySubjectWritePermissionTests(RoleBindingAccessTestMixin, TransactionIdentityRequest):
+    """Tests for PUT by_subject action Kessel access checks."""
+
+    def _make_by_subject_put_view(self):
+        """Build a mock view for PUT by_subject."""
+        mock_view = Mock()
+        mock_view.action = "by_subject"
+        return mock_view
+
+    def _make_put_request(self, resource_id, resource_type):
+        """Build a mock PUT request with query params."""
+        mock_request = Mock()
+        mock_request.method = "PUT"
+        mock_request.user.system = False
+        mock_request.user.admin = False
+        mock_request.query_params = {
+            "resource_id": str(resource_id),
+            "resource_type": resource_type,
+        }
+        return mock_request
+
+    @patch("management.permissions.role_binding_access.FEATURE_FLAGS")
+    @patch("management.permissions.role_binding_access.get_kessel_principal_id")
+    @patch("management.permissions.role_binding_access.WorkspaceInventoryAccessChecker")
+    def test_put_by_subject_uses_edit_relation_when_flag_disabled(
+        self, mock_checker_class, mock_get_principal_id, mock_feature_flags
+    ):
+        """PUT by_subject should use 'edit' relation when feature flag is disabled (MVP)."""
+        permission = RoleBindingKesselAccessPermission()
+        mock_feature_flags.is_use_role_binding_view_permission_enabled.return_value = False
+        mock_get_principal_id.return_value = "localhost/test-user-123"
+
+        mock_checker = MagicMock()
+        mock_checker.check_resource_access.return_value = True
+        mock_checker_class.return_value = mock_checker
+
+        mock_request = self._make_put_request(self.workspace.id, "workspace")
+
+        result = permission.has_permission(mock_request, self._make_by_subject_put_view())
+
+        self.assertTrue(result)
+        mock_checker.check_resource_access.assert_called_once()
+        call_kwargs = mock_checker.check_resource_access.call_args[1]
+        self.assertEqual(call_kwargs["relation"], "edit")
+
+    @patch("management.permissions.role_binding_access.FEATURE_FLAGS")
+    @patch("management.permissions.role_binding_access.get_kessel_principal_id")
+    @patch("management.permissions.role_binding_access.WorkspaceInventoryAccessChecker")
+    def test_put_by_subject_uses_grant_and_revoke_when_flag_enabled(
+        self, mock_checker_class, mock_get_principal_id, mock_feature_flags
+    ):
+        """PUT by_subject should check both 'role_binding_grant' AND 'role_binding_revoke' (POST-MVP)."""
+        permission = RoleBindingKesselAccessPermission()
+        mock_feature_flags.is_use_role_binding_view_permission_enabled.return_value = True
+        mock_get_principal_id.return_value = "localhost/test-user-123"
+
+        mock_checker = MagicMock()
+        mock_checker.check_resource_access.return_value = True
+        mock_checker_class.return_value = mock_checker
+
+        mock_request = self._make_put_request(self.workspace.id, "workspace")
+
+        result = permission.has_permission(mock_request, self._make_by_subject_put_view())
+
+        self.assertTrue(result)
+        self.assertEqual(mock_checker.check_resource_access.call_count, 2)
+        relations_checked = [call[1]["relation"] for call in mock_checker.check_resource_access.call_args_list]
+        self.assertIn("role_binding_grant", relations_checked)
+        self.assertIn("role_binding_revoke", relations_checked)
+
+    @patch("management.permissions.role_binding_access.FEATURE_FLAGS")
+    @patch("management.permissions.role_binding_access.get_kessel_principal_id")
+    @patch("management.permissions.role_binding_access.WorkspaceInventoryAccessChecker")
+    def test_put_by_subject_denied_when_grant_fails(
+        self, mock_checker_class, mock_get_principal_id, mock_feature_flags
+    ):
+        """PUT by_subject should deny when role_binding_grant fails (POST-MVP)."""
+        permission = RoleBindingKesselAccessPermission()
+        mock_feature_flags.is_use_role_binding_view_permission_enabled.return_value = True
+        mock_get_principal_id.return_value = "localhost/test-user-123"
+
+        mock_checker = MagicMock()
+        mock_checker.check_resource_access.return_value = False
+        mock_checker_class.return_value = mock_checker
+
+        mock_request = self._make_put_request(self.workspace.id, "workspace")
+
+        result = permission.has_permission(mock_request, self._make_by_subject_put_view())
+
+        self.assertFalse(result)
+        # Should stop after first failed check (grant), not check revoke
+        self.assertEqual(mock_checker.check_resource_access.call_count, 1)
+
+    @patch("management.permissions.role_binding_access.FEATURE_FLAGS")
+    @patch("management.permissions.role_binding_access.get_kessel_principal_id")
+    @patch("management.permissions.role_binding_access.WorkspaceInventoryAccessChecker")
+    def test_put_by_subject_denied_when_grant_passes_but_revoke_fails(
+        self, mock_checker_class, mock_get_principal_id, mock_feature_flags
+    ):
+        """PUT by_subject should deny when grant passes but revoke fails (POST-MVP)."""
+        permission = RoleBindingKesselAccessPermission()
+        mock_feature_flags.is_use_role_binding_view_permission_enabled.return_value = True
+        mock_get_principal_id.return_value = "localhost/test-user-123"
+
+        mock_checker = MagicMock()
+        # Grant passes, revoke fails
+        mock_checker.check_resource_access.side_effect = [True, False]
+        mock_checker_class.return_value = mock_checker
+
+        mock_request = self._make_put_request(self.workspace.id, "workspace")
+
+        result = permission.has_permission(mock_request, self._make_by_subject_put_view())
+
+        self.assertFalse(result)
+        self.assertEqual(mock_checker.check_resource_access.call_count, 2)
+
+    @patch("management.permissions.role_binding_access.WorkspaceInventoryAccessChecker")
+    def test_put_by_subject_denied_when_unknown_resource_type(self, mock_checker_class):
+        """PUT by_subject should deny when resource_type is unknown and not call Kessel."""
+        permission = RoleBindingKesselAccessPermission()
+
+        mock_request = self._make_put_request(self.workspace.id, "unknown_type")
+
+        result = permission.has_permission(mock_request, self._make_by_subject_put_view())
+
+        self.assertFalse(result)
+        mock_checker_class.assert_not_called()
+
+    @patch("management.permissions.role_binding_access.WorkspaceInventoryAccessChecker")
+    @patch("management.permissions.role_binding_access.FEATURE_FLAGS")
+    def test_put_by_subject_tenant_flag_enabled_denies_non_admin(self, mock_feature_flags, mock_checker_class):
+        """PUT by_subject tenant should deny non-admins when flag is enabled and not call Kessel."""
+        permission = RoleBindingKesselAccessPermission()
+        mock_feature_flags.is_use_role_binding_view_permission_enabled.return_value = True
+
+        tenant_resource_id = self.tenant.tenant_resource_id()
+        mock_request = self._make_put_request(tenant_resource_id, "tenant")
+        mock_request.tenant = self.tenant
+
+        result = permission.has_permission(mock_request, self._make_by_subject_put_view())
+
+        self.assertFalse(result)
+        mock_checker_class.assert_not_called()
+
+    @patch("management.permissions.role_binding_access.WorkspaceInventoryAccessChecker")
+    @patch("management.permissions.role_binding_access.FEATURE_FLAGS")
+    def test_put_by_subject_tenant_flag_enabled_allows_admin(self, mock_feature_flags, mock_checker_class):
+        """PUT by_subject tenant should allow admins when flag is enabled and not call Kessel."""
+        permission = RoleBindingKesselAccessPermission()
+        mock_feature_flags.is_use_role_binding_view_permission_enabled.return_value = True
+
+        tenant_resource_id = self.tenant.tenant_resource_id()
+        mock_request = self._make_put_request(tenant_resource_id, "tenant")
+        mock_request.user.admin = True
+        mock_request.tenant = self.tenant
+
+        result = permission.has_permission(mock_request, self._make_by_subject_put_view())
+
+        self.assertTrue(result)
+        mock_checker_class.assert_not_called()
+
+    def test_put_by_subject_denied_when_missing_resource_params(self):
+        """PUT by_subject should deny when resource_id/resource_type are missing."""
+        permission = RoleBindingKesselAccessPermission()
+
+        mock_request = Mock()
+        mock_request.method = "PUT"
+        mock_request.user.system = False
+        mock_request.user.admin = False
+        mock_request.query_params = {}
+
+        result = permission.has_permission(mock_request, self._make_by_subject_put_view())
+
+        self.assertFalse(result)
+
+    @patch("management.permissions.role_binding_access.FEATURE_FLAGS")
+    @patch("management.permissions.role_binding_access.get_kessel_principal_id")
+    @patch("management.permissions.role_binding_access.WorkspaceInventoryAccessChecker")
+    def test_put_by_subject_denied_when_edit_check_fails(
+        self, mock_checker_class, mock_get_principal_id, mock_feature_flags
+    ):
+        """PUT by_subject should deny when edit check fails (MVP)."""
+        permission = RoleBindingKesselAccessPermission()
+        mock_feature_flags.is_use_role_binding_view_permission_enabled.return_value = False
+        mock_get_principal_id.return_value = "localhost/test-user-123"
+
+        mock_checker = MagicMock()
+        mock_checker.check_resource_access.return_value = False
+        mock_checker_class.return_value = mock_checker
+
+        mock_request = self._make_put_request(self.workspace.id, "workspace")
+
+        result = permission.has_permission(mock_request, self._make_by_subject_put_view())
+
+        self.assertFalse(result)
+        call_kwargs = mock_checker.check_resource_access.call_args[1]
+        self.assertEqual(call_kwargs["relation"], "edit")
+
+    def test_put_by_subject_tenant_resource_requires_org_admin(self):
+        """PUT by_subject with tenant resource should require org admin."""
+        permission = RoleBindingKesselAccessPermission()
+
+        tenant_resource_id = self.tenant.tenant_resource_id()
+        mock_request = Mock()
+        mock_request.method = "PUT"
+        mock_request.user.system = False
+        mock_request.user.admin = False
+        mock_request.query_params = {
+            "resource_id": tenant_resource_id,
+            "resource_type": "tenant",
+        }
+        mock_request.tenant = self.tenant
+
+        result = permission.has_permission(mock_request, self._make_by_subject_put_view())
+
+        self.assertFalse(result)
+
+    @patch("management.permissions.role_binding_access.FEATURE_FLAGS")
+    def test_put_by_subject_tenant_resource_allowed_for_org_admin(self, mock_feature_flags):
+        """PUT by_subject with tenant resource should allow org admin."""
+        permission = RoleBindingKesselAccessPermission()
+        mock_feature_flags.is_use_role_binding_view_permission_enabled.return_value = False
+
+        tenant_resource_id = self.tenant.tenant_resource_id()
+        mock_request = Mock()
+        mock_request.method = "PUT"
+        mock_request.user.system = False
+        mock_request.user.admin = True
+        mock_request.query_params = {
+            "resource_id": tenant_resource_id,
+            "resource_type": "tenant",
+        }
+        mock_request.tenant = self.tenant
+
+        result = permission.has_permission(mock_request, self._make_by_subject_put_view())
+
+        self.assertTrue(result)
