@@ -828,6 +828,23 @@ class RoleBindingListViewSetTest(IdentityRequest):
         self.assertEqual(len(seeded_items), 1)
         self.assertEqual(seeded_items[0]["role"]["name"], "Detailed Seeded Role")
 
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_includes_resource_name_when_requested(self, mock_permission):
+        """List returns resource.name when fields includes resource(name)."""
+        url = self._get_list_url()
+        response = self.client.get(
+            f"{url}?fields=resource(id,name),role(id),subject(id,type)&limit=3",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for item in response.data["data"]:
+            self.assertEqual(item["resource"]["id"], str(self.workspace.id))
+            self.assertEqual(item["resource"]["name"], "Test Workspace")
+
     # --- Ordering tests for list endpoint ---
 
     @patch(

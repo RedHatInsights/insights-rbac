@@ -538,7 +538,8 @@ class RoleBindingListOutputSerializer(RoleBindingOutputSerializerMixin, serializ
     Field selection syntax:
     - subject(group.name, group.description) - accesses obj.name, obj.description
     - role(name) - accesses role.name
-    - resource(type) - accesses resource type from the binding
+    - resource(name, type) - display name via ``RoleBindingQuerySet.with_resource_names()`` annotation;
+      type from the binding
     """
 
     subject = serializers.SerializerMethodField()
@@ -596,14 +597,19 @@ class RoleBindingListOutputSerializer(RoleBindingOutputSerializerMixin, serializ
 
         Default (no fields param): Returns only resource id.
         With fields param: id is always included, plus explicitly requested fields.
+        ``name`` requires the queryset to have been annotated via
+        ``RoleBindingQuerySet.with_resource_names()``.
         """
         field_selection = self._get_field_selection()
 
         resource_data = {"id": obj.resource_id}
 
         if field_selection is not None:
-            if "type" in field_selection.get_nested("resource"):
+            nested_resource = field_selection.get_nested("resource")
+            if "type" in nested_resource:
                 resource_data["type"] = obj.resource_type
+            if "name" in nested_resource:
+                resource_data["name"] = getattr(obj, "resource_name", None)
 
         return resource_data
 
