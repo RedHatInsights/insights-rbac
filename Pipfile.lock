@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "ebc77841fff16c80bf6ab0f988545fd40dfb6565ef3bbf7813697561aec3c02a"
+            "sha256": "3cd253e184dc6d4d5f31fe8ca1f16ccb6481ca16090f48d8e9aaa7ab23320fc0"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -1091,15 +1091,6 @@
             "markers": "python_version >= '3.9'",
             "version": "==6.33.6"
         },
-        "protoc-gen-validate": {
-            "hashes": [
-                "sha256:76c1cea6c2b1290fc2a266b7d19f44cdcc1dc496236b760db1a50e1672d6c978",
-                "sha256:da57131e2315f2b40a5ad4c75ce5352dbd8edc18a0787557895e1ebd2d74b883"
-            ],
-            "index": "pypi",
-            "markers": "python_version >= '3.10'",
-            "version": "==1.3.3"
-        },
         "psycopg2": {
             "hashes": [
                 "sha256:103e857f46bb76908768ead4e2d0ba1d1a130e7b8ed77d3ae91e8b33481813e8",
@@ -1657,12 +1648,6 @@
             ],
             "markers": "sys_platform != 'emscripten'",
             "version": "==0.42.0"
-        },
-        "validate-email": {
-            "hashes": [
-                "sha256:784719dc5f780be319cdd185dc85dd93afebdb6ebb943811bc4c7c5f9c72aeaf"
-            ],
-            "version": "==1.3"
         },
         "vine": {
             "hashes": [
