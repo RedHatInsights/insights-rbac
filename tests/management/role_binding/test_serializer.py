@@ -1111,7 +1111,7 @@ class RoleBindingListOutputSerializerTest(IdentityRequest):
         self.assertEqual(data["resource"]["type"], "workspace")
 
     def test_field_selection_resource_name(self):
-        """resource(name) uses RoleBinding.name (workspace display name)."""
+        """resource(name) resolves workspace display name via queryset annotation."""
         prev_resource_id = self.binding.resource_id
         root = Workspace.objects.create(
             name=Workspace.SpecialNames.ROOT,
@@ -1134,9 +1134,10 @@ class RoleBindingListOutputSerializerTest(IdentityRequest):
             self.binding.resource_id = str(ws.id)
             self.binding.save(update_fields=["resource_id"])
 
+            annotated_binding = RoleBinding.objects.filter(pk=self.binding.pk).with_resource_names().get()
             fs = RoleBindingFieldSelection.parse("resource(name)")
             data = RoleBindingListOutputSerializer(
-                self.binding,
+                annotated_binding,
                 context={"request": Mock(), "field_selection": fs},
             ).data
             self.assertEqual(data["resource"]["name"], "List RB Name Test WS")

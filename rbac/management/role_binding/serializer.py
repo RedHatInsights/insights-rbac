@@ -538,8 +538,8 @@ class RoleBindingListOutputSerializer(RoleBindingOutputSerializerMixin, serializ
     Field selection syntax:
     - subject(group.name, group.description) - accesses obj.name, obj.description
     - role(name) - accesses role.name
-    - resource(name, type) - display name from ``resource_names_by_key`` context when present
-      (list endpoint avoids N+1), else ``RoleBinding.bound_resource_display_name``; type from the binding
+    - resource(name, type) - display name via ``RoleBindingQuerySet.with_resource_names()`` annotation;
+      type from the binding
     """
 
     subject = serializers.SerializerMethodField()
@@ -592,18 +592,13 @@ class RoleBindingListOutputSerializer(RoleBindingOutputSerializerMixin, serializ
         field_selection = self._get_field_selection()
         return self._build_role_data(obj.role, field_selection)
 
-    def _resource_display_name(self, obj: RoleBinding) -> Optional[str]:
-        """Resolve resource display name; prefer batched map from list view to avoid N+1."""
-        cached = self.context.get("resource_names_by_key")
-        if cached is not None:
-            return cached.get((obj.resource_type, obj.resource_id))
-        return RoleBinding.bound_resource_display_name(obj.tenant, obj.resource_id, obj.resource_type)
-
     def get_resource(self, obj: RoleBinding):
         """Extract resource information from the RoleBinding.
 
         Default (no fields param): Returns only resource id.
         With fields param: id is always included, plus explicitly requested fields.
+        ``name`` requires the queryset to have been annotated via
+        ``RoleBindingQuerySet.with_resource_names()``.
         """
         field_selection = self._get_field_selection()
 
@@ -614,7 +609,7 @@ class RoleBindingListOutputSerializer(RoleBindingOutputSerializerMixin, serializ
             if "type" in nested_resource:
                 resource_data["type"] = obj.resource_type
             if "name" in nested_resource:
-                resource_data["name"] = self._resource_display_name(obj)
+                resource_data["name"] = getattr(obj, "resource_name", None)
 
         return resource_data
 
