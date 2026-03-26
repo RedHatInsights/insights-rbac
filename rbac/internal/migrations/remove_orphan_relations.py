@@ -34,6 +34,10 @@ from management.relation_replicator.relation_replicator import ReplicationEvent,
 from management.role.v2_model import RoleV2, SeededRoleV2
 from management.role_binding.model import RoleBinding
 from management.tenant_mapping.model import DefaultAccessType
+from management.tenant_mapping.v2_activation import (
+    lock_tenant_version,
+    TenantVersion,
+)
 from management.tenant_service.v2 import lock_tenant_for_bootstrap, TenantBootstrapLock
 from migration_tool.in_memory_tuples import RelationTuple
 from migration_tool.models import V2boundresource, role_permission_tuple
@@ -282,33 +286,39 @@ def _remove_orphaned_role_bindings(
         # We must use SERIALIZABLE here because we are potentially interacting with concurrent V2 writers (which all
         # use SERIALIZABLE rather than explicit locking).
         #
-        # Unfortunately, we must *also* use select_for_update() here because we are potentially interacting with
-        # concurrent V1 writers (which all use SELECT FOR UPDATE rather than SERIALIZABLE).
+        # Unfortunately, we must *also* use select_for_update() for V1 tenants here because we are potentially
+        # interacting with concurrent V1 writers (which all use SELECT FOR UPDATE rather than SERIALIZABLE).
         with atomic_block():
             to_remove: list[RelationTuple | Relationship] = []
 
             bootstrap_lock: TenantBootstrapLock = lock_tenant_for_bootstrap(tenant)
             builtin_binding_ids: set[str] = bootstrap_lock.tenant_mapping.role_binding_ids()
 
-            # This will lock both the bindings and custom roles.
-            # See https://docs.djangoproject.com/en/5.2/ref/models/querysets/#select-for-update
-            custom_binding_mappings: list[BindingMapping] = list(
-                BindingMapping.objects.filter(mappings__id__in=binding_ids, role__system=False)
-                .select_related("role")
-                .select_for_update()
-            )
+            tenant_is_v1 = lock_tenant_version(tenant) == TenantVersion.VERSION_1
 
-            # Only lock the bindings themselves here, not the associated system roles.
-            system_binding_mappings: list[BindingMapping] = list(
-                BindingMapping.objects.filter(mappings__id__in=binding_ids, role__system=True)
-                .select_related("role")
-                .select_for_update(of=["self"])
-            )
+            if tenant_is_v1:
+                # This will lock both the bindings and custom roles.
+                # See https://docs.djangoproject.com/en/5.2/ref/models/querysets/#select-for-update
+                custom_binding_mappings: list[BindingMapping] = list(
+                    BindingMapping.objects.filter(mappings__id__in=binding_ids, role__system=False)
+                    .select_related("role")
+                    .select_for_update()
+                )
 
-            binding_mappings_by_id: dict[str, BindingMapping] = {
-                b.mappings["id"]: b for b in [*custom_binding_mappings, *system_binding_mappings]
-            }
+                # Only lock the bindings themselves here, not the associated system roles.
+                system_binding_mappings: list[BindingMapping] = list(
+                    BindingMapping.objects.filter(mappings__id__in=binding_ids, role__system=True)
+                    .select_related("role")
+                    .select_for_update(of=["self"])
+                )
 
+                binding_mappings_by_id: dict[str, BindingMapping] = {
+                    b.mappings["id"]: b for b in [*custom_binding_mappings, *system_binding_mappings]
+                }
+            else:
+                binding_mappings_by_id = {}
+
+            # We theoretically don't need to take a lock here for V2 tenants, but it's simpler to just always do so.
             role_bindings: list[RoleBinding] = list(
                 RoleBinding.objects.filter(uuid__in=binding_ids)
                 .prefetch_related("group_entries", "principal_entries")

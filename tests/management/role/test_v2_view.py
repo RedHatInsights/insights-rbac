@@ -19,7 +19,7 @@
 import uuid
 from collections.abc import Iterable
 from importlib import reload
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 from django.test import override_settings
 from django.urls import clear_url_caches, reverse
@@ -749,17 +749,19 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]), 2)
 
-    def test_list_roles_name_filter_is_case_sensitive(self):
-        """Test that name filter is case sensitive exact match."""
+    def test_list_roles_name_filter_is_case_insensitive(self):
+        """Test that name filter is case insensitive."""
         RoleV2.objects.create(name="Test_Role", description="Uppercase", tenant=self.tenant)
 
-        # Should not match "test_role" (lowercase from setUp)
+        # Should match both "Test_Role" and "test_role" (from setUp)
         url = f"{self.list_url}&name=Test_Role"
         response = self.client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data["data"]), 1)
-        self.assertEqual(response.data["data"][0]["name"], "Test_Role")
+        self.assertEqual(len(response.data["data"]), 2)
+
+        returned_names = {role["name"] for role in response.data["data"]}
+        self.assertEqual(returned_names, {"Test_Role", "test_role"})
 
     def test_list_roles_with_permissions_field(self):
         """Test that requesting permissions field returns permissions array."""
@@ -1250,8 +1252,11 @@ class RoleV2ViewSetTests(IdentityRequest):
         url = f"{self.url}?fields=id,nonexistent_field"
         response = self.client.post(url, data, format="json")
 
-        # Should still succeed but ignore invalid field
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response["Content-Type"], "application/problem+json")
+        self.assertIn("nonexistent_field", str(response.data))
+        self.assertEqual(response.data["status"], 400)
+        self.assertEqual(response.data["errors"][0]["field"], "fields")
 
     def test_create_role_with_asterisk_in_name_returns_400(self):
         """Test that creating a role with '*' in the name returns 400."""
@@ -1372,7 +1377,7 @@ class RoleV2ViewSetTests(IdentityRequest):
         )
 
     def test_update_role_nonexistent_returns_404(self):
-        """Test that updating a nonexistent role returns 404."""
+        """Test that updating a nonexistent role returns 404 with Problem RFC format."""
         update_url = reverse("v2_management:roles-detail", kwargs={"uuid": "550e8400-e29b-41d4-a716-446655440000"})
         data = {
             "name": "Updated Role",
@@ -1383,9 +1388,13 @@ class RoleV2ViewSetTests(IdentityRequest):
         response = self.client.put(update_url, data, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(response["Content-Type"], "application/problem+json")
+        self.assertEqual(response.data["status"], 404)
+        self.assertIn("title", response.data)
+        self.assertIn("detail", response.data)
 
     def test_update_role_duplicate_name_returns_400(self):
-        """Test that updating a role to duplicate name returns 400."""
+        """Test that updating a role to duplicate name returns 400 with Problem RFC format."""
         role1 = CustomRoleV2.objects.create(
             name="Role One",
             description="First role",
@@ -1408,10 +1417,16 @@ class RoleV2ViewSetTests(IdentityRequest):
         response = self.client.put(update_url, data, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("already exists", response.data["detail"])
+        self.assertEqual(response["Content-Type"], "application/problem+json")
+        self.assertEqual(response.data["status"], 400)
+        self.assertEqual(response.data["title"], "The request payload contains invalid syntax.")
+        self.assertIn("detail", response.data)
+        self.assertEqual(len(response.data["errors"]), 1)
+        self.assertEqual(response.data["errors"][0]["field"], "name")
+        self.assertIn("Role One", response.data["errors"][0]["message"])
 
     def test_update_role_empty_permissions_returns_400(self):
-        """Test that updating a role with empty permissions returns 400."""
+        """Test that updating a role with empty permissions returns 400 with Problem RFC format."""
         role = CustomRoleV2.objects.create(
             name="Test Role",
             description="Test description",
@@ -1428,6 +1443,13 @@ class RoleV2ViewSetTests(IdentityRequest):
         response = self.client.put(update_url, data, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response["Content-Type"], "application/problem+json")
+        self.assertEqual(response.data["status"], 400)
+        self.assertEqual(response.data["title"], "The request payload contains invalid syntax.")
+        self.assertIn("detail", response.data)
+        self.assertEqual(len(response.data["errors"]), 1)
+        self.assertEqual(response.data["errors"][0]["field"], "permissions")
+        self.assertEqual(response.data["errors"][0]["message"], "permissions is required")
 
     def test_update_role_missing_description_succeeds(self):
         """Test that updating a role without description succeeds with empty description."""
@@ -1550,7 +1572,7 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertEqual(response.data["errors"][0]["field"], "name")
 
     def test_update_platform_role_returns_404(self):
-        """Test that attempting to update a platform role returns 404."""
+        """Test that attempting to update a platform role returns 404 with Problem RFC format."""
         # Create a platform role
         platform_role = PlatformRoleV2.objects.create(
             name="Test Platform Role",
@@ -1570,6 +1592,46 @@ class RoleV2ViewSetTests(IdentityRequest):
 
         # Platform roles are filtered out in get_queryset() for update action
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(response["Content-Type"], "application/problem+json")
+        self.assertEqual(response.data["status"], 404)
+        self.assertIn("title", response.data)
+        self.assertIn("detail", response.data)
+
+    # --- Problem RFC format on errors ---
+
+    def test_update_role_error_responses_use_problem_format(self):
+        """Test that update role error responses use full Problem RFC 9457 shape."""
+        role = CustomRoleV2.objects.create(
+            name="Test Role",
+            description="Test description",
+            tenant=self.tenant,
+        )
+        role.permissions.add(self.permission1)
+
+        update_url = reverse("v2_management:roles-detail", kwargs={"uuid": str(role.uuid)})
+        data = {
+            "name": "Updated Role",
+            "description": "Updated description",
+            "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
+        }
+
+        error_cases = [
+            ("invalid_field_name", f"{update_url}?fields=permission", "fields"),
+            ("multiple_invalid_fields", f"{update_url}?fields=permission,invalid_field", "fields"),
+            ("mixed_valid_invalid_fields", f"{update_url}?fields=name,permission,invalid", "fields"),
+        ]
+
+        for label, request_url, expected_field in error_cases:
+            with self.subTest(label=label):
+                response = self.client.put(request_url, data, format="json")
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, f"Failed for {label}")
+                self.assertEqual(response["Content-Type"], "application/problem+json")
+                self.assertEqual(response.data["status"], 400)
+                self.assertEqual(response.data["title"], "The request payload contains invalid syntax.")
+                self.assertIn("detail", response.data)
+                self.assertEqual(len(response.data["errors"]), 1)
+                self.assertEqual(response.data["errors"][0]["field"], expected_field)
+                self.assertIn("message", response.data["errors"][0])
 
     def test_update_description_noop_audit_log(self):
         """Test that name and description are not included in audit log if not modified."""
