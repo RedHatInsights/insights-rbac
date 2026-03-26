@@ -361,7 +361,7 @@ class RoleBindingService:
             )
 
         queryset = queryset.annotate(
-            latest_modified=Max("role_binding_entries__binding__role__modified", filter=latest_modified_filter)
+            latest_modified=Max("role_binding_entries__created", filter=latest_modified_filter)
         )
 
         queryset = self._annotate_role_fields_for_cursor(queryset, latest_modified_filter)
@@ -517,7 +517,7 @@ class RoleBindingService:
             )
 
         queryset = queryset.annotate(
-            latest_modified=Max("role_binding_entries__binding__role__modified", filter=latest_modified_filter)
+            latest_modified=Max("role_binding_entries__created", filter=latest_modified_filter)
         )
 
         queryset = self._annotate_role_fields_for_cursor(queryset, latest_modified_filter)

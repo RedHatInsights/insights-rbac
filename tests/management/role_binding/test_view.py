@@ -19,6 +19,7 @@
 import base64
 import json
 import uuid
+from datetime import timedelta
 from importlib import reload
 from unittest import skip
 from unittest.mock import ANY, patch
@@ -27,6 +28,8 @@ from urllib.parse import parse_qs, urlparse
 from django.test import TestCase
 from django.test.utils import override_settings
 from django.urls import clear_url_caches, reverse
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -47,6 +50,13 @@ from management.tenant_service.v2 import V2TenantBootstrapService
 from migration_tool.in_memory_tuples import InMemoryRelationReplicator
 from rbac import urls
 from tests.identity_request import IdentityRequest
+
+
+def _coerce_api_datetime(value):
+    """Normalize JSON/datetime values from API responses for comparisons."""
+    if isinstance(value, str):
+        return parse_datetime(value)
+    return value
 
 
 def _create_seeded_role_binding(tenant, workspace, permission, role_name, group_name):
@@ -982,7 +992,7 @@ class RoleBindingListViewSetTest(IdentityRequest):
         self.assertEqual(all_names, sorted(all_names, reverse=True))
 
 
-@override_settings(V2_APIS_ENABLED=True)
+@override_settings(V2_APIS_ENABLED=True, V2_EDIT_API_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
 class RoleBindingViewSetTest(IdentityRequest):
     """Test the RoleBindingViewSet by-subject endpoint."""
 
@@ -1012,6 +1022,9 @@ class RoleBindingViewSetTest(IdentityRequest):
             type=Workspace.Types.STANDARD,
             parent=self.default_workspace,
         )
+
+        # TenantMapping required for V2 write operations (e.g. PUT by-subject)
+        TenantMapping.objects.get_or_create(tenant=self.tenant, defaults={})
 
         # Create permission and role
         self.permission = Permission.objects.create(
@@ -1088,6 +1101,7 @@ class RoleBindingViewSetTest(IdentityRequest):
         Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.STANDARD).delete()
         Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.DEFAULT).delete()
         Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.ROOT).delete()
+        TenantMapping.objects.filter(tenant=self.tenant).delete()
         super().tearDown()
 
     def _get_by_subject_url(self):
@@ -1730,6 +1744,46 @@ class RoleBindingViewSetTest(IdentityRequest):
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
     )
+    def test_by_subject_order_by_last_modified(self, mock_permission):
+        """Test ordering by last_modified (assignment time) matches response field semantics."""
+        g_early, g_late = self.groups[0], self.groups[1]
+        rbg_early = RoleBindingGroup.objects.get(group=g_early, binding__resource_id=str(self.workspace.id))
+        rbg_late = RoleBindingGroup.objects.get(group=g_late, binding__resource_id=str(self.workspace.id))
+        base = timezone.now()
+        RoleBindingGroup.objects.filter(pk=rbg_early.pk).update(created=base - timedelta(hours=2))
+        RoleBindingGroup.objects.filter(pk=rbg_late.pk).update(created=base - timedelta(hours=1))
+
+        url = self._get_by_subject_url()
+
+        response_asc = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace"
+            f"&order_by=last_modified&fields=subject(id),last_modified&limit=100",
+            **self.headers,
+        )
+        self.assertEqual(response_asc.status_code, status.HTTP_200_OK)
+        data_asc = response_asc.data["data"]
+        self.assertGreater(len(data_asc), 1)
+        times_asc = [_coerce_api_datetime(item["last_modified"]) for item in data_asc]
+        self.assertEqual(times_asc, sorted(times_asc))
+        uuids_asc = [str(item["subject"]["id"]) for item in data_asc]
+        self.assertLess(uuids_asc.index(str(g_early.uuid)), uuids_asc.index(str(g_late.uuid)))
+
+        response_desc = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace"
+            f"&order_by=-last_modified&fields=subject(id),last_modified&limit=100",
+            **self.headers,
+        )
+        self.assertEqual(response_desc.status_code, status.HTTP_200_OK)
+        data_desc = response_desc.data["data"]
+        times_desc = [_coerce_api_datetime(item["last_modified"]) for item in data_desc]
+        self.assertEqual(times_desc, sorted(times_desc, reverse=True))
+        uuids_desc = [str(item["subject"]["id"]) for item in data_desc]
+        self.assertLess(uuids_desc.index(str(g_late.uuid)), uuids_desc.index(str(g_early.uuid)))
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
     def test_by_subject_order_by_role_name_with_pagination(self, mock_permission):
         """Test that cursor pagination maintains role.name ordering across pages."""
         url = self._get_by_subject_url()
@@ -1828,6 +1882,40 @@ class RoleBindingViewSetTest(IdentityRequest):
         self.assertIn("id", resource)
         self.assertNotIn("name", resource)
         self.assertNotIn("type", resource)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_by_subject_subject_created_reflects_assignment(self, mock_permission):
+        """Test that last_modified reflects when a subject was assigned to a role binding."""
+        url = self._get_by_subject_url()
+        group = self.groups[0]
+
+        # Assign a role to a group via PUT
+        put_response = self.client.put(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace"
+            f"&subject_id={group.uuid}&subject_type=group&fields=last_modified",
+            data={"roles": [{"id": str(self.role.uuid)}]},
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(put_response.status_code, status.HTTP_200_OK)
+
+        # GET by-subject with fields=last_modified and verify the value
+        get_response = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace"
+            f"&subject_type=group&subject_id={group.uuid}&fields=last_modified&limit=1",
+            **self.headers,
+        )
+        self.assertEqual(get_response.status_code, status.HTTP_200_OK)
+        data = get_response.data["data"]
+        self.assertGreater(len(data), 0)
+
+        item = data[0]
+        self.assertIn("last_modified", item)
+        last_modified = item["last_modified"]
+        self.assertIsNotNone(last_modified)
 
     @patch(
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",

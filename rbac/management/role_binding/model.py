@@ -310,6 +310,7 @@ class RoleBindingGroup(models.Model):
 
     group = models.ForeignKey(Group, on_delete=models.CASCADE, related_name="role_binding_entries")
     binding = models.ForeignKey(RoleBinding, on_delete=models.CASCADE, related_name="group_entries")
+    created = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=["group", "binding"], name="unique group binding pair")]
@@ -321,6 +322,7 @@ class RoleBindingPrincipal(models.Model):
     principal = models.ForeignKey(Principal, on_delete=models.CASCADE, related_name="role_binding_entries")
     binding = models.ForeignKey(RoleBinding, on_delete=models.CASCADE, related_name="principal_entries")
     source = models.CharField(max_length=128, null=False)
+    created = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         constraints = [
