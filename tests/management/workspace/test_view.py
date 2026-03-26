@@ -1725,6 +1725,25 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
         with self.assertRaises(DualWriteException):
             client.post(url, data, format="json", **self.headers)
 
+    @patch("management.base_viewsets.BaseV2ViewSet.create")
+    def test_create_bare_operational_error_propagates(self, mock_super_create):
+        """
+        Test that OperationalError without __cause__ re-raises as unhandled.
+
+        If OperationalError has no __cause__ (e.g., connection error, not serialization),
+        it should propagate as an unhandled exception rather than being silently swallowed.
+        """
+        bare_error = OperationalError("connection reset by peer")
+
+        mock_super_create.side_effect = bare_error
+
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        data = {"name": "Test Workspace Bare", "parent_id": str(self.default_workspace.id)}
+
+        with self.assertRaises(OperationalError):
+            client.post(url, data, format="json", **self.headers)
+
 
 @override_settings(V2_APIS_ENABLED=True, WORKSPACE_HIERARCHY_DEPTH_LIMIT=5)
 class WorkspaceMove(TransactionalWorkspaceViewTests):
@@ -2575,6 +2594,31 @@ class WorkspaceMove(TransactionalWorkspaceViewTests):
 
         # Verify the method was only called once (no retries for ValidationError)
         self.assertEqual(mock_serializer_move.call_count, 1)
+
+    @patch(
+        "management.workspace.relation_api_dual_write_workspace_handler.RelationApiDualWriteWorkspaceHandler._replicate"
+    )
+    def test_move_dual_write_operational_error_propagates_for_retry(self, mock_replicate):
+        """
+        Test that OperationalError from dual write handler propagates through for pgtransaction retry on move.
+
+        Same fix as create path: _replicate() now re-raises OperationalError instead of wrapping
+        in DualWriteException, allowing pgtransaction to retry. When retries are exhausted, returns 503.
+        """
+        serialization_error = OperationalError("could not serialize access")
+        serialization_error.__cause__ = SerializationFailure("could not serialize access due to concurrent update")
+
+        mock_replicate.side_effect = serialization_error
+
+        url = reverse("v2_management:workspace-move", kwargs={"pk": self.test_workspace.id})
+        client = APIClient()
+        data = {"parent_id": str(self.default_workspace.id)}
+        response = client.post(url, data, format="json", **self.headers)
+
+        # OperationalError propagates through _replicate -> pgtransaction retries -> exhausted -> 503
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertIn("temporarily unable to handle this request", str(response.data["detail"]))
+        self.assertEqual(response["Retry-After"], "1")
 
 
 @override_settings(V2_APIS_ENABLED=True)

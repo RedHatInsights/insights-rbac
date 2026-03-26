@@ -115,6 +115,7 @@ class RelationApiDualWriteWorkspaceHandler(BaseRelationApiDualWriteHandler):
                 "The transaction may be retried by pgtransaction.",
                 self.workspace.id,
                 self.event_type,
+                exc_info=True,
             )
             raise
         except Exception as e:
