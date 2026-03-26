@@ -41,10 +41,12 @@ python-dateutil = "==2.9.0.post0"
 redis = "==7.3.0"
 jsonschema = "*"
 pyasn1 = ">=0.6.2"
-unleashclient = "*"
+unleashclient = ">=5.12.5,<6.0.0"
 django-pgtransaction = "*"
 kessel-sdk = {extras = ["auth"], version = "*"}
 mcp = ">=1.26.0"
+pywin32 = {version = "*", markers = "sys_platform == 'win32'"}
+platformdirs = ">=4.9.2"
 
 [dev-packages]
 sphinx-rtd-theme = "==3.1.0"
