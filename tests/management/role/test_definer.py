@@ -83,12 +83,22 @@ class RoleDefinerTests(IdentityRequest):
             f"Expected child relation to be present: parent={str(parent_uuid)}, child={str(child_uuid)}",
         )
 
+        platform_role = PlatformRoleV2.objects.get(uuid=parent_uuid)
+        child_role = SeededRoleV2.objects.get(uuid=child_uuid)
+
+        self.assertTrue(platform_role.children.contains(child_role))
+
     def _assert_not_child(self, tuples: InMemoryTuples, parent_uuid: str | UUID, child_uuid: str | UUID):
         self.assertEqual(
             0,
             len(tuples.find_tuples(_child_predicate(parent_uuid=parent_uuid, child_uuid=child_uuid))),
             f"Expected child relation to be absent: parent={str(parent_uuid)}, child={str(child_uuid)}",
         )
+
+        platform_role = PlatformRoleV2.objects.get(uuid=parent_uuid)
+        child_role = SeededRoleV2.objects.get(uuid=child_uuid)
+
+        self.assertFalse(platform_role.children.contains(child_role))
 
     def setUp(self):
         """Set up the role definer tests."""
