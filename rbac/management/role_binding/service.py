@@ -869,6 +869,37 @@ class RoleBindingService:
 
         return result
 
+    @atomic
+    def delete_role_bindings_for_subject(
+        self, resource_type: str, resource_id: str, subject_type: str, subject_id: str
+    ):
+        """Remove all role bindings for a subject on a resource.
+
+        Args:
+            resource_type: The type of resource (e.g., 'workspace')
+            resource_id: The resource identifier
+            subject_type: The type of subject ('group' or 'user')
+            subject_id: The subject identifier (UUID)
+
+        Raises:
+            UnsupportedSubjectTypeError: If the subject type is not supported
+            NotFoundError: If the subject or resource cannot be found
+        """
+        self._validate_resource(resource_type, resource_id)
+        ensure_v2_write_activated(self.tenant)
+
+        subject = Subject.objects.by_type(type=subject_type, id=subject_id).entity
+
+        self._replace_role_bindings(resource_type=resource_type, resource_id=resource_id, subject=subject, roles=[])
+
+        logger.info(
+            "Updated role bindings for %s '%s' on %s '%s': removed all roles",
+            subject_type,
+            subject_id,
+            resource_type,
+            resource_id,
+        )
+
     def _validate_resource(self, resource_type: str, resource_id: str) -> None:
         """Validate that the resource exists and belongs to this tenant.
 

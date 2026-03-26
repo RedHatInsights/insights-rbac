@@ -32,6 +32,9 @@ from migration_tool.in_memory_tuples import (
     relation,
     resource,
     subject,
+    one_of,
+    resource_id,
+    subject_type,
 )
 
 from management.models import Group, Permission, Principal, Workspace
@@ -2636,3 +2639,93 @@ class ReplaceRoleBindingsTests(_ReplicationAssertionsMixin, IdentityRequest):
         self.assertTuplesRemoved(
             set(old_role1_binding.binding_tuples()) | {old_role1_binding.subject_tuple(self.group1)}
         )
+
+
+@override_settings(ATOMIC_RETRY_DISABLED=True)
+class DeleteRoleBindingsTest(IdentityRequest):
+    def setUp(self):
+        self.tuples = InMemoryTuples()
+        replicator = InMemoryRelationReplicator(self.tuples)
+
+        bootstrap_result = bootstrap_tenant_for_v2_test(self.tenant, tuples=self.tuples)
+        self.default_workspace = bootstrap_result.default_workspace
+        self.root_workspace = bootstrap_result.root_workspace
+
+        self.service = RoleBindingService(tenant=self.tenant, replicator=replicator)
+        role_service = RoleV2Service(tenant=self.tenant, replicator=replicator)
+
+        self.permission1 = Permission.objects.create(permission="app:resource:read", tenant=self.tenant)
+        self.permission2 = Permission.objects.create(permission="app:resource:write", tenant=self.tenant)
+
+        self.role1 = role_service.create(
+            tenant=self.tenant,
+            name="test role 1",
+            description="a role",
+            permission_data=[{"application": "app", "resource_type": "resource", "operation": "read"}],
+        )
+
+        self.role2 = role_service.create(
+            tenant=self.tenant,
+            name="test role 2",
+            description="a role",
+            permission_data=[{"application": "app", "resource_type": "resource", "operation": "write"}],
+        )
+
+        self.group = Group.objects.create(
+            name="test_group",
+            description="Test group description",
+            tenant=self.tenant,
+        )
+
+    def test_delete(self):
+        self.service.update_role_bindings_for_subject(
+            resource_type="workspace",
+            resource_id=str(self.default_workspace.id),
+            subject_type="group",
+            subject_id=str(self.group.uuid),
+            role_ids=[str(self.role1.uuid), str(self.role2.uuid)],
+        )
+
+        def assert_local_roles(roles: list[RoleV2]):
+            self.assertCountEqual(
+                [(self.group, r) for r in roles],
+                [
+                    (group, entry.binding.role)
+                    for group in self.service.get_role_bindings_by_subject(
+                        {
+                            "resource_type": "workspace",
+                            "resource_id": str(self.default_workspace.id),
+                            "subject_type": "group",
+                            "subject_id": str(self.group.uuid),
+                        }
+                    )
+                    for entry in group.filtered_bindings
+                ],
+            )
+
+        def assert_tuple_count(count: int, role: RoleV2):
+            self.assertEqual(
+                count,
+                self.tuples.count_tuples(
+                    all_of(
+                        resource_type("rbac", "role_binding"),
+                        relation("role"),
+                        subject("rbac", "role", str(role.uuid)),
+                    )
+                ),
+            )
+
+        assert_local_roles([self.role1, self.role2])
+        assert_tuple_count(1, self.role1)
+        assert_tuple_count(1, self.role2)
+
+        self.service.delete_role_bindings_for_subject(
+            resource_type="workspace",
+            resource_id=str(self.default_workspace.id),
+            subject_type="group",
+            subject_id=str(self.group.uuid),
+        )
+
+        assert_local_roles([])
+        assert_tuple_count(0, self.role1)
+        assert_tuple_count(0, self.role2)
