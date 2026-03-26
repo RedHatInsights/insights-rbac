@@ -729,6 +729,55 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIsNone(response.data["links"]["previous"])
 
+    def test_list_roles_with_limit_minus_one_returns_all(self):
+        """Test that limit=-1 returns all roles without pagination."""
+        # Create additional roles
+        for i in range(15):
+            RoleV2.objects.create(name=f"role_{i}", description=f"Role {i}", tenant=self.tenant)
+
+        url = f"{self.list_url}&limit=-1"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should return all roles (16 total: 1 from setUp + 15 created)
+        self.assertEqual(len(response.data["data"]), 16)
+        # Meta limit should equal the total count
+        self.assertEqual(response.data["meta"]["limit"], 16)
+        # No pagination links when returning all results
+        self.assertIsNone(response.data["links"]["next"])
+        self.assertIsNone(response.data["links"]["previous"])
+
+    def test_list_roles_normal_limits_still_work_after_limit_minus_one_added(self):
+        """Test that various normal limit values still work correctly."""
+        # Create additional roles for testing
+        for i in range(20):
+            RoleV2.objects.create(name=f"role_{i}", description=f"Role {i}", tenant=self.tenant)
+
+        # Test limit=5
+        url = f"{self.list_url}&limit=5"
+        response = self.client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 5)
+        self.assertEqual(response.data["meta"]["limit"], 5)
+        # Should have next link since there are 21 total roles
+        self.assertIsNotNone(response.data["links"]["next"])
+
+        # Test limit=10
+        url = f"{self.list_url}&limit=10"
+        response = self.client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 10)
+        self.assertEqual(response.data["meta"]["limit"], 10)
+        self.assertIsNotNone(response.data["links"]["next"])
+
+        # Test limit=15
+        url = f"{self.list_url}&limit=15"
+        response = self.client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 15)
+        self.assertEqual(response.data["meta"]["limit"], 15)
+        self.assertIsNotNone(response.data["links"]["next"])
+
     def test_list_roles_with_empty_name_filter(self):
         """Test that empty name filter returns all roles."""
         RoleV2.objects.create(name="other_role", description="Other", tenant=self.tenant)
