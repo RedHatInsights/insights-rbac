@@ -116,13 +116,17 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
             subject_id=validated_params.get("subject_id"),
         )
 
-        # Build context for output serializer
-        context = {
-            "request": request,
-            "field_selection": validated_params.get("fields"),
-        }
+        field_selection = validated_params.get("fields")
+        if field_selection is not None and "name" in field_selection.get_nested("resource"):
+            queryset = queryset.with_resource_names()
 
         page = self.paginate_queryset(queryset)
+
+        context = {
+            "request": request,
+            "field_selection": field_selection,
+        }
+
         serializer = self.get_serializer(page, many=True, context=context)
         return self.get_paginated_response(serializer.data)
 

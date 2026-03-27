@@ -24,6 +24,25 @@ from management.group.platform import GlobalPolicyIdService
 from management.permission.scope_service import Scope
 from management.tenant_mapping.model import DefaultAccessType
 
+# System role that is admin_default but must nest under the admin platform role at ROOT (root workspace),
+# not under the scope implied by inventory:groups permissions.
+INVENTORY_GROUPS_ADMINISTRATOR_SEEDED_ROLE_NAME = "Inventory Groups Administrator"
+
+
+def admin_platform_parent_scope_for_seeded_system_role(
+    role_name: str, admin_default: bool, permission_derived_scope: Scope, *, apply_override: bool
+) -> Scope:
+    """
+    Return the scope of the admin platform role that should be the parent of this seeded system role.
+
+    When apply_override is False (e.g. when generating tuples to strip all historical variants), the
+    caller's scope is used as-is.
+    """
+    if apply_override and admin_default and role_name == INVENTORY_GROUPS_ADMINISTRATOR_SEEDED_ROLE_NAME:
+        return Scope.ROOT
+    return permission_derived_scope
+
+
 _uuid_fns: dict[DefaultAccessType, dict[Scope, Callable[[GlobalPolicyIdService], UUID]]] = {
     DefaultAccessType.USER: {
         Scope.DEFAULT: lambda ps: ps.platform_default_policy_uuid(),

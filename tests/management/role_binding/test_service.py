@@ -20,6 +20,7 @@ import concurrent.futures
 import uuid
 from unittest.mock import patch
 
+from api.models import Tenant
 from django.test import TestCase, override_settings
 from management.principal.model import Principal as PrincipalModel
 from management.relation_replicator.outbox_replicator import OutboxReplicator
@@ -31,6 +32,7 @@ from migration_tool.in_memory_tuples import (
     all_of,
     relation,
     resource,
+    resource_type,
     subject,
 )
 
@@ -40,7 +42,7 @@ from management.role.v2_service import RoleV2Service
 from management.exceptions import InvalidFieldError, NotFoundError, RequiredFieldError
 from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
 from management.role_binding.serializer import RoleBindingByGroupSerializer, RoleBindingFieldSelection
-from management.role_binding.service import CreateBindingRequest, RoleBindingService
+from management.role_binding.service import CreateBindingRequest, RoleBindingService, API_PRINCIPAL_SOURCE
 from management.role_binding.util import parse_resource_type
 from management.tenant_mapping.model import TenantMapping
 from management.utils import FieldSelectionValidationError
@@ -296,15 +298,17 @@ class RoleBindingServiceTests(IdentityRequest):
             resource_id=str(self.workspace.id),
             tenant=self.tenant,
         )
-        RoleBindingGroup.objects.create(
+
+        self.binding_group_entry = RoleBindingGroup.objects.create(
             group=self.group,
             binding=self.binding,
         )
+
         # Create RoleBindingPrincipal for user-type queries
-        RoleBindingPrincipal.objects.create(
+        self.binding_principal_entry = RoleBindingPrincipal.objects.create(
             principal=self.principal,
             binding=self.binding,
-            source="test",
+            source=API_PRINCIPAL_SOURCE,
         )
 
         self.service = RoleBindingService(tenant=self.tenant)
@@ -834,6 +838,97 @@ class RoleBindingServiceTests(IdentityRequest):
         RoleBindingGroup.objects.filter(binding=parent_binding).delete()
         parent_binding.delete()
         parent_group.delete()
+
+    def test_exclude_principal_different_source(self):
+        """Test that a principal with only entries from a different source is not returned."""
+
+        def subjects_for_service(service: RoleBindingService):
+            return service.get_role_bindings_by_subject(
+                {
+                    "resource_type": self.binding.resource_type,
+                    "resource_id": self.binding.resource_id,
+                    "subject_type": "user",
+                }
+            )
+
+        self.assertCountEqual([self.principal], subjects_for_service(self.service))
+
+        self.binding_principal_entry.source = "another source"
+        self.binding_principal_entry.save()
+
+        self.assertCountEqual([], subjects_for_service(self.service))
+
+        self.assertCountEqual(
+            [self.principal],
+            subjects_for_service(RoleBindingService(tenant=self.tenant, principal_source="another source")),
+        )
+
+    def test_exclude_entries_different_source(self):
+        """Test that principal.filtered_bindings includes only entries with the correct source."""
+
+        def check_entries(service: RoleBindingService, entries: list[RoleBindingPrincipal]):
+            principals = service.get_role_bindings_by_subject(
+                {
+                    "resource_type": self.binding.resource_type,
+                    "resource_id": self.binding.resource_id,
+                    "subject_type": "user",
+                }
+            )
+
+            self.assertCountEqual([self.principal], principals)
+            self.assertCountEqual(entries, principals[0].filtered_bindings)
+
+        check_entries(self.service, [self.binding_principal_entry])
+
+        another_entry = RoleBindingPrincipal.objects.create(
+            binding=self.binding, principal=self.principal, source="another source"
+        )
+
+        check_entries(self.service, [self.binding_principal_entry])
+        check_entries(RoleBindingService(tenant=self.tenant, principal_source="another source"), [another_entry])
+
+    def test_exclude_entries_external_tenant(self):
+        """Test that external subjects are retrieved if and only if requested."""
+        exclude_service = RoleBindingService(tenant=self.tenant)
+        include_service = RoleBindingService(tenant=self.tenant, allow_external_subjects=True)
+
+        ext_tenant = Tenant.objects.create(tenant_name="another tenant", org_id="789")
+
+        def get_groups(service: RoleBindingService):
+            return service.get_role_bindings_by_subject(
+                {
+                    "resource_type": self.binding.resource_type,
+                    "resource_id": self.binding.resource_id,
+                    "subject_type": "group",
+                }
+            )
+
+        def get_principals(service: RoleBindingService):
+            return service.get_role_bindings_by_subject(
+                {
+                    "resource_type": self.binding.resource_type,
+                    "resource_id": self.binding.resource_id,
+                    "subject_type": "user",
+                }
+            )
+
+        self.assertEqual(1, len(get_groups(exclude_service)))
+        self.assertEqual(1, len(get_principals(exclude_service)))
+
+        self.assertEqual(1, len(get_groups(include_service)))
+        self.assertEqual(1, len(get_principals(include_service)))
+
+        self.group.tenant = ext_tenant
+        self.group.save()
+
+        self.assertEqual(0, len(get_groups(exclude_service)))
+        self.assertEqual(1, len(get_groups(include_service)))
+
+        self.principal.tenant = ext_tenant
+        self.principal.save()
+
+        self.assertEqual(0, len(get_principals(exclude_service)))
+        self.assertEqual(1, len(get_principals(include_service)))
 
 
 class RoleBindingSerializerTests(IdentityRequest):
@@ -1536,6 +1631,8 @@ class BatchCreateRoleBindingTests(IdentityRequest):
         self.assertEqual(len(store), 3)
 
         binding = RoleBinding.objects.get(role=self.role1, resource_id=str(self.workspace.id))
+        self.assertCountEqual([API_PRINCIPAL_SOURCE], [p.source for p in binding.principal_entries.all()])
+
         binding_uuid = str(binding.uuid)
         principal_resource_id = PrincipalModel.user_id_to_principal_resource_id(self.principal.user_id)
 
@@ -1850,6 +1947,108 @@ class BatchCreateRoleBindingTests(IdentityRequest):
         )
         self.assertEqual(len(role_tuples), 1)
 
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    def test_batch_create_multiple_source(self):
+        """Test creating a role binding for a principal when it already exists with a different source."""
+        tuples = InMemoryTuples()
+        replicator = InMemoryRelationReplicator(tuples)
+
+        def create_with(service: RoleBindingService):
+            service.batch_create(
+                [
+                    CreateBindingRequest(
+                        role_id=str(self.role1.uuid),
+                        resource_type="workspace",
+                        resource_id=str(self.workspace.id),
+                        subject_type="user",
+                        subject_id=str(self.principal.uuid),
+                    )
+                ]
+            )
+
+        def assert_principal_bound():
+            self.assertEqual(
+                1,
+                tuples.count_tuples(
+                    all_of(
+                        resource_type("rbac", "role_binding"),
+                        relation("subject"),
+                        subject("rbac", "principal", self.principal.principal_resource_id()),
+                    )
+                ),
+            )
+
+        api_service = RoleBindingService(tenant=self.tenant, replicator=replicator)
+        alt_service = RoleBindingService(tenant=self.tenant, replicator=replicator, principal_source="another source")
+
+        create_with(api_service)
+        assert_principal_bound()
+
+        tuples.clear()
+
+        create_with(alt_service)
+
+        # We haven't changed whether the principal is actually assigned to the role binding, but we still want to
+        # replicate the subject tuple (just in case something went wrong previously).
+        assert_principal_bound()
+
+        self.assertCountEqual(
+            [API_PRINCIPAL_SOURCE, "another source"],
+            [p.source for p in RoleBinding.objects.get(role=self.role1).principal_entries.all()],
+        )
+
+    def test_batch_create_external_principal(self):
+        """Test that external principals are rejected in batch_create unless enabled."""
+        ext_tenant = Tenant.objects.create(tenant_name="external tenant", org_id="34567")
+        ext_principal = Principal.objects.create(tenant=ext_tenant, username="some_user", user_id="some_user")
+
+        def do_create_with(service: RoleBindingService):
+            service.batch_create(
+                [
+                    CreateBindingRequest(
+                        role_id=str(self.role1.uuid),
+                        resource_type="workspace",
+                        resource_id=str(self.default_workspace.id),
+                        subject_type="user",
+                        subject_id=str(ext_principal.uuid),
+                    )
+                ]
+            )
+
+        with self.assertRaises(NotFoundError):
+            do_create_with(RoleBindingService(tenant=self.tenant, allow_external_subjects=False))
+
+        try:
+            do_create_with(RoleBindingService(tenant=self.tenant, allow_external_subjects=True))
+        except NotFoundError as e:
+            self.fail(f"Unexpected NotFoundError: {e}")
+
+    def test_batch_create_external_group(self):
+        """Test that external groups are rejected in batch_create unless enabled."""
+        ext_tenant = Tenant.objects.create(tenant_name="external tenant", org_id="34567")
+        ext_group = Group.objects.create(tenant=ext_tenant, name="a group")
+
+        def do_create_with(service: RoleBindingService):
+            service.batch_create(
+                [
+                    CreateBindingRequest(
+                        role_id=str(self.role1.uuid),
+                        resource_type="workspace",
+                        resource_id=str(self.default_workspace.id),
+                        subject_type="group",
+                        subject_id=str(ext_group.uuid),
+                    )
+                ]
+            )
+
+        with self.assertRaises(NotFoundError):
+            do_create_with(RoleBindingService(tenant=self.tenant, allow_external_subjects=False))
+
+        try:
+            do_create_with(RoleBindingService(tenant=self.tenant, allow_external_subjects=True))
+        except NotFoundError as e:
+            self.fail(f"Unexpected NotFoundError: {e}")
+
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)
 class UpdateRoleBindingsForSubjectTests(_ReplicationAssertionsMixin, IdentityRequest):
@@ -2021,6 +2220,60 @@ class UpdateRoleBindingsForSubjectTests(_ReplicationAssertionsMixin, IdentityReq
 
         self.assertTrue(is_v2_write_activated(self.tenant))
 
+    def test_update_multiple_sources(self):
+        tuples = InMemoryTuples()
+        replicator = InMemoryRelationReplicator(tuples)
+
+        def update_with(service: RoleBindingService, roles: list[RoleV2]):
+            service.update_role_bindings_for_subject(
+                resource_type="workspace",
+                resource_id=str(self.workspace.id),
+                subject_type="user",
+                subject_id=str(self.principal.uuid),
+                role_ids=[str(r.uuid) for r in roles],
+            )
+
+        api_service = RoleBindingService(tenant=self.tenant, replicator=replicator)
+        alt_service = RoleBindingService(tenant=self.tenant, replicator=replicator, principal_source="another source")
+
+        update_with(api_service, [self.role1])
+        update_with(alt_service, [self.role1])
+
+        binding = self._get_binding(self.role1)
+
+        def assert_principal_bound(is_bound: bool = True):
+            self.assertEqual(
+                int(is_bound),
+                tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "role_binding", str(binding.uuid)),
+                        relation("subject"),
+                        subject("rbac", "principal", self.principal.principal_resource_id()),
+                    )
+                ),
+            )
+
+        def assert_sources(sources: list[str]):
+            self.assertEqual(
+                sources,
+                [p.source for p in binding.principal_entries.all()],
+            )
+
+        assert_principal_bound()
+        assert_sources([API_PRINCIPAL_SOURCE, "another source"])
+
+        # We can't currently pass an empty list of roles, so just use another role instead.
+        # See https://github.com/RedHatInsights/insights-rbac/pull/2629
+        update_with(api_service, [self.role2])
+
+        assert_principal_bound()
+        assert_sources(["another source"])
+
+        update_with(alt_service, [self.role2])
+
+        assert_principal_bound(False)
+        self.assertFalse(RoleBinding.objects.filter(pk=binding.pk).exists())
+
     def test_update_replicates_tuples_for_group(self):
         """Test that updating role bindings replicates correct tuples for a group."""
         self.tracker.clear()
@@ -2052,6 +2305,52 @@ class UpdateRoleBindingsForSubjectTests(_ReplicationAssertionsMixin, IdentityReq
         binding = self._get_binding(self.role1)
         self.assertTuplesAdded(set(binding.binding_tuples()) | {binding.subject_tuple(self.principal)})
         self.assertTuplesRemoved(set())
+
+    def test_update_external_principal(self):
+        """Test that updating an external principal is rejected unless enabled."""
+        ext_tenant = Tenant.objects.create(tenant_name="a tenant", org_id="34567")
+        ext_principal = Principal.objects.create(
+            tenant=ext_tenant, username="test_principal", user_id="test_principal"
+        )
+
+        def do_update_with(service: RoleBindingService):
+            service.update_role_bindings_for_subject(
+                resource_type="workspace",
+                resource_id=str(self.default_workspace.id),
+                subject_type="user",
+                subject_id=str(ext_principal.uuid),
+                role_ids=[str(self.role1.uuid)],
+            )
+
+        with self.assertRaises(NotFoundError):
+            do_update_with(RoleBindingService(tenant=self.tenant, allow_external_subjects=False))
+
+        try:
+            do_update_with(RoleBindingService(tenant=self.tenant, allow_external_subjects=True))
+        except NotFoundError as e:
+            self.fail(f"Unexpected NotFoundError: {e}")
+
+    def test_update_external_group(self):
+        """Test that updating an external group is rejected unless enabled."""
+        ext_tenant = Tenant.objects.create(tenant_name="a tenant", org_id="34567")
+        ext_group = Group.objects.create(tenant=ext_tenant, name="test_group")
+
+        def do_update_with(service: RoleBindingService):
+            service.update_role_bindings_for_subject(
+                resource_type="workspace",
+                resource_id=str(self.default_workspace.id),
+                subject_type="group",
+                subject_id=str(ext_group.uuid),
+                role_ids=[str(self.role1.uuid)],
+            )
+
+        with self.assertRaises(NotFoundError):
+            do_update_with(RoleBindingService(tenant=self.tenant, allow_external_subjects=False))
+
+        try:
+            do_update_with(RoleBindingService(tenant=self.tenant, allow_external_subjects=True))
+        except NotFoundError as e:
+            self.fail(f"Unexpected NotFoundError: {e}")
 
     def test_update_raises_not_found_error(self):
         """Test that update raises NotFoundError for non-existent entities."""

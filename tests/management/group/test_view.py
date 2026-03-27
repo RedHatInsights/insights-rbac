@@ -7180,7 +7180,7 @@ class GroupViewNonAdminTests(IdentityRequest):
             )
 
 
-@override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+@override_settings(REPLICATION_TO_RELATION_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
 class GroupReplicationTests(IdentityRequest):
     def setUp(self):
         super().setUp()

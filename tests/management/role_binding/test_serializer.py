@@ -22,7 +22,7 @@ from unittest.mock import Mock
 
 from django.test import TestCase, override_settings
 
-from management.models import Group, Permission, Principal, RoleBinding, RoleBindingGroup, RoleV2
+from management.models import Group, Permission, Principal, RoleBinding, RoleBindingGroup, RoleV2, Workspace
 from management.role.v2_service import RoleV2Service
 from management.role_binding.serializer import (
     BatchCreateRoleBindingRequestSerializer,
@@ -1109,6 +1109,44 @@ class RoleBindingListOutputSerializerTest(IdentityRequest):
         # Resource includes id (always) + type
         self.assertEqual(data["resource"]["id"], "ws-12345")
         self.assertEqual(data["resource"]["type"], "workspace")
+
+    def test_field_selection_resource_name(self):
+        """resource(name) resolves workspace display name via queryset annotation."""
+        prev_resource_id = self.binding.resource_id
+        root = Workspace.objects.create(
+            name=Workspace.SpecialNames.ROOT,
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        default_ws = Workspace.objects.create(
+            name=Workspace.SpecialNames.DEFAULT,
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            parent=root,
+        )
+        ws = Workspace.objects.create(
+            name="List RB Name Test WS",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=default_ws,
+        )
+        try:
+            self.binding.resource_id = str(ws.id)
+            self.binding.save(update_fields=["resource_id"])
+
+            annotated_binding = RoleBinding.objects.filter(pk=self.binding.pk).with_resource_names().get()
+            fs = RoleBindingFieldSelection.parse("resource(name)")
+            data = RoleBindingListOutputSerializer(
+                annotated_binding,
+                context={"request": Mock(), "field_selection": fs},
+            ).data
+            self.assertEqual(data["resource"]["name"], "List RB Name Test WS")
+        finally:
+            self.binding.resource_id = prev_resource_id
+            self.binding.save(update_fields=["resource_id"])
+            ws.delete()
+            default_ws.delete()
+            root.delete()
 
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)

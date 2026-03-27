@@ -20,6 +20,7 @@ from typing import Optional
 
 from django.conf import settings
 from django.db import transaction
+from management.atomic_transactions import atomic_block
 from management.group.model import Group
 from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
 from management.relation_replicator.outbox_replicator import OutboxReplicator
@@ -176,6 +177,7 @@ def migrate_all_role_bindings(
     logger.info(f"Starting binding scope migration{tenant_info}")
     logger.info(f"ROOT_SCOPE_PERMISSIONS: {settings.ROOT_SCOPE_PERMISSIONS}")
     logger.info(f"TENANT_SCOPE_PERMISSIONS: {settings.TENANT_SCOPE_PERMISSIONS}")
+    logger.info(f"DEFAULT_SCOPE_PERMISSIONS: {settings.DEFAULT_SCOPE_PERMISSIONS}")
 
     # Part 1: Migrate custom role bindings
     # Include all custom roles with access (permissions), even if they have no policies (groups) assigned yet.
@@ -291,7 +293,8 @@ def migrate_all_role_bindings(
     for raw_car in cars.iterator():
         cars_checked += 1
 
-        with transaction.atomic():
+        # This block can operate on V2 tenants, so we need to use a SERIALIZABLE transaciton here.
+        with atomic_block():
             car: Optional[CrossAccountRequest] = (
                 CrossAccountRequest.objects.filter(pk=raw_car.pk).select_for_update().first()
             )
