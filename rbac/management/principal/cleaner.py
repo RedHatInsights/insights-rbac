@@ -20,8 +20,10 @@
 import logging
 import os
 import ssl
+from queue import Empty, Queue
 from typing import Optional
 
+import stomp
 import xmltodict
 from django.conf import settings
 from django.db import connection, transaction
@@ -33,10 +35,6 @@ from management.tenant_service.tenant_service import TenantBootstrapService
 from prometheus_client import Counter
 from rest_framework import status
 from sentry_sdk import capture_exception
-from stompest.config import StompConfig
-from stompest.error import StompConnectionError
-from stompest.protocol import StompSpec
-from stompest.sync import Stomp
 
 from api.models import Tenant, User
 
@@ -141,11 +139,105 @@ if os.path.isfile(CERT_LOC):
 if os.path.isfile(CA_LOC):
     ssl_context.load_verify_locations(cafile=CA_LOC)
 
-CONFIG = StompConfig(
-    f"ssl://{settings.UMB_HOST}:{settings.UMB_PORT}", sslContext=ssl_context, version=StompSpec.VERSION_1_2
-)
 QUEUE = f"/queue/Consumer.{settings.SA_NAME}.users-subscription.VirtualTopic.canonical.user"
-UMB_CLIENT = Stomp(CONFIG)
+
+
+class UMBListener(stomp.ConnectionListener):
+    """Listener for UMB STOMP messages."""
+
+    def __init__(self, message_queue: Queue):
+        self.message_queue = message_queue
+        self.connected = False
+
+    def on_connected(self, frame):
+        """Called when connection is established."""
+        self.connected = True
+        logger.debug("UMBListener: Connected to UMB")
+
+    def on_message(self, frame):
+        """Called when a message is received."""
+        self.message_queue.put(frame)
+
+    def on_error(self, frame):
+        """Called when an error frame is received."""
+        logger.error("UMBListener: Received error frame: %s", frame.body)
+
+    def on_disconnected(self):
+        """Called when disconnected."""
+        self.connected = False
+        logger.debug("UMBListener: Disconnected from UMB")
+
+
+class StompClient:
+    """Wrapper around stomp.py to provide stompest-compatible interface for tests."""
+
+    def __init__(self, host: str, port: int, ssl_context):
+        self._host = host
+        self._port = port
+        self._ssl_context = ssl_context
+        self._conn = None
+        self._message_queue: Queue = Queue()
+        self._listener = None
+        self._subscribed = False
+
+    def connect(self, versions=None):
+        """Connect to the STOMP broker."""
+        if self._conn and self._conn.is_connected():
+            raise stomp.exception.ConnectFailedException("Already connected")
+        self._conn = stomp.Connection12(
+            [(self._host, self._port)],
+            use_ssl=True,
+            ssl_context=self._ssl_context,
+        )
+        self._listener = UMBListener(self._message_queue)
+        self._conn.set_listener("umb_listener", self._listener)
+        self._conn.connect(wait=True)
+
+    def subscribe(self, destination, headers):
+        """Subscribe to a destination."""
+        if self._subscribed:
+            raise stomp.exception.ConnectFailedException("Already subscribed")
+        sub_id = headers.get("id", "0")
+        ack_mode = headers.get("ack", "client-individual")
+        self._conn.subscribe(destination=destination, id=sub_id, ack=ack_mode)
+        self._subscribed = True
+
+    def canRead(self, timeout: int) -> bool:
+        """Check if there are messages available to read within timeout."""
+        try:
+            # Try to get a message without blocking first
+            frame = self._message_queue.get(timeout=timeout)
+            # Put it back so receiveFrame can get it
+            self._message_queue.put(frame)
+            return True
+        except Empty:
+            return False
+
+    def receiveFrame(self):
+        """Receive a frame from the queue."""
+        return self._message_queue.get(block=False)
+
+    def ack(self, frame):
+        """Acknowledge a message."""
+        message_id = frame.headers.get("message-id")
+        subscription = frame.headers.get("subscription")
+        self._conn.ack(message_id, subscription)
+
+    def nack(self, frame):
+        """Negative acknowledge a message."""
+        message_id = frame.headers.get("message-id")
+        subscription = frame.headers.get("subscription")
+        self._conn.nack(message_id, subscription)
+
+    def disconnect(self):
+        """Disconnect from the STOMP broker."""
+        if self._conn:
+            self._conn.disconnect()
+            self._subscribed = False
+
+
+# Global UMB client instance (maintains compatibility with tests that mock UMB_CLIENT)
+UMB_CLIENT = StompClient(settings.UMB_HOST, settings.UMB_PORT, ssl_context)
 
 
 def retrieve_user_info(message) -> User:
@@ -203,7 +295,7 @@ def retrieve_user_info(message) -> User:
     return external_principal_to_user(user_data)
 
 
-def process_umb_event(frame, umb_client: Stomp, bootstrap_service: TenantBootstrapService) -> bool:
+def process_umb_event(frame, umb_client: StompClient, bootstrap_service: TenantBootstrapService) -> bool:
     """
     Process each umb frame.
 
@@ -217,7 +309,8 @@ def process_umb_event(frame, umb_client: Stomp, bootstrap_service: TenantBootstr
             return False
 
         try:
-            body = frame.body.decode("utf-8", errors="ignore")
+            # stomp.py frame body is already a string or bytes
+            body = frame.body if isinstance(frame.body, str) else frame.body.decode("utf-8", errors="ignore")
             data_dict = xmltodict.parse(body)
             canonical_message = data_dict.get("CanonicalMessage")
 
@@ -249,20 +342,21 @@ def process_principal_events_from_umb(bootstrap_service: Optional[TenantBootstra
     """Process principals events from UMB."""
     logger.info("process_tenant_principal_events: Start processing principal events from umb.")
     bootstrap_service = bootstrap_service or get_tenant_bootstrap_service(OutboxReplicator())
+
     try:
-        # 1.1 or greater is required to support NACK, used when messages fail.
-        UMB_CLIENT.connect(versions=[StompSpec.VERSION_1_1, StompSpec.VERSION_1_2])
+        UMB_CLIENT.connect()
         # We only have one subscription for this connection, so using a static ID header.
-        UMB_CLIENT.subscribe(QUEUE, {StompSpec.ACK_HEADER: StompSpec.ACK_CLIENT_INDIVIDUAL, StompSpec.ID_HEADER: "0"})
-    except StompConnectionError as e:
+        UMB_CLIENT.subscribe(QUEUE, {"ack": "client-individual", "id": "0"})
+    except stomp.exception.ConnectFailedException as e:
         # Skip if already connected/subscribed
         if not str(e).startswith(("Already connected", "Already subscribed")):
+            logger.error("process_tenant_principal_events: Failed to connect to UMB: %s", str(e))
             raise e
 
     try:
         while UMB_CLIENT.canRead(15):  # Check if queue is empty, 15 sec timeout
             frame = UMB_CLIENT.receiveFrame()
-            logger.info("process_tenant_principal_events: Processing frame. info=%s", frame.info())
+            logger.info("process_tenant_principal_events: Processing frame. headers=%s", frame.headers)
             if not process_umb_event(frame, UMB_CLIENT, bootstrap_service):
                 break
     finally:
