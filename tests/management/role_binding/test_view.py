@@ -43,7 +43,7 @@ from management.role.platform import platform_v2_role_uuid_for
 from management.role.v2_model import PlatformRoleV2, RoleV2, SeededRoleV2
 from management.role.v2_service import RoleV2Service
 from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
-from management.role_binding.service import RoleBindingService
+from management.role_binding.service import RoleBindingService, API_PRINCIPAL_SOURCE
 from management.subject import SubjectType
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
 from management.tenant_service.v2 import V2TenantBootstrapService
@@ -625,7 +625,9 @@ class RoleBindingListViewSetTest(IdentityRequest):
         user_binding = RoleBinding.objects.create(
             role=user_role, resource_type="workspace", resource_id=str(self.workspace.id), tenant=self.tenant
         )
-        RoleBindingPrincipal.objects.create(principal=user_principal, binding=user_binding, source="default")
+        RoleBindingPrincipal.objects.create(
+            principal=user_principal, binding=user_binding, source=API_PRINCIPAL_SOURCE
+        )
 
         try:
             cases = [
@@ -1100,7 +1102,7 @@ class RoleBindingViewSetTest(IdentityRequest):
             RoleBindingPrincipal.objects.create(
                 principal=principal,
                 binding=binding,
-                source="test",
+                source=API_PRINCIPAL_SOURCE,
             )
 
     def tearDown(self):
@@ -2348,7 +2350,7 @@ class RoleBindingViewSetTest(IdentityRequest):
         RoleBindingPrincipal.objects.create(
             principal=inherited_user,
             binding=inherited_binding,
-            source="test",
+            source=API_PRINCIPAL_SOURCE,
         )
 
         # Get a direct binding UUID from setUp (these are on self.workspace)
