@@ -633,6 +633,12 @@ def clean_invalid_workspace_resource_definitions(dry_run: bool = False) -> dict:
                 logger.warning(f"Role vanished before it could be cleaned: pk={raw_role.pk!r}")
                 continue
 
+            try:
+                assert_v1_write_allowed(role.tenant)
+            except V1WriteBlockedError:
+                logger.info(f"Skipping fixing resource definitions for role in V2 tenant: role pk={role.pk!r}")
+                continue
+
             roles_checked += 1
 
             dual_write = RelationApiDualWriteHandler(role, ReplicationEventType.FIX_RESOURCE_DEFINITIONS)
