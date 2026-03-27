@@ -52,6 +52,7 @@ from tests.util import assert_v1_v2_locally_consistent
 URL_LIST = reverse("v1_api:cross-list")
 
 
+@override_settings(ATOMIC_RETRY_DISABLED=True)
 class CrossAccountRequestViewTests(CrossAccountRequestTest):
     """Test the cross account request view."""
 

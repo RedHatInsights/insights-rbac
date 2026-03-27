@@ -96,10 +96,12 @@ class RoleBindingService:
         tenant: Tenant,
         replicator: RelationReplicator | None = None,
         principal_source: str = API_PRINCIPAL_SOURCE,
+        allow_external_subjects: bool = False,
     ):
         """Initialize the service with a tenant and optional replicator."""
         self.tenant = tenant
         self._principal_source = principal_source
+        self._allow_external_subjects = allow_external_subjects
 
         if settings.REPLICATION_TO_RELATION_ENABLED:
             self._replicator = replicator if replicator is not None else OutboxReplicator()
@@ -258,6 +260,15 @@ class RoleBindingService:
 
         return {**groups_by_uuid, **principals_by_uuid}
 
+    def _validate_subject(self, subject: Group | Principal):
+        if not (isinstance(subject, Group) or isinstance(subject, Principal)):
+            raise TypeError(f"Unexpected subject: {subject!r}")
+
+        if not self._allow_external_subjects:
+            if subject.tenant_id != self.tenant.id:
+                subject_type = SubjectType.GROUP if isinstance(subject, Group) else SubjectType.USER
+                raise NotFoundError(subject_type, str(subject.uuid))
+
     @staticmethod
     def _group_by_subject_resource(
         requests: list[CreateBindingRequest],
@@ -323,6 +334,9 @@ class RoleBindingService:
         # This includes tenant-specific groups and public tenant default groups.
         # No tenant filter needed since resource_id is tenant-specific.
         queryset = Group.objects.filter(binding_filter).distinct()
+
+        if not self._allow_external_subjects:
+            queryset = queryset.filter(tenant=self.tenant)
 
         # Annotate with principal count
         queryset = queryset.annotate(
@@ -490,16 +504,15 @@ class RoleBindingService:
         )
 
         # Get users who have role bindings matching our filter
-        principal_queryset = (
-            Principal.objects.filter(
-                Exists(RoleBindingPrincipal.objects.filter(principal=OuterRef("pk")).filter(principal_entry_filter)),
-            )
-            .filter(
+        principal_queryset = Principal.objects.filter(
+            Exists(RoleBindingPrincipal.objects.filter(principal=OuterRef("pk")).filter(principal_entry_filter)),
+        ).distinct()
+
+        if not self._allow_external_subjects:
+            principal_queryset = principal_queryset.filter(
                 tenant=self.tenant,
                 type=Principal.Types.USER,
             )
-            .distinct()
-        )
 
         # Prefetch RoleBindingPrincipal entries with their bindings
         principal_entry_queryset = RoleBindingPrincipal.objects.filter(principal_entry_filter).prefetch_related(
@@ -851,6 +864,7 @@ class RoleBindingService:
         roles = self._get_roles(role_ids)
 
         subject = Subject.objects.by_type(type=subject_type, id=subject_id)
+        self._validate_subject(subject.entity)
 
         self._replace_role_bindings(
             resource_type=resource_type,
@@ -942,6 +956,8 @@ class RoleBindingService:
         subject: Group | Principal,
         roles: Sequence[RoleV2],
     ) -> None:
+        self._validate_subject(subject)
+
         """Replace all role bindings for a subject on a resource.
 
         Computes the diff between current and desired roles, then only
@@ -1014,6 +1030,8 @@ class RoleBindingService:
         subject: Group | Principal,
         bindings: Sequence[RoleBinding],
     ) -> tuple[list[RoleBinding], list[RoleBinding]]:
+        self._validate_subject(subject)
+
         """Remove a subject from bindings, cleaning up orphaned bindings.
 
         Returns:
@@ -1060,6 +1078,8 @@ class RoleBindingService:
         roles_by_id: dict,
         role_ids: set,
     ) -> tuple[list[RoleBinding], list[RoleBinding]]:
+        self._validate_subject(subject)
+
         """Create or find bindings for roles and link the subject.
 
         Uses bulk operations to minimise DB round-trips:

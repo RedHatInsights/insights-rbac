@@ -20,6 +20,7 @@ import concurrent.futures
 import uuid
 from unittest.mock import patch
 
+from api.models import Tenant
 from django.test import TestCase, override_settings
 from management.principal.model import Principal as PrincipalModel
 from management.relation_replicator.outbox_replicator import OutboxReplicator
@@ -885,6 +886,49 @@ class RoleBindingServiceTests(IdentityRequest):
 
         check_entries(self.service, [self.binding_principal_entry])
         check_entries(RoleBindingService(tenant=self.tenant, principal_source="another source"), [another_entry])
+
+    def test_exclude_entries_external_tenant(self):
+        """Test that external subjects are retrieved if and only if requested."""
+        exclude_service = RoleBindingService(tenant=self.tenant)
+        include_service = RoleBindingService(tenant=self.tenant, allow_external_subjects=True)
+
+        ext_tenant = Tenant.objects.create(tenant_name="another tenant", org_id="789")
+
+        def get_groups(service: RoleBindingService):
+            return service.get_role_bindings_by_subject(
+                {
+                    "resource_type": self.binding.resource_type,
+                    "resource_id": self.binding.resource_id,
+                    "subject_type": "group",
+                }
+            )
+
+        def get_principals(service: RoleBindingService):
+            return service.get_role_bindings_by_subject(
+                {
+                    "resource_type": self.binding.resource_type,
+                    "resource_id": self.binding.resource_id,
+                    "subject_type": "user",
+                }
+            )
+
+        self.assertEqual(1, len(get_groups(exclude_service)))
+        self.assertEqual(1, len(get_principals(exclude_service)))
+
+        self.assertEqual(1, len(get_groups(include_service)))
+        self.assertEqual(1, len(get_principals(include_service)))
+
+        self.group.tenant = ext_tenant
+        self.group.save()
+
+        self.assertEqual(0, len(get_groups(exclude_service)))
+        self.assertEqual(1, len(get_groups(include_service)))
+
+        self.principal.tenant = ext_tenant
+        self.principal.save()
+
+        self.assertEqual(0, len(get_principals(exclude_service)))
+        self.assertEqual(1, len(get_principals(include_service)))
 
 
 class RoleBindingSerializerTests(IdentityRequest):
@@ -1953,6 +1997,58 @@ class BatchCreateRoleBindingTests(IdentityRequest):
             [p.source for p in RoleBinding.objects.get(role=self.role1).principal_entries.all()],
         )
 
+    def test_batch_create_external_principal(self):
+        """Test that external principals are rejected in batch_create unless enabled."""
+        ext_tenant = Tenant.objects.create(tenant_name="external tenant", org_id="34567")
+        ext_principal = Principal.objects.create(tenant=ext_tenant, username="some_user", user_id="some_user")
+
+        def do_create_with(service: RoleBindingService):
+            service.batch_create(
+                [
+                    CreateBindingRequest(
+                        role_id=str(self.role1.uuid),
+                        resource_type="workspace",
+                        resource_id=str(self.default_workspace.id),
+                        subject_type="user",
+                        subject_id=str(ext_principal.uuid),
+                    )
+                ]
+            )
+
+        with self.assertRaises(NotFoundError):
+            do_create_with(RoleBindingService(tenant=self.tenant, allow_external_subjects=False))
+
+        try:
+            do_create_with(RoleBindingService(tenant=self.tenant, allow_external_subjects=True))
+        except NotFoundError as e:
+            self.fail(f"Unexpected NotFoundError: {e}")
+
+    def test_batch_create_external_group(self):
+        """Test that external groups are rejected in batch_create unless enabled."""
+        ext_tenant = Tenant.objects.create(tenant_name="external tenant", org_id="34567")
+        ext_group = Group.objects.create(tenant=ext_tenant, name="a group")
+
+        def do_create_with(service: RoleBindingService):
+            service.batch_create(
+                [
+                    CreateBindingRequest(
+                        role_id=str(self.role1.uuid),
+                        resource_type="workspace",
+                        resource_id=str(self.default_workspace.id),
+                        subject_type="group",
+                        subject_id=str(ext_group.uuid),
+                    )
+                ]
+            )
+
+        with self.assertRaises(NotFoundError):
+            do_create_with(RoleBindingService(tenant=self.tenant, allow_external_subjects=False))
+
+        try:
+            do_create_with(RoleBindingService(tenant=self.tenant, allow_external_subjects=True))
+        except NotFoundError as e:
+            self.fail(f"Unexpected NotFoundError: {e}")
+
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)
 class UpdateRoleBindingsForSubjectTests(_ReplicationAssertionsMixin, IdentityRequest):
@@ -2209,6 +2305,52 @@ class UpdateRoleBindingsForSubjectTests(_ReplicationAssertionsMixin, IdentityReq
         binding = self._get_binding(self.role1)
         self.assertTuplesAdded(set(binding.binding_tuples()) | {binding.subject_tuple(self.principal)})
         self.assertTuplesRemoved(set())
+
+    def test_update_external_principal(self):
+        """Test that updating an external principal is rejected unless enabled."""
+        ext_tenant = Tenant.objects.create(tenant_name="a tenant", org_id="34567")
+        ext_principal = Principal.objects.create(
+            tenant=ext_tenant, username="test_principal", user_id="test_principal"
+        )
+
+        def do_update_with(service: RoleBindingService):
+            service.update_role_bindings_for_subject(
+                resource_type="workspace",
+                resource_id=str(self.default_workspace.id),
+                subject_type="user",
+                subject_id=str(ext_principal.uuid),
+                role_ids=[str(self.role1.uuid)],
+            )
+
+        with self.assertRaises(NotFoundError):
+            do_update_with(RoleBindingService(tenant=self.tenant, allow_external_subjects=False))
+
+        try:
+            do_update_with(RoleBindingService(tenant=self.tenant, allow_external_subjects=True))
+        except NotFoundError as e:
+            self.fail(f"Unexpected NotFoundError: {e}")
+
+    def test_update_external_group(self):
+        """Test that updating an external group is rejected unless enabled."""
+        ext_tenant = Tenant.objects.create(tenant_name="a tenant", org_id="34567")
+        ext_group = Group.objects.create(tenant=ext_tenant, name="test_group")
+
+        def do_update_with(service: RoleBindingService):
+            service.update_role_bindings_for_subject(
+                resource_type="workspace",
+                resource_id=str(self.default_workspace.id),
+                subject_type="group",
+                subject_id=str(ext_group.uuid),
+                role_ids=[str(self.role1.uuid)],
+            )
+
+        with self.assertRaises(NotFoundError):
+            do_update_with(RoleBindingService(tenant=self.tenant, allow_external_subjects=False))
+
+        try:
+            do_update_with(RoleBindingService(tenant=self.tenant, allow_external_subjects=True))
+        except NotFoundError as e:
+            self.fail(f"Unexpected NotFoundError: {e}")
 
     def test_update_raises_not_found_error(self):
         """Test that update raises NotFoundError for non-existent entities."""

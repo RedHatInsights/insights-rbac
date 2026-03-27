@@ -46,7 +46,7 @@ from functools import partial
 URL_LIST = reverse("v1_api:cross-list")
 
 
-@override_settings(PRINCIPAL_USER_DOMAIN="localhost")
+@override_settings(PRINCIPAL_USER_DOMAIN="localhost", ATOMIC_RETRY_DISABLED=True)
 class CrossAccountRequestUtilTests(CrossAccountRequestTest):
     """Test the cross access util module."""
 
