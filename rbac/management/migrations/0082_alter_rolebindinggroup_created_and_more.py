@@ -14,11 +14,11 @@ class Migration(migrations.Migration):
         migrations.AlterField(
             model_name="rolebindinggroup",
             name="created",
-            field=models.DateTimeField(default=django.utils.timezone.now),
+            field=models.DateTimeField(default=django.utils.timezone.now, editable=False),
         ),
         migrations.AlterField(
             model_name="rolebindingprincipal",
             name="created",
-            field=models.DateTimeField(default=django.utils.timezone.now),
+            field=models.DateTimeField(default=django.utils.timezone.now, editable=False),
         ),
     ]
