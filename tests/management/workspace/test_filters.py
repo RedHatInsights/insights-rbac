@@ -400,6 +400,60 @@ class WorkspaceFilterBackendIntegrationTests(TransactionIdentityRequest):
             self.assertIn(str(self.default_workspace.id), returned_ids)
             self.assertIn(str(self.ungrouped_workspace.id), returned_ids)
 
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_v2_list_non_admin_without_inventory_access_includes_root_and_default(self, mock_flag, mock_channel):
+        """Users with no workspace relations in Inventory still list root and default (and ungrouped) workspaces."""
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+        mock_stub.StreamedListObjects.return_value = iter([])
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+            response = APIClient().get(reverse("v2_management:workspace-list"), format="json", **headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        types_by_id = {str(row["id"]): row["type"] for row in response.data["data"]}
+        self.assertEqual(types_by_id[str(self.root_workspace.id)], Workspace.Types.ROOT)
+        self.assertEqual(types_by_id[str(self.default_workspace.id)], Workspace.Types.DEFAULT)
+        self.assertEqual(types_by_id[str(self.ungrouped_workspace.id)], Workspace.Types.UNGROUPED_HOSTS)
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_list_returns_fallback_when_inventory_ids_missing_in_rbac_db(self, mock_flag, mock_channel):
+        """Inventory IDs with no matching Workspace row for this tenant fall back to root/default/ungrouped."""
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+        orphan_id = uuid4()
+        mock_stub.StreamedListObjects.side_effect = lambda *args, **kwargs: iter(
+            self._create_mock_workspace_responses([orphan_id])
+        )
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+            response = APIClient().get(reverse("v2_management:workspace-list"), format="json", **headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        returned_ids = {str(ws["id"]) for ws in response.data["data"]}
+        self.assertIn(str(self.root_workspace.id), returned_ids)
+        self.assertIn(str(self.default_workspace.id), returned_ids)
+        self.assertIn(str(self.ungrouped_workspace.id), returned_ids)
+        self.assertNotIn(str(orphan_id), returned_ids)
+
     @patch(
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
         return_value=False,

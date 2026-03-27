@@ -368,15 +368,31 @@ def is_user_allowed_v2(request, required_operation, target_workspace):
                         id__in=accessible_workspace_ids, tenant=request.tenant
                     )
 
-                # Find the top-level workspace(s) - those that are not children of any other accessible workspace
-                with record_timing(timings, "filter_top_level_workspaces"):
-                    top_level_workspaces = filter_top_level_workspaces(accessible_workspaces)
+                if not accessible_workspaces.exists():
+                    # Inventory can return workspace ids that are not present in RBAC for this tenant
+                    # (replication lag, stale tuples, cross-env mismatch). Treat like no workspace access
+                    # so the list API still returns root/default/ungrouped like users with no permissions.
+                    logger.info(
+                        "StreamedListObjects returned %s workspace id(s) but none exist for this tenant; "
+                        "using fallback workspaces",
+                        len(accessible_workspace_ids),
+                    )
+                    request.has_real_workspace_access = False
+                    with record_timing(timings, "get_fallback_workspace_ids"):
+                        accessible_workspace_ids = get_fallback_workspace_ids(request.tenant)
+                else:
+                    # Keep only ids that exist for this tenant; drop stale Inventory-only ids
+                    accessible_workspace_ids = {str(wid) for wid in accessible_workspaces.values_list("id", flat=True)}
 
-                with record_timing(timings, "add_ancestor_ids"):
-                    for workspace in top_level_workspaces:
-                        # Add ancestors directly for this top-level workspace
-                        ancestor_ids = {str(ancestor.id) for ancestor in workspace.ancestors()}
-                        accessible_workspace_ids.update(ancestor_ids)
+                    # Find the top-level workspace(s) - those that are not children of any other accessible workspace
+                    with record_timing(timings, "filter_top_level_workspaces"):
+                        top_level_workspaces = filter_top_level_workspaces(accessible_workspaces)
+
+                    with record_timing(timings, "add_ancestor_ids"):
+                        for workspace in top_level_workspaces:
+                            # Add ancestors directly for this top-level workspace
+                            ancestor_ids = {str(ancestor.id) for ancestor in workspace.ancestors()}
+                            accessible_workspace_ids.update(ancestor_ids)
             else:
                 # User has no actual workspace permissions, only fallback access
                 request.has_real_workspace_access = False
