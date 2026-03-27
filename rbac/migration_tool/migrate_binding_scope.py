@@ -292,7 +292,7 @@ def migrate_all_role_bindings(
     for raw_car in cars.iterator():
         cars_checked += 1
 
-        # This block can operate on V2 tenants, so we need to use a SERIALIZABLE transaciton here.
+        # This block can operate on V2 tenants, so we need to use a SERIALIZABLE transaction here.
         with atomic_block():
             car: Optional[CrossAccountRequest] = (
                 CrossAccountRequest.objects.filter(pk=raw_car.pk).select_for_update().first()
@@ -302,8 +302,8 @@ def migrate_all_role_bindings(
                 logger.warning(f"Cross-account request vanished before it could be migrated: pk={raw_car.pk!r}")
                 continue
 
-            # We do not need to check for V1-writability here. The V2 API should not affect role bindings from CARs
-            # (see RHCLOUD-45849).
+            # We do not need to check for V1-writability. _migrate_car_bindings uses
+            # RelationApiDualWriteCrossAccessHandler, which supports V2 tenants.
 
             try:
                 migrated = _migrate_car_bindings(car=car, replicator=replicator)
