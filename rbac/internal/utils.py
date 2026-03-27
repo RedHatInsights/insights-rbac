@@ -655,7 +655,12 @@ def clean_invalid_workspace_resource_definitions(dry_run: bool = False) -> dict:
                         continue
 
                     # Get workspace IDs from resource definition
-                    workspace_ids = get_workspace_ids_from_resource_definition(rd.attributeFilter)
+                    workspace_ids, malformed_workspace_ids = get_workspace_ids_from_resource_definition_with_malformed(
+                        rd.attributeFilter
+                    )
+
+                    # null is acceptable for us.
+                    malformed_workspace_ids = [x for x in malformed_workspace_ids if x is not None]
 
                     # Check if the resource definition has None (for ungrouped workspace)
                     operation = rd.attributeFilter.get("operation")
@@ -667,8 +672,10 @@ def clean_invalid_workspace_resource_definitions(dry_run: bool = False) -> dict:
                     elif operation == "equal":
                         has_none_value = original_value is None
 
-                    if not workspace_ids:
-                        continue
+                    # Previously, we would attempt to exit early if workspace_ids is empty (believing there would be
+                    # nothing to process). However, this isn't always valid. If the resource definition contains only
+                    # malformed workspace IDs (e.g. invalid UUIDs or values that aren't strings), we still need to
+                    # remove all of those values, but workspace_ids will be empty.
 
                     # Check which workspaces exist in the role's tenant
                     valid_workspace_ids = set(
@@ -680,7 +687,7 @@ def clean_invalid_workspace_resource_definitions(dry_run: bool = False) -> dict:
 
                     invalid_workspace_ids = set(str(ws_id) for ws_id in workspace_ids) - valid_workspace_ids
 
-                    if invalid_workspace_ids:
+                    if invalid_workspace_ids or malformed_workspace_ids:
                         role_had_invalid_rds = True
 
                         # Calculate what the new value would be
@@ -710,6 +717,7 @@ def clean_invalid_workspace_resource_definitions(dry_run: bool = False) -> dict:
                             "original_value": original_value,
                             "new_value": new_value,
                             "invalid_workspaces": list(invalid_workspace_ids),
+                            "malformed_workspaces": list(malformed_workspace_ids),
                             "valid_workspaces": list(valid_workspace_ids),
                             "preserved_none": has_none_value,
                         }
@@ -839,19 +847,36 @@ def is_resource_a_workspace(application: str, resource_type: str, attributeFilte
     return is_workspace_application and is_workspace_resource_type and is_workspace_group_filter
 
 
-def get_workspace_ids_from_resource_definition(attributeFilter: dict) -> list[uuid.UUID]:
-    """Get workspace id from a resource definition."""
+def get_workspace_ids_from_resource_definition_with_malformed(attributeFilter: dict) -> tuple[list[uuid.UUID], list]:
+    """Get workspace id from a resource definition. Returns a tuple of the valid entries and the invalid entries."""
     operation = attributeFilter.get("operation")
-    ret = []
+
+    valid = []
+    invalid = []
+
     if operation == "in":
         value = attributeFilter.get("value", [])
-        ret.extend(uuid.UUID(val) for val in value if is_str_valid_uuid(val))
+
+        for val in value:
+            if is_str_valid_uuid(val):
+                valid.append(uuid.UUID(val))
+            else:
+                invalid.append(val)
+
     elif operation == "equal":
         value = attributeFilter.get("value", "")
-        if is_str_valid_uuid(value):
-            ret.append(uuid.UUID(value))
 
-    return ret
+        if is_str_valid_uuid(value):
+            valid.append(uuid.UUID(value))
+        else:
+            invalid.append(value)
+
+    return valid, invalid
+
+
+def get_workspace_ids_from_resource_definition(attributeFilter: dict) -> list[uuid.UUID]:
+    """Get workspace id from a resource definition."""
+    return get_workspace_ids_from_resource_definition_with_malformed(attributeFilter)[0]
 
 
 def is_str_valid_uuid(uuid_str: str) -> bool:

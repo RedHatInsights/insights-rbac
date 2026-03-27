@@ -546,6 +546,35 @@ class CleanInvalidResourceDefinitionsTest(TestCase):
         rd.refresh_from_db()
         self.assertIsNone(rd.attributeFilter["value"], "None value should be preserved for operation='equal'")
 
+    def test_clean_fixes_int_id(self):
+        role = Role.objects.create(name="Test Role Equal None", system=False, tenant=self.tenant)
+
+        perm = Permission.objects.create(
+            permission="inventory:groups:read",
+            application="inventory",
+            resource_type="groups",
+            verb="read",
+            tenant=self.tenant,
+        )
+        access = Access.objects.create(role=role, permission=perm, tenant=self.tenant)
+
+        # Create RD with operation='equal' and value=None (ungrouped workspace)
+        rd = ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter={
+                "key": "group.id",
+                "operation": "in",
+                "value": [1],
+            },
+            tenant=self.tenant,
+        )
+
+        results = clean_invalid_workspace_resource_definitions()
+        self.assertEqual(results["resource_definitions_fixed"], 1)
+
+        rd.refresh_from_db()
+        self.assertEqual(rd.attributeFilter["value"], [])
+
     def test_clean_dry_run_mode(self):
         """
         Test that dry_run mode reports changes without making them.
