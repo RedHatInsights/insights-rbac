@@ -335,6 +335,7 @@ class RoleBindingSystemUserPermissionTests(RoleBindingAccessTestMixin, Transacti
         }
 
         mock_view = Mock()
+        mock_view.action = "by_subject"
 
         result = permission.has_permission(mock_request, mock_view)
 
@@ -354,6 +355,7 @@ class RoleBindingSystemUserPermissionTests(RoleBindingAccessTestMixin, Transacti
         }
 
         mock_view = Mock()
+        mock_view.action = "by_subject"
 
         result = permission.has_permission(mock_request, mock_view)
 
@@ -372,6 +374,7 @@ class RoleBindingSystemUserPermissionTests(RoleBindingAccessTestMixin, Transacti
         }
 
         mock_view = Mock()
+        mock_view.action = "by_subject"
 
         result = permission.has_permission(mock_request, mock_view)
 
@@ -391,6 +394,7 @@ class RoleBindingSystemUserPermissionTests(RoleBindingAccessTestMixin, Transacti
         }
 
         mock_view = Mock()
+        mock_view.action = "by_subject"
 
         result = permission.has_permission(mock_request, mock_view)
 
@@ -405,6 +409,7 @@ class RoleBindingSystemUserPermissionTests(RoleBindingAccessTestMixin, Transacti
         mock_request.user = Mock(spec=[])
 
         mock_view = Mock()
+        mock_view.action = "by_subject"
 
         result = permission.has_permission(mock_request, mock_view)
 
@@ -419,6 +424,7 @@ class RoleBindingSystemUserPermissionTests(RoleBindingAccessTestMixin, Transacti
         mock_request.user.admin = False
 
         mock_view = Mock()
+        mock_view.action = "by_subject"
 
         result = permission.has_permission(mock_request, mock_view)
 
@@ -450,6 +456,7 @@ class RoleBindingKesselPermissionTests(RoleBindingAccessTestMixin, TransactionId
         }
 
         mock_view = Mock()
+        mock_view.action = "by_subject"
 
         result = permission.has_permission(mock_request, mock_view)
 
@@ -482,6 +489,7 @@ class RoleBindingKesselPermissionTests(RoleBindingAccessTestMixin, TransactionId
         }
 
         mock_view = Mock()
+        mock_view.action = "by_subject"
 
         result = permission.has_permission(mock_request, mock_view)
 
@@ -508,6 +516,7 @@ class RoleBindingKesselPermissionTests(RoleBindingAccessTestMixin, TransactionId
         }
 
         mock_view = Mock()
+        mock_view.action = "by_subject"
 
         result = permission.has_permission(mock_request, mock_view)
 
@@ -528,6 +537,7 @@ class RoleBindingKesselPermissionTests(RoleBindingAccessTestMixin, TransactionId
         }
 
         mock_view = Mock()
+        mock_view.action = "by_subject"
 
         result = permission.has_permission(mock_request, mock_view)
 
@@ -555,6 +565,7 @@ class RoleBindingKesselPermissionTests(RoleBindingAccessTestMixin, TransactionId
         mock_request.tenant = self.tenant
 
         mock_view = Mock()
+        mock_view.action = "by_subject"
 
         result = permission.has_permission(mock_request, mock_view)
 
@@ -576,6 +587,7 @@ class RoleBindingKesselPermissionTests(RoleBindingAccessTestMixin, TransactionId
         mock_request.tenant = self.tenant
 
         mock_view = Mock()
+        mock_view.action = "by_subject"
 
         result = permission.has_permission(mock_request, mock_view)
 
@@ -595,6 +607,7 @@ class RoleBindingKesselPermissionTests(RoleBindingAccessTestMixin, TransactionId
         mock_request.tenant = self.tenant
 
         mock_view = Mock()
+        mock_view.action = "by_subject"
 
         result = permission.has_permission(mock_request, mock_view)
 
@@ -621,6 +634,7 @@ class RoleBindingKesselPermissionTests(RoleBindingAccessTestMixin, TransactionId
         }
 
         mock_view = Mock()
+        mock_view.action = "by_subject"
 
         result = permission.has_permission(mock_request, mock_view)
 
@@ -654,6 +668,7 @@ class RoleBindingKesselPermissionTests(RoleBindingAccessTestMixin, TransactionId
         }
 
         mock_view = Mock()
+        mock_view.action = "by_subject"
 
         result = permission.has_permission(mock_request, mock_view)
 
@@ -687,6 +702,7 @@ class RoleBindingKesselPermissionTests(RoleBindingAccessTestMixin, TransactionId
         }
 
         mock_view = Mock()
+        mock_view.action = "by_subject"
 
         result = permission.has_permission(mock_request, mock_view)
 
@@ -694,6 +710,22 @@ class RoleBindingKesselPermissionTests(RoleBindingAccessTestMixin, TransactionId
         mock_checker.check_resource_access.assert_called_once()
         call_kwargs = mock_checker.check_resource_access.call_args[1]
         self.assertEqual(call_kwargs["relation"], "role_binding_view")
+
+    def test_kessel_permission_denies_unrecognized_action(self):
+        """Kessel permission should deny access for unrecognized view actions (fail-closed)."""
+        permission = RoleBindingKesselAccessPermission()
+
+        mock_request = Mock()
+        mock_request.user.system = False
+        mock_request.user.admin = False
+        mock_request.query_params = {}
+
+        mock_view = Mock()
+        mock_view.action = "some_future_action"
+
+        result = permission.has_permission(mock_request, mock_view)
+
+        self.assertFalse(result)
 
 
 @override_settings(V2_APIS_ENABLED=True)
@@ -725,6 +757,7 @@ class RoleBindingPrincipalLookupTests(RoleBindingAccessTestMixin, TransactionIde
         }
 
         mock_view = Mock()
+        mock_view.action = "by_subject"
 
         result = permission.has_permission(mock_request, mock_view)
 
@@ -755,6 +788,7 @@ class RoleBindingPrincipalLookupTests(RoleBindingAccessTestMixin, TransactionIde
         }
 
         mock_view = Mock()
+        mock_view.action = "by_subject"
 
         result = permission.has_permission(mock_request, mock_view)
 
@@ -787,6 +821,7 @@ class RoleBindingPrincipalLookupTests(RoleBindingAccessTestMixin, TransactionIde
         }
 
         mock_view = Mock()
+        mock_view.action = "by_subject"
 
         result = permission.has_permission(mock_request, mock_view)
 
@@ -809,6 +844,7 @@ class RoleBindingPrincipalLookupTests(RoleBindingAccessTestMixin, TransactionIde
         }
 
         mock_view = Mock()
+        mock_view.action = "by_subject"
 
         result = permission.has_permission(mock_request, mock_view)
 
@@ -831,6 +867,7 @@ class RoleBindingPrincipalLookupTests(RoleBindingAccessTestMixin, TransactionIde
         }
 
         mock_view = Mock()
+        mock_view.action = "by_subject"
 
         result = permission.has_permission(mock_request, mock_view)
 
@@ -860,6 +897,7 @@ class RoleBindingPrincipalLookupTests(RoleBindingAccessTestMixin, TransactionIde
         }
 
         mock_view = Mock()
+        mock_view.action = "by_subject"
 
         result = permission.has_permission(mock_request, mock_view)
 
@@ -889,6 +927,7 @@ class RoleBindingPrincipalLookupTests(RoleBindingAccessTestMixin, TransactionIde
         }
 
         mock_view = Mock()
+        mock_view.action = "by_subject"
 
         result = permission.has_permission(mock_request, mock_view)
 
@@ -917,6 +956,7 @@ class RoleBindingPrincipalLookupTests(RoleBindingAccessTestMixin, TransactionIde
         }
 
         mock_view = Mock()
+        mock_view.action = "by_subject"
 
         result = permission.has_permission(mock_request, mock_view)
 
@@ -989,6 +1029,7 @@ class RoleBindingServiceAccountTests(RoleBindingAccessTestMixin, TransactionIden
         }
 
         mock_view = Mock()
+        mock_view.action = "by_subject"
 
         result = permission.has_permission(mock_request, mock_view)
 
@@ -1017,6 +1058,7 @@ class RoleBindingServiceAccountTests(RoleBindingAccessTestMixin, TransactionIden
         }
 
         mock_view = Mock()
+        mock_view.action = "by_subject"
 
         result = permission.has_permission(mock_request, mock_view)
 

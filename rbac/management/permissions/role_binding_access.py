@@ -126,9 +126,11 @@ class RoleBindingKesselAccessPermission(permissions.BasePermission):
             return self._check_batch_create_permission(request)
         elif action == "by_subject" and request.method == "PUT":
             return self._check_by_subject_write_permission(request)
-        else:
-            # list and by_subject GET: check via query params
+        elif action in ("list", "by_subject"):
             return self._check_read_permission(request)
+        else:
+            logger.warning("Denied access: unrecognized action %s", action)
+            return False
 
     def _parse_query_resource(self, request):
         """Parse and sanitize resource_id/resource_type from query params.
@@ -203,9 +205,9 @@ class RoleBindingKesselAccessPermission(permissions.BasePermission):
             return False
 
         if FEATURE_FLAGS.is_use_role_binding_view_permission_enabled():
-            if not self._check_single_resource(request, resource_type, resource_id, self.ROLE_BINDING_GRANT_RELATION):
-                return False
-            return self._check_single_resource(request, resource_type, resource_id, self.ROLE_BINDING_REVOKE_RELATION)
+            return self._check_single_resource(
+                request, resource_type, resource_id, self.ROLE_BINDING_GRANT_RELATION
+            ) and self._check_single_resource(request, resource_type, resource_id, self.ROLE_BINDING_REVOKE_RELATION)
         else:
             return self._check_single_resource(request, resource_type, resource_id, self.EDIT_RELATION)
 
