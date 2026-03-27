@@ -627,7 +627,7 @@ def clean_invalid_workspace_resource_definitions(dry_run: bool = False) -> dict:
 
         with transaction.atomic():
             # Lock the role to prevent concurrent modifications
-            role = Role.objects.select_for_update().filter(pk=raw_role.pk).first()
+            role = Role.objects.select_for_update(of=["self"]).select_related("tenant").filter(pk=raw_role.pk).first()
 
             if role is None:
                 logger.warning(f"Role vanished before it could be cleaned: pk={raw_role.pk!r}")
