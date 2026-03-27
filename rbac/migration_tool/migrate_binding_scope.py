@@ -177,6 +177,7 @@ def migrate_all_role_bindings(
     logger.info(f"Starting binding scope migration{tenant_info}")
     logger.info(f"ROOT_SCOPE_PERMISSIONS: {settings.ROOT_SCOPE_PERMISSIONS}")
     logger.info(f"TENANT_SCOPE_PERMISSIONS: {settings.TENANT_SCOPE_PERMISSIONS}")
+    logger.info(f"DEFAULT_SCOPE_PERMISSIONS: {settings.DEFAULT_SCOPE_PERMISSIONS}")
 
     # Part 1: Migrate custom role bindings
     # Include all custom roles with access (permissions), even if they have no policies (groups) assigned yet.
