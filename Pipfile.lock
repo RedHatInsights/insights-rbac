@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "fbeba6cd84dfeaa3e04c2e1debbffd0c0a580843776371d881e00779e4b1031f"
+            "sha256": "5b58fad39c250160fd2ff488e0b4b88cda4db6e931032ae865028ad4ef5a698a"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -535,6 +535,7 @@
                 "sha256:16d40da1c3c5a0533f57d268fe72e0ebb0ae1cc3b567024122651c045d879b64",
                 "sha256:195ebe3dca18eddd1b3db5edc5189b76c13e96f29e73043b923ebcf3f1a860f7"
             ],
+            "index": "pypi",
             "markers": "python_version >= '3.8'",
             "version": "==2.49.1"
         },
@@ -799,13 +800,11 @@
             "version": "==2.1.5"
         },
         "kessel-sdk": {
-            "extras": [
-                "auth"
-            ],
             "hashes": [
                 "sha256:1a52c8091716009aebdc614bd4f92de2b8910bf688b5c68b7cf78184ec4866d6",
                 "sha256:de3e49cc91d98d4893e24ae0ea5908e3e4f8e8891ce77e2982d3f37039888012"
             ],
+            "index": "pypi",
             "markers": "python_version >= '3.11'",
             "version": "==2.4.0"
         },
@@ -1374,6 +1373,7 @@
                 "sha256:7dd8a5c40426b779b0868c404bdef9768deccf22749cde15852df527e6269b36",
                 "sha256:b3dffaebd884d8cd778494369603a9e7b58d29111bf6b41bdc2dcd87203af4e9"
             ],
+            "index": "pypi",
             "markers": "python_version >= '3.4'",
             "version": "==2.0.0"
         },

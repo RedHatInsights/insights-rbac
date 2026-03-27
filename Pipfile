@@ -43,7 +43,10 @@ jsonschema = "==4.26.0"
 pyasn1 = "==0.6.3"
 unleashclient = "==6.7.0"
 django-pgtransaction = "==2.1.0"
-kessel-sdk = {extras = ["auth"], version = "==2.4.0"}
+# kessel-sdk with auth extras - dependencies listed explicitly for Snyk compatibility
+kessel-sdk = "==2.4.0"
+google-auth = "==2.49.1"
+requests-oauthlib = "==2.0.0"
 mcp = "==1.26.0"
 
 [dev-packages]
