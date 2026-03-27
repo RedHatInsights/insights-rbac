@@ -37,7 +37,7 @@ from migration_tool.in_memory_tuples import (
 from management.models import Group, Permission, Principal, Workspace
 from management.role.v2_model import PlatformRoleV2, RoleV2, SeededRoleV2
 from management.role.v2_service import RoleV2Service
-from management.exceptions import InvalidFieldError, NotFoundError
+from management.exceptions import InvalidFieldError, NotFoundError, RequiredFieldError
 from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
 from management.role_binding.serializer import RoleBindingByGroupSerializer, RoleBindingFieldSelection
 from management.role_binding.service import CreateBindingRequest, RoleBindingService
@@ -1139,6 +1139,12 @@ class BatchCreateRoleBindingTests(IdentityRequest):
             subject_id=str(subject_id),
         )
 
+    def test_batch_create_empty(self):
+        with self.assertRaises(RequiredFieldError) as error:
+            self.service.batch_create([])
+
+        self.assertEqual(error.exception.field_name, "requests")
+
     def test_batch_create_for_group(self):
         """Create a single binding with a group subject."""
         results = self.service.batch_create(
@@ -2212,18 +2218,6 @@ class UpdateRoleBindingsForSubjectTests(_ReplicationAssertionsMixin, IdentityReq
                 },
                 "subject_id",
             ),
-            # Empty roles list - caught by model validation
-            (
-                "empty_roles",
-                {
-                    "resource_type": "workspace",
-                    "resource_id": str(self.workspace.id),
-                    "subject_type": "group",
-                    "subject_id": str(self.group.uuid),
-                    "role_ids": [],
-                },
-                "roles",
-            ),
         ]
 
         for description, params, expected_field in test_cases:
@@ -2343,6 +2337,27 @@ class ReplaceRoleBindingsTests(_ReplicationAssertionsMixin, IdentityRequest):
         binding = self._get_binding(self.role3)
         self.assertTuplesAdded(set(binding.binding_tuples()) | {binding.subject_tuple(self.user1)})
         self.assertTuplesRemoved(set())
+
+    # -- 1b. Empty roles removes all bindings -------------------------------
+
+    def test_empty_roles_removes_all_bindings(self):
+        """Empty roles list removes all bindings for the subject."""
+        # Given: user1 linked to RoleBinding(ws, role1), only subject
+        self._update_access(self.user1, [self.role1])
+        self.assertTrue(self._binding_exists(self.role1))
+        old_binding = self._get_binding(self.role1)
+        self.tracker.clear()
+
+        # When: PUT roles=[]
+        self._update_access(self.user1, [])
+
+        # Then — removed: user1 unlinked, binding deleted (orphaned)
+        self.assertFalse(self._binding_exists(self.role1))
+        self.assertEqual(self._roles_for_principal(self.user1), set())
+
+        # Then — replication: old binding fully removed
+        self.assertTuplesAdded(set())
+        self.assertTuplesRemoved(set(old_binding.binding_tuples()) | {old_binding.subject_tuple(self.user1)})
 
     # -- 2. Complete replacement, old binding orphaned --------------------
 

@@ -20,6 +20,7 @@
 import logging
 from typing import Optional
 
+from django.db import OperationalError
 from management.models import Workspace
 from management.relation_replicator.relation_replicator import (
     DualWriteException,
@@ -80,7 +81,7 @@ class RelationApiDualWriteWorkspaceHandler(BaseRelationApiDualWriteHandler):
         self.generate_relations_to_remove_workspace()
         self._replicate(skip_ws_events=skip_ws_events)
 
-    def _replicate(self, skip_ws_events: bool = False):
+    def _replicate(self, skip_ws_events: bool = False) -> None:
         # To avoid Circular Dependency
         from management.workspace.serializer import WorkspaceEventSerializer
 
@@ -107,6 +108,16 @@ class RelationApiDualWriteWorkspaceHandler(BaseRelationApiDualWriteHandler):
                         partition_key=PartitionKey.byEnvironment(),
                     )
                 )
+        except OperationalError:
+            logger.warning(
+                "Database operational error during workspace dual write replication, "
+                "workspace_id='%s' event_type='%s'. "
+                "The transaction may be retried by pgtransaction.",
+                self.workspace.id,
+                self.event_type,
+                exc_info=True,
+            )
+            raise
         except Exception as e:
             raise DualWriteException(e)
 

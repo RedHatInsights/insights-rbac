@@ -34,7 +34,10 @@ from management.relation_replicator.relation_replicator import ReplicationEvent
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.relation_replicator.types import RelationTuple
 from management.role.model import BindingMapping, Role
-from management.role.platform import platform_v2_role_uuid_for
+from management.role.platform import (
+    admin_platform_parent_scope_for_seeded_system_role,
+    platform_v2_role_uuid_for,
+)
 from management.role.relations import deduplicate_role_permission_relationships, role_child_relationship
 from management.role.v2_model import CustomRoleV2
 from management.role_binding.model import RoleBinding
@@ -138,14 +141,20 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
             [],
         )
 
-    def _check_create_admin_platform_relation(self, role, role_scope):
-        create_relations = []
+    def _check_create_admin_platform_relation(self, role, role_scope, *, apply_seeded_admin_scope_override: bool):
         """Check system role and create admin and platform system role parent-child relationship."""
+        create_relations = []
         if role.admin_default:
             try:
+                admin_scope = admin_platform_parent_scope_for_seeded_system_role(
+                    role.name,
+                    role.admin_default,
+                    role_scope,
+                    apply_override=apply_seeded_admin_scope_override,
+                )
                 parent_uuid = platform_v2_role_uuid_for(
                     DefaultAccessType.ADMIN,
-                    role_scope,
+                    admin_scope,
                     GlobalPolicyIdService.shared(),
                 )
 
@@ -187,11 +196,19 @@ class SeedingRelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
             # When deleting, generate relationships for all possible scopes
         if list_all_possible_scopes_for_removal is True:
             for scope in Scope:
-                relations.extend(self._check_create_admin_platform_relation(self.role, scope))
+                relations.extend(
+                    self._check_create_admin_platform_relation(
+                        self.role, scope, apply_seeded_admin_scope_override=False
+                    )
+                )
         else:
             # Determine highest scope for the role's permissions
             highest_scope: Scope = self.implicit_resource_service.scope_for_role(self.role)
-            relations.extend(self._check_create_admin_platform_relation(self.role, highest_scope))
+            relations.extend(
+                self._check_create_admin_platform_relation(
+                    self.role, highest_scope, apply_seeded_admin_scope_override=True
+                )
+            )
 
         for permission in v2_permissions:
             relations.append(
