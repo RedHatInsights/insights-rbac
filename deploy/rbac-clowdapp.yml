@@ -275,6 +275,8 @@ objects:
             value: ${ROOT_SCOPE_PERMISSIONS}
           - name: TENANT_SCOPE_PERMISSIONS
             value: ${TENANT_SCOPE_PERMISSIONS}
+          - name: DEFAULT_SCOPE_PERMISSIONS
+            value: ${DEFAULT_SCOPE_PERMISSIONS}
           ####### Following envs are for scheduler, doesn't hurt to put in worker
           - name: PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB
             value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB}
@@ -568,6 +570,8 @@ objects:
             value: ${ROOT_SCOPE_PERMISSIONS}
           - name: TENANT_SCOPE_PERMISSIONS
             value: ${TENANT_SCOPE_PERMISSIONS}
+          - name: DEFAULT_SCOPE_PERMISSIONS
+            value: ${DEFAULT_SCOPE_PERMISSIONS}
           - name: WORKSPACE_ACCESS_TIMING_ENABLED
             value: ${WORKSPACE_ACCESS_TIMING_ENABLED}
           - name: RBAC_KAFKA_CONSUMER_TOPIC
@@ -676,6 +680,8 @@ objects:
             value: ${ROOT_SCOPE_PERMISSIONS}
           - name: TENANT_SCOPE_PERMISSIONS
             value: ${TENANT_SCOPE_PERMISSIONS}
+          - name: DEFAULT_SCOPE_PERMISSIONS
+            value: ${DEFAULT_SCOPE_PERMISSIONS}
 
     - name: rbac-kafka-consumer
       minReplicas: ${{RBAC_KAFKA_CONSUMER_REPLICAS}}
@@ -761,6 +767,8 @@ objects:
             value: ${ROOT_SCOPE_PERMISSIONS}
           - name: TENANT_SCOPE_PERMISSIONS
             value: ${TENANT_SCOPE_PERMISSIONS}
+          - name: DEFAULT_SCOPE_PERMISSIONS
+            value: ${DEFAULT_SCOPE_PERMISSIONS}
           - name: REDHAT_SSO
             value: ${REDHAT_SSO}
         livenessProbe:
@@ -1220,6 +1228,8 @@ objects:
               value: ${ROOT_SCOPE_PERMISSIONS}
             - name: TENANT_SCOPE_PERMISSIONS
               value: ${TENANT_SCOPE_PERMISSIONS}
+            - name: DEFAULT_SCOPE_PERMISSIONS
+              value: ${DEFAULT_SCOPE_PERMISSIONS}
             ######## Following envs are different from worker
             - name: S3_AWS_ACCESS_KEY_ID
               valueFrom:
@@ -1801,6 +1811,9 @@ parameters:
   value: ''
 - name: TENANT_SCOPE_PERMISSIONS
   description: Comma-separated list of permissions that bind to tenant scope (supports wildcards like rbac:*:*)
+  value: ''
+- name: DEFAULT_SCOPE_PERMISSIONS
+  description: Comma-separated list of permissions that bind to default workspace scope (more specific patterns override broader TENANT_SCOPE_PERMISSIONS entries)
   value: ''
 - name: WORKSPACE_ACCESS_TIMING_ENABLED
   description: Enable detailed timing logs for v2 workspace access checks (for performance investigation)
