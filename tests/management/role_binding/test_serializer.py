@@ -1200,6 +1200,22 @@ class BatchCreateRequestSerializerTests(IdentityRequest):
         serializer = self._make_serializer(self.valid_payload)
         self.assertTrue(serializer.is_valid(), serializer.errors)
 
+    def test_valid_request_non_uuid_resource_id_passes(self):
+        """Resource id may be non-UUID (e.g. tenant resource id or workspace string id)."""
+        tenant_style = "localhost/12345"
+        payload = {
+            "requests": [
+                {
+                    "resource": {"id": tenant_style, "type": "tenant"},
+                    "subject": {"id": str(self.group.uuid), "type": "group"},
+                    "role": {"id": str(self.role.uuid)},
+                }
+            ],
+        }
+        serializer = self._make_serializer(payload)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(serializer.validated_data["requests"][0]["resource"]["id"], tenant_style)
+
     def test_rejects_empty_requests_list(self):
         """Empty requests list fails min_length=1."""
         serializer = self._make_serializer({"requests": []})

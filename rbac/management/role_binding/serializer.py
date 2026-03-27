@@ -672,7 +672,9 @@ class RoleBindingListOutputSerializer(RoleBindingOutputSerializerMixin, serializ
 class ResourceInputSerializer(serializers.Serializer):
     """Validates the resource portion of a role binding request."""
 
-    id = serializers.UUIDField(help_text="UUID of the resource")
+    id = serializers.CharField(
+        help_text="Resource identifier (e.g. workspace id as UUID, or tenant id as domain/org_id)"
+    )
     type = serializers.CharField(help_text="Type of resource")
 
 
