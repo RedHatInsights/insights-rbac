@@ -52,7 +52,8 @@ from management.role.relation_api_dual_write_handler import (
     SeedingRelationApiDualWriteHandler,
 )
 from management.role.v2_model import CustomRoleV2, RoleV2, SeededRoleV2
-from management.role_binding.model import RoleBinding
+from management.role_binding.model import RoleBinding, RoleBindingPrincipal
+from management.role_binding.service import RoleBindingService
 from management.tenant_mapping.model import TenantMapping, DefaultAccessType
 from management.tenant_mapping.v2_activation import ensure_v2_write_activated
 from management.tenant_service.tenant_service import BootstrappedTenant
@@ -2696,6 +2697,79 @@ class DualWriteCrossAccountReqeustTestCase(DualWriteTestCase):
         with self.settings(ROOT_SCOPE_PERMISSIONS="app:resource:verb", TENANT_SCOPE_PERMISSIONS=""):
             self.given_car_expired(car)
             self._expect_user_default_count(0, system_role)
+
+    @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="")
+    def test_v2_existing_binding_unaffected(self):
+        """Test that adding a CAR to a V2 tenant does not affect existing groups/principals on a role binding."""
+        system_role = self.given_v1_system_role("test", permissions=["app:resource:verb"])
+        group, _ = self.given_group("a group", ["p1"])
+
+        service = RoleBindingService(
+            tenant=self.tenant,
+            replicator=InMemoryRelationReplicator(self.tuples),
+            principal_source="another source",
+            allow_external_subjects=True,
+        )
+
+        ensure_v2_write_activated(self.tenant)
+
+        # Add a group to check that nothing accidentally removes the group later.
+        service.update_role_bindings_for_subject(
+            resource_type="workspace",
+            resource_id=self.default_workspace(),
+            subject_type="group",
+            subject_id=str(group.uuid),
+            role_ids=[str(system_role.uuid)],
+        )
+
+        service.update_role_bindings_for_subject(
+            resource_type="workspace",
+            resource_id=self.default_workspace(),
+            subject_type="user",
+            subject_id=str(self.user.uuid),
+            role_ids=[str(system_role.uuid)],
+        )
+
+        self.expect_1_role_binding_to_workspace(
+            workspace=self.default_workspace(),
+            for_v2_roles=[str(system_role.uuid)],
+            for_groups=[str(group.uuid)],
+            for_principals=[self.user_id],
+        )
+
+        def _assert_source(exists: bool, source: str):
+            self.assertEqual(
+                exists,
+                RoleBindingPrincipal.objects.filter(binding__role__v1_source=system_role, source=source).exists(),
+            )
+
+        car = self.given_car(self.user_id, [system_role])
+
+        # The principal should still be bound (it just now has two sources).
+        self.assertEqual(2, RoleBindingPrincipal.objects.filter(principal=self.user).count())
+
+        _assert_source(True, "another source")
+        _assert_source(True, str(car.source_key()))
+
+        self.expect_1_role_binding_to_workspace(
+            workspace=self.default_workspace(),
+            for_v2_roles=[str(system_role.uuid)],
+            for_groups=[str(group.uuid)],
+            for_principals=[self.user_id],
+        )
+
+        self.given_car_expired(car)
+
+        _assert_source(True, "another source")
+        _assert_source(False, str(car.source_key()))
+
+        # The principal should still be bound in relations (since there is still a source for it).
+        self.expect_1_role_binding_to_workspace(
+            workspace=self.default_workspace(),
+            for_v2_roles=[str(system_role.uuid)],
+            for_groups=[str(group.uuid)],
+            for_principals=[self.user_id],
+        )
 
 
 class RbacFixture:
