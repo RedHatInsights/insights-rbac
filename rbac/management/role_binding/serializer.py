@@ -92,10 +92,18 @@ class RoleBindingListInputSerializer(RoleBindingInputSerializerMixin, serializer
     """
 
     role_id = serializers.UUIDField(required=False, help_text="Filter by role ID")
-    resource_id = serializers.UUIDField(required=False, help_text="Filter by resource ID")
+    resource_id = serializers.CharField(required=False, max_length=256, help_text="Filter by resource ID")
     resource_type = serializers.CharField(required=False, help_text="Filter by resource type")
     subject_type = serializers.CharField(required=False, help_text="Filter by subject type")
     subject_id = serializers.UUIDField(required=False, help_text="Filter by subject ID")
+    granted_subject_type = serializers.CharField(
+        required=False,
+        help_text="Filter by the type of subject effectively granted access ('user' or 'group')",
+    )
+    granted_subject_id = serializers.CharField(
+        required=False,
+        help_text="ID of the subject effectively granted access (principal UUID, user_id, or group UUID)",
+    )
     fields = serializers.CharField(required=False, help_text="Control which fields are included")
     order_by = serializers.CharField(required=False, help_text="Sort by specified field(s)")
     exclude_sources = serializers.ChoiceField(
@@ -106,11 +114,14 @@ class RoleBindingListInputSerializer(RoleBindingInputSerializerMixin, serializer
         "Requires both resource_id and resource_type to be specified for inherited binding lookups.",
     )
 
-    def validate(self, data):
-        """Validate that resource_id and resource_type are both provided for inherited binding lookups."""
-        exclude_sources = data.get("exclude_sources", ExcludeSources.NONE)
-        resource_id = data.get("resource_id")
-        resource_type = data.get("resource_type")
+    def validate(self, attrs):
+        """Cross-field validation for exclude_sources, granted_subject, and subject params."""
+        attrs = super().validate(attrs)
+
+        # Validate exclude_sources with resource_id/resource_type
+        exclude_sources = attrs.get("exclude_sources", ExcludeSources.NONE)
+        resource_id = attrs.get("resource_id")
+        resource_type = attrs.get("resource_type")
 
         # Inherited binding lookups require both resource_id and resource_type.
         # This applies when exclude_sources is 'none' (include all) or 'direct' (inherited only).
@@ -132,7 +143,26 @@ class RoleBindingListInputSerializer(RoleBindingInputSerializerMixin, serializer
                     }
                 )
 
-        return data
+        # Validate granted_subject params
+        granted_type = attrs.get("granted_subject_type")
+        granted_id = attrs.get("granted_subject_id")
+
+        if bool(granted_type) != bool(granted_id):
+            raise serializers.ValidationError(
+                "Both granted_subject_type and granted_subject_id must be provided together."
+            )
+
+        if granted_type:
+            if not SubjectType.is_valid(granted_type):
+                raise serializers.ValidationError(
+                    f"granted_subject_type must be one of: {', '.join(SubjectType.values())}."
+                )
+            if attrs.get("subject_type") or attrs.get("subject_id"):
+                raise serializers.ValidationError(
+                    "granted_subject_type/granted_subject_id cannot be combined with subject_type/subject_id."
+                )
+
+        return attrs
 
 
 class RoleBindingInputSerializer(serializers.Serializer):
@@ -684,7 +714,7 @@ class RoleBindingListOutputSerializer(RoleBindingOutputSerializerMixin, serializ
 class ResourceInputSerializer(serializers.Serializer):
     """Validates the resource portion of a role binding request."""
 
-    id = serializers.UUIDField(help_text="UUID of the resource")
+    id = serializers.CharField(max_length=256, help_text="ID of the resource")
     type = serializers.CharField(help_text="Type of resource")
 
 

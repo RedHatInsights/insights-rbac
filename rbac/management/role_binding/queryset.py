@@ -16,6 +16,8 @@
 #
 """QuerySet for RoleBinding lookups."""
 
+import uuid as uuid_mod
+
 from django.db.models import Count, F, OuterRef, Q, QuerySet, Subquery
 from django.db.models.fields import UUIDField
 from django.db.models.functions import Cast
@@ -24,6 +26,11 @@ from management.subject import SubjectType
 
 class RoleBindingQuerySet(QuerySet):
     """Custom QuerySet for RoleBinding with domain-aware query methods."""
+
+    def _clone(self):
+        c = super()._clone()
+        c._tenant = getattr(self, "_tenant", None)
+        return c
 
     def for_tenant(self, tenant):
         """Return role bindings for a tenant with related data eagerly loaded.
@@ -34,7 +41,7 @@ class RoleBindingQuerySet(QuerySet):
         cursor positions — plain ORM lookups (``role__name``) only work in
         ``.order_by()`` but not in ``getattr``.
         """
-        return (
+        qs = (
             self.filter(tenant=tenant)
             .select_related("role")
             .prefetch_related("group_entries__group", "principal_entries__principal")
@@ -45,6 +52,8 @@ class RoleBindingQuerySet(QuerySet):
                 role_modified=F("role__modified"),
             )
         )
+        qs._tenant = tenant
+        return qs
 
     def for_role(self, role_id):
         """Filter by role UUID."""
@@ -82,6 +91,33 @@ class RoleBindingQuerySet(QuerySet):
             ).distinct()
         return self
 
+    def for_granted_subject(self, granted_subject_type, granted_subject_id):
+        """Filter by effective access grant, including transitive group membership.
+
+        Requires for_tenant() to have been called first.
+
+        For groups: returns bindings where the group is a direct subject.
+        For users: looks up the principal and resolves their group memberships
+        (explicitly assigned + platform default groups), then returns bindings
+        where the user is a direct subject OR any of their groups is a subject.
+        Returns an empty queryset if the principal is not found.
+        """
+        tenant = getattr(self, "_tenant", None)
+        if tenant is None:
+            raise ValueError("for_granted_subject() requires for_tenant() to be called first")
+
+        if granted_subject_type == SubjectType.GROUP:
+            return self.filter(group_entries__group__uuid=granted_subject_id)
+        elif granted_subject_type == SubjectType.USER:
+            principal = _resolve_principal(granted_subject_id, tenant)
+            if not principal:
+                return self.none()
+            group_uuids = _group_uuids_for_principal(principal, tenant)
+            return self.filter(
+                Q(principal_entries__principal__uuid=principal.uuid) | Q(group_entries__group__uuid__in=group_uuids)
+            ).distinct()
+        return self.none()
+
     def with_resource_names(self):
         """Annotate each binding with its resource's display name.
 
@@ -110,3 +146,26 @@ class RoleBindingQuerySet(QuerySet):
             group_count=Count("group_entries"),
             principal_count=Count("principal_entries"),
         ).filter(group_count=0, principal_count=0)
+
+
+def _resolve_principal(granted_subject_id, tenant):
+    """Look up a Principal by UUID, falling back to user_id."""
+    from management.principal.model import Principal
+
+    try:
+        principal = Principal.objects.filter(uuid=uuid_mod.UUID(str(granted_subject_id)), tenant=tenant).first()
+    except ValueError:
+        principal = None
+    if not principal:
+        principal = Principal.objects.filter(user_id=granted_subject_id, tenant=tenant).first()
+    return principal
+
+
+def _group_uuids_for_principal(principal, tenant):
+    """Return a lazy queryset of group UUIDs for a principal (assigned + platform default)."""
+    from management.group.model import Group
+
+    return Group.objects.filter(
+        Q(principals=principal) | Q(platform_default=True),
+        Q(tenant=tenant) | Q(tenant__tenant_name="public"),
+    ).values_list("uuid", flat=True)
