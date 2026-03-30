@@ -364,6 +364,32 @@ class RoleBindingModelTests(IdentityRequest):
         self.assertCountEqual([str(group_uuid)], migration_value.groups)
         self.assertEqual({}, migration_value.users)
 
+    def test_role_binding_group_has_created_timestamp(self):
+        """Test that RoleBindingGroup gets a created timestamp when a group is assigned."""
+        binding: RoleBinding = RoleBinding.objects.create(
+            role=self.role,
+            resource_type="workspace",
+            resource_id="ws-12345",
+            tenant=self.tenant,
+        )
+        binding.update_groups([self.group1])
+
+        entry = RoleBindingGroup.objects.get(binding=binding, group=self.group1)
+        self.assertIsNotNone(entry.created)
+
+    def test_role_binding_principal_has_created_timestamp(self):
+        """Test that RoleBindingPrincipal gets a created timestamp when a principal is assigned."""
+        binding: RoleBinding = RoleBinding.objects.create(
+            role=self.role,
+            resource_type="workspace",
+            resource_id="ws-12345",
+            tenant=self.tenant,
+        )
+        binding.update_principals([("test_source", self.principal1)])
+
+        entry = RoleBindingPrincipal.objects.get(binding=binding, principal=self.principal1)
+        self.assertIsNotNone(entry.created)
+
     def test_update_groups(self):
         binding: RoleBinding = RoleBinding.objects.create(
             role=self.role,

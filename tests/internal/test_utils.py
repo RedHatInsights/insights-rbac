@@ -293,6 +293,19 @@ class ReplicateMissingBindingTuplesTest(TestCase):
             ),
         )
 
+
+@override_settings(ATOMIC_RETRY_DISABLED=True)
+class CleanInvalidResourceDefinitionsTest(TestCase):
+    def setUp(self):
+        """Set up test data."""
+        self.public_tenant = Tenant.objects.get(tenant_name="public")
+
+        self.tenant = Tenant.objects.create(tenant_name="test_tenant", org_id="12345")
+        bootstrap_result = bootstrap_tenant_for_v2_test(self.tenant)
+
+        self.default_ws = bootstrap_result.default_workspace
+        self.root_ws = bootstrap_result.root_workspace
+
     @override_settings(REPLICATION_TO_RELATION_ENABLED=False)
     def test_clean_invalid_workspace_resource_definitions_handles_both_operations(self):
         """
@@ -533,6 +546,35 @@ class ReplicateMissingBindingTuplesTest(TestCase):
         rd.refresh_from_db()
         self.assertIsNone(rd.attributeFilter["value"], "None value should be preserved for operation='equal'")
 
+    def test_clean_fixes_int_id(self):
+        role = Role.objects.create(name="Test Role Equal None", system=False, tenant=self.tenant)
+
+        perm = Permission.objects.create(
+            permission="inventory:groups:read",
+            application="inventory",
+            resource_type="groups",
+            verb="read",
+            tenant=self.tenant,
+        )
+        access = Access.objects.create(role=role, permission=perm, tenant=self.tenant)
+
+        # Create RD with operation='equal' and value=None (ungrouped workspace)
+        rd = ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter={
+                "key": "group.id",
+                "operation": "in",
+                "value": [1],
+            },
+            tenant=self.tenant,
+        )
+
+        results = clean_invalid_workspace_resource_definitions()
+        self.assertEqual(results["resource_definitions_fixed"], 1)
+
+        rd.refresh_from_db()
+        self.assertEqual(rd.attributeFilter["value"], [])
+
     def test_clean_dry_run_mode(self):
         """
         Test that dry_run mode reports changes without making them.
@@ -600,6 +642,39 @@ class ReplicateMissingBindingTuplesTest(TestCase):
         self.assertEqual(rd.attributeFilter["value"], [None])
         self.assertNotIn(fake_ws_id_1, rd.attributeFilter["value"])
         self.assertNotIn(fake_ws_id_2, rd.attributeFilter["value"])
+
+    def test_ignore_v2_tenant(self):
+        role = Role.objects.create(name="Test Role Equal None", system=False, tenant=self.tenant)
+
+        perm = Permission.objects.create(
+            permission="inventory:groups:read",
+            application="inventory",
+            resource_type="groups",
+            verb="read",
+            tenant=self.tenant,
+        )
+        access = Access.objects.create(role=role, permission=perm, tenant=self.tenant)
+
+        # Create RD with operation='equal' and value=None (ungrouped workspace)
+        original_filter = {
+            "key": "group.id",
+            "operation": "in",
+            "value": [1],
+        }
+
+        rd = ResourceDefinition.objects.create(
+            access=access,
+            attributeFilter=original_filter,
+            tenant=self.tenant,
+        )
+
+        ensure_v2_write_activated(self.tenant)
+
+        result = clean_invalid_workspace_resource_definitions()
+        self.assertEqual(result["resource_definitions_fixed"], 0)
+
+        rd.refresh_from_db()
+        self.assertEqual(rd.attributeFilter, original_filter)
 
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)
