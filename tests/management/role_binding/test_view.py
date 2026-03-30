@@ -650,6 +650,113 @@ class RoleBindingListViewSetTest(IdentityRequest):
             user_role.delete()
             user_principal.delete()
 
+    # --- granted_subject filters ---
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_filter_by_granted_subject_type_group(self, mock_permission):
+        """Test filtering by granted_subject_type=group returns group's bindings."""
+        url = self._get_list_url()
+        target_group = self.groups[0]
+
+        response = self.client.get(
+            f"{url}?granted_subject_type=group&granted_subject_id={target_group.uuid}&limit=100",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_filter_by_granted_subject_type_user(self, mock_permission):
+        """Test that granted_subject_type=user returns direct + group bindings."""
+        url = self._get_list_url()
+
+        user_principal = Principal.objects.create(
+            username="granted_user", tenant=self.tenant, user_id="granted-uid"
+        )
+        user_role = RoleV2.objects.create(name="granted_user_role", tenant=self.tenant)
+        user_role.permissions.add(self.permission)
+        user_binding = RoleBinding.objects.create(
+            role=user_role,
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            tenant=self.tenant,
+        )
+        RoleBindingPrincipal.objects.create(
+            principal=user_principal, binding=user_binding, source=API_PRINCIPAL_SOURCE
+        )
+
+        target_group = self.groups[0]
+        target_group.principals.add(user_principal)
+
+        try:
+            response = self.client.get(
+                f"{url}?granted_subject_type=user&granted_subject_id={user_principal.uuid}&limit=100",
+                **self.headers,
+            )
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            returned_binding_roles = {str(item["role"]["id"]) for item in response.data["data"]}
+            self.assertIn(str(user_role.uuid), returned_binding_roles)
+            self.assertIn(str(self.roles[0].uuid), returned_binding_roles)
+        finally:
+            target_group.principals.remove(user_principal)
+            RoleBindingPrincipal.objects.filter(binding=user_binding).delete()
+            user_binding.delete()
+            user_role.delete()
+            user_principal.delete()
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_filter_by_granted_subject_nonexistent_principal(self, mock_permission):
+        """Test that granted_subject_type=user with non-existent principal returns empty."""
+        url = self._get_list_url()
+        response = self.client.get(
+            f"{url}?granted_subject_type=user&granted_subject_id={uuid.uuid4()}&limit=100",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 0)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_granted_subject_mutual_exclusivity_with_subject(self, mock_permission):
+        """Test that granted_subject params cannot be combined with subject_type/subject_id."""
+        url = self._get_list_url()
+
+        cases = [
+            (
+                "with_subject_type",
+                f"granted_subject_type=user&granted_subject_id={uuid.uuid4()}&subject_type=group",
+            ),
+            (
+                "with_subject_id",
+                f"granted_subject_type=user&granted_subject_id={uuid.uuid4()}&subject_id={uuid.uuid4()}",
+            ),
+        ]
+        for label, query in cases:
+            with self.subTest(label=label):
+                response = self.client.get(f"{url}?{query}", **self.headers)
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_granted_subject_type_without_id_returns_400(self, mock_permission):
+        """Test that providing granted_subject_type without granted_subject_id returns 400."""
+        url = self._get_list_url()
+        response = self.client.get(f"{url}?granted_subject_type=user", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     # --- Combined filters ---
 
     @patch(

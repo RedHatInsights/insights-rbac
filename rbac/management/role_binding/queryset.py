@@ -16,6 +16,8 @@
 #
 """QuerySet for RoleBinding lookups."""
 
+import uuid as uuid_mod
+
 from django.db.models import Count, F, OuterRef, Q, QuerySet, Subquery
 from django.db.models.fields import UUIDField
 from django.db.models.functions import Cast
@@ -81,6 +83,44 @@ class RoleBindingQuerySet(QuerySet):
                 Q(group_entries__group__uuid=subject_id) | Q(principal_entries__principal__uuid=subject_id)
             ).distinct()
         return self
+
+    def for_granted_subject(self, granted_subject_type, granted_subject_id, tenant):
+        """Filter by effective access grant, including transitive group membership.
+
+        For groups: returns bindings where the group is a direct subject.
+        For users: looks up the principal and resolves their group memberships
+        (explicitly assigned + platform default groups), then returns bindings
+        where the user is a direct subject OR any of their groups is a subject.
+        Returns an empty queryset if the principal is not found.
+        """
+        from management.group.model import Group
+        from management.principal.model import Principal
+
+        if granted_subject_type == SubjectType.GROUP:
+            return self.filter(group_entries__group__uuid=granted_subject_id)
+        elif granted_subject_type == SubjectType.USER:
+            principal = None
+            try:
+                principal = Principal.objects.filter(
+                    uuid=uuid_mod.UUID(str(granted_subject_id)), tenant=tenant
+                ).first()
+            except ValueError:
+                pass
+            if not principal:
+                principal = Principal.objects.filter(user_id=granted_subject_id, tenant=tenant).first()
+            if not principal:
+                return self.none()
+
+            group_uuids = Group.objects.filter(
+                Q(principals=principal) | Q(platform_default=True),
+                Q(tenant=tenant) | Q(tenant__tenant_name="public"),
+            ).values_list("uuid", flat=True)
+
+            return self.filter(
+                Q(principal_entries__principal__uuid=principal.uuid)
+                | Q(group_entries__group__uuid__in=group_uuids)
+            ).distinct()
+        return self.none()
 
     def with_resource_names(self):
         """Annotate each binding with its resource's display name.

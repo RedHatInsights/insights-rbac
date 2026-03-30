@@ -80,9 +80,9 @@
             "name": "subject_type",
             "in": "query",
             "required": false,
-            "description": "Filter by subject type (e.g., 'group' or 'user')",
+            "description": "Filter by subject type (e.g., 'group')",
             "schema": {
-              "$ref": "#/components/schemas/RoleBindings.SubjectType"
+              "type": "string"
             },
             "explode": false
           },
@@ -314,7 +314,7 @@
             "required": false,
             "description": "Filter by subject type",
             "schema": {
-              "$ref": "#/components/schemas/RoleBindings.SubjectType"
+              "type": "string"
             },
             "explode": false
           },
@@ -329,16 +329,13 @@
             "explode": false
           },
           {
-            "name": "exclude_sources",
+            "name": "parent_role_bindings",
             "in": "query",
             "required": false,
+            "description": "Include role bindings inherited from parent resources",
             "schema": {
-              "allOf": [
-                {
-                  "$ref": "#/components/schemas/ExcludeSources"
-                }
-              ],
-              "default": "none"
+              "type": "boolean",
+              "default": false
             },
             "explode": false
           },
@@ -353,7 +350,7 @@
                   "$ref": "#/components/schemas/FieldMask"
                 }
               ],
-              "default": "subject(group.name),roles(name),resource(name,type),last_modified"
+              "default": "subject(group.name),role(name),resource(name,type),last_modified"
             },
             "explode": false
           },
@@ -407,7 +404,7 @@
                         "limit": 10
                       },
                       "links": {
-                        "next": "http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?limit=10&exclude_sources=direct&cursor=xyz",
+                        "next": "http://localhost:8000/api/rbac/v2/role-bindings/by-subject/?limit=10&parent_role_bindings=true&cursor=xyz",
                         "previous": null
                       },
                       "data": [
@@ -433,13 +430,11 @@
                             "name": "Child Workspace",
                             "type": "workspace"
                           },
-                          "sources": [
-                            {
-                              "id": "550e8400-e29b-41d4-a716-446655440001",
-                              "name": "Parent Workspace",
-                              "type": "workspace"
-                            }
-                          ]
+                          "inherited_from": {
+                            "id": "550e8400-e29b-41d4-a716-446655440001",
+                            "name": "Parent Workspace",
+                            "type": "workspace"
+                          }
                         }
                       ]
                     }
@@ -602,7 +597,7 @@
             "required": true,
             "description": "Identify the subject type for the set of role bindings to replace",
             "schema": {
-              "$ref": "#/components/schemas/RoleBindings.SubjectType"
+              "type": "string"
             },
             "explode": false
           },
@@ -616,7 +611,7 @@
                   "$ref": "#/components/schemas/FieldMask"
                 }
               ],
-              "default": "resource(id),subject(id),roles(id)"
+              "default": "resource(id),subject(id),roles(id),last_modified"
             },
             "explode": false
           }
@@ -630,6 +625,7 @@
                   "$ref": "#/components/schemas/RoleBindings.RoleBindingBySubject"
                 },
                 "example": {
+                  "last_modified": "2024-08-04T12:00:00Z",
                   "subject": {
                     "id": "3fa85f64-5717-4562-b3fc-2c963f66afa6",
                     "type": "group",
@@ -775,7 +771,7 @@
         }
       }
     },
-    "/role-bindings:batchCreate/": {
+    "/role-bindings:batchCreate": {
       "post": {
         "operationId": "RoleBindings_batchCreate",
         "summary": "Grant access to a resource to a set of subjects with a set of roles",
@@ -999,7 +995,7 @@
             "name": "name",
             "in": "query",
             "required": false,
-            "description": "Filter by role name. Exact match by default; use * as a wildcard for partial matching (e.g. foo*).",
+            "description": "Filter by role name using case sensitive exact match.",
             "schema": {
               "type": "string"
             },
@@ -1191,7 +1187,7 @@
             "name": "fields",
             "in": "query",
             "required": false,
-            "description": "Control which fields are included in the response to optimize payload size.\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are returned. All response fields become optional.\n\n**Examples:**\n- `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)\n- `?fields=permissions_count,last_modified` - Include only count and timestamp\n- `?fields=id,name,org_id` - Include org_id (not returned by default; must be requested explicitly)",
+            "description": "Control which fields are included in the response to optimize payload size.\n\n**When fields parameter is provided:**\nOnly explicitly specified fields are returned. All response fields become optional.\n\n**Examples:**\n- `?fields=id,name,permissions_count` - Include id, name, and count (no permissions array)\n- `?fields=permissions_count,last_modified` - Include only count and timestamp",
             "schema": {
               "type": "string",
               "default": "id,name,description,permissions,last_modified"
@@ -1688,7 +1684,7 @@
         }
       }
     },
-    "/roles:batchDelete/": {
+    "/roles:batchDelete": {
       "post": {
         "operationId": "Roles_batchDelete",
         "description": "Delete multiple roles by ID atomically.",
@@ -2889,15 +2885,6 @@
           }
         }
       },
-      "ExcludeSources": {
-        "type": "string",
-        "enum": [
-          "direct",
-          "indirect",
-          "none"
-        ],
-        "description": "Exclude bindings by source type: 'none' (default) shows all, 'indirect' excludes inherited, 'direct' excludes direct"
-      },
       "FieldMask": {
         "type": "string",
         "description": "Field mask used by the `fields` query parameter to control which fields\nare included in the response.\n\n**Syntax:**\n- Use comma to separate multiple fields: `id,name,description`\n- Use parentheses for nested objects: `subject(id,name),resource(type)`\n\n**Examples:**\n- `id,name`\n- `subject(group.name),role(name)`"
@@ -3241,10 +3228,6 @@
             "type": "string",
             "format": "date-time",
             "description": "Timestamp of when the role was last modified"
-          },
-          "org_id": {
-            "type": "string",
-            "description": "ID of the organization that owns this role. Will not be populated if roles belong to the Public Tenant."
           }
         },
         "example": {
@@ -3400,10 +3383,10 @@
                 "description": "UUID that uniquely identifies the subject"
               },
               "type": {
-                "allOf": [
-                  {
-                    "$ref": "#/components/schemas/RoleBindings.SubjectType"
-                  }
+                "type": "string",
+                "enum": [
+                  "user",
+                  "group"
                 ],
                 "description": "Type of subject"
               }
@@ -3607,12 +3590,13 @@
             ],
             "description": "Resource the roles apply to"
           },
-          "sources": {
-            "type": "array",
-            "items": {
-              "$ref": "#/components/schemas/RoleBindings.Resource"
-            },
-            "description": "Resources from which this role binding is sourced (direct or inherited)"
+          "inherited_from": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/RoleBindings.Resource"
+              }
+            ],
+            "description": "Resource from which this role binding is inherited (only present when parent_role_bindings=true)"
           }
         },
         "example": {
@@ -3637,22 +3621,12 @@
             "name": "Child Workspace",
             "type": "workspace"
           },
-          "sources": [
-            {
-              "id": "550e8400-e29b-41d4-a716-446655440001",
-              "name": "Parent Workspace",
-              "type": "workspace"
-            }
-          ]
+          "inherited_from": {
+            "id": "550e8400-e29b-41d4-a716-446655440001",
+            "name": "Parent Workspace",
+            "type": "workspace"
+          }
         }
-      },
-      "RoleBindings.SubjectType": {
-        "type": "string",
-        "enum": [
-          "user",
-          "group"
-        ],
-        "description": "Type of subject for role bindings"
       },
       "RoleBindings.UpdateRoleBindingsRequest": {
         "type": "object",
@@ -3678,7 +3652,8 @@
                 "id"
               ]
             },
-            "description": "Roles to assign (replaces existing roles for the target binding). Empty array removes all bindings."
+            "minItems": 1,
+            "description": "Roles to assign (replaces existing roles for the target binding)"
           }
         },
         "description": "Request body for updating role bindings - contains the new roles to assign",
@@ -3761,8 +3736,7 @@
         "properties": {
           "name": {
             "type": "string",
-            "pattern": "^[^*]+$",
-            "description": "A human readable name for the role. Must be unique within a tenant. Asterisks (*) are not allowed."
+            "description": "A human readable name for the role. Must be unique within a tenant."
           },
           "description": {
             "type": "string",

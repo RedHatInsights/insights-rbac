@@ -94,10 +94,11 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
             - resource_type: Filter by resource type (must be used with resource_id)
             - subject_type: Filter by subject type (e.g., 'group')
             - subject_id: Filter by subject ID (UUID)
+            - granted_subject_type: Filter by effective grant subject type ('user' or 'group')
+            - granted_subject_id: Filter by effective grant subject ID (UUID)
             - fields: Control which fields are included in the response
             - order_by: Sort by specified field(s), prefix with '-' for descending
         """
-        # Validate and parse query parameters using input serializer
         input_serializer = RoleBindingListInputSerializer(data=request.query_params)
         input_serializer.is_valid(raise_exception=True)
         validated_params = input_serializer.validated_data
@@ -115,6 +116,13 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
             subject_type=validated_params.get("subject_type"),
             subject_id=validated_params.get("subject_id"),
         )
+
+        granted_subject_type = validated_params.get("granted_subject_type")
+        granted_subject_id = validated_params.get("granted_subject_id")
+        if granted_subject_type and granted_subject_id:
+            queryset = queryset.for_granted_subject(
+                granted_subject_type, granted_subject_id, request.tenant
+            )
 
         field_selection = validated_params.get("fields")
         if field_selection is not None and "name" in field_selection.get_nested("resource"):

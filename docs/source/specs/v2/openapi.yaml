@@ -63,6 +63,20 @@ paths:
           schema:
             type: string
           explode: false
+        - name: granted_subject_type
+          in: query
+          required: false
+          description: Filter by the type of subject effectively granted access. When 'user', returns role bindings granted directly to the user and through their group memberships. When 'group', returns role bindings granted to the group. Cannot be combined with subject_type/subject_id.
+          schema:
+            $ref: '#/components/schemas/RoleBindings.SubjectType'
+          explode: false
+        - name: granted_subject_id
+          in: query
+          required: false
+          description: ID of the subject effectively granted access. Required when granted_subject_type is provided.
+          schema:
+            type: string
+          explode: false
         - name: fields
           in: query
           required: false

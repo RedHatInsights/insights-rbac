@@ -881,6 +881,91 @@ class RoleBindingListInputSerializerTest(TestCase):
         s = RoleBindingListInputSerializer(data={"subject_id": f"\x00{valid_uuid}\x00"})
         self.assertTrue(s.is_valid(), s.errors)
 
+    # --- granted_subject_type ---
+
+    def test_granted_subject_type_valid_inputs(self):
+        """Test that valid granted_subject_type values are accepted."""
+        cases = [
+            ("user", "user"),
+            ("group", "group"),
+        ]
+        for label, value in cases:
+            with self.subTest(label=label):
+                s = RoleBindingListInputSerializer(
+                    data={"granted_subject_type": value, "granted_subject_id": str(uuid.uuid4())}
+                )
+                self.assertTrue(s.is_valid(), s.errors)
+                self.assertEqual(s.validated_data["granted_subject_type"], value)
+
+    def test_granted_subject_type_invalid_value(self):
+        """Test that invalid granted_subject_type values are rejected."""
+        s = RoleBindingListInputSerializer(
+            data={"granted_subject_type": "service-account", "granted_subject_id": str(uuid.uuid4())}
+        )
+        self.assertFalse(s.is_valid())
+        self.assertIn("non_field_errors", s.errors)
+
+    def test_granted_subject_type_omitted_is_valid(self):
+        """Test that omitting granted_subject_type is valid (required=False)."""
+        s = RoleBindingListInputSerializer(data={})
+        self.assertTrue(s.is_valid(), s.errors)
+        self.assertNotIn("granted_subject_type", s.validated_data)
+
+    # --- granted_subject_id ---
+
+    def test_granted_subject_id_valid_inputs(self):
+        """Test that valid string values are accepted for granted_subject_id."""
+        valid_values = [
+            ("uuid", "550e8400-e29b-41d4-a716-446655440000"),
+            ("arbitrary_string", "some-identifier"),
+            ("generated_uuid", str(uuid.uuid4())),
+        ]
+        for label, value in valid_values:
+            with self.subTest(label=label):
+                s = RoleBindingListInputSerializer(
+                    data={"granted_subject_type": "user", "granted_subject_id": value}
+                )
+                self.assertTrue(s.is_valid(), s.errors)
+                self.assertEqual(s.validated_data["granted_subject_id"], value)
+
+    # --- granted_subject cross-field validation ---
+
+    def test_granted_subject_type_without_id_is_invalid(self):
+        """Test that providing granted_subject_type without granted_subject_id is rejected."""
+        s = RoleBindingListInputSerializer(data={"granted_subject_type": "user"})
+        self.assertFalse(s.is_valid())
+        self.assertIn("non_field_errors", s.errors)
+
+    def test_granted_subject_id_without_type_is_invalid(self):
+        """Test that providing granted_subject_id without granted_subject_type is rejected."""
+        s = RoleBindingListInputSerializer(data={"granted_subject_id": str(uuid.uuid4())})
+        self.assertFalse(s.is_valid())
+        self.assertIn("non_field_errors", s.errors)
+
+    def test_granted_subject_with_subject_type_is_invalid(self):
+        """Test that granted_subject params cannot be combined with subject_type."""
+        s = RoleBindingListInputSerializer(
+            data={
+                "granted_subject_type": "user",
+                "granted_subject_id": str(uuid.uuid4()),
+                "subject_type": "group",
+            }
+        )
+        self.assertFalse(s.is_valid())
+        self.assertIn("non_field_errors", s.errors)
+
+    def test_granted_subject_with_subject_id_is_invalid(self):
+        """Test that granted_subject params cannot be combined with subject_id."""
+        s = RoleBindingListInputSerializer(
+            data={
+                "granted_subject_type": "user",
+                "granted_subject_id": str(uuid.uuid4()),
+                "subject_id": str(uuid.uuid4()),
+            }
+        )
+        self.assertFalse(s.is_valid())
+        self.assertIn("non_field_errors", s.errors)
+
     # --- Combined ---
 
     def test_all_params_together(self):
@@ -904,6 +989,23 @@ class RoleBindingListInputSerializerTest(TestCase):
         self.assertIn("subject_id", s.validated_data)
         self.assertIsNotNone(s.validated_data["fields"])
         self.assertEqual(s.validated_data["order_by"], "-role.name")
+
+    def test_granted_subject_with_other_filters(self):
+        """Test that granted_subject params work with non-subject filters."""
+        s = RoleBindingListInputSerializer(
+            data={
+                "role_id": str(uuid.uuid4()),
+                "resource_id": str(uuid.uuid4()),
+                "resource_type": "workspace",
+                "granted_subject_type": "user",
+                "granted_subject_id": str(uuid.uuid4()),
+                "fields": "role(name),resource(type)",
+            }
+        )
+        self.assertTrue(s.is_valid(), s.errors)
+        self.assertIn("granted_subject_type", s.validated_data)
+        self.assertIn("granted_subject_id", s.validated_data)
+        self.assertIn("role_id", s.validated_data)
 
 
 class RoleBindingListOutputSerializerTest(IdentityRequest):

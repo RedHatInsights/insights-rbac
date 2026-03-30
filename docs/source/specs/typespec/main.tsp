@@ -1244,6 +1244,14 @@ namespace RoleBindings {
         @example("3fa85f64-5717-4562-b3fc-2c963f66afa6")
         @query subject_id?: string;
 
+        @doc("Filter by the type of subject effectively granted access. When 'user', returns role bindings granted directly to the user and through their group memberships. When 'group', returns role bindings granted to the group. Cannot be combined with subject_type/subject_id.")
+        @example(SubjectType.user)
+        @query granted_subject_type?: SubjectType;
+
+        @doc("ID of the subject effectively granted access. Required when granted_subject_type is provided.")
+        @example("3fa85f64-5717-4562-b3fc-2c963f66afa6")
+        @query granted_subject_id?: string;
+
         @doc("Control which fields are included in the response to optimize payload size.")
         @query fields?: FieldMask = "resource(id),role(id),subject(id,type)";
 
