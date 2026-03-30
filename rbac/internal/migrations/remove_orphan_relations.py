@@ -21,6 +21,7 @@ from collections.abc import Callable, Iterable
 from typing import Protocol
 
 import pgtransaction
+from django.db.models import QuerySet
 
 from api.models import Tenant
 from django.db import transaction
@@ -538,6 +539,10 @@ def _collect_remote_workspaces(tenant_resource_id: str, read_tuples_typed: _Read
     return workspace_data
 
 
+def _local_workspace_ids_for(tenant: Tenant) -> set[str]:
+    return set(str(u) for u in Workspace.objects.filter(tenant=tenant).values_list("id", flat=True))
+
+
 def _remove_orphaned_workspace_parent_relations(
     tenant: Tenant, workspace_data: _RemoteWorkspaceData, commit_removal: _CommitRemoval
 ) -> int:
@@ -550,10 +555,8 @@ def _remove_orphaned_workspace_parent_relations(
     #
     # There is also no issue if a workspace has been locally deleted but the deletion has not yet been replicated.
     # It can't be recreated (for the reasons above), and redundantly deleting the relation will have no effect.
-    existing_local_ids = set(
-        str(u) for u in Workspace.objects.filter(tenant=tenant, id__in=remote_ids).values_list("id", flat=True)
-    )
 
+    existing_local_ids = _local_workspace_ids_for(tenant)
     orphaned_ids = remote_ids - existing_local_ids
 
     logger.info(
@@ -728,7 +731,10 @@ def cleanup_tenant_orphaned_relationships(
 
     do_remove_role_bindings("tenant", tenant_resource_id)
 
-    for ws_id in workspace_ids_in_kessel:
+    # We do not need to lock the workspaces here. Attempting to remove from a workspace that is later deleted is fine
+    # (since we will at worst delete some role bindings that should have already been deleted), and missing a
+    # workspace created later is fine (since we expect that any new operations will be correctly replicated).
+    for ws_id in workspace_ids_in_kessel.union(_local_workspace_ids_for(tenant)):
         do_remove_role_bindings("workspace", ws_id)
 
     logger.info(
