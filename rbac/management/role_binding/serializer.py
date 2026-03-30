@@ -95,8 +95,40 @@ class RoleBindingListInputSerializer(RoleBindingInputSerializerMixin, serializer
     resource_type = serializers.CharField(required=False, help_text="Filter by resource type")
     subject_type = serializers.CharField(required=False, help_text="Filter by subject type")
     subject_id = serializers.UUIDField(required=False, help_text="Filter by subject ID")
+    granted_subject_type = serializers.CharField(
+        required=False,
+        help_text="Filter by the type of subject effectively granted access ('user' or 'group')",
+    )
+    granted_subject_id = serializers.CharField(
+        required=False,
+        help_text="ID of the subject effectively granted access (principal UUID, user_id, or group UUID)",
+    )
     fields = serializers.CharField(required=False, help_text="Control which fields are included")
     order_by = serializers.CharField(required=False, help_text="Sort by specified field(s)")
+
+    def validate(self, attrs):
+        """Cross-field validation for granted_subject and subject params."""
+        attrs = super().validate(attrs)
+
+        granted_type = attrs.get("granted_subject_type")
+        granted_id = attrs.get("granted_subject_id")
+
+        if bool(granted_type) != bool(granted_id):
+            raise serializers.ValidationError(
+                "Both granted_subject_type and granted_subject_id must be provided together."
+            )
+
+        if granted_type:
+            if not SubjectType.is_valid(granted_type):
+                raise serializers.ValidationError(
+                    f"granted_subject_type must be one of: {', '.join(SubjectType.values())}."
+                )
+            if attrs.get("subject_type") or attrs.get("subject_id"):
+                raise serializers.ValidationError(
+                    "granted_subject_type/granted_subject_id cannot be combined with subject_type/subject_id."
+                )
+
+        return attrs
 
 
 class RoleBindingInputSerializer(serializers.Serializer):
