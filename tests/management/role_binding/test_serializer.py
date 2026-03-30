@@ -733,31 +733,24 @@ class RoleBindingListInputSerializerTest(TestCase):
     # --- resource_id ---
 
     def test_resource_id_valid_inputs(self):
-        """Test that valid UUID formats are accepted for resource_id."""
-        valid_uuids = [
-            ("standard", "550e8400-e29b-41d4-a716-446655440000"),
-            ("zeros", "00000000-0000-0000-0000-000000000000"),
-            ("generated", str(uuid.uuid4())),
+        """Test that valid resource ID formats are accepted for resource_id."""
+        valid_ids = [
+            ("uuid", "550e8400-e29b-41d4-a716-446655440000"),
+            ("zeros_uuid", "00000000-0000-0000-0000-000000000000"),
+            ("generated_uuid", str(uuid.uuid4())),
+            ("tenant_format", "redhat/12345678"),
         ]
-        for label, value in valid_uuids:
+        for label, value in valid_ids:
             with self.subTest(label=label):
                 s = RoleBindingListInputSerializer(data={"resource_id": value})
                 self.assertTrue(s.is_valid(), s.errors)
-                self.assertEqual(s.validated_data["resource_id"], uuid.UUID(value))
+                self.assertEqual(s.validated_data["resource_id"], value)
 
-    def test_resource_id_invalid_inputs(self):
-        """Test that non-UUID values are rejected for resource_id."""
-        invalid_values = [
-            ("not-a-uuid", "not-a-uuid"),
-            ("integer", "12345"),
-            ("empty", ""),
-            ("spaces", "   "),
-        ]
-        for label, value in invalid_values:
-            with self.subTest(label=label):
-                s = RoleBindingListInputSerializer(data={"resource_id": value})
-                self.assertFalse(s.is_valid())
-                self.assertIn("resource_id", s.errors)
+    def test_resource_id_rejects_empty(self):
+        """Test that empty string is rejected for resource_id."""
+        s = RoleBindingListInputSerializer(data={"resource_id": ""})
+        self.assertFalse(s.is_valid())
+        self.assertIn("resource_id", s.errors)
 
     def test_resource_id_omitted_is_valid(self):
         """Test that omitting resource_id is valid (required=False)."""
@@ -790,8 +783,15 @@ class RoleBindingListInputSerializerTest(TestCase):
         res_uuid = str(uuid.uuid4())
         s = RoleBindingListInputSerializer(data={"resource_id": res_uuid, "resource_type": "workspace"})
         self.assertTrue(s.is_valid(), s.errors)
-        self.assertEqual(s.validated_data["resource_id"], uuid.UUID(res_uuid))
+        self.assertEqual(s.validated_data["resource_id"], res_uuid)
         self.assertEqual(s.validated_data["resource_type"], "workspace")
+
+    def test_resource_id_tenant_format_with_type(self):
+        """Test that tenant resource ID format with resource_type=tenant works."""
+        s = RoleBindingListInputSerializer(data={"resource_id": "redhat/12345678", "resource_type": "tenant"})
+        self.assertTrue(s.is_valid(), s.errors)
+        self.assertEqual(s.validated_data["resource_id"], "redhat/12345678")
+        self.assertEqual(s.validated_data["resource_type"], "tenant")
 
     # --- subject_type ---
 
@@ -864,10 +864,12 @@ class RoleBindingListInputSerializerTest(TestCase):
                 self.assertTrue(s.is_valid(), s.errors)
 
     def test_nul_bytes_stripped_from_resource_id(self):
-        """Test that NUL bytes in resource_id are stripped before UUID validation."""
+        """Test that NUL bytes in resource_id are stripped before validation."""
         valid_uuid = "550e8400-e29b-41d4-a716-446655440000"
         s = RoleBindingListInputSerializer(data={"resource_id": f"\x00{valid_uuid}\x00"})
         self.assertTrue(s.is_valid(), s.errors)
+        self.assertEqual(s.validated_data["resource_id"], valid_uuid)
+        self.assertIsInstance(s.validated_data["resource_id"], str)
 
     def test_nul_bytes_stripped_from_role_id(self):
         """Test that NUL bytes in role_id are stripped before UUID validation."""
@@ -1265,6 +1267,43 @@ class BatchCreateRequestSerializerTests(IdentityRequest):
         self.assertTrue(serializer.is_valid(), serializer.errors)
         self.assertIsNotNone(serializer.validated_data["fields"])
         self.assertIn("name", serializer.validated_data["fields"].get_nested("role"))
+
+    def test_valid_request_with_tenant_resource(self):
+        """Batch create with resource_type=tenant and redhat/org_id format passes validation."""
+        payload = {
+            "requests": [
+                {
+                    "resource": {"id": "redhat/12345678", "type": "tenant"},
+                    "subject": {"id": str(self.group.uuid), "type": "group"},
+                    "role": {"id": str(self.role.uuid)},
+                }
+            ],
+        }
+        serializer = self._make_serializer(payload)
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+
+    def test_resource_id_is_string_after_validation(self):
+        """Resource ID is a plain string after validation, for both UUID and tenant formats."""
+        cases = [
+            ("uuid", str(uuid.uuid4()), "workspace"),
+            ("tenant", "redhat/12345678", "tenant"),
+        ]
+        for label, resource_id, resource_type in cases:
+            with self.subTest(label=label):
+                payload = {
+                    "requests": [
+                        {
+                            "resource": {"id": resource_id, "type": resource_type},
+                            "subject": {"id": str(self.group.uuid), "type": "group"},
+                            "role": {"id": str(self.role.uuid)},
+                        }
+                    ],
+                }
+                serializer = self._make_serializer(payload)
+                self.assertTrue(serializer.is_valid(), serializer.errors)
+                validated_id = serializer.validated_data["requests"][0]["resource"]["id"]
+                self.assertIsInstance(validated_id, str)
+                self.assertEqual(validated_id, resource_id)
 
     def test_rejects_over_max_items_limit(self):
         """101 items exceeds max_length=100 and fails validation."""
