@@ -101,13 +101,15 @@ class RoleBindingListInputSerializer(RoleBindingInputSerializerMixin, serializer
     )
     granted_subject_id = serializers.CharField(
         required=False,
-        help_text="ID of the subject effectively granted access",
+        help_text="ID of the subject effectively granted access (principal UUID, user_id, or group UUID)",
     )
     fields = serializers.CharField(required=False, help_text="Control which fields are included")
     order_by = serializers.CharField(required=False, help_text="Sort by specified field(s)")
 
     def validate(self, attrs):
         """Cross-field validation for granted_subject and subject params."""
+        attrs = super().validate(attrs)
+
         granted_type = attrs.get("granted_subject_type")
         granted_id = attrs.get("granted_subject_id")
 

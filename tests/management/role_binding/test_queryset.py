@@ -315,14 +315,14 @@ class RoleBindingQuerySetTest(IdentityRequest):
     def test_granted_subject_group_returns_group_bindings(self):
         """Test that for_granted_subject with type=group returns bindings for that group."""
         qs = RoleBinding.objects.for_tenant(self.tenant).for_granted_subject(
-            granted_subject_type="group", granted_subject_id=self.group.uuid, tenant=self.tenant
+            granted_subject_type="group", granted_subject_id=self.group.uuid
         )
         self.assertEqual(set(qs), {self.binding_a, self.binding_b})
 
     def test_granted_subject_group_no_match(self):
         """Test that for_granted_subject with non-existent group returns empty."""
         qs = RoleBinding.objects.for_tenant(self.tenant).for_granted_subject(
-            granted_subject_type="group", granted_subject_id=uuid.uuid4(), tenant=self.tenant
+            granted_subject_type="group", granted_subject_id=uuid.uuid4()
         )
         self.assertEqual(qs.count(), 0)
 
@@ -340,7 +340,6 @@ class RoleBindingQuerySetTest(IdentityRequest):
             qs = RoleBinding.objects.for_tenant(self.tenant).for_granted_subject(
                 granted_subject_type="user",
                 granted_subject_id=principal.uuid,
-                tenant=self.tenant,
             )
             self.assertEqual(set(qs), {binding_c, self.binding_a, self.binding_b})
         finally:
@@ -363,7 +362,6 @@ class RoleBindingQuerySetTest(IdentityRequest):
             qs = RoleBinding.objects.for_tenant(self.tenant).for_granted_subject(
                 granted_subject_type="user",
                 granted_subject_id=principal.uuid,
-                tenant=self.tenant,
             )
             self.assertEqual(set(qs), {binding_c})
         finally:
@@ -381,7 +379,6 @@ class RoleBindingQuerySetTest(IdentityRequest):
             qs = RoleBinding.objects.for_tenant(self.tenant).for_granted_subject(
                 granted_subject_type="user",
                 granted_subject_id=principal.uuid,
-                tenant=self.tenant,
             )
             self.assertEqual(set(qs), {self.binding_a, self.binding_b})
         finally:
@@ -402,7 +399,6 @@ class RoleBindingQuerySetTest(IdentityRequest):
             qs = RoleBinding.objects.for_tenant(self.tenant).for_granted_subject(
                 granted_subject_type="user",
                 granted_subject_id="user-id-123",
-                tenant=self.tenant,
             )
             self.assertEqual(set(qs), {binding_c, self.binding_a, self.binding_b})
         finally:
@@ -415,16 +411,23 @@ class RoleBindingQuerySetTest(IdentityRequest):
     def test_granted_subject_nonexistent_user_returns_empty(self):
         """Test that for_granted_subject with non-existent principal returns empty."""
         qs = RoleBinding.objects.for_tenant(self.tenant).for_granted_subject(
-            granted_subject_type="user", granted_subject_id=str(uuid.uuid4()), tenant=self.tenant
+            granted_subject_type="user", granted_subject_id=str(uuid.uuid4())
         )
         self.assertEqual(qs.count(), 0)
 
     def test_granted_subject_invalid_type_returns_empty(self):
         """Test that for_granted_subject with unknown type returns empty queryset."""
         qs = RoleBinding.objects.for_tenant(self.tenant).for_granted_subject(
-            granted_subject_type="service-account", granted_subject_id=uuid.uuid4(), tenant=self.tenant
+            granted_subject_type="service-account", granted_subject_id=uuid.uuid4()
         )
         self.assertEqual(qs.count(), 0)
+
+    def test_granted_subject_without_for_tenant_raises(self):
+        """Test that for_granted_subject raises ValueError without prior for_tenant()."""
+        with self.assertRaises(ValueError):
+            RoleBinding.objects.all().for_granted_subject(
+                granted_subject_type="group", granted_subject_id=self.group.uuid
+            )
 
     # --- Combined filters ---
 

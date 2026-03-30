@@ -73,7 +73,7 @@ paths:
         - name: granted_subject_id
           in: query
           required: false
-          description: ID of the subject effectively granted access. Required when granted_subject_type is provided.
+          description: ID of the subject effectively granted access. Accepts a principal UUID, user_id, or group UUID. Required when granted_subject_type is provided.
           schema:
             type: string
           explode: false

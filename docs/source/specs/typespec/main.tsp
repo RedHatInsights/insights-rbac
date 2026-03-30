@@ -1248,7 +1248,7 @@ namespace RoleBindings {
         @example(SubjectType.user)
         @query granted_subject_type?: SubjectType;
 
-        @doc("ID of the subject effectively granted access. Required when granted_subject_type is provided.")
+        @doc("ID of the subject effectively granted access. Accepts a principal UUID, user_id, or group UUID. Required when granted_subject_type is provided.")
         @example("3fa85f64-5717-4562-b3fc-2c963f66afa6")
         @query granted_subject_id?: string;
 
