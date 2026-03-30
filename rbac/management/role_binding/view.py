@@ -18,7 +18,6 @@
 
 import logging
 
-from django.db import OperationalError
 from management.base_viewsets import BaseV2ViewSet
 from management.group.model import Group
 from management.permissions.role_binding_access import (
@@ -109,28 +108,27 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         resource_id = validated_params.get("resource_id")
         resource_type = validated_params.get("resource_type")
 
+        field_selection = validated_params.get("fields")
+        if field_selection is not None and "name" in field_selection.get_nested("resource"):
+            queryset = queryset.with_resource_names()
+
+        page = self.paginate_queryset(queryset)
+
         # Build context for output serializer
         context = {
             "request": request,
-            "field_selection": validated_params.get("fields"),
+            "field_selection": field_selection,
             "queried_resource_id": str(resource_id) if resource_id else None,
             "queried_resource_type": resource_type,
             "service": service,
         }
 
-        page = self.paginate_queryset(queryset)
         serializer = self.get_serializer(page, many=True, context=context)
         return self.get_paginated_response(serializer.data)
 
     def batch_create(self, request, *args, **kwargs):
         """Grant access to a resource to a set of subjects with a set of roles."""
-        try:
-            return self._run_atomic(self._perform_batch_create, request, *args, **kwargs)
-        except OperationalError as e:
-            response = self._handle_concurrency_error(e, "batch_create")
-            if response:
-                return response
-            raise
+        return self._atomic_action(self._perform_batch_create, "batch_create", request, *args, **kwargs)
 
     def _perform_batch_create(self, request, *args, **kwargs):
         """Core batch create logic."""
@@ -191,6 +189,10 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
 
     def _update_by_subject(self, request):
         """Update role bindings for a specific subject on a resource."""
+        return self._atomic_action(self._perform_update_by_subject, "update_by_subject", request)
+
+    def _perform_update_by_subject(self, request):
+        """Core update-by-subject logic."""
         data = {**request.query_params.dict(), **request.data}
 
         serializer = UpdateRoleBindingRequestSerializer(data=data, context={"request": request})

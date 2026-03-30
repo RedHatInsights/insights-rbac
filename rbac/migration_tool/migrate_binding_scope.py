@@ -20,12 +20,14 @@ from typing import Optional
 
 from django.conf import settings
 from django.db import transaction
+from management.atomic_transactions import atomic_block
 from management.group.model import Group
 from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import RelationReplicator, ReplicationEventType
 from management.role.model import Role
 from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
+from management.tenant_mapping.v2_activation import V1WriteBlockedError, assert_v1_write_allowed
 
 from api.cross_access.model import CrossAccountRequest
 from api.cross_access.relation_api_dual_write_cross_access_handler import RelationApiDualWriteCrossAccessHandler
@@ -49,6 +51,8 @@ def migrate_custom_role_bindings(role: Role, replicator: RelationReplicator) -> 
     """
     if role.system:
         raise ValueError(f"migrate_custom_role_bindings called with system role {role.uuid}")
+
+    logger.info(f"Migrating role bindings for custom role: pk={role.pk!r}")
 
     # Use RelationApiDualWriteHandler
     dual_write = RelationApiDualWriteHandler(role, ReplicationEventType.MIGRATE_BINDING_SCOPE, replicator=replicator)
@@ -79,11 +83,19 @@ def migrate_system_role_bindings_for_group(group: Group, replicator: RelationRep
 
     Returns: Number of bindings cleaned up
     """
-    # Get system roles assigned to this group
-    system_roles = Role.objects.filter(policies__group=group, system=True).distinct()
+    logger.info(f"Migrating system role binding scopes for group: pk={group.pk}, uuid={str(group.uuid)}")
 
-    if not system_roles.exists():
+    # Get system roles assigned to this group
+    system_roles = list(Role.objects.filter(policies__group=group, system=True).distinct())
+
+    if not system_roles:
+        logger.info(f"Found no system roles for group: pk={group.pk}")
         return 0
+
+    logger.info(
+        f"Found system roles for group with pk={group.pk}: "
+        + ", ".join(f"{r.pk!r} ({r.name!r})" for r in system_roles)
+    )
 
     # Use group handler to bind/rebind system roles at correct scope
     dual_write_handler = RelationApiDualWriteGroupHandler(
@@ -113,10 +125,18 @@ def _migrate_car_bindings(car: CrossAccountRequest, replicator: RelationReplicat
     if car.status != "approved":
         return 0
 
+    logger.info(f"Migrating roles for cross-account request: pk={car.pk!r}")
+
     roles = list(car.roles.all())
 
     if len(roles) == 0:
+        logger.info(f"Found no roles for cross-account request, pk={car.pk!r}")
         return 0
+
+    logger.info(
+        f"Found roles for cross-account request with pk={car.pk!r}: "
+        + ", ".join(f"{r.pk!r} ({r.name!r})" for r in roles)
+    )
 
     dual_write_handler = RelationApiDualWriteCrossAccessHandler(
         cross_account_request=car,
@@ -175,6 +195,7 @@ def migrate_all_role_bindings(
     logger.info(f"Starting binding scope migration{tenant_info}")
     logger.info(f"ROOT_SCOPE_PERMISSIONS: {settings.ROOT_SCOPE_PERMISSIONS}")
     logger.info(f"TENANT_SCOPE_PERMISSIONS: {settings.TENANT_SCOPE_PERMISSIONS}")
+    logger.info(f"DEFAULT_SCOPE_PERMISSIONS: {settings.DEFAULT_SCOPE_PERMISSIONS}")
 
     # Part 1: Migrate custom role bindings
     # Include all custom roles with access (permissions), even if they have no policies (groups) assigned yet.
@@ -195,10 +216,18 @@ def migrate_all_role_bindings(
         custom_roles_checked += 1
 
         with transaction.atomic():
-            role: Optional[Role] = Role.objects.select_for_update().filter(pk=raw_role.pk).first()
+            role: Optional[Role] = (
+                Role.objects.select_for_update().select_related("tenant").filter(pk=raw_role.pk).first()
+            )
 
             if role is None:
                 logger.warning(f"Role vanished before it could be migrated: pk={raw_role.pk!r}")
+                continue
+
+            try:
+                assert_v1_write_allowed(role.tenant)
+            except V1WriteBlockedError:
+                logger.info(f"Skipping role with pk={role.pk!r}; tenant (pk={role.tenant.pk!r}) has migrated to V2")
                 continue
 
             try:
@@ -246,6 +275,12 @@ def migrate_all_role_bindings(
                 continue
 
             try:
+                assert_v1_write_allowed(group.tenant)
+            except V1WriteBlockedError:
+                logger.info(f"Skipping group with pk={group.pk!r}; tenant (pk={group.tenant.pk!r}) has migrated to V2")
+                continue
+
+            try:
                 migrated = migrate_system_role_bindings_for_group(group, replicator)
                 if migrated > 0:
                     groups_migrated += 1
@@ -276,7 +311,8 @@ def migrate_all_role_bindings(
     for raw_car in cars.iterator():
         cars_checked += 1
 
-        with transaction.atomic():
+        # This block can operate on V2 tenants, so we need to use a SERIALIZABLE transaciton here.
+        with atomic_block():
             car: Optional[CrossAccountRequest] = (
                 CrossAccountRequest.objects.filter(pk=raw_car.pk).select_for_update().first()
             )
@@ -284,6 +320,9 @@ def migrate_all_role_bindings(
             if car is None:
                 logger.warning(f"Cross-account request vanished before it could be migrated: pk={raw_car.pk!r}")
                 continue
+
+            # We do not need to check for V1-writability here. The V2 API should not affect role bindings from CARs
+            # (see RHCLOUD-45849).
 
             try:
                 migrated = _migrate_car_bindings(car=car, replicator=replicator)

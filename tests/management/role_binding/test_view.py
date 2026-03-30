@@ -19,6 +19,7 @@
 import base64
 import json
 import uuid
+from datetime import timedelta
 from importlib import reload
 from unittest import skip
 from unittest.mock import ANY, patch
@@ -27,6 +28,8 @@ from urllib.parse import parse_qs, urlparse
 from django.test import TestCase
 from django.test.utils import override_settings
 from django.urls import clear_url_caches, reverse
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from rest_framework import status
 from rest_framework.test import APIClient
 
@@ -40,13 +43,20 @@ from management.role.platform import platform_v2_role_uuid_for
 from management.role.v2_model import PlatformRoleV2, RoleV2, SeededRoleV2
 from management.role.v2_service import RoleV2Service
 from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
-from management.role_binding.service import RoleBindingService
+from management.role_binding.service import RoleBindingService, API_PRINCIPAL_SOURCE
 from management.subject import SubjectType
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
 from management.tenant_service.v2 import V2TenantBootstrapService
 from migration_tool.in_memory_tuples import InMemoryRelationReplicator
 from rbac import urls
 from tests.identity_request import IdentityRequest
+
+
+def _coerce_api_datetime(value):
+    """Normalize JSON/datetime values from API responses for comparisons."""
+    if isinstance(value, str):
+        return parse_datetime(value)
+    return value
 
 
 def _create_seeded_role_binding(tenant, workspace, permission, role_name, group_name):
@@ -629,7 +639,9 @@ class RoleBindingListViewSetTest(IdentityRequest):
         user_binding = RoleBinding.objects.create(
             role=user_role, resource_type="workspace", resource_id=str(self.workspace.id), tenant=self.tenant
         )
-        RoleBindingPrincipal.objects.create(principal=user_principal, binding=user_binding, source="default")
+        RoleBindingPrincipal.objects.create(
+            principal=user_principal, binding=user_binding, source=API_PRINCIPAL_SOURCE
+        )
 
         try:
             cases = [
@@ -831,6 +843,23 @@ class RoleBindingListViewSetTest(IdentityRequest):
         seeded_items = [item for item in response.data["data"] if str(item["role"]["id"]) == str(seeded_role.uuid)]
         self.assertEqual(len(seeded_items), 1)
         self.assertEqual(seeded_items[0]["role"]["name"], "Detailed Seeded Role")
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_includes_resource_name_when_requested(self, mock_permission):
+        """List returns resource.name when fields includes resource(name)."""
+        url = self._get_list_url()
+        response = self.client.get(
+            f"{url}?fields=resource(id,name),role(id),subject(id,type)&limit=3",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for item in response.data["data"]:
+            self.assertEqual(item["resource"]["id"], str(self.workspace.id))
+            self.assertEqual(item["resource"]["name"], "Test Workspace")
 
     # --- Ordering tests for list endpoint ---
 
@@ -1204,7 +1233,7 @@ class RoleBindingListViewSetTest(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 
-@override_settings(V2_APIS_ENABLED=True)
+@override_settings(V2_APIS_ENABLED=True, V2_EDIT_API_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
 class RoleBindingViewSetTest(IdentityRequest):
     """Test the RoleBindingViewSet by-subject endpoint."""
 
@@ -1234,6 +1263,9 @@ class RoleBindingViewSetTest(IdentityRequest):
             type=Workspace.Types.STANDARD,
             parent=self.default_workspace,
         )
+
+        # TenantMapping required for V2 write operations (e.g. PUT by-subject)
+        TenantMapping.objects.get_or_create(tenant=self.tenant, defaults={})
 
         # Create permission and role
         self.permission = Permission.objects.create(
@@ -1292,7 +1324,7 @@ class RoleBindingViewSetTest(IdentityRequest):
             RoleBindingPrincipal.objects.create(
                 principal=principal,
                 binding=binding,
-                source="test",
+                source=API_PRINCIPAL_SOURCE,
             )
 
     def tearDown(self):
@@ -1310,6 +1342,7 @@ class RoleBindingViewSetTest(IdentityRequest):
         Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.STANDARD).delete()
         Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.DEFAULT).delete()
         Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.ROOT).delete()
+        TenantMapping.objects.filter(tenant=self.tenant).delete()
         super().tearDown()
 
     def _get_by_subject_url(self):
@@ -1952,6 +1985,46 @@ class RoleBindingViewSetTest(IdentityRequest):
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
     )
+    def test_by_subject_order_by_last_modified(self, mock_permission):
+        """Test ordering by last_modified (assignment time) matches response field semantics."""
+        g_early, g_late = self.groups[0], self.groups[1]
+        rbg_early = RoleBindingGroup.objects.get(group=g_early, binding__resource_id=str(self.workspace.id))
+        rbg_late = RoleBindingGroup.objects.get(group=g_late, binding__resource_id=str(self.workspace.id))
+        base = timezone.now()
+        RoleBindingGroup.objects.filter(pk=rbg_early.pk).update(created=base - timedelta(hours=2))
+        RoleBindingGroup.objects.filter(pk=rbg_late.pk).update(created=base - timedelta(hours=1))
+
+        url = self._get_by_subject_url()
+
+        response_asc = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace"
+            f"&order_by=last_modified&fields=subject(id),last_modified&limit=100",
+            **self.headers,
+        )
+        self.assertEqual(response_asc.status_code, status.HTTP_200_OK)
+        data_asc = response_asc.data["data"]
+        self.assertGreater(len(data_asc), 1)
+        times_asc = [_coerce_api_datetime(item["last_modified"]) for item in data_asc]
+        self.assertEqual(times_asc, sorted(times_asc))
+        uuids_asc = [str(item["subject"]["id"]) for item in data_asc]
+        self.assertLess(uuids_asc.index(str(g_early.uuid)), uuids_asc.index(str(g_late.uuid)))
+
+        response_desc = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace"
+            f"&order_by=-last_modified&fields=subject(id),last_modified&limit=100",
+            **self.headers,
+        )
+        self.assertEqual(response_desc.status_code, status.HTTP_200_OK)
+        data_desc = response_desc.data["data"]
+        times_desc = [_coerce_api_datetime(item["last_modified"]) for item in data_desc]
+        self.assertEqual(times_desc, sorted(times_desc, reverse=True))
+        uuids_desc = [str(item["subject"]["id"]) for item in data_desc]
+        self.assertLess(uuids_desc.index(str(g_late.uuid)), uuids_desc.index(str(g_early.uuid)))
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
     def test_by_subject_order_by_role_name_with_pagination(self, mock_permission):
         """Test that cursor pagination maintains role.name ordering across pages."""
         url = self._get_by_subject_url()
@@ -2050,6 +2123,40 @@ class RoleBindingViewSetTest(IdentityRequest):
         self.assertIn("id", resource)
         self.assertNotIn("name", resource)
         self.assertNotIn("type", resource)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_by_subject_subject_created_reflects_assignment(self, mock_permission):
+        """Test that last_modified reflects when a subject was assigned to a role binding."""
+        url = self._get_by_subject_url()
+        group = self.groups[0]
+
+        # Assign a role to a group via PUT
+        put_response = self.client.put(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace"
+            f"&subject_id={group.uuid}&subject_type=group&fields=last_modified",
+            data={"roles": [{"id": str(self.role.uuid)}]},
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(put_response.status_code, status.HTTP_200_OK)
+
+        # GET by-subject with fields=last_modified and verify the value
+        get_response = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace"
+            f"&subject_type=group&subject_id={group.uuid}&fields=last_modified&limit=1",
+            **self.headers,
+        )
+        self.assertEqual(get_response.status_code, status.HTTP_200_OK)
+        data = get_response.data["data"]
+        self.assertGreater(len(data), 0)
+
+        item = data[0]
+        self.assertIn("last_modified", item)
+        last_modified = item["last_modified"]
+        self.assertIsNotNone(last_modified)
 
     @patch(
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
@@ -2369,6 +2476,132 @@ class RoleBindingViewSetTest(IdentityRequest):
         parent_binding.delete()
         parent_group.delete()
         parent_role.delete()
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    @patch("management.role_binding.service.RoleBindingService._lookup_binding_uuids_via_relations")
+    def test_by_subject_exclude_sources_direct_excludes_direct_when_relations_returns_both(
+        self, mock_lookup, mock_permission
+    ):
+        """Test that exclude_sources=direct excludes direct bindings even when Relations API returns both.
+
+        This tests the fix for a bug where the Relations API returns both direct and inherited
+        binding UUIDs, but exclude_sources=direct showed both binding types.
+        """
+        # Create an inherited binding on parent workspace
+        inherited_role = RoleV2.objects.create(
+            name="inherited_role",
+            tenant=self.tenant,
+        )
+        inherited_group = Group.objects.create(
+            name="inherited_group",
+            tenant=self.tenant,
+        )
+        inherited_binding = RoleBinding.objects.create(
+            role=inherited_role,
+            resource_type="workspace",
+            resource_id=str(self.default_workspace.id),
+            tenant=self.tenant,
+        )
+        RoleBindingGroup.objects.create(
+            group=inherited_group,
+            binding=inherited_binding,
+        )
+
+        # Get a direct binding UUID from setUp (these are on self.workspace)
+        direct_binding = self.bindings[0]
+
+        # Mock Relations API to return BOTH direct and inherited binding UUIDs
+        # This simulates real behavior where the "binding" relation returns all bindings
+        mock_lookup.return_value = [str(direct_binding.uuid), str(inherited_binding.uuid)]
+
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace&exclude_sources=direct&limit=100",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Should only include the inherited binding, not the direct one
+        self.assertEqual(len(response.data["data"]), 1)
+
+        # Verify only inherited_group is returned
+        returned_subject_ids = [str(item["subject"]["id"]) for item in response.data["data"]]
+        self.assertIn(str(inherited_group.uuid), returned_subject_ids)
+
+        # Verify direct binding's group is NOT returned
+        direct_group = self.groups[0]
+        self.assertNotIn(str(direct_group.uuid), returned_subject_ids)
+
+        # Cleanup
+        RoleBindingGroup.objects.filter(binding=inherited_binding).delete()
+        inherited_binding.delete()
+        inherited_group.delete()
+        inherited_role.delete()
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    @patch("management.role_binding.service.RoleBindingService._lookup_binding_uuids_via_relations")
+    def test_by_subject_exclude_sources_direct_excludes_direct_for_users(self, mock_lookup, mock_permission):
+        """Test that exclude_sources=direct excludes direct bindings for user subject type.
+
+        This tests the fix for a bug where the Relations API returns both direct and inherited
+        binding UUIDs, but exclude_sources=direct showed both binding types.
+        """
+        # Create an inherited binding on parent workspace with a user
+        inherited_role = RoleV2.objects.create(
+            name="inherited_user_role",
+            tenant=self.tenant,
+        )
+        inherited_user = Principal.objects.create(
+            username="inherited_user",
+            tenant=self.tenant,
+            type=Principal.Types.USER,
+        )
+        inherited_binding = RoleBinding.objects.create(
+            role=inherited_role,
+            resource_type="workspace",
+            resource_id=str(self.default_workspace.id),
+            tenant=self.tenant,
+        )
+        RoleBindingPrincipal.objects.create(
+            principal=inherited_user,
+            binding=inherited_binding,
+            source=API_PRINCIPAL_SOURCE,
+        )
+
+        # Get a direct binding UUID from setUp (these are on self.workspace)
+        direct_binding = self.bindings[0]
+
+        # Mock Relations API to return BOTH direct and inherited binding UUIDs
+        mock_lookup.return_value = [str(direct_binding.uuid), str(inherited_binding.uuid)]
+
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace"
+            f"&subject_type=user&exclude_sources=direct&limit=100",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Should only include the inherited user, not the direct ones
+        self.assertEqual(len(response.data["data"]), 1)
+
+        # Verify only inherited_user is returned
+        returned_subject_ids = [str(item["subject"]["id"]) for item in response.data["data"]]
+        self.assertIn(str(inherited_user.uuid), returned_subject_ids)
+
+        # Cleanup
+        RoleBindingPrincipal.objects.filter(binding=inherited_binding).delete()
+        inherited_binding.delete()
+        inherited_user.delete()
+        inherited_role.delete()
 
     @patch(
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
@@ -3294,6 +3527,32 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
     )
+    def test_empty_roles_removes_all_bindings(self, mock_permission):
+        """Test that empty roles list removes all bindings for the subject."""
+        url = self._get_by_subject_url()
+        # First assign roles
+        self.client.put(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace"
+            f"&subject_id={self.group.uuid}&subject_type=group",
+            data={"roles": [{"id": str(self.role1.uuid)}]},
+            format="json",
+            **self.headers,
+        )
+        # Then remove all with empty roles
+        response = self.client.put(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace"
+            f"&subject_id={self.group.uuid}&subject_type=group",
+            data={"roles": []},
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["roles"], [])
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
     def test_success_for_principal(self, mock_permission):
         """Test successful update for a principal/user subject."""
         url = self._get_by_subject_url()
@@ -3416,12 +3675,6 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
 
         # Each case: (body, expected_field, expected_message)
         test_cases = [
-            # Empty roles list
-            (
-                {"roles": []},
-                "roles",
-                "At least one role is required.",
-            ),
             # Missing roles key
             (
                 {},
@@ -3643,3 +3896,95 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
             tenant=self.tenant,
         ).count()
         self.assertEqual(binding_count, 1)
+
+
+_SENTINEL = RuntimeError("_atomic_action sentinel")
+_ATOMIC_ACTION_PATH = "management.v2_mixins.AtomicOperationsMixin._atomic_action"
+
+
+@override_settings(V2_APIS_ENABLED=True, V2_EDIT_API_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
+class RoleBindingViewSetAtomicWiringTests(IdentityRequest):
+    """Verify RoleBindingViewSet write endpoints delegate to _atomic_action."""
+
+    def setUp(self):
+        reload(urls)
+        clear_url_caches()
+        super().setUp()
+        bootstrapped = V2TenantBootstrapService(InMemoryRelationReplicator()).bootstrap_tenant(self.tenant)
+        self.root_workspace = bootstrapped.root_workspace
+        self.default_workspace = bootstrapped.default_workspace
+        self.client = APIClient()
+
+        self.workspace = Workspace.objects.create(
+            name="Test Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.default_workspace,
+        )
+
+        Permission.objects.create(permission="app:resource:read", tenant=self.tenant)
+        role_service = RoleV2Service()
+        self.role = role_service.create(
+            name="wiring_role",
+            description="Test",
+            permission_data=[{"application": "app", "resource_type": "resource", "operation": "read"}],
+            tenant=self.tenant,
+        )
+
+        self.group = Group.objects.create(name="wiring_group", description="Test", tenant=self.tenant)
+        self.principal = Principal.objects.create(
+            username="wiring_user", tenant=self.tenant, user_id="wiring_user", type=Principal.Types.USER
+        )
+
+    def tearDown(self):
+        RoleBindingGroup.objects.all().delete()
+        RoleBinding.objects.all().delete()
+        Principal.objects.filter(tenant=self.tenant).delete()
+        Group.objects.filter(tenant=self.tenant).delete()
+        RoleV2.objects.filter(tenant=self.tenant).delete()
+        Permission.objects.filter(tenant=self.tenant).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.STANDARD).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.DEFAULT).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.ROOT).delete()
+        super().tearDown()
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    @patch(_ATOMIC_ACTION_PATH, side_effect=_SENTINEL)
+    def test_batch_create_delegates_to_atomic_action(self, mock_atomic, _mock_permission):
+        url = reverse("v2_management:role-bindings-batch-create")
+        with self.assertRaises(RuntimeError, msg="_atomic_action sentinel"):
+            self.client.post(
+                url,
+                {
+                    "requests": [
+                        {
+                            "resource": {"id": str(self.workspace.id), "type": "workspace"},
+                            "subject": {"id": str(self.group.uuid), "type": "group"},
+                            "role": {"id": str(self.role.uuid)},
+                        }
+                    ]
+                },
+                format="json",
+                **self.headers,
+            )
+        mock_atomic.assert_called_once()
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    @patch(_ATOMIC_ACTION_PATH, side_effect=_SENTINEL)
+    def test_update_by_subject_delegates_to_atomic_action(self, mock_atomic, _mock_permission):
+        url = reverse("v2_management:role-bindings-by-subject")
+        with self.assertRaises(RuntimeError, msg="_atomic_action sentinel"):
+            self.client.put(
+                f"{url}?resource_id={self.workspace.id}&resource_type=workspace"
+                f"&subject_id={self.group.uuid}&subject_type=group",
+                data={"roles": [{"id": str(self.role.uuid)}]},
+                format="json",
+                **self.headers,
+            )
+        mock_atomic.assert_called_once()

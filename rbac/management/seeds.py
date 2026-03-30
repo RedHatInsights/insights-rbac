@@ -48,6 +48,7 @@ def _run_seeds(seed_type, **kwargs):
     # noqa: E402 pylint: disable=C0413
     from management.group.definer import seed_group
     from management.permission.scope_service import permission_scope_cache
+    from management.role.v2_role_scope import v2_role_excluded_application_permission_ids_cache
     from management.role.definer import seed_roles, seed_permissions
 
     seed_functions = {"role": seed_roles, "group": seed_group, "permission": seed_permissions}
@@ -57,6 +58,7 @@ def _run_seeds(seed_type, **kwargs):
         seed_functions[seed_type](**kwargs)
         if seed_type in ("permission", "role"):
             permission_scope_cache.invalidate()
+            v2_role_excluded_application_permission_ids_cache.invalidate()
         logger.info(f"Finished seeding {seed_type}.")
     except Exception as exc:
         logger.error(f"Error encountered during {seed_type} seeding {exc}.")

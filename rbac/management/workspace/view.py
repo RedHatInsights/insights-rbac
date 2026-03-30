@@ -135,19 +135,9 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
         except OperationalError as e:
-            # Django wraps psycopg2 errors in OperationalError
-            if hasattr(e, "__cause__"):
-                if isinstance(e.__cause__, SerializationFailure):
-                    logger.exception("SerializationFailure in workspace creation operation")
-                    return Response(
-                        {"detail": "Too many concurrent updates. Please retry."}, status=status.HTTP_409_CONFLICT
-                    )
-                elif isinstance(e.__cause__, DeadlockDetected):
-                    logger.exception("DeadlockDetected in workspace creation operation")
-                    return Response(
-                        {"detail": "Internal server error in concurrent updates. Please try again later."},
-                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    )
+            response = self._handle_operational_error(e, "creation")
+            if response is not None:
+                return response
             raise
         except ValidationError as e:
             message = ""
@@ -204,7 +194,7 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
         if type_field != all_types:
             queryset = queryset.filter(type=type_field)
         if name:
-            queryset = queryset.filter(name__iexact=name.lower())
+            queryset = queryset.filter(name__icontains=name)
         if parent_id:
             queryset = queryset.filter(parent_id=parent_id)
 
@@ -257,21 +247,9 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
             response_data = self._move_atomic(request)
             return Response(response_data, status=status.HTTP_200_OK)
         except OperationalError as e:
-            # Django wraps psycopg2 errors in OperationalError
-            if hasattr(e, "__cause__"):
-                if isinstance(e.__cause__, SerializationFailure):
-                    logger.exception(
-                        "SerializationFailure in workspace movement operation, ws id: %s", kwargs.get("pk")
-                    )
-                    return Response(
-                        {"detail": "Too many concurrent updates. Please retry."}, status=status.HTTP_409_CONFLICT
-                    )
-                elif isinstance(e.__cause__, DeadlockDetected):
-                    logger.exception("DeadlockDetected in workspace movement operation, ws id: %s", kwargs.get("pk"))
-                    return Response(
-                        {"detail": "Internal server error in concurrent updates. Please try again later."},
-                        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    )
+            response = self._handle_operational_error(e, "movement", ws_id=kwargs.get("pk"))
+            if response is not None:
+                return response
             raise
         except Workspace.DoesNotExist:
             logger.exception("Target Workspace not found during operation, ws id: %s", kwargs.get("pk"))
@@ -289,6 +267,47 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
                     message = error_message
                     break
             raise serializers.ValidationError(message)
+
+    def _handle_operational_error(
+        self, error: OperationalError, operation: str, ws_id: str | None = None
+    ) -> Response | None:
+        """Handle OperationalError from pgtransaction after retries are exhausted.
+
+        When this method is called, pgtransaction has already retried the transaction
+        up to 3 times. This is the final error handler for serialization conflicts
+        and deadlocks that persist despite retries.
+
+        Returns a Response for known error types, or None if the error is unrecognized
+        (caller should re-raise with bare ``raise`` to preserve the original traceback).
+        """
+        ws_context = f", ws_id='{ws_id}'" if ws_id else ""
+        if hasattr(error, "__cause__"):
+            if isinstance(error.__cause__, SerializationFailure):
+                logger.error(
+                    "SerializationFailure in workspace %s operation after all retries exhausted%s",
+                    operation,
+                    ws_context,
+                )
+                response = Response(
+                    {
+                        "detail": "The server is temporarily unable to handle this request due to concurrent updates. "
+                        "Please try again shortly."
+                    },
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
+                response["Retry-After"] = "1"
+                return response
+            elif isinstance(error.__cause__, DeadlockDetected):
+                logger.error(
+                    "DeadlockDetected in workspace %s operation after all retries exhausted%s",
+                    operation,
+                    ws_context,
+                )
+                return Response(
+                    {"detail": "Internal server error in concurrent updates. Please try again later."},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+        return None
 
     @staticmethod
     def _parent_id_query_param_validation(request: Request) -> uuid.UUID:

@@ -16,7 +16,9 @@
 #
 """QuerySet for RoleBinding lookups."""
 
-from django.db.models import Count, F, Q, QuerySet
+from django.db.models import Count, F, OuterRef, Q, QuerySet, Subquery
+from django.db.models.fields import UUIDField
+from django.db.models.functions import Cast
 from management.subject import SubjectType
 
 
@@ -79,6 +81,24 @@ class RoleBindingQuerySet(QuerySet):
                 Q(group_entries__group__uuid=subject_id) | Q(principal_entries__principal__uuid=subject_id)
             ).distinct()
         return self
+
+    def with_resource_names(self):
+        """Annotate each binding with its resource's display name.
+
+        Resolves workspace names via a correlated subquery so the name is
+        available as ``obj.resource_name`` without per-row queries.
+        Non-workspace resource types will get ``None``.
+        """
+        from management.workspace.model import Workspace
+
+        return self.annotate(
+            resource_name=Subquery(
+                Workspace.objects.filter(
+                    id=Cast(OuterRef("resource_id"), UUIDField()),
+                    tenant=OuterRef("tenant"),
+                ).values("name")[:1]
+            )
+        )
 
     def for_resource(self, resource_type, resource_id, tenant):
         """Filter to bindings on a specific resource for a tenant."""

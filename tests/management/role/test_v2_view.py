@@ -19,7 +19,7 @@
 import uuid
 from collections.abc import Iterable
 from importlib import reload
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 from django.test import override_settings
 from django.urls import clear_url_caches, reverse
@@ -64,19 +64,23 @@ class RoleV2RetrieveViewTest(IdentityRequest):
         reload(urls)
         clear_url_caches()
         super().setUp()
+        # Bootstrap tenant so V2 writes (create/update/destroy) can run ensure_v2_write_activated
+        bootstrap_tenant_for_v2_test(self.tenant)
         self.client = APIClient()
 
-        self._principal_patcher = patch(
-            "management.permissions.role_v2_access.get_kessel_principal_id",
-            return_value="localhost/test-user-id",
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.get_kessel_principal_id",
+                return_value="localhost/test-user-id",
+            )
         )
-        self._principal_patcher.start()
 
-        self._access_patcher = patch(
-            "management.permissions.role_v2_access.WorkspaceInventoryAccessChecker.check_resource_access",
-            return_value=True,
+        self.mock_check_access = self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.WorkspaceInventoryAccessChecker.check_resource_access",
+                return_value=True,
+            )
         )
-        self.mock_check_access = self._access_patcher.start()
 
         # Create permissions
         self.permission1 = Permission.objects.create(
@@ -110,8 +114,6 @@ class RoleV2RetrieveViewTest(IdentityRequest):
 
     def tearDown(self):
         """Tear down test data."""
-        self._access_patcher.stop()
-        self._principal_patcher.stop()
         RoleV2.objects.filter(tenant=self.tenant).delete()
         Permission.objects.filter(tenant=self.tenant).delete()
         super().tearDown()
@@ -142,6 +144,26 @@ class RoleV2RetrieveViewTest(IdentityRequest):
         self.assertEqual(len(data["permissions"]), 2)
         permission_strings = {f"{p['application']}:{p['resource_type']}:{p['operation']}" for p in data["permissions"]}
         self.assertEqual(permission_strings, {"inventory:hosts:read", "inventory:hosts:write"})
+
+    @override_settings(V2_MIGRATION_APP_EXCLUDE_LIST=["cost"])
+    def test_retrieve_excluded_app_role_returns_404(self):
+        """Test that retrieving a role whose permissions are all from an excluded app returns 404."""
+        from management.role.v2_role_scope import v2_role_excluded_application_permission_ids_cache
+
+        v2_role_excluded_application_permission_ids_cache.invalidate()
+        try:
+            excluded_role = CustomRoleV2.objects.create(
+                name="Excluded App Role",
+                description="Has only excluded-app permissions",
+                tenant=self.tenant,
+            )
+            excluded_role.permissions.add(self.permission3)  # cost:reports:read
+
+            url = self._get_role_url(excluded_role.uuid)
+            response = self.client.get(url, **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        finally:
+            v2_role_excluded_application_permission_ids_cache.invalidate()
 
     def test_retrieve_platform_role_returns_404(self):
         """Test that retrieving a platform role returns 404 (platform roles are not exposed)."""
@@ -444,17 +466,20 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.client = APIClient()
         self.client.credentials(HTTP_X_RH_IDENTITY=self.headers.get("HTTP_X_RH_IDENTITY"))
 
-        self._principal_patcher = patch(
-            "management.permissions.role_v2_access.get_kessel_principal_id",
-            return_value="localhost/test-user-id",
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.get_kessel_principal_id",
+                return_value="localhost/test-user-id",
+            )
         )
-        self._principal_patcher.start()
 
-        self._access_patcher = patch(
-            "management.permissions.role_v2_access.WorkspaceInventoryAccessChecker.check_resource_access",
-            return_value=True,
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.WorkspaceInventoryAccessChecker.check_resource_access",
+                return_value=True,
+            )
         )
-        self.mock_check_access = self._access_patcher.start()
+
         # URL for roles endpoint
         self.url = reverse("v2_management:roles-list")
         self.list_url = f"{self.url}?resource_type=workspace"
@@ -490,8 +515,6 @@ class RoleV2ViewSetTests(IdentityRequest):
 
     def tearDown(self):
         """Tear down RoleV2ViewSet tests."""
-        self._access_patcher.stop()
-        self._principal_patcher.stop()
         RoleV2.objects.all().delete()
         Permission.objects.filter(tenant=self.tenant).delete()
 
@@ -726,6 +749,55 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIsNone(response.data["links"]["previous"])
 
+    def test_list_roles_with_limit_minus_one_returns_all(self):
+        """Test that limit=-1 returns all roles without pagination."""
+        # Create additional roles
+        for i in range(15):
+            RoleV2.objects.create(name=f"role_{i}", description=f"Role {i}", tenant=self.tenant)
+
+        url = f"{self.list_url}&limit=-1"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should return all roles (16 total: 1 from setUp + 15 created)
+        self.assertEqual(len(response.data["data"]), 16)
+        # Meta limit should equal the total count
+        self.assertEqual(response.data["meta"]["limit"], 16)
+        # No pagination links when returning all results
+        self.assertIsNone(response.data["links"]["next"])
+        self.assertIsNone(response.data["links"]["previous"])
+
+    def test_list_roles_normal_limits_still_work_after_limit_minus_one_added(self):
+        """Test that various normal limit values still work correctly."""
+        # Create additional roles for testing
+        for i in range(20):
+            RoleV2.objects.create(name=f"role_{i}", description=f"Role {i}", tenant=self.tenant)
+
+        # Test limit=5
+        url = f"{self.list_url}&limit=5"
+        response = self.client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 5)
+        self.assertEqual(response.data["meta"]["limit"], 5)
+        # Should have next link since there are 21 total roles
+        self.assertIsNotNone(response.data["links"]["next"])
+
+        # Test limit=10
+        url = f"{self.list_url}&limit=10"
+        response = self.client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 10)
+        self.assertEqual(response.data["meta"]["limit"], 10)
+        self.assertIsNotNone(response.data["links"]["next"])
+
+        # Test limit=15
+        url = f"{self.list_url}&limit=15"
+        response = self.client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 15)
+        self.assertEqual(response.data["meta"]["limit"], 15)
+        self.assertIsNotNone(response.data["links"]["next"])
+
     def test_list_roles_with_empty_name_filter(self):
         """Test that empty name filter returns all roles."""
         RoleV2.objects.create(name="other_role", description="Other", tenant=self.tenant)
@@ -746,17 +818,19 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(response.data["data"]), 2)
 
-    def test_list_roles_name_filter_is_case_sensitive(self):
-        """Test that name filter is case sensitive exact match."""
+    def test_list_roles_name_filter_is_case_insensitive(self):
+        """Test that name filter is case insensitive."""
         RoleV2.objects.create(name="Test_Role", description="Uppercase", tenant=self.tenant)
 
-        # Should not match "test_role" (lowercase from setUp)
+        # Should match both "Test_Role" and "test_role" (from setUp)
         url = f"{self.list_url}&name=Test_Role"
         response = self.client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data["data"]), 1)
-        self.assertEqual(response.data["data"][0]["name"], "Test_Role")
+        self.assertEqual(len(response.data["data"]), 2)
+
+        returned_names = {role["name"] for role in response.data["data"]}
+        self.assertEqual(returned_names, {"Test_Role", "test_role"})
 
     def test_list_roles_with_permissions_field(self):
         """Test that requesting permissions field returns permissions array."""
@@ -1247,8 +1321,11 @@ class RoleV2ViewSetTests(IdentityRequest):
         url = f"{self.url}?fields=id,nonexistent_field"
         response = self.client.post(url, data, format="json")
 
-        # Should still succeed but ignore invalid field
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response["Content-Type"], "application/problem+json")
+        self.assertIn("nonexistent_field", str(response.data))
+        self.assertEqual(response.data["status"], 400)
+        self.assertEqual(response.data["errors"][0]["field"], "fields")
 
     def test_create_role_with_asterisk_in_name_returns_400(self):
         """Test that creating a role with '*' in the name returns 400."""
@@ -1369,7 +1446,7 @@ class RoleV2ViewSetTests(IdentityRequest):
         )
 
     def test_update_role_nonexistent_returns_404(self):
-        """Test that updating a nonexistent role returns 404."""
+        """Test that updating a nonexistent role returns 404 with Problem RFC format."""
         update_url = reverse("v2_management:roles-detail", kwargs={"uuid": "550e8400-e29b-41d4-a716-446655440000"})
         data = {
             "name": "Updated Role",
@@ -1380,9 +1457,13 @@ class RoleV2ViewSetTests(IdentityRequest):
         response = self.client.put(update_url, data, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(response["Content-Type"], "application/problem+json")
+        self.assertEqual(response.data["status"], 404)
+        self.assertIn("title", response.data)
+        self.assertIn("detail", response.data)
 
     def test_update_role_duplicate_name_returns_400(self):
-        """Test that updating a role to duplicate name returns 400."""
+        """Test that updating a role to duplicate name returns 400 with Problem RFC format."""
         role1 = CustomRoleV2.objects.create(
             name="Role One",
             description="First role",
@@ -1405,10 +1486,16 @@ class RoleV2ViewSetTests(IdentityRequest):
         response = self.client.put(update_url, data, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("already exists", response.data["detail"])
+        self.assertEqual(response["Content-Type"], "application/problem+json")
+        self.assertEqual(response.data["status"], 400)
+        self.assertEqual(response.data["title"], "The request payload contains invalid syntax.")
+        self.assertIn("detail", response.data)
+        self.assertEqual(len(response.data["errors"]), 1)
+        self.assertEqual(response.data["errors"][0]["field"], "name")
+        self.assertIn("Role One", response.data["errors"][0]["message"])
 
     def test_update_role_empty_permissions_returns_400(self):
-        """Test that updating a role with empty permissions returns 400."""
+        """Test that updating a role with empty permissions returns 400 with Problem RFC format."""
         role = CustomRoleV2.objects.create(
             name="Test Role",
             description="Test description",
@@ -1425,6 +1512,13 @@ class RoleV2ViewSetTests(IdentityRequest):
         response = self.client.put(update_url, data, format="json")
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response["Content-Type"], "application/problem+json")
+        self.assertEqual(response.data["status"], 400)
+        self.assertEqual(response.data["title"], "The request payload contains invalid syntax.")
+        self.assertIn("detail", response.data)
+        self.assertEqual(len(response.data["errors"]), 1)
+        self.assertEqual(response.data["errors"][0]["field"], "permissions")
+        self.assertEqual(response.data["errors"][0]["message"], "permissions is required")
 
     def test_update_role_missing_description_succeeds(self):
         """Test that updating a role without description succeeds with empty description."""
@@ -1547,7 +1641,7 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertEqual(response.data["errors"][0]["field"], "name")
 
     def test_update_platform_role_returns_404(self):
-        """Test that attempting to update a platform role returns 404."""
+        """Test that attempting to update a platform role returns 404 with Problem RFC format."""
         # Create a platform role
         platform_role = PlatformRoleV2.objects.create(
             name="Test Platform Role",
@@ -1567,6 +1661,46 @@ class RoleV2ViewSetTests(IdentityRequest):
 
         # Platform roles are filtered out in get_queryset() for update action
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(response["Content-Type"], "application/problem+json")
+        self.assertEqual(response.data["status"], 404)
+        self.assertIn("title", response.data)
+        self.assertIn("detail", response.data)
+
+    # --- Problem RFC format on errors ---
+
+    def test_update_role_error_responses_use_problem_format(self):
+        """Test that update role error responses use full Problem RFC 9457 shape."""
+        role = CustomRoleV2.objects.create(
+            name="Test Role",
+            description="Test description",
+            tenant=self.tenant,
+        )
+        role.permissions.add(self.permission1)
+
+        update_url = reverse("v2_management:roles-detail", kwargs={"uuid": str(role.uuid)})
+        data = {
+            "name": "Updated Role",
+            "description": "Updated description",
+            "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
+        }
+
+        error_cases = [
+            ("invalid_field_name", f"{update_url}?fields=permission", "fields"),
+            ("multiple_invalid_fields", f"{update_url}?fields=permission,invalid_field", "fields"),
+            ("mixed_valid_invalid_fields", f"{update_url}?fields=name,permission,invalid", "fields"),
+        ]
+
+        for label, request_url, expected_field in error_cases:
+            with self.subTest(label=label):
+                response = self.client.put(request_url, data, format="json")
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, f"Failed for {label}")
+                self.assertEqual(response["Content-Type"], "application/problem+json")
+                self.assertEqual(response.data["status"], 400)
+                self.assertEqual(response.data["title"], "The request payload contains invalid syntax.")
+                self.assertIn("detail", response.data)
+                self.assertEqual(len(response.data["errors"]), 1)
+                self.assertEqual(response.data["errors"][0]["field"], expected_field)
+                self.assertIn("message", response.data["errors"][0])
 
     def test_update_description_noop_audit_log(self):
         """Test that name and description are not included in audit log if not modified."""
@@ -1755,3 +1889,85 @@ class RoleV2ViewSetTests(IdentityRequest):
 
                 self.assertIn("errors", response.data)
                 self.assertEqual(response.data["errors"], [{"message": "Must be a valid UUID.", "field": "ids.0"}])
+
+
+_SENTINEL = RuntimeError("_atomic_action sentinel")
+_ATOMIC_ACTION_PATH = "management.v2_mixins.AtomicOperationsMixin._atomic_action"
+
+
+@override_settings(V2_APIS_ENABLED=True, V2_EDIT_API_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
+class RoleV2ViewSetAtomicWiringTests(IdentityRequest):
+    """Verify RoleV2ViewSet write endpoints delegate to _atomic_action."""
+
+    def setUp(self):
+        reload(v2_urls)
+        reload(urls)
+        clear_url_caches()
+        super().setUp()
+        bootstrap_tenant_for_v2_test(self.tenant)
+        self.client = APIClient()
+        self.client.credentials(HTTP_X_RH_IDENTITY=self.headers.get("HTTP_X_RH_IDENTITY"))
+
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.get_kessel_principal_id",
+                return_value="localhost/test-user-id",
+            )
+        )
+
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.WorkspaceInventoryAccessChecker.check_resource_access",
+                return_value=True,
+            )
+        )
+
+        Permission.objects.create(permission="app:resource:read", tenant=self.tenant)
+        self.role = RoleV2.objects.create(name="wiring_role", tenant=self.tenant)
+
+    def tearDown(self):
+        RoleV2.objects.filter(tenant=self.tenant).delete()
+        Permission.objects.filter(tenant=self.tenant).delete()
+        super().tearDown()
+
+    @patch(_ATOMIC_ACTION_PATH, side_effect=_SENTINEL)
+    def test_create_delegates_to_atomic_action(self, _mock):
+        url = reverse("v2_management:roles-list")
+        with self.assertRaises(RuntimeError, msg="_atomic_action sentinel"):
+            self.client.post(
+                url,
+                {
+                    "name": "x",
+                    "permissions": [{"application": "app", "resource_type": "resource", "operation": "read"}],
+                },
+                format="json",
+                **self.headers,
+            )
+        _mock.assert_called_once()
+
+    @patch(_ATOMIC_ACTION_PATH, side_effect=_SENTINEL)
+    def test_update_delegates_to_atomic_action(self, _mock):
+        url = reverse("v2_management:roles-detail", kwargs={"uuid": str(self.role.uuid)})
+        with self.assertRaises(RuntimeError, msg="_atomic_action sentinel"):
+            self.client.put(
+                url,
+                {
+                    "name": "x",
+                    "permissions": [{"application": "app", "resource_type": "resource", "operation": "read"}],
+                },
+                format="json",
+                **self.headers,
+            )
+        _mock.assert_called_once()
+
+    @patch(_ATOMIC_ACTION_PATH, side_effect=_SENTINEL)
+    def test_bulk_destroy_delegates_to_atomic_action(self, _mock):
+        url = reverse("v2_management:roles-bulk-destroy")
+        with self.assertRaises(RuntimeError, msg="_atomic_action sentinel"):
+            self.client.post(
+                url,
+                {"ids": [str(self.role.uuid)]},
+                format="json",
+                **self.headers,
+            )
+        _mock.assert_called_once()

@@ -1069,8 +1069,7 @@ namespace RoleBindings {
         ]
     })
     model UpdateRoleBindingsRequest {
-        @doc("Roles to assign (replaces existing roles for the target binding)")
-        @minItems(1)
+        @doc("Roles to assign (replaces existing roles for the target binding). Empty array removes all bindings.")
         roles: {
             @doc("Role identifier")
             id: UUID;

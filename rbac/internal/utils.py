@@ -50,7 +50,9 @@ from management.relation_replicator.relations_api_replicator import RelationsApi
 from management.role.v2_model import CustomRoleV2, RoleV2
 from management.role_binding.model import RoleBinding
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
+from management.tenant_mapping.v2_activation import V1WriteBlockedError, assert_v1_write_allowed
 from management.tenant_service.relations import default_role_binding_tuples
+from management.tenant_service.v2 import TenantNotBootstrappedError
 from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspaceHandler
 from migration_tool.utils import create_relationship
 
@@ -625,10 +627,16 @@ def clean_invalid_workspace_resource_definitions(dry_run: bool = False) -> dict:
 
         with transaction.atomic():
             # Lock the role to prevent concurrent modifications
-            role = Role.objects.select_for_update().filter(pk=raw_role.pk).first()
+            role = Role.objects.select_for_update(of=["self"]).select_related("tenant").filter(pk=raw_role.pk).first()
 
             if role is None:
                 logger.warning(f"Role vanished before it could be cleaned: pk={raw_role.pk!r}")
+                continue
+
+            try:
+                assert_v1_write_allowed(role.tenant)
+            except V1WriteBlockedError:
+                logger.info(f"Skipping fixing resource definitions for role in V2 tenant: role pk={role.pk!r}")
                 continue
 
             roles_checked += 1
@@ -647,7 +655,12 @@ def clean_invalid_workspace_resource_definitions(dry_run: bool = False) -> dict:
                         continue
 
                     # Get workspace IDs from resource definition
-                    workspace_ids = get_workspace_ids_from_resource_definition(rd.attributeFilter)
+                    workspace_ids, malformed_workspace_ids = get_workspace_ids_from_resource_definition_with_malformed(
+                        rd.attributeFilter
+                    )
+
+                    # null is acceptable for us.
+                    malformed_workspace_ids = [x for x in malformed_workspace_ids if x is not None]
 
                     # Check if the resource definition has None (for ungrouped workspace)
                     operation = rd.attributeFilter.get("operation")
@@ -659,8 +672,10 @@ def clean_invalid_workspace_resource_definitions(dry_run: bool = False) -> dict:
                     elif operation == "equal":
                         has_none_value = original_value is None
 
-                    if not workspace_ids:
-                        continue
+                    # Previously, we would attempt to exit early if workspace_ids is empty (believing there would be
+                    # nothing to process). However, this isn't always valid. If the resource definition contains only
+                    # malformed workspace IDs (e.g. invalid UUIDs or values that aren't strings), we still need to
+                    # remove all of those values, but workspace_ids will be empty.
 
                     # Check which workspaces exist in the role's tenant
                     valid_workspace_ids = set(
@@ -672,7 +687,7 @@ def clean_invalid_workspace_resource_definitions(dry_run: bool = False) -> dict:
 
                     invalid_workspace_ids = set(str(ws_id) for ws_id in workspace_ids) - valid_workspace_ids
 
-                    if invalid_workspace_ids:
+                    if invalid_workspace_ids or malformed_workspace_ids:
                         role_had_invalid_rds = True
 
                         # Calculate what the new value would be
@@ -702,6 +717,7 @@ def clean_invalid_workspace_resource_definitions(dry_run: bool = False) -> dict:
                             "original_value": original_value,
                             "new_value": new_value,
                             "invalid_workspaces": list(invalid_workspace_ids),
+                            "malformed_workspaces": list(malformed_workspace_ids),
                             "valid_workspaces": list(valid_workspace_ids),
                             "preserved_none": has_none_value,
                         }
@@ -831,19 +847,36 @@ def is_resource_a_workspace(application: str, resource_type: str, attributeFilte
     return is_workspace_application and is_workspace_resource_type and is_workspace_group_filter
 
 
-def get_workspace_ids_from_resource_definition(attributeFilter: dict) -> list[uuid.UUID]:
-    """Get workspace id from a resource definition."""
+def get_workspace_ids_from_resource_definition_with_malformed(attributeFilter: dict) -> tuple[list[uuid.UUID], list]:
+    """Get workspace id from a resource definition. Returns a tuple of the valid entries and the invalid entries."""
     operation = attributeFilter.get("operation")
-    ret = []
+
+    valid = []
+    invalid = []
+
     if operation == "in":
         value = attributeFilter.get("value", [])
-        ret.extend(uuid.UUID(val) for val in value if is_str_valid_uuid(val))
+
+        for val in value:
+            if is_str_valid_uuid(val):
+                valid.append(uuid.UUID(val))
+            else:
+                invalid.append(val)
+
     elif operation == "equal":
         value = attributeFilter.get("value", "")
-        if is_str_valid_uuid(value):
-            ret.append(uuid.UUID(value))
 
-    return ret
+        if is_str_valid_uuid(value):
+            valid.append(uuid.UUID(value))
+        else:
+            invalid.append(value)
+
+    return valid, invalid
+
+
+def get_workspace_ids_from_resource_definition(attributeFilter: dict) -> list[uuid.UUID]:
+    """Get workspace id from a resource definition."""
+    return get_workspace_ids_from_resource_definition_with_malformed(attributeFilter)[0]
 
 
 def is_str_valid_uuid(uuid_str: str) -> bool:
@@ -990,6 +1023,46 @@ def remove_unassigned_system_binding_mappings(replicator: Optional[RelationRepli
                     f"BindingMapping for system role is inconsistent: "
                     f"pk={mapping.pk!r}, mappings={mapping.mappings}"
                 )
+
+            if not (
+                (mapping.resource_type_namespace == "rbac") and (mapping.resource_type_name in ("tenant", "workspace"))
+            ):
+                logger.warning(
+                    f"Unexpected role binding resource type: "
+                    f"{mapping.resource_type_namespace}/{mapping.resource_type_name}"
+                )
+
+                continue
+
+            tenant: Tenant | None = None
+
+            if mapping.resource_type_name == "workspace":
+                workspace = Workspace.objects.filter(id=mapping.resource_id).first()
+
+                if workspace is None:
+                    logger.warning(f"Unknown workspace ID for binding: {mapping.resource_id}")
+                    continue
+
+                tenant = workspace.tenant
+            elif mapping.resource_type_name == "tenant":
+                org_id = Tenant.tenant_resource_id_to_org_id(mapping.resource_id)
+                tenant = Tenant.objects.filter(org_id=org_id).first()
+
+                if tenant is None:
+                    logger.warning(f"Unknown tenant resource ID for binding: {mapping.resource_id}")
+                    continue
+
+            if tenant is None:
+                raise AssertionError("Tenant should have been found")
+
+            try:
+                assert_v1_write_allowed(tenant)
+            except V1WriteBlockedError:
+                logger.info(f"Not processing BindingMapping for V2 tenant: pk={mapping.pk!r}, tenant pk={tenant.pk!r}")
+                continue
+            except TenantNotBootstrappedError:
+                logger.warning(f"Tenant not bootstrapped: pk={tenant.pk!r}. Not processing BindingMapping.")
+                continue
 
             # Because a BindingMapping exists for this role binding, and BindingMappings for system roles are always
             # locked for update, we know that this binding cannot be concurrently updated by V1 code.

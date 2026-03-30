@@ -29,6 +29,8 @@ from django.db.models import Q, QuerySet
 from internal.migrations.remove_orphan_relations import cleanup_tenant_orphan_bindings
 from management.group.model import Group
 from management.role.model import Role
+from management.role.v2_model import RoleV2
+from management.role_binding.model import RoleBinding
 from management.workspace.model import Workspace
 
 from api.models import Tenant
@@ -90,6 +92,8 @@ class Command(BaseCommand):
         interesting_tenants = base.filter(
             Q(id__in=(Group.objects.all().values_list("tenant_id", flat=True)))
             | Q(id__in=(Role.objects.all().values_list("tenant_id", flat=True)))
+            | Q(id__in=(RoleV2.objects.all().values_list("tenant_id", flat=True)))
+            | Q(id__in=(RoleBinding.objects.all().values_list("tenant_id", flat=True)))
             | Q(id__in=(Workspace.objects.filter(type=Workspace.Types.STANDARD).values_list("tenant_id", flat=True)))
         ).distinct()
 

@@ -2840,6 +2840,8 @@ class CleanInvalidWorkspaceResourceDefinitionsTests(BaseInternalViewsetTests):
         super().setUp()
         self.url = "/_private/api/utils/clean_invalid_workspace_resource_definitions/"
 
+        bootstrap_tenant_for_v2_test(self.tenant)
+
     @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
     @patch("management.tasks.clean_invalid_workspace_resource_definitions_in_worker.delay")
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")

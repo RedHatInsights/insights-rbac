@@ -105,6 +105,10 @@ class RoleV2(TenantAwareModel):
 
         raise ValueError(f"Unexpected type of role: {self.type} for {self}")
 
+    def v2_permissions(self) -> set[str]:
+        """Get the set of V2 strings for the permissions of this role."""
+        return set(p.v2_string() for p in self.permissions.all())
+
 
 class TypedRoleV2Manager(models.Manager):
     """Manager for RoleV2 with a specific type."""
@@ -227,6 +231,36 @@ class SeededRoleV2(TypeValidatedRoleV2Mixin, RoleV2):
 
     _expected_type = RoleV2.Types.SEEDED
     objects = TypedRoleV2Manager(role_type=_expected_type)
+
+    @classmethod
+    def for_v1_roles(cls, roles: Iterable[Role]) -> set[SeededRoleV2]:
+        """
+        Retrieve the V2 equivalents of the provided V1 system roles.
+
+        Fails if a custom role is provided or if a role cannot be found.
+        """
+        roles = set(roles)
+        non_system_roles = {r for r in roles if not r.system}
+
+        if non_system_roles:
+            raise ValueError(
+                f"Only system V1 roles have seeded V2 equivalents; found non-system roles: "
+                f"{', '.join(f'pk={r.pk}' for r in non_system_roles)}"
+            )
+
+        v2_roles = set(cls.objects.filter(v1_source__in=roles).distinct())
+
+        if len(roles) != len(v2_roles):
+            missing = roles - {r.v1_source for r in v2_roles}
+
+            if len(missing) == 0:
+                raise AssertionError("Unable to determine missing V1 roles.")
+
+            raise ValueError(
+                f"Unable to find V2 roles for the following V1 roles: " f"{', '.join(f'pk={r.pk}' for r in missing)}"
+            )
+
+        return v2_roles
 
 
 class PlatformRoleV2(TypeValidatedRoleV2Mixin, RoleV2):
