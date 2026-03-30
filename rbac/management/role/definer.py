@@ -25,7 +25,9 @@ import os
 from core.utils import destructive_ok
 from django.conf import settings
 from django.db import transaction
+from django.db.models import QuerySet
 from django.utils import timezone
+from management.atomic_transactions import atomic
 from management.group.definer import seed_group
 from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
 from management.notifications.notification_handlers import role_obj_change_notification_handler
@@ -83,6 +85,9 @@ class _SeedRolesConfig:
             raise ValueError("force_create_relationships and force_update_relationships cannot both be True")
 
 
+# We do each operation in a SERIALIZABLE transaction so that other SERIALIZABLE transactions can have a consistent view
+# of what system roles exist.
+@atomic
 def _make_role(data, config: _SeedRolesConfig, platform_roles=None, resource_service=None):
     """Create the role object in the database."""
     public_tenant = Tenant.objects.get(tenant_name="public")
@@ -159,12 +164,23 @@ def _update_or_create_roles(roles, config: _SeedRolesConfig, platform_roles=None
     sorted_roles = sorted(roles, key=lambda r: r.get("name", ""))
     for role_json in sorted_roles:
         try:
-            with transaction.atomic():
-                role = _make_role(role_json, config, platform_roles, resource_service)
-                current_role_ids.add(role.id)
+            role = _make_role(role_json, config, platform_roles, resource_service)
+            current_role_ids.add(role.id)
         except Exception as e:
             logger.error(f"Failed to update or create system role: {role_json.get('name')} with error: {e}")
     return current_role_ids
+
+
+# SERIALIZABLE for the same reason as _make_role above.
+@atomic
+def _do_delete_system_roles(roles: QuerySet):
+    logger.info(f"Removing the following role(s): {roles.values()}")
+
+    for role in roles:
+        dual_write_handler = SeedingRelationApiDualWriteHandler(role)
+        dual_write_handler.replicate_deleted_system_role()
+
+    roles.delete()
 
 
 def seed_roles(force_create_relationships=False, force_update_relationships=False):
@@ -198,14 +214,11 @@ def seed_roles(force_create_relationships=False, force_update_relationships=Fals
     # Find roles in DB but not in config
     roles_to_delete = Role.objects.public_tenant_only().exclude(id__in=current_role_ids)
     logger.info(f"The following '{roles_to_delete.count()}' roles(s) eligible for removal: {roles_to_delete.values()}")
+
     if destructive_ok("seeding"):
-        logger.info(f"Removing the following role(s): {roles_to_delete.values()}")
-        # Actually remove roles no longer in config
-        with transaction.atomic():
-            for role in roles_to_delete:
-                dual_write_handler = SeedingRelationApiDualWriteHandler(role)
-                dual_write_handler.replicate_deleted_system_role()
-            roles_to_delete.delete()
+        # Actually remove roles no longer in config.
+        # We must use all() to ensure we actually load the roles within the transaction.
+        _do_delete_system_roles(roles_to_delete.all())
 
 
 def seed_permissions():
