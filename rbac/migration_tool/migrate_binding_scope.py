@@ -52,6 +52,8 @@ def migrate_custom_role_bindings(role: Role, replicator: RelationReplicator) -> 
     if role.system:
         raise ValueError(f"migrate_custom_role_bindings called with system role {role.uuid}")
 
+    logger.info(f"Migrating role bindings for custom role: pk={role.pk!r}")
+
     # Use RelationApiDualWriteHandler
     dual_write = RelationApiDualWriteHandler(role, ReplicationEventType.MIGRATE_BINDING_SCOPE, replicator=replicator)
 
@@ -81,11 +83,19 @@ def migrate_system_role_bindings_for_group(group: Group, replicator: RelationRep
 
     Returns: Number of bindings cleaned up
     """
-    # Get system roles assigned to this group
-    system_roles = Role.objects.filter(policies__group=group, system=True).distinct()
+    logger.info(f"Migrating system role binding scopes for group: pk={group.pk}, uuid={str(group.uuid)}")
 
-    if not system_roles.exists():
+    # Get system roles assigned to this group
+    system_roles = list(Role.objects.filter(policies__group=group, system=True).distinct())
+
+    if not system_roles:
+        logger.info(f"Found no system roles for group: pk={group.pk}")
         return 0
+
+    logger.info(
+        f"Found system roles for group with pk={group.pk}: "
+        + ", ".join(f"{r.pk!r} ({r.name!r})" for r in system_roles)
+    )
 
     # Use group handler to bind/rebind system roles at correct scope
     dual_write_handler = RelationApiDualWriteGroupHandler(
@@ -115,10 +125,18 @@ def _migrate_car_bindings(car: CrossAccountRequest, replicator: RelationReplicat
     if car.status != "approved":
         return 0
 
+    logger.info(f"Migrating roles for cross-account request: pk={car.pk!r}")
+
     roles = list(car.roles.all())
 
     if len(roles) == 0:
+        logger.info(f"Found no roles for cross-account request, pk={car.pk!r}")
         return 0
+
+    logger.info(
+        f"Found roles for cross-account request with pk={car.pk!r}: "
+        + ", ".join(f"{r.pk!r} ({r.name!r})" for r in roles)
+    )
 
     dual_write_handler = RelationApiDualWriteCrossAccessHandler(
         cross_account_request=car,
