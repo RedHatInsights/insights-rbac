@@ -91,7 +91,7 @@ class RoleBindingListInputSerializer(RoleBindingInputSerializerMixin, serializer
     """
 
     role_id = serializers.UUIDField(required=False, help_text="Filter by role ID")
-    resource_id = serializers.UUIDField(required=False, help_text="Filter by resource ID")
+    resource_id = serializers.CharField(required=False, max_length=256, help_text="Filter by resource ID")
     resource_type = serializers.CharField(required=False, help_text="Filter by resource type")
     subject_type = serializers.CharField(required=False, help_text="Filter by subject type")
     subject_id = serializers.UUIDField(required=False, help_text="Filter by subject ID")
@@ -649,7 +649,7 @@ class RoleBindingListOutputSerializer(RoleBindingOutputSerializerMixin, serializ
 class ResourceInputSerializer(serializers.Serializer):
     """Validates the resource portion of a role binding request."""
 
-    id = serializers.UUIDField(help_text="UUID of the resource")
+    id = serializers.CharField(max_length=256, help_text="ID of the resource")
     type = serializers.CharField(help_text="Type of resource")
 
 

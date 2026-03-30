@@ -815,7 +815,6 @@ class RoleBindingListViewSetTest(IdentityRequest):
             ("group_order_by", f"{url}?order_by=group.name", "order_by"),
             ("unknown_fields_object", f"{url}?fields=bogus(nope)", "fields"),
             ("invalid_role_field", f"{url}?fields=role(nonexistent)", "fields"),
-            ("invalid_resource_id", f"{url}?resource_id=not-a-uuid", "resource_id"),
             ("invalid_subject_id", f"{url}?subject_id=not-a-uuid", "subject_id"),
         ]
         for label, request_url, expected_field in error_cases:
