@@ -145,6 +145,26 @@ class RoleV2RetrieveViewTest(IdentityRequest):
         permission_strings = {f"{p['application']}:{p['resource_type']}:{p['operation']}" for p in data["permissions"]}
         self.assertEqual(permission_strings, {"inventory:hosts:read", "inventory:hosts:write"})
 
+    @override_settings(V2_MIGRATION_APP_EXCLUDE_LIST=["cost"])
+    def test_retrieve_excluded_app_role_returns_404(self):
+        """Test that retrieving a role whose permissions are all from an excluded app returns 404."""
+        from management.role.v2_role_scope import v2_role_excluded_application_permission_ids_cache
+
+        v2_role_excluded_application_permission_ids_cache.invalidate()
+        try:
+            excluded_role = CustomRoleV2.objects.create(
+                name="Excluded App Role",
+                description="Has only excluded-app permissions",
+                tenant=self.tenant,
+            )
+            excluded_role.permissions.add(self.permission3)  # cost:reports:read
+
+            url = self._get_role_url(excluded_role.uuid)
+            response = self.client.get(url, **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        finally:
+            v2_role_excluded_application_permission_ids_cache.invalidate()
+
     def test_retrieve_platform_role_returns_404(self):
         """Test that retrieving a platform role returns 404 (platform roles are not exposed)."""
         url = self._get_role_url(self.platform_role.uuid)

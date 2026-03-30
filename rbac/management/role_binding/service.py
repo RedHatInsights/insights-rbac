@@ -930,6 +930,7 @@ class RoleBindingService:
 
         Uses RoleV2.objects.assignable() to filter to roles that can be
         assigned to bindings (custom + seeded, not platform).
+        Also excludes roles with permissions from migration-excluded applications.
         Empty role_ids is valid and returns [] to support removing all bindings.
 
         Raises:
@@ -938,7 +939,7 @@ class RoleBindingService:
         if not role_ids:
             return []
 
-        roles = list(RoleV2.objects.filter(uuid__in=role_ids).assignable())
+        roles = list(RoleV2.objects.filter(uuid__in=role_ids).assignable().excluding_out_of_scope_v2_roles())
 
         found_ids = {str(r.uuid) for r in roles}
         requested_ids = set(role_ids)
