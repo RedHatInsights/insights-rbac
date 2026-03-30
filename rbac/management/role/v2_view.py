@@ -69,7 +69,7 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         base_qs = RoleV2.objects.for_tenant(self.request.tenant).assignable().with_fields(fields)
 
         if self.action in ("list", "retrieve"):
-            return base_qs
+            return base_qs.excluding_out_of_scope_v2_roles()
         return base_qs.filter(type=RoleV2.Types.CUSTOM)
 
     def get_serializer_context(self):

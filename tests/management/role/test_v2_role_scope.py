@@ -17,6 +17,7 @@
 """Tests for v2 role list filtering when applications are migration-excluded."""
 
 from django.test import override_settings
+from management.exceptions import InvalidFieldError
 from management.models import Permission
 from management.role.v2_model import RoleV2
 from management.role.v2_role_scope import (
@@ -24,6 +25,7 @@ from management.role.v2_role_scope import (
     v2_role_excluded_applications,
 )
 from management.role.v2_service import RoleV2Service
+from management.role_binding.service import RoleBindingService
 from tests.identity_request import IdentityRequest
 
 
@@ -85,3 +87,18 @@ class V2RoleScopeTests(IdentityRequest):
         qs = self.service.list({})
         names = set(qs.values_list("name", flat=True))
         self.assertEqual(names, {"cost_role"})
+
+    @override_settings(V2_MIGRATION_APP_EXCLUDE_LIST=["cost-management"])
+    def test_role_binding_rejects_excluded_app_role(self):
+        """Assigning an out-of-scope role to a binding raises InvalidFieldError."""
+        service = RoleBindingService(tenant=self.tenant)
+        with self.assertRaises(InvalidFieldError):
+            service._get_roles([str(self.cost_role.uuid)])
+
+    @override_settings(V2_MIGRATION_APP_EXCLUDE_LIST=["cost-management"])
+    def test_role_binding_accepts_in_scope_role(self):
+        """Assigning an in-scope role to a binding succeeds."""
+        service = RoleBindingService(tenant=self.tenant)
+        roles = service._get_roles([str(self.inventory_role.uuid)])
+        self.assertEqual(len(roles), 1)
+        self.assertEqual(roles[0].uuid, self.inventory_role.uuid)
