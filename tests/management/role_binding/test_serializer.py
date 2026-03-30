@@ -922,9 +922,7 @@ class RoleBindingListInputSerializerTest(TestCase):
         ]
         for label, value in valid_values:
             with self.subTest(label=label):
-                s = RoleBindingListInputSerializer(
-                    data={"granted_subject_type": "user", "granted_subject_id": value}
-                )
+                s = RoleBindingListInputSerializer(data={"granted_subject_type": "user", "granted_subject_id": value})
                 self.assertTrue(s.is_valid(), s.errors)
                 self.assertEqual(s.validated_data["granted_subject_id"], value)
 

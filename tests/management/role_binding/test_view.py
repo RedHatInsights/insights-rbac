@@ -676,9 +676,7 @@ class RoleBindingListViewSetTest(IdentityRequest):
         """Test that granted_subject_type=user returns direct + group bindings."""
         url = self._get_list_url()
 
-        user_principal = Principal.objects.create(
-            username="granted_user", tenant=self.tenant, user_id="granted-uid"
-        )
+        user_principal = Principal.objects.create(username="granted_user", tenant=self.tenant, user_id="granted-uid")
         user_role = RoleV2.objects.create(name="granted_user_role", tenant=self.tenant)
         user_role.permissions.add(self.permission)
         user_binding = RoleBinding.objects.create(

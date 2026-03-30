@@ -120,9 +120,7 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         granted_subject_type = validated_params.get("granted_subject_type")
         granted_subject_id = validated_params.get("granted_subject_id")
         if granted_subject_type and granted_subject_id:
-            queryset = queryset.for_granted_subject(
-                granted_subject_type, granted_subject_id, request.tenant
-            )
+            queryset = queryset.for_granted_subject(granted_subject_type, granted_subject_id, request.tenant)
 
         field_selection = validated_params.get("fields")
         if field_selection is not None and "name" in field_selection.get_nested("resource"):

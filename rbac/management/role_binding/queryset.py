@@ -117,8 +117,7 @@ class RoleBindingQuerySet(QuerySet):
             ).values_list("uuid", flat=True)
 
             return self.filter(
-                Q(principal_entries__principal__uuid=principal.uuid)
-                | Q(group_entries__group__uuid__in=group_uuids)
+                Q(principal_entries__principal__uuid=principal.uuid) | Q(group_entries__group__uuid__in=group_uuids)
             ).distinct()
         return self.none()
 
