@@ -49,8 +49,7 @@ from management.tenant_mapping.model import DefaultAccessType, TenantMapping
 from management.tenant_service.v2 import V2TenantBootstrapService
 from migration_tool.in_memory_tuples import InMemoryRelationReplicator
 from rbac import urls
-from rbac.middleware import TENANTS
-from tests.identity_request import IdentityRequest, TransactionalIdentityRequest
+from tests.identity_request import IdentityRequest
 
 
 def _coerce_api_datetime(value):
@@ -3536,13 +3535,6 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
         """Set up test data using services."""
         reload(urls)
         clear_url_caches()
-
-        # Clear stale tenant cache to prevent using cached tenant with different id
-        try:
-            TENANTS.delete_tenant(self.customer_data["org_id"])
-        except Exception:
-            pass
-
         super().setUp()
 
         # Clean up any existing bootstrap data to ensure fresh state
