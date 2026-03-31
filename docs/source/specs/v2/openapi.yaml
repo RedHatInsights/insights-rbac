@@ -49,6 +49,13 @@ paths:
           schema:
             type: string
           explode: false
+        - name: resource.tenant.org_id
+          in: query
+          required: false
+          description: Org ID of the tenant resource to filter by. Cannot be combined with resource_id. When provided, resource_type is implicitly 'tenant'.
+          schema:
+            type: string
+          explode: false
         - name: subject_type
           in: query
           required: false
@@ -66,14 +73,21 @@ paths:
         - name: granted_subject_type
           in: query
           required: false
-          description: Filter by the type of subject effectively granted access. When 'user', returns role bindings granted directly to the user and through their group memberships. When 'group', returns role bindings granted to the group. Cannot be combined with subject_type/subject_id.
+          description: Filter by the type of subject effectively granted access. When 'user', returns role bindings granted directly to the user and through their group memberships. When 'group', returns role bindings granted to the group. When 'principal', filters by external user ID via granted_subject.principal.user_id. Cannot be combined with subject_type/subject_id.
           schema:
             $ref: '#/components/schemas/RoleBindings.SubjectType'
           explode: false
         - name: granted_subject_id
           in: query
           required: false
-          description: ID of the subject effectively granted access. Accepts a principal UUID, user_id, or group UUID. Required when granted_subject_type is provided.
+          description: ID of the subject effectively granted access. Accepts a principal UUID or group UUID. Used with granted_subject_type='user' or 'group'. Prefer granted_subject.principal.user_id with granted_subject_type='principal' for user lookups.
+          schema:
+            type: string
+          explode: false
+        - name: granted_subject.principal.user_id
+          in: query
+          required: false
+          description: External user ID of the principal effectively granted access. Requires granted_subject_type='principal'.
           schema:
             type: string
           explode: false
@@ -2405,6 +2419,7 @@ components:
       enum:
         - user
         - group
+        - principal
       description: Type of subject for role bindings
     RoleBindings.UpdateRoleBindingsRequest:
       type: object

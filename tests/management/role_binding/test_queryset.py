@@ -429,6 +429,73 @@ class RoleBindingQuerySetTest(IdentityRequest):
                 granted_subject_type="group", granted_subject_id=self.group.uuid
             )
 
+    # --- for_granted_subject with type=principal ---
+
+    def test_granted_subject_principal_with_user_id_returns_direct_and_group_bindings(self):
+        """Test that for_granted_subject with type=principal and user_id returns direct + group bindings."""
+        principal = Principal.objects.create(username="principal_user", tenant=self.tenant, user_id="ext-user-123")
+        self.group.principals.add(principal)
+        role_c = RoleV2.objects.create(name="role_c", tenant=self.tenant)
+        binding_c = RoleBinding.objects.create(
+            role=role_c, resource_type="workspace", resource_id="res-3", tenant=self.tenant
+        )
+        RoleBindingPrincipal.objects.create(principal=principal, binding=binding_c, source="default")
+
+        try:
+            qs = RoleBinding.objects.for_tenant(self.tenant).for_granted_subject(
+                granted_subject_type="principal",
+                granted_subject_principal_user_id="ext-user-123",
+            )
+            self.assertEqual(set(qs), {binding_c, self.binding_a, self.binding_b})
+        finally:
+            self.group.principals.remove(principal)
+            RoleBindingPrincipal.objects.filter(binding=binding_c).delete()
+            binding_c.delete()
+            role_c.delete()
+            principal.delete()
+
+    def test_granted_subject_principal_user_id_no_match_returns_empty(self):
+        """Test that for_granted_subject with type=principal and non-existent user_id returns empty."""
+        qs = RoleBinding.objects.for_tenant(self.tenant).for_granted_subject(
+            granted_subject_type="principal",
+            granted_subject_principal_user_id="nonexistent-user",
+        )
+        self.assertEqual(qs.count(), 0)
+
+    def test_granted_subject_principal_without_user_id_returns_all(self):
+        """Test that for_granted_subject with type=principal and no user_id is a no-op."""
+        qs = RoleBinding.objects.for_tenant(self.tenant).for_granted_subject(
+            granted_subject_type="principal",
+        )
+        self.assertEqual(set(qs), {self.binding_a, self.binding_b})
+
+    def test_granted_subject_principal_user_id_only_matches_user_id_not_uuid(self):
+        """Test that principal type resolves by user_id only, not by UUID."""
+        principal = Principal.objects.create(username="uuid_test", tenant=self.tenant, user_id="uid-only")
+        role_c = RoleV2.objects.create(name="role_c", tenant=self.tenant)
+        binding_c = RoleBinding.objects.create(
+            role=role_c, resource_type="workspace", resource_id="res-3", tenant=self.tenant
+        )
+        RoleBindingPrincipal.objects.create(principal=principal, binding=binding_c, source="default")
+
+        try:
+            qs = RoleBinding.objects.for_tenant(self.tenant).for_granted_subject(
+                granted_subject_type="principal",
+                granted_subject_principal_user_id=str(principal.uuid),
+            )
+            self.assertEqual(qs.count(), 0)
+
+            qs = RoleBinding.objects.for_tenant(self.tenant).for_granted_subject(
+                granted_subject_type="principal",
+                granted_subject_principal_user_id="uid-only",
+            )
+            self.assertEqual(set(qs), {binding_c})
+        finally:
+            RoleBindingPrincipal.objects.filter(binding=binding_c).delete()
+            binding_c.delete()
+            role_c.delete()
+            principal.delete()
+
     # --- Combined filters ---
 
     def test_combined_role_and_resource_filter(self):

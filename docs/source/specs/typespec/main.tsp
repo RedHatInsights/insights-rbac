@@ -719,6 +719,7 @@ namespace RoleBindings {
     enum SubjectType {
         user,
         group,
+        principal,
     }
 
     @discriminator("type")
@@ -1236,6 +1237,10 @@ namespace RoleBindings {
         @example("workspace")
         @query resource_type?: string;
 
+        @doc("Org ID of the tenant resource to filter by. Cannot be combined with resource_id. When provided, resource_type is implicitly 'tenant'.")
+        @example("12345678")
+        @query("resource.tenant.org_id") resource_tenant_org_id?: string;
+
         @doc("Filter by subject type (e.g., 'group' or 'user')")
         @example(SubjectType.group)
         @query subject_type?: SubjectType;
@@ -1244,13 +1249,17 @@ namespace RoleBindings {
         @example("3fa85f64-5717-4562-b3fc-2c963f66afa6")
         @query subject_id?: string;
 
-        @doc("Filter by the type of subject effectively granted access. When 'user', returns role bindings granted directly to the user and through their group memberships. When 'group', returns role bindings granted to the group. Cannot be combined with subject_type/subject_id.")
+        @doc("Filter by the type of subject effectively granted access. When 'user', returns role bindings granted directly to the user and through their group memberships. When 'group', returns role bindings granted to the group. When 'principal', filters by external user ID via granted_subject.principal.user_id. Cannot be combined with subject_type/subject_id.")
         @example(SubjectType.user)
         @query granted_subject_type?: SubjectType;
 
-        @doc("ID of the subject effectively granted access. Accepts a principal UUID, user_id, or group UUID. Required when granted_subject_type is provided.")
+        @doc("ID of the subject effectively granted access. Accepts a principal UUID or group UUID. Used with granted_subject_type='user' or 'group'. Prefer granted_subject.principal.user_id with granted_subject_type='principal' for user lookups.")
         @example("3fa85f64-5717-4562-b3fc-2c963f66afa6")
         @query granted_subject_id?: string;
+
+        @doc("External user ID of the principal effectively granted access. Requires granted_subject_type='principal'.")
+        @example("jsmith")
+        @query("granted_subject.principal.user_id") granted_subject_principal_user_id?: string;
 
         @doc("Control which fields are included in the response to optimize payload size.")
         @query fields?: FieldMask = "resource(id),role(id),subject(id,type)";

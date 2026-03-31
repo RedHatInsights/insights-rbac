@@ -18,6 +18,7 @@
 
 import logging
 
+from api.models import Tenant
 from management.base_viewsets import BaseV2ViewSet
 from management.group.model import Group
 from management.permissions.role_binding_access import (
@@ -147,9 +148,17 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         if role_id:
             queryset = queryset.for_role(role_id)
 
+        resource_type = validated_params.get("resource_type")
+        resource_id = validated_params.get("resource_id")
+
+        resource_tenant_org_id = validated_params.get("resource_tenant_org_id")
+        if resource_tenant_org_id:
+            resource_id = Tenant.org_id_to_tenant_resource_id(resource_tenant_org_id)
+            resource_type = resource_type or "tenant"
+
         queryset = queryset.for_resource_filter(
-            resource_type=validated_params.get("resource_type"),
-            resource_id=validated_params.get("resource_id"),
+            resource_type=resource_type,
+            resource_id=resource_id,
         ).for_subject(
             subject_type=validated_params.get("subject_type"),
             subject_id=validated_params.get("subject_id"),
@@ -157,8 +166,13 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
 
         granted_subject_type = validated_params.get("granted_subject_type")
         granted_subject_id = validated_params.get("granted_subject_id")
-        if granted_subject_type and granted_subject_id:
-            queryset = queryset.for_granted_subject(granted_subject_type, granted_subject_id)
+        granted_subject_principal_user_id = validated_params.get("granted_subject_principal_user_id")
+        if granted_subject_type:
+            queryset = queryset.for_granted_subject(
+                granted_subject_type,
+                granted_subject_id=granted_subject_id,
+                granted_subject_principal_user_id=granted_subject_principal_user_id,
+            )
 
         field_selection = validated_params.get("fields")
         if field_selection is not None and "name" in field_selection.get_nested("resource"):

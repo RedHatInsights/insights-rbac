@@ -930,11 +930,10 @@ class RoleBindingListInputSerializerTest(TestCase):
 
     # --- granted_subject cross-field validation ---
 
-    def test_granted_subject_type_without_id_is_invalid(self):
-        """Test that providing granted_subject_type without granted_subject_id is rejected."""
+    def test_granted_subject_type_without_id_is_valid(self):
+        """Test that providing granted_subject_type without granted_subject_id is accepted."""
         s = RoleBindingListInputSerializer(data={"granted_subject_type": "user"})
-        self.assertFalse(s.is_valid())
-        self.assertIn("non_field_errors", s.errors)
+        self.assertTrue(s.is_valid(), s.errors)
 
     def test_granted_subject_id_without_type_is_invalid(self):
         """Test that providing granted_subject_id without granted_subject_type is rejected."""
@@ -965,6 +964,123 @@ class RoleBindingListInputSerializerTest(TestCase):
         )
         self.assertFalse(s.is_valid())
         self.assertIn("non_field_errors", s.errors)
+
+    # --- resource.tenant.org_id (dotted query param) ---
+
+    def test_resource_tenant_org_id_accepted_via_dotted_key(self):
+        """Test that resource.tenant.org_id is remapped and accepted."""
+        s = RoleBindingListInputSerializer(data={"resource.tenant.org_id": "12345678"})
+        self.assertTrue(s.is_valid(), s.errors)
+        self.assertEqual(s.validated_data["resource_tenant_org_id"], "12345678")
+
+    def test_resource_tenant_org_id_with_resource_type_tenant(self):
+        """Test that resource.tenant.org_id with resource_type=tenant is valid."""
+        s = RoleBindingListInputSerializer(data={"resource.tenant.org_id": "12345678", "resource_type": "tenant"})
+        self.assertTrue(s.is_valid(), s.errors)
+
+    def test_resource_tenant_org_id_with_resource_id_is_invalid(self):
+        """Test that resource.tenant.org_id cannot be combined with resource_id."""
+        s = RoleBindingListInputSerializer(
+            data={"resource.tenant.org_id": "12345678", "resource_id": "redhat/12345678"}
+        )
+        self.assertFalse(s.is_valid())
+        self.assertIn("non_field_errors", s.errors)
+
+    def test_resource_tenant_org_id_with_wrong_resource_type_is_invalid(self):
+        """Test that resource.tenant.org_id with resource_type != 'tenant' is rejected."""
+        s = RoleBindingListInputSerializer(
+            data={"resource.tenant.org_id": "12345678", "resource_type": "workspace"}
+        )
+        self.assertFalse(s.is_valid())
+        self.assertIn("non_field_errors", s.errors)
+
+    def test_resource_tenant_org_id_omitted_is_valid(self):
+        """Test that omitting resource.tenant.org_id is valid."""
+        s = RoleBindingListInputSerializer(data={})
+        self.assertTrue(s.is_valid(), s.errors)
+        self.assertNotIn("resource_tenant_org_id", s.validated_data)
+
+    # --- granted_subject.principal.user_id (dotted query param) ---
+
+    def test_granted_subject_principal_user_id_accepted_via_dotted_key(self):
+        """Test that granted_subject.principal.user_id is remapped and accepted."""
+        s = RoleBindingListInputSerializer(
+            data={
+                "granted_subject_type": "principal",
+                "granted_subject.principal.user_id": "jsmith",
+            }
+        )
+        self.assertTrue(s.is_valid(), s.errors)
+        self.assertEqual(s.validated_data["granted_subject_principal_user_id"], "jsmith")
+
+    def test_granted_subject_principal_user_id_without_principal_type_is_invalid(self):
+        """Test that granted_subject.principal.user_id requires granted_subject_type=principal."""
+        s = RoleBindingListInputSerializer(
+            data={
+                "granted_subject_type": "user",
+                "granted_subject_id": str(uuid.uuid4()),
+                "granted_subject.principal.user_id": "jsmith",
+            }
+        )
+        self.assertFalse(s.is_valid())
+        self.assertIn("non_field_errors", s.errors)
+
+    def test_granted_subject_principal_user_id_alone_is_invalid(self):
+        """Test that granted_subject.principal.user_id without granted_subject_type is invalid."""
+        s = RoleBindingListInputSerializer(data={"granted_subject.principal.user_id": "jsmith"})
+        self.assertFalse(s.is_valid())
+        self.assertIn("non_field_errors", s.errors)
+
+    def test_granted_subject_principal_user_id_omitted_is_valid(self):
+        """Test that omitting granted_subject.principal.user_id is valid."""
+        s = RoleBindingListInputSerializer(data={})
+        self.assertTrue(s.is_valid(), s.errors)
+        self.assertNotIn("granted_subject_principal_user_id", s.validated_data)
+
+    # --- granted_subject_type=principal ---
+
+    def test_granted_subject_type_principal_accepted(self):
+        """Test that granted_subject_type=principal is valid."""
+        s = RoleBindingListInputSerializer(data={"granted_subject_type": "principal"})
+        self.assertTrue(s.is_valid(), s.errors)
+        self.assertEqual(s.validated_data["granted_subject_type"], "principal")
+
+    def test_granted_subject_type_principal_with_user_id(self):
+        """Test that granted_subject_type=principal with granted_subject.principal.user_id is valid."""
+        s = RoleBindingListInputSerializer(
+            data={
+                "granted_subject_type": "principal",
+                "granted_subject.principal.user_id": "jsmith",
+            }
+        )
+        self.assertTrue(s.is_valid(), s.errors)
+
+    def test_granted_subject_type_principal_without_user_id_is_valid(self):
+        """Test that granted_subject_type=principal without user_id is valid (future extensibility)."""
+        s = RoleBindingListInputSerializer(data={"granted_subject_type": "principal"})
+        self.assertTrue(s.is_valid(), s.errors)
+
+    def test_granted_subject_type_principal_with_subject_type_is_invalid(self):
+        """Test that granted_subject_type=principal cannot be combined with subject_type."""
+        s = RoleBindingListInputSerializer(
+            data={
+                "granted_subject_type": "principal",
+                "granted_subject.principal.user_id": "jsmith",
+                "subject_type": "group",
+            }
+        )
+        self.assertFalse(s.is_valid())
+        self.assertIn("non_field_errors", s.errors)
+
+    def test_granted_subject_type_user_without_id_is_valid(self):
+        """Test that granted_subject_type=user without granted_subject_id is accepted."""
+        s = RoleBindingListInputSerializer(data={"granted_subject_type": "user"})
+        self.assertTrue(s.is_valid(), s.errors)
+
+    def test_granted_subject_type_group_without_id_is_valid(self):
+        """Test that granted_subject_type=group without granted_subject_id is accepted."""
+        s = RoleBindingListInputSerializer(data={"granted_subject_type": "group"})
+        self.assertTrue(s.is_valid(), s.errors)
 
     # --- Combined ---
 
