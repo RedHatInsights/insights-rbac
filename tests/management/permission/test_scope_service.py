@@ -63,6 +63,14 @@ class ConstructTest(TestCase):
                     tenant_scope_permissions=["valid_app:resource:verb", permission],
                 )
 
+                self.assertRaises(
+                    ValueError,
+                    ImplicitResourceService,
+                    root_scope_permissions=[],
+                    tenant_scope_permissions=[],
+                    default_scope_permissions=["valid_app:resource:verb", permission],
+                )
+
     def test_construct_conflict(self):
         """Test that ImplicitResourceService cannot be constructed with conflicting assignments."""
         self.assertRaises(
@@ -70,6 +78,22 @@ class ConstructTest(TestCase):
             ImplicitResourceService,
             root_scope_permissions=["app:resource:verb"],
             tenant_scope_permissions=["app:resource:verb"],
+        )
+
+        self.assertRaises(
+            ValueError,
+            ImplicitResourceService,
+            root_scope_permissions=["app:resource:verb"],
+            tenant_scope_permissions=[],
+            default_scope_permissions=["app:resource:verb"],
+        )
+
+        self.assertRaises(
+            ValueError,
+            ImplicitResourceService,
+            root_scope_permissions=[],
+            tenant_scope_permissions=["app:resource:verb"],
+            default_scope_permissions=["app:resource:verb"],
         )
 
 
@@ -442,6 +466,42 @@ class ResourceTest(TestCase):
         )
 
 
+class RbacDefaultScopeV2ResourceTest(TestCase):
+    """v2_bound_resource_for_permission with rbac:*:* (tenant) and rbac:role_binding:* (default workspace)."""
+
+    org_id = "an_org"
+    root_id = "root_workspace"
+    default_id = "default_workspace"
+
+    def _service(self) -> ImplicitResourceService:
+        return ImplicitResourceService(
+            root_scope_permissions=[],
+            tenant_scope_permissions=["rbac:*:*"],
+            default_scope_permissions=["rbac:role_binding:*"],
+        )
+
+    def test_role_binding_only_binds_default_workspace(self):
+        result = self._service().v2_bound_resource_for_permission(
+            ["rbac:role_binding:read"],
+            tenant_org_id=self.org_id,
+            root_workspace_id=self.root_id,
+            default_workspace_id=self.default_id,
+        )
+        self.assertEqual(("rbac", "workspace"), result.resource_type)
+        self.assertEqual(self.default_id, result.resource_id)
+
+    @override_settings(PRINCIPAL_USER_DOMAIN="some_domain")
+    def test_mixed_rbac_permissions_bind_tenant(self):
+        result = self._service().v2_bound_resource_for_permission(
+            ["rbac:role_binding:read", "rbac:group:read"],
+            tenant_org_id=self.org_id,
+            root_workspace_id=self.root_id,
+            default_workspace_id=self.default_id,
+        )
+        self.assertEqual(("rbac", "tenant"), result.resource_type)
+        self.assertEqual(Tenant.org_id_to_tenant_resource_id(self.org_id), result.resource_id)
+
+
 class SettingsTest(TestCase):
     def test_settings_invalid(self):
         """Test that invalid settings are correctly rejected."""
@@ -454,6 +514,9 @@ class SettingsTest(TestCase):
                     self.assertRaises(ValueError, ImplicitResourceService.from_settings)
 
                 with override_settings(TENANT_SCOPE_PERMISSIONS=setting):
+                    self.assertRaises(ValueError, ImplicitResourceService.from_settings)
+
+                with override_settings(DEFAULT_SCOPE_PERMISSIONS=setting):
                     self.assertRaises(ValueError, ImplicitResourceService.from_settings)
 
     def test_empty(self):
@@ -469,7 +532,11 @@ class SettingsTest(TestCase):
 
         for setting in empty_settings:
             with self.subTest(setting=setting):
-                with override_settings(ROOT_SCOPE_PERMISSIONS=setting, TENANT_SCOPE_PERMISSIONS=setting):
+                with override_settings(
+                    ROOT_SCOPE_PERMISSIONS=setting,
+                    TENANT_SCOPE_PERMISSIONS=setting,
+                    DEFAULT_SCOPE_PERMISSIONS=setting,
+                ):
                     service = ImplicitResourceService.from_settings()
 
                     self.assertEqual(
@@ -499,6 +566,54 @@ class SettingsTest(TestCase):
                 Scope.TENANT,
                 service.scope_for_permission("tenant_app:resource:verb"),
             )
+
+    def test_default_scope_permissions_trim(self):
+        """Whitespace is trimmed for DEFAULT_SCOPE_PERMISSIONS like other scope settings."""
+        with override_settings(
+            ROOT_SCOPE_PERMISSIONS="",
+            TENANT_SCOPE_PERMISSIONS="",
+            DEFAULT_SCOPE_PERMISSIONS="\n  rbac:role_binding:*  \t",
+        ):
+            service = ImplicitResourceService.from_settings()
+            self.assertEqual(Scope.DEFAULT, service.scope_for_permission("rbac:role_binding:read"))
+
+    def test_rbac_tenant_wildcard_role_binding_default_workspace(self):
+        """Broad rbac tenant scope with a more specific default-workspace exception (explicit service)."""
+        service = ImplicitResourceService(
+            root_scope_permissions=[],
+            tenant_scope_permissions=["rbac:*:*"],
+            default_scope_permissions=["rbac:role_binding:*"],
+        )
+
+        self.assertEqual(Scope.DEFAULT, service.scope_for_permission("rbac:role_binding:read"))
+        self.assertEqual(Scope.DEFAULT, service.scope_for_permission("rbac:role_binding:*"))
+        self.assertEqual(Scope.TENANT, service.scope_for_permission("rbac:group:read"))
+        self.assertEqual(Scope.TENANT, service.scope_for_permission("rbac:role:read"))
+
+    def test_rbac_tenant_wildcard_role_binding_default_workspace_via_settings(self):
+        """Same as test_rbac_tenant_wildcard_role_binding_default_workspace using Django settings."""
+        with override_settings(
+            ROOT_SCOPE_PERMISSIONS="",
+            TENANT_SCOPE_PERMISSIONS="rbac:*:*",
+            DEFAULT_SCOPE_PERMISSIONS="rbac:role_binding:*",
+        ):
+            service = ImplicitResourceService.from_settings()
+
+            self.assertEqual(Scope.DEFAULT, service.scope_for_permission("rbac:role_binding:read"))
+            self.assertEqual(Scope.TENANT, service.scope_for_permission("rbac:group:read"))
+
+    def test_highest_scope_mixed_rbac_permissions(self):
+        """A role with both role_binding (default) and other rbac (tenant) scopes maps to tenant."""
+        service = ImplicitResourceService(
+            root_scope_permissions=[],
+            tenant_scope_permissions=["rbac:*:*"],
+            default_scope_permissions=["rbac:role_binding:*"],
+        )
+
+        self.assertEqual(
+            Scope.TENANT,
+            service.highest_scope_for_permissions(["rbac:role_binding:read", "rbac:group:read"]),
+        )
 
     def test_wildcard(self):
         """Test that wildcards are correctly parsed in settings."""

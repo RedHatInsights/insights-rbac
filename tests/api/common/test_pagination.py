@@ -16,15 +16,16 @@
 #
 """Test the API pagination module."""
 
+from datetime import timedelta
 from unittest.mock import Mock, patch
 from urllib.parse import parse_qs, urlparse
 
-from django.test import TestCase
 from django.contrib.auth.models import User
-from rest_framework.test import APIRequestFactory
-from rest_framework.request import Request
-
+from django.test import TestCase
+from django.utils import timezone
 from rest_framework.exceptions import ValidationError
+from rest_framework.request import Request
+from rest_framework.test import APIRequestFactory
 
 from api.common.pagination import PATH_INFO, StandardResultsSetPagination, V2CursorPagination, V2ResultsSetPagination
 
@@ -613,3 +614,247 @@ class V2CursorPaginationTest(TestCase):
         request = Request(self.factory.get("/api/rbac/v2/roles/"))
         ordering = paginator.get_ordering(request, self.queryset, None)
         self.assertEqual(ordering, ("name",))
+
+    @patch.object(V2CursorPagination, "_get_default_ordering", return_value="-date_joined")
+    def test_no_limit_returns_all_results(self, mock_ordering):
+        """Test that limit=-1 returns all results without pagination."""
+        request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?limit=-1"))
+        request.META[PATH_INFO] = "/api/rbac/v2/role-bindings/by-subject/"
+        paginated_queryset = self.paginator.paginate_queryset(self.queryset, request)
+
+        # Build response from actual paginated_queryset, not hard-coded data
+        serialized_data = [{"id": user.id} for user in paginated_queryset]
+        response = self.paginator.get_paginated_response(serialized_data)
+
+        # Should return all items
+        self.assertEqual(len(paginated_queryset), self.queryset.count())
+        # Response data length should match paginated queryset length
+        self.assertEqual(len(response.data["data"]), len(paginated_queryset))
+        # Meta limit should equal total count
+        self.assertEqual(response.data["meta"]["limit"], self.queryset.count())
+        # No pagination links
+        self.assertIsNone(response.data["links"]["next"])
+        self.assertIsNone(response.data["links"]["previous"])
+
+    @patch.object(V2CursorPagination, "_get_default_ordering", return_value="-date_joined")
+    def test_no_limit_empty_queryset(self, mock_ordering):
+        """Test that limit=-1 handles empty queryset correctly."""
+        request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?limit=-1"))
+        request.META[PATH_INFO] = "/api/rbac/v2/role-bindings/by-subject/"
+        empty_queryset = User.objects.none()
+
+        paginated_queryset = self.paginator.paginate_queryset(empty_queryset, request)
+
+        # Build response from actual paginated_queryset to ensure alignment
+        serialized_data = list(paginated_queryset)
+        response = self.paginator.get_paginated_response(serialized_data)
+
+        # Should return no items
+        self.assertEqual(len(paginated_queryset), 0)
+        # Response data length should match paginated queryset length
+        self.assertEqual(len(response.data["data"]), len(paginated_queryset))
+        # Meta limit should be 0
+        self.assertEqual(response.data["meta"]["limit"], 0)
+        # No pagination links
+        self.assertIsNone(response.data["links"]["next"])
+        self.assertIsNone(response.data["links"]["previous"])
+
+    @patch.object(V2CursorPagination, "_get_default_ordering", return_value="-date_joined")
+    def test_normal_limit_5_still_works(self, mock_ordering):
+        """Test that limit=5 still works with normal pagination."""
+        request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?limit=5"))
+        request.META[PATH_INFO] = "/api/rbac/v2/role-bindings/by-subject/"
+        paginated_queryset = self.paginator.paginate_queryset(self.queryset, request)
+
+        # Build response from actual paginated_queryset
+        serialized_data = [{"id": user.id} for user in paginated_queryset]
+        response = self.paginator.get_paginated_response(serialized_data)
+
+        # Should return only 5 items (uses normal cursor pagination)
+        self.assertEqual(len(paginated_queryset), 5)
+        # Response data length should match paginated queryset length
+        self.assertEqual(len(response.data["data"]), len(paginated_queryset))
+        # Meta limit should be 5
+        self.assertEqual(response.data["meta"]["limit"], 5)
+        # Should have pagination links (next link exists since we have 25 total)
+        self.assertIsNotNone(response.data["links"]["next"])
+        # Previous should be None on first page
+        self.assertIsNone(response.data["links"]["previous"])
+
+    @patch.object(V2CursorPagination, "_get_default_ordering", return_value="-date_joined")
+    def test_normal_limit_20_still_works(self, mock_ordering):
+        """Test that limit=20 still works with normal pagination."""
+        request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?limit=20"))
+        request.META[PATH_INFO] = "/api/rbac/v2/role-bindings/by-subject/"
+        paginated_queryset = self.paginator.paginate_queryset(self.queryset, request)
+
+        # Build response from actual paginated_queryset
+        serialized_data = [{"id": user.id} for user in paginated_queryset]
+        response = self.paginator.get_paginated_response(serialized_data)
+
+        # Should return 20 items
+        self.assertEqual(len(paginated_queryset), 20)
+        # Response data length should match paginated queryset length
+        self.assertEqual(len(response.data["data"]), len(paginated_queryset))
+        # Meta limit should be 20
+        self.assertEqual(response.data["meta"]["limit"], 20)
+        # Should have next link since we have 25 total
+        self.assertIsNotNone(response.data["links"]["next"])
+
+    @patch.object(V2CursorPagination, "_get_default_ordering", return_value="-date_joined")
+    def test_default_limit_still_works(self, mock_ordering):
+        """Test that default pagination is NOT overridden when no limit param provided.
+
+        This verifies that limit=-1 only affects behavior when explicitly requested,
+        and default pagination (limit=10) is preserved when no limit is specified.
+        """
+        request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/"))
+        request.META[PATH_INFO] = "/api/rbac/v2/role-bindings/by-subject/"
+        paginated_queryset = self.paginator.paginate_queryset(self.queryset, request)
+
+        # Build response from actual paginated_queryset
+        serialized_data = [{"id": user.id} for user in paginated_queryset]
+        response = self.paginator.get_paginated_response(serialized_data)
+
+        # Should return default page size (10), NOT all results
+        self.assertEqual(len(paginated_queryset), 10)
+        # Response data length should match paginated queryset length
+        self.assertEqual(len(response.data["data"]), len(paginated_queryset))
+        # Meta limit should be 10 (default), NOT len(data)
+        self.assertEqual(response.data["meta"]["limit"], 10)
+        # Should have pagination links (next link exists since we have 25 total)
+        self.assertIsNotNone(response.data["links"]["next"])
+
+    def test_ordering_applied_with_limit_minus_one_default(self):
+        """Test that default ordering is applied when limit=-1."""
+        # Create users with specific date_joined values to test ordering
+        User.objects.filter(username__startswith="order_default_").delete()
+        now = timezone.now()
+
+        # Create 5 users with different join dates
+        user1 = User.objects.create(username="order_default_oldest", date_joined=now - timedelta(days=5))
+        user2 = User.objects.create(username="order_default_old", date_joined=now - timedelta(days=3))
+        user3 = User.objects.create(username="order_default_middle", date_joined=now - timedelta(days=2))
+        user4 = User.objects.create(username="order_default_new", date_joined=now - timedelta(days=1))
+        user5 = User.objects.create(username="order_default_newest", date_joined=now)
+
+        queryset = User.objects.filter(username__startswith="order_default_")
+
+        # Test with default ordering (should use -date_joined from _get_default_ordering)
+        paginator = V2CursorPagination()
+        request = Request(self.factory.get("/api/rbac/v2/role-bindings/by-subject/?limit=-1"))
+        request.META[PATH_INFO] = "/api/rbac/v2/role-bindings/by-subject/"
+
+        with patch.object(V2CursorPagination, "_get_default_ordering", return_value="-date_joined"):
+            paginated_queryset = paginator.paginate_queryset(queryset, request)
+
+        # Should return all 5 users
+        self.assertEqual(len(paginated_queryset), 5)
+
+        # Should be ordered by date_joined descending (newest first)
+        self.assertEqual(paginated_queryset[0].id, user5.id)  # newest
+        self.assertEqual(paginated_queryset[1].id, user4.id)
+        self.assertEqual(paginated_queryset[2].id, user3.id)
+        self.assertEqual(paginated_queryset[3].id, user2.id)
+        self.assertEqual(paginated_queryset[4].id, user1.id)  # oldest
+
+        # Cleanup
+        User.objects.filter(username__startswith="order_default_").delete()
+
+    def test_ordering_applied_with_limit_minus_one_custom_ascending(self):
+        """Test that custom ascending ordering is applied when limit=-1."""
+        # Create users with specific usernames to test ordering
+        user_c = User.objects.create(username="order_asc_charlie")
+        user_a = User.objects.create(username="order_asc_alice")
+        user_b = User.objects.create(username="order_asc_bob")
+
+        queryset = User.objects.filter(username__startswith="order_asc_")
+
+        # Test with custom ascending ordering
+        paginator = V2CursorPagination()
+        paginator.FIELD_MAPPING = {"name": "username"}  # For simple test
+        request = Request(self.factory.get("/api/rbac/v2/roles/?limit=-1&order_by=name"))
+        request.META[PATH_INFO] = "/api/rbac/v2/roles/"
+
+        paginated_queryset = paginator.paginate_queryset(queryset, request)
+
+        # Should return all 3 users
+        self.assertEqual(len(paginated_queryset), 3)
+
+        # Should be ordered by username ascending
+        self.assertEqual(paginated_queryset[0].id, user_a.id)  # alice
+        self.assertEqual(paginated_queryset[1].id, user_b.id)  # bob
+        self.assertEqual(paginated_queryset[2].id, user_c.id)  # charlie
+
+        # Cleanup
+        User.objects.filter(username__startswith="order_asc_").delete()
+
+    def test_ordering_applied_with_limit_minus_one_custom_descending(self):
+        """Test that custom descending ordering is applied when limit=-1."""
+        # Create users with specific usernames to test ordering
+        user_c = User.objects.create(username="order_desc_charlie")
+        user_a = User.objects.create(username="order_desc_alice")
+        user_b = User.objects.create(username="order_desc_bob")
+
+        queryset = User.objects.filter(username__startswith="order_desc_")
+
+        # Test with custom descending ordering
+        paginator = V2CursorPagination()
+        paginator.FIELD_MAPPING = {"name": "username"}  # For simple test
+        request = Request(self.factory.get("/api/rbac/v2/roles/?limit=-1&order_by=-name"))
+        request.META[PATH_INFO] = "/api/rbac/v2/roles/"
+
+        paginated_queryset = paginator.paginate_queryset(queryset, request)
+
+        # Should return all 3 users
+        self.assertEqual(len(paginated_queryset), 3)
+
+        # Should be ordered by username descending
+        self.assertEqual(paginated_queryset[0].id, user_c.id)  # charlie
+        self.assertEqual(paginated_queryset[1].id, user_b.id)  # bob
+        self.assertEqual(paginated_queryset[2].id, user_a.id)  # alice
+
+        # Cleanup
+        User.objects.filter(username__startswith="order_desc_").delete()
+
+    def test_ordering_applied_with_limit_minus_one_multiple_fields(self):
+        """Test that multiple order_by fields are applied when limit=-1."""
+        # Create users to test multiple field ordering
+        # Secondary sort only applies when primary field values are equal
+        now = timezone.now()
+
+        # Create users where first name is same, last name differs
+        # We'll use email as a tie-breaker since username must be unique
+        user1 = User.objects.create(
+            username="order_multi_user1", email="alice@example.com", date_joined=now - timedelta(days=3)
+        )
+        user2 = User.objects.create(
+            username="order_multi_user2",
+            email="alice@example.com",  # Same email
+            date_joined=now - timedelta(days=1),  # Newer
+        )
+        user3 = User.objects.create(
+            username="order_multi_user3", email="bob@example.com", date_joined=now - timedelta(days=2)
+        )
+
+        queryset = User.objects.filter(username__startswith="order_multi_")
+
+        # Test with multiple ordering fields: email asc, then date_joined desc
+        paginator = V2CursorPagination()
+        paginator.FIELD_MAPPING = {"name": "email", "last_modified": "date_joined"}
+        request = Request(self.factory.get("/api/rbac/v2/roles/?limit=-1&order_by=name,-last_modified"))
+        request.META[PATH_INFO] = "/api/rbac/v2/roles/"
+
+        paginated_queryset = paginator.paginate_queryset(queryset, request)
+
+        # Should return all 3 users
+        self.assertEqual(len(paginated_queryset), 3)
+
+        # Should be ordered by email asc, then date_joined desc
+        # For same email (alice@example.com), newer user2 comes before older user1
+        self.assertEqual(paginated_queryset[0].id, user2.id)  # alice, newer (1 day ago)
+        self.assertEqual(paginated_queryset[1].id, user1.id)  # alice, older (3 days ago)
+        self.assertEqual(paginated_queryset[2].id, user3.id)  # bob
+
+        # Cleanup
+        User.objects.filter(username__startswith="order_multi_").delete()

@@ -145,6 +145,26 @@ class RoleV2RetrieveViewTest(IdentityRequest):
         permission_strings = {f"{p['application']}:{p['resource_type']}:{p['operation']}" for p in data["permissions"]}
         self.assertEqual(permission_strings, {"inventory:hosts:read", "inventory:hosts:write"})
 
+    @override_settings(V2_MIGRATION_APP_EXCLUDE_LIST=["cost"])
+    def test_retrieve_excluded_app_role_returns_404(self):
+        """Test that retrieving a role whose permissions are all from an excluded app returns 404."""
+        from management.role.v2_role_scope import v2_role_excluded_application_permission_ids_cache
+
+        v2_role_excluded_application_permission_ids_cache.invalidate()
+        try:
+            excluded_role = CustomRoleV2.objects.create(
+                name="Excluded App Role",
+                description="Has only excluded-app permissions",
+                tenant=self.tenant,
+            )
+            excluded_role.permissions.add(self.permission3)  # cost:reports:read
+
+            url = self._get_role_url(excluded_role.uuid)
+            response = self.client.get(url, **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        finally:
+            v2_role_excluded_application_permission_ids_cache.invalidate()
+
     def test_retrieve_platform_role_returns_404(self):
         """Test that retrieving a platform role returns 404 (platform roles are not exposed)."""
         url = self._get_role_url(self.platform_role.uuid)
@@ -728,6 +748,55 @@ class RoleV2ViewSetTests(IdentityRequest):
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIsNone(response.data["links"]["previous"])
+
+    def test_list_roles_with_limit_minus_one_returns_all(self):
+        """Test that limit=-1 returns all roles without pagination."""
+        # Create additional roles
+        for i in range(15):
+            RoleV2.objects.create(name=f"role_{i}", description=f"Role {i}", tenant=self.tenant)
+
+        url = f"{self.list_url}&limit=-1"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Should return all roles (16 total: 1 from setUp + 15 created)
+        self.assertEqual(len(response.data["data"]), 16)
+        # Meta limit should equal the total count
+        self.assertEqual(response.data["meta"]["limit"], 16)
+        # No pagination links when returning all results
+        self.assertIsNone(response.data["links"]["next"])
+        self.assertIsNone(response.data["links"]["previous"])
+
+    def test_list_roles_normal_limits_still_work_after_limit_minus_one_added(self):
+        """Test that various normal limit values still work correctly."""
+        # Create additional roles for testing
+        for i in range(20):
+            RoleV2.objects.create(name=f"role_{i}", description=f"Role {i}", tenant=self.tenant)
+
+        # Test limit=5
+        url = f"{self.list_url}&limit=5"
+        response = self.client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 5)
+        self.assertEqual(response.data["meta"]["limit"], 5)
+        # Should have next link since there are 21 total roles
+        self.assertIsNotNone(response.data["links"]["next"])
+
+        # Test limit=10
+        url = f"{self.list_url}&limit=10"
+        response = self.client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 10)
+        self.assertEqual(response.data["meta"]["limit"], 10)
+        self.assertIsNotNone(response.data["links"]["next"])
+
+        # Test limit=15
+        url = f"{self.list_url}&limit=15"
+        response = self.client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 15)
+        self.assertEqual(response.data["meta"]["limit"], 15)
+        self.assertIsNotNone(response.data["links"]["next"])
 
     def test_list_roles_with_empty_name_filter(self):
         """Test that empty name filter returns all roles."""

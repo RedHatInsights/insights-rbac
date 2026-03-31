@@ -160,16 +160,30 @@ class ImplicitResourceService:
 
     _permissions_map: dict[PermissionValue, Scope]
 
-    def __init__(self, root_scope_permissions: list[str], tenant_scope_permissions: list[str]):
+    def __init__(
+        self,
+        root_scope_permissions: list[str],
+        tenant_scope_permissions: list[str],
+        default_scope_permissions: list[str] | None = None,
+    ):
         """
-        Create an ImplicitResourceService with specific root and tenant scope permissions.
+        Create an ImplicitResourceService with specific root, tenant, and default workspace scope permissions.
 
         root_scope_permissions is a set of permissions assigned to the root workspace scope.
         tenant_scope_permissions is a set of permissions assigned to tenant scope.
+        default_scope_permissions is a set of permissions assigned to the default workspace scope.
 
-        Both sets of permissions are represented as V1 permission strings (valid for _PermissionDescriptor.parse_v1).
-        Both sets may contain wildcards.
+        All sets are represented as V1 permission strings (valid for _PermissionDescriptor.parse_v1).
+        All sets may contain wildcards.
+
+        For a given permission, scope_for_permission checks more specific wildcard candidates before broader
+        ones (see scope_for_permission). Listing both ``rbac:*:*`` in tenant_scope_permissions and
+        ``rbac:role_binding:*`` in default_scope_permissions therefore binds role_binding at default workspace
+        and other rbac permissions at tenant scope.
         """
+        if default_scope_permissions is None:
+            default_scope_permissions = []
+
         self._permissions_map = {}
 
         def add_permission(permission: PermissionValue, scope: Scope):
@@ -189,13 +203,17 @@ class ImplicitResourceService:
         for permission_str in tenant_scope_permissions:
             add_permission(PermissionValue.parse_v1(permission_str), Scope.TENANT)
 
+        for permission_str in default_scope_permissions:
+            add_permission(PermissionValue.parse_v1(permission_str), Scope.DEFAULT)
+
     @classmethod
     def from_settings(cls) -> "ImplicitResourceService":
         """
         Create an ImplicitResourceService from the configuration in settings.
 
         Root workspace permissions are determined from the ROOT_SCOPE_PERMISSIONS setting. Tenant permissions are
-        determined from the TENANT_SCOPE_PERMISSIONS setting.
+        determined from the TENANT_SCOPE_PERMISSIONS setting. Default workspace permissions are determined from the
+        DEFAULT_SCOPE_PERMISSIONS setting.
 
         Each setting must be a comma-separated list of V1 permissions strings (as if for
         _PermissionDescriptor.parse_v1); spaces are trimmed from the start and each of each permission. An empty (or
@@ -211,6 +229,7 @@ class ImplicitResourceService:
         return cls(
             root_scope_permissions=parse_setting(settings.ROOT_SCOPE_PERMISSIONS),
             tenant_scope_permissions=parse_setting(settings.TENANT_SCOPE_PERMISSIONS),
+            default_scope_permissions=parse_setting(settings.DEFAULT_SCOPE_PERMISSIONS),
         )
 
     def scope_for_permission(self, permission: str) -> Scope:
@@ -225,7 +244,8 @@ class ImplicitResourceService:
         2. Wildcard app:resource_type:* match.
         3. Wildcard app:*:verb match.
         4. Wildcard app:*:* match.
-        5. Finally, if no match exists, the DEFAULT scope.
+        5. Finally, if no match exists, the DEFAULT scope (including explicit patterns from default_scope_permissions
+        / DEFAULT_SCOPE_PERMISSIONS when they match a candidate).
 
         Note that, if the permission is a wildcard, some of these steps will be redundant. For instance,
         if the permission is app:*:verb, there are only two possible matches: app:*:verb and app:*:*.

@@ -91,12 +91,44 @@ class RoleBindingListInputSerializer(RoleBindingInputSerializerMixin, serializer
     """
 
     role_id = serializers.UUIDField(required=False, help_text="Filter by role ID")
-    resource_id = serializers.UUIDField(required=False, help_text="Filter by resource ID")
+    resource_id = serializers.CharField(required=False, max_length=256, help_text="Filter by resource ID")
     resource_type = serializers.CharField(required=False, help_text="Filter by resource type")
     subject_type = serializers.CharField(required=False, help_text="Filter by subject type")
     subject_id = serializers.UUIDField(required=False, help_text="Filter by subject ID")
+    granted_subject_type = serializers.CharField(
+        required=False,
+        help_text="Filter by the type of subject effectively granted access ('user' or 'group')",
+    )
+    granted_subject_id = serializers.CharField(
+        required=False,
+        help_text="ID of the subject effectively granted access (principal UUID, user_id, or group UUID)",
+    )
     fields = serializers.CharField(required=False, help_text="Control which fields are included")
     order_by = serializers.CharField(required=False, help_text="Sort by specified field(s)")
+
+    def validate(self, attrs):
+        """Cross-field validation for granted_subject and subject params."""
+        attrs = super().validate(attrs)
+
+        granted_type = attrs.get("granted_subject_type")
+        granted_id = attrs.get("granted_subject_id")
+
+        if bool(granted_type) != bool(granted_id):
+            raise serializers.ValidationError(
+                "Both granted_subject_type and granted_subject_id must be provided together."
+            )
+
+        if granted_type:
+            if not SubjectType.is_valid(granted_type):
+                raise serializers.ValidationError(
+                    f"granted_subject_type must be one of: {', '.join(SubjectType.values())}."
+                )
+            if attrs.get("subject_type") or attrs.get("subject_id"):
+                raise serializers.ValidationError(
+                    "granted_subject_type/granted_subject_id cannot be combined with subject_type/subject_id."
+                )
+
+        return attrs
 
 
 class RoleBindingInputSerializer(serializers.Serializer):
@@ -538,7 +570,8 @@ class RoleBindingListOutputSerializer(RoleBindingOutputSerializerMixin, serializ
     Field selection syntax:
     - subject(group.name, group.description) - accesses obj.name, obj.description
     - role(name) - accesses role.name
-    - resource(type) - accesses resource type from the binding
+    - resource(name, type) - display name via ``RoleBindingQuerySet.with_resource_names()`` annotation;
+      type from the binding
     """
 
     subject = serializers.SerializerMethodField()
@@ -596,14 +629,19 @@ class RoleBindingListOutputSerializer(RoleBindingOutputSerializerMixin, serializ
 
         Default (no fields param): Returns only resource id.
         With fields param: id is always included, plus explicitly requested fields.
+        ``name`` requires the queryset to have been annotated via
+        ``RoleBindingQuerySet.with_resource_names()``.
         """
         field_selection = self._get_field_selection()
 
         resource_data = {"id": obj.resource_id}
 
         if field_selection is not None:
-            if "type" in field_selection.get_nested("resource"):
+            nested_resource = field_selection.get_nested("resource")
+            if "type" in nested_resource:
                 resource_data["type"] = obj.resource_type
+            if "name" in nested_resource:
+                resource_data["name"] = getattr(obj, "resource_name", None)
 
         return resource_data
 
@@ -611,7 +649,7 @@ class RoleBindingListOutputSerializer(RoleBindingOutputSerializerMixin, serializ
 class ResourceInputSerializer(serializers.Serializer):
     """Validates the resource portion of a role binding request."""
 
-    id = serializers.UUIDField(help_text="UUID of the resource")
+    id = serializers.CharField(max_length=256, help_text="ID of the resource")
     type = serializers.CharField(help_text="Type of resource")
 
 
@@ -844,17 +882,6 @@ class UpdateRoleBindingRequestSerializer(RoleBindingInputSerializerMixin, serial
             return RoleBindingBySubjectFieldSelection.parse(value)
         except FieldSelectionValidationError as e:
             raise serializers.ValidationError(e.message)
-
-    def validate_roles(self, value):
-        """Validate that at least one role is provided.
-
-        Custom validator instead of allow_empty=False so the error surfaces as
-        field="roles" with a clear message, rather than DRF's default
-        field="roles.non_field_errors" / "This list may not be empty."
-        """
-        if not value:
-            raise serializers.ValidationError("At least one role is required.")
-        return value
 
     def validate_subject_type(self, value):
         """Validate subject_type is a supported enum value."""

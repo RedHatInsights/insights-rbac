@@ -71,3 +71,15 @@ class RoleV2QuerySet(models.QuerySet):
         if "*" in name:
             return self.filter(name__iregex=_glob_to_regex(name))
         return self.filter(name__iexact=name)
+
+    def excluding_out_of_scope_v2_roles(self):
+        """Exclude roles that include any permission from a migration-excluded application.
+
+        Uses cached permission PKs; see ``v2_role_excluded_application_permission_ids_cache``.
+        """
+        from management.role.v2_role_scope import v2_role_excluded_application_permission_ids_cache
+
+        perm_ids = v2_role_excluded_application_permission_ids_cache.permission_ids()
+        if not perm_ids:
+            return self
+        return self.exclude(permissions__id__in=perm_ids).distinct()

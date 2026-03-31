@@ -22,7 +22,7 @@ from typing import Optional, Sequence
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import CharField, Count, Max, Min, Prefetch, Q, QuerySet, TextChoices
+from django.db.models import CharField, Count, Exists, Max, Min, OuterRef, Prefetch, Q, QuerySet, TextChoices
 from django.db.models.functions import Cast
 from management.atomic_transactions import atomic
 from management.exceptions import InvalidFieldError, NotFoundError, RequiredFieldError
@@ -85,12 +85,24 @@ class CreateBindingRequest:
     subject_id: str
 
 
+API_PRINCIPAL_SOURCE = "v2_api"
+
+
 class RoleBindingService:
     """Service for role binding queries and operations."""
 
-    def __init__(self, tenant: Tenant, replicator: RelationReplicator | None = None):
+    def __init__(
+        self,
+        tenant: Tenant,
+        replicator: RelationReplicator | None = None,
+        principal_source: str = API_PRINCIPAL_SOURCE,
+        allow_external_subjects: bool = False,
+    ):
         """Initialize the service with a tenant and optional replicator."""
         self.tenant = tenant
+        self._principal_source = principal_source
+        self._allow_external_subjects = allow_external_subjects
+
         if settings.REPLICATION_TO_RELATION_ENABLED:
             self._replicator = replicator if replicator is not None else OutboxReplicator()
         else:
@@ -188,6 +200,9 @@ class RoleBindingService:
         """Create multiple role bindings."""
         ensure_v2_write_activated(self.tenant)
 
+        if len(requests) == 0:
+            raise RequiredFieldError("requests")
+
         roles = self._get_roles(list({req.role_id for req in requests}))
         roles_by_uuid = {str(r.uuid): r for r in roles}
         roles_by_id = {r.id: r for r in roles}
@@ -244,6 +259,15 @@ class RoleBindingService:
             raise NotFoundError(SubjectType.USER, ", ".join(missing))
 
         return {**groups_by_uuid, **principals_by_uuid}
+
+    def _validate_subject(self, subject: Group | Principal):
+        if not (isinstance(subject, Group) or isinstance(subject, Principal)):
+            raise TypeError(f"Unexpected subject: {subject!r}")
+
+        if not self._allow_external_subjects:
+            if subject.tenant_id != self.tenant.id:
+                subject_type = SubjectType.GROUP if isinstance(subject, Group) else SubjectType.USER
+                raise NotFoundError(subject_type, str(subject.uuid))
 
     @staticmethod
     def _group_by_subject_resource(
@@ -308,8 +332,12 @@ class RoleBindingService:
 
         # Get groups that have bindings matching our filter.
         # This includes tenant-specific groups and public tenant default groups.
-        # No tenant filter needed since resource_id is tenant-specific.
         queryset = Group.objects.filter(binding_filter).distinct()
+
+        if not self._allow_external_subjects:
+            queryset = queryset.filter(
+                Q(tenant=self.tenant) | Q(platform_default=True, system=True) | Q(admin_default=True, system=True)
+            )
 
         # Annotate with principal count
         queryset = queryset.annotate(
@@ -358,7 +386,7 @@ class RoleBindingService:
             )
 
         queryset = queryset.annotate(
-            latest_modified=Max("role_binding_entries__binding__role__modified", filter=latest_modified_filter)
+            latest_modified=Max("role_binding_entries__created", filter=latest_modified_filter)
         )
 
         queryset = self._annotate_role_fields_for_cursor(queryset, latest_modified_filter)
@@ -417,6 +445,28 @@ class RoleBindingService:
 
         return queryset
 
+    def _build_binding_filter(
+        self,
+        resource_id: str,
+        resource_type: str,
+        binding_uuids: Optional[Sequence[str]] = None,
+        exclude_direct: bool = False,
+    ) -> Q:
+        direct_filter = Q(resource_type=resource_type, resource_id=resource_id)
+
+        if binding_uuids is not None:
+            indirect_filter = Q(uuid__in=binding_uuids)
+
+            if exclude_direct:
+                return indirect_filter & ~direct_filter
+            else:
+                return indirect_filter | direct_filter
+        else:
+            if exclude_direct:
+                raise ValueError("Cannot have exclude_direct be True when no binding_uuids are provided.")
+
+            return direct_filter
+
     def _build_user_queryset(
         self,
         resource_id: str,
@@ -441,85 +491,59 @@ class RoleBindingService:
         if exclude_direct and binding_uuids is None:
             # Relations API failed — cannot determine inherited bindings, return empty
             return Principal.objects.none()
-        elif exclude_direct and binding_uuids is not None:
-            # Only inherited bindings by UUID (exclude direct)
-            binding_filter = Q(role_binding_entries__binding__uuid__in=binding_uuids) & ~Q(
-                role_binding_entries__binding__resource_type=resource_type,
-                role_binding_entries__binding__resource_id=resource_id,
-            )
-        elif binding_uuids is not None:
-            # Both direct and inherited bindings (exclude_sources=none)
-            binding_filter = Q(
-                role_binding_entries__binding__resource_type=resource_type,
-                role_binding_entries__binding__resource_id=resource_id,
-            ) | Q(role_binding_entries__binding__uuid__in=binding_uuids)
-        else:
-            # Only direct bindings (exclude_sources=indirect)
-            binding_filter = Q(
-                role_binding_entries__binding__resource_type=resource_type,
-                role_binding_entries__binding__resource_id=resource_id,
-            )
 
-        # Get users who have role bindings matching our filter
-        queryset = Principal.objects.filter(
-            binding_filter,
-            tenant=self.tenant,
-            type=Principal.Types.USER,
-        ).distinct()
-
-        # Prefetch role bindings for this resource
-        # Include inherited bindings when binding_uuids is provided
-        if binding_uuids:
-            binding_prefetch_filter = Q(resource_type=resource_type, resource_id=resource_id) | Q(
-                uuid__in=binding_uuids
-            )
-            join_table_filter = Q(binding__resource_type=resource_type, binding__resource_id=resource_id) | Q(
-                binding__uuid__in=binding_uuids
-            )
-        else:
-            binding_prefetch_filter = Q(resource_type=resource_type, resource_id=resource_id)
-            join_table_filter = Q(binding__resource_type=resource_type, binding__resource_id=resource_id)
-
-        binding_queryset = (
-            RoleBinding.objects.filter(binding_prefetch_filter)
-            .select_related("role")
-            .prefetch_related("role__children")
+        binding_filter = self._build_binding_filter(
+            resource_id=resource_id,
+            resource_type=resource_type,
+            binding_uuids=binding_uuids,
+            exclude_direct=exclude_direct,
         )
 
+        principal_entry_filter = Q(
+            source=self._principal_source,
+            binding__in=RoleBinding.objects.filter(binding_filter),
+        )
+
+        # Get users who have role bindings matching our filter
+        principal_queryset = Principal.objects.filter(
+            Exists(RoleBindingPrincipal.objects.filter(principal=OuterRef("pk")).filter(principal_entry_filter)),
+        ).distinct()
+
+        # Always filter to USER type (this endpoint is for user subjects only)
+        principal_queryset = principal_queryset.filter(type=Principal.Types.USER)
+
+        if not self._allow_external_subjects:
+            principal_queryset = principal_queryset.filter(tenant=self.tenant)
+
         # Prefetch RoleBindingPrincipal entries with their bindings
-        rolebinding_principal_queryset = RoleBindingPrincipal.objects.filter(join_table_filter).prefetch_related(
-            Prefetch("binding", queryset=binding_queryset)
+        principal_entry_queryset = RoleBindingPrincipal.objects.filter(principal_entry_filter).prefetch_related(
+            Prefetch("binding", queryset=RoleBinding.objects.select_related("role").prefetch_related("role__children"))
         )
 
         # Prefetch role_binding_entries on Principal
-        queryset = queryset.prefetch_related(
+        principal_queryset = principal_queryset.prefetch_related(
             Prefetch(
                 "role_binding_entries",
-                queryset=rolebinding_principal_queryset,
+                queryset=principal_entry_queryset,
                 to_attr="filtered_bindings",
             )
         )
 
         # Annotate with latest modified timestamp from roles
-        # Include inherited bindings when binding_uuids is provided
-        if binding_uuids:
-            latest_modified_filter = Q(
-                role_binding_entries__binding__resource_type=resource_type,
-                role_binding_entries__binding__resource_id=resource_id,
-            ) | Q(role_binding_entries__binding__uuid__in=binding_uuids)
-        else:
-            latest_modified_filter = Q(
-                role_binding_entries__binding__resource_type=resource_type,
-                role_binding_entries__binding__resource_id=resource_id,
-            )
-
-        queryset = queryset.annotate(
-            latest_modified=Max("role_binding_entries__binding__role__modified", filter=latest_modified_filter)
+        latest_modified_filter = Q(
+            role_binding_entries__in=RoleBindingPrincipal.objects.filter(principal_entry_filter)
         )
 
-        queryset = self._annotate_role_fields_for_cursor(queryset, latest_modified_filter)
+        principal_queryset = principal_queryset.annotate(
+            latest_modified=Max(
+                "role_binding_entries__created",
+                filter=latest_modified_filter,
+            )
+        )
 
-        return queryset
+        principal_queryset = self._annotate_role_fields_for_cursor(principal_queryset, latest_modified_filter)
+
+        return principal_queryset
 
     def _apply_user_filters(
         self,
@@ -841,6 +865,7 @@ class RoleBindingService:
         roles = self._get_roles(role_ids)
 
         subject = Subject.objects.by_type(type=subject_type, id=subject_id)
+        self._validate_subject(subject.entity)
 
         self._replace_role_bindings(
             resource_type=resource_type,
@@ -906,15 +931,16 @@ class RoleBindingService:
 
         Uses RoleV2.objects.assignable() to filter to roles that can be
         assigned to bindings (custom + seeded, not platform).
+        Also excludes roles with permissions from migration-excluded applications.
+        Empty role_ids is valid and returns [] to support removing all bindings.
 
         Raises:
-            RequiredFieldError: If role_ids is empty
             InvalidFieldError: If any requested role UUIDs don't exist or aren't assignable
         """
         if not role_ids:
-            raise RequiredFieldError("roles")
+            return []
 
-        roles = list(RoleV2.objects.filter(uuid__in=role_ids).assignable())
+        roles = list(RoleV2.objects.filter(uuid__in=role_ids).assignable().excluding_out_of_scope_v2_roles())
 
         found_ids = {str(r.uuid) for r in roles}
         requested_ids = set(role_ids)
@@ -932,6 +958,8 @@ class RoleBindingService:
         subject: Group | Principal,
         roles: Sequence[RoleV2],
     ) -> None:
+        self._validate_subject(subject)
+
         """Replace all role bindings for a subject on a resource.
 
         Computes the diff between current and desired roles, then only
@@ -952,7 +980,9 @@ class RoleBindingService:
         if isinstance(subject, Group):
             current_bindings = current_bindings.filter(group_entries__group=subject)
         else:
-            current_bindings = current_bindings.filter(principal_entries__principal=subject)
+            current_bindings = current_bindings.filter(
+                principal_entries__principal=subject, principal_entries__source=self._principal_source
+            )
 
         # 2. Compute the diff
         current_role_ids = {b.role_id for b in current_bindings}
@@ -1002,6 +1032,8 @@ class RoleBindingService:
         subject: Group | Principal,
         bindings: Sequence[RoleBinding],
     ) -> tuple[list[RoleBinding], list[RoleBinding]]:
+        self._validate_subject(subject)
+
         """Remove a subject from bindings, cleaning up orphaned bindings.
 
         Returns:
@@ -1015,14 +1047,30 @@ class RoleBindingService:
         if isinstance(subject, Group):
             RoleBindingGroup.objects.filter(group=subject, binding_id__in=binding_ids).delete()
         else:
-            RoleBindingPrincipal.objects.filter(principal=subject, binding_id__in=binding_ids).delete()
+            RoleBindingPrincipal.objects.filter(
+                principal=subject, binding_id__in=binding_ids, source=self._principal_source
+            ).delete()
 
         # 2. Cleanup: delete any bindings that are now orphaned
         orphaned = list(RoleBinding.objects.filter(id__in=binding_ids).orphaned())
-        if orphaned:
-            RoleBinding.objects.filter(id__in=[b.id for b in orphaned]).delete()
 
-        return orphaned, list(bindings)
+        if orphaned:
+            RoleBinding.objects.filter(pk__in=[b.pk for b in orphaned]).delete()
+
+        if isinstance(subject, Group):
+            # We always remove all group entries, so all provided bindings will be unlinked.
+            unlinked = list(bindings)
+        else:
+            # For principals, it's possible that another entry exists with a source that we cannot remove,
+            # so the principal may not have become unlinked from all the provided bindings.
+            #
+            # A binding that is fully removed has still been "unlinked" from its subject, so we need to include it
+            # here. (Otherwise, we will not actually remove the relevant subject relation.)
+            unlinked = orphaned + list(
+                RoleBinding.objects.filter(id__in=binding_ids).exclude(principal_entries__principal=subject)
+            )
+
+        return orphaned, unlinked
 
     def _add_access(
         self,
@@ -1032,6 +1080,8 @@ class RoleBindingService:
         roles_by_id: dict,
         role_ids: set,
     ) -> tuple[list[RoleBinding], list[RoleBinding]]:
+        self._validate_subject(subject)
+
         """Create or find bindings for roles and link the subject.
 
         Uses bulk operations to minimise DB round-trips:
@@ -1075,7 +1125,7 @@ class RoleBindingService:
             )
         else:
             RoleBindingPrincipal.objects.bulk_create(
-                [RoleBindingPrincipal(binding=b, principal=subject, source="v2_api") for b in existing],
+                [RoleBindingPrincipal(binding=b, principal=subject, source=self._principal_source) for b in existing],
                 ignore_conflicts=True,
             )
 

@@ -62,6 +62,7 @@ from tests.util import (
 from tests.v2_util import seed_v2_role_from_v1, bootstrap_tenant_for_v2_test
 
 
+@override_settings(ATOMIC_RETRY_DISABLED=True)
 class BindingScopeMigrationAPITest(TestCase):
     """Tests for binding scope migration API endpoint."""
 
@@ -907,6 +908,7 @@ class SystemRoleBindingMigrationTest(TestCase):
         )
 
 
+@override_settings(ATOMIC_RETRY_DISABLED=True)
 class CrossAccountRequestMigrationTest(DualWriteTestCase):
     def setUp(self):
         super().setUp()
@@ -919,10 +921,11 @@ class CrossAccountRequestMigrationTest(DualWriteTestCase):
         CrossAccountRequest.objects.all().delete()
 
     def tearDown(self):
-        with self.subTest(msg="V2 consistency"):
-            assert_v1_v2_locally_consistent(test=self)
-
+        assert_v2_tuples_consistent(test=self, tuples=self.tuples)
         super().tearDown()
+
+    def _assert_v1_v2_locally_consistent(self):
+        assert_v1_v2_locally_consistent(test=self)
 
     def _do_migrate(self):
         migrate_all_role_bindings(replicator=InMemoryRelationReplicator(self.tuples), tenant=self.tenant)
@@ -964,6 +967,7 @@ class CrossAccountRequestMigrationTest(DualWriteTestCase):
     def test_migrate_car(self):
         """Test that migrating the scope of a binding from a cross-account request works."""
         self._do_test_migrate_car()
+        self._assert_v1_v2_locally_consistent()
 
     def test_migrate_car_v2_tenant(self):
         """Test that migrating the scope of a binding from a cross-account request works in a V2 tenant."""
@@ -1006,6 +1010,8 @@ class CrossAccountRequestMigrationTest(DualWriteTestCase):
         expect_default_count(0)
         expect_root_count(1)
 
+        self._assert_v1_v2_locally_consistent()
+
     @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="")
     def test_migrate_expired_car(self):
         """Test that the migration does not revive expired cross-cacount requests."""
@@ -1032,7 +1038,10 @@ class CrossAccountRequestMigrationTest(DualWriteTestCase):
         self._do_migrate()
         expect_binding_count(0)
 
+        self._assert_v1_v2_locally_consistent()
 
+
+@override_settings(ATOMIC_RETRY_DISABLED=True)
 class ComprehensiveBootstrapMigrationTest(DualWriteTestCase):
     """
     Comprehensive integration test using tenant bootstrap and group APIs.
