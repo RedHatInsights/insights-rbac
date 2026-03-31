@@ -348,18 +348,29 @@ class RoleBindingService:
         # Also prefetch children for platform roles (which will be returned instead of the platform role)
         # When binding_uuids is provided (inherited bindings), include those bindings in the prefetch
         # so groups with only inherited roles get their roles populated correctly
-        binding_filter_q = Q(resource_type=resource_type, resource_id=resource_id)
-        if binding_uuids:
-            binding_filter_q = binding_filter_q | Q(uuid__in=binding_uuids)
+        # Must respect exclude_direct to avoid including direct binding roles in the response
+        binding_filter_q = self._build_binding_filter(
+            resource_id=resource_id,
+            resource_type=resource_type,
+            binding_uuids=binding_uuids,
+            exclude_direct=exclude_direct,
+        )
         binding_queryset = (
             RoleBinding.objects.filter(binding_filter_q).select_related("role").prefetch_related("role__children")
         )
 
         # Prefetch the join table entries with the filtered bindings
         # Include both direct bindings and inherited bindings (when binding_uuids provided)
-        rolebinding_group_filter = Q(binding__resource_type=resource_type, binding__resource_id=resource_id)
-        if binding_uuids:
-            rolebinding_group_filter = rolebinding_group_filter | Q(binding__uuid__in=binding_uuids)
+        # Must respect exclude_direct to avoid including direct binding roles in the response
+        if exclude_direct:
+            # Only inherited bindings - exclude any that match this resource directly
+            rolebinding_group_filter = Q(binding__uuid__in=binding_uuids) & ~Q(
+                binding__resource_type=resource_type, binding__resource_id=resource_id
+            )
+        else:
+            rolebinding_group_filter = Q(binding__resource_type=resource_type, binding__resource_id=resource_id)
+            if binding_uuids:
+                rolebinding_group_filter = rolebinding_group_filter | Q(binding__uuid__in=binding_uuids)
         rolebinding_group_queryset = RoleBindingGroup.objects.filter(rolebinding_group_filter).prefetch_related(
             Prefetch("binding", queryset=binding_queryset)
         )
