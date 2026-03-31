@@ -44,7 +44,7 @@ class RoleBindingQuerySet(QuerySet):
         qs = (
             self.filter(tenant=tenant)
             .select_related("role")
-            .prefetch_related("group_entries__group", "principal_entries__principal")
+            .prefetch_related("group_entries__group", "principal_entries__principal", "role__children")
             .annotate(
                 role_created=F("role__created"),
                 role_name=F("role__name"),
