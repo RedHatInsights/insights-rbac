@@ -135,8 +135,17 @@ class RoleBindingKesselAccessPermission(permissions.BasePermission):
     def _parse_query_resource(self, request):
         """Parse and sanitize resource_id/resource_type from query params.
 
+        Handles both old-style (resource_type + resource_id) and new-style
+        (resource.tenant.org_id) query parameters.
+
         Returns (resource_type, resource_id) or (None, None) if not provided.
         """
+        org_id = request.query_params.get("resource.tenant.org_id", "").replace("\x00", "")
+        if org_id:
+            from api.models import Tenant
+
+            return "tenant", Tenant.org_id_to_tenant_resource_id(org_id)
+
         resource_id = request.query_params.get("resource_id", "").replace("\x00", "")
         resource_type = request.query_params.get("resource_type", "").replace("\x00", "").lower()
         if not resource_id or not resource_type:
