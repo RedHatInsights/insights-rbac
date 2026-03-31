@@ -115,8 +115,12 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
             queryset = queryset.for_granted_subject(granted_subject_type, granted_subject_id)
 
         field_selection = validated_params.get("fields")
-        if field_selection is not None and "name" in field_selection.get_nested("resource"):
-            queryset = queryset.with_resource_names()
+        if field_selection is not None:
+            needs_resource_names = "name" in field_selection.get_nested(
+                "resource"
+            ) or "name" in field_selection.get_nested("sources")
+            if needs_resource_names:
+                queryset = queryset.with_resource_names()
 
         page = self.paginate_queryset(queryset)
 

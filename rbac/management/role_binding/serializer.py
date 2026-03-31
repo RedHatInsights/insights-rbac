@@ -701,12 +701,7 @@ class RoleBindingListOutputSerializer(RoleBindingOutputSerializerMixin, serializ
             if "type" in source_fields:
                 source_data["type"] = obj.resource_type
             if "name" in source_fields:
-                # Use the service's get_resource_name to look up the name
-                service = self.context.get("service")
-                if service:
-                    source_data["name"] = service.get_resource_name(obj.resource_id, obj.resource_type)
-                else:
-                    source_data["name"] = None
+                source_data["name"] = getattr(obj, "resource_name", None)
 
         return [source_data]
 
