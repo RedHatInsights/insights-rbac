@@ -1252,6 +1252,84 @@ class RoleBindingListOutputSerializerTest(IdentityRequest):
             root.delete()
 
 
+class ExpandPlatformRolesTest(IdentityRequest):
+    """Test the _expand_platform_roles helper from the view module."""
+
+    def setUp(self):
+        """Set up test data."""
+        super().setUp()
+        from management.role.v2_model import PlatformRoleV2, SeededRoleV2
+
+        self.PlatformRoleV2 = PlatformRoleV2
+        self.SeededRoleV2 = SeededRoleV2
+
+    def test_non_platform_binding_passes_through(self):
+        """Test that a non-platform role binding is returned unchanged."""
+        from management.role_binding.view import _expand_platform_roles
+
+        role = RoleV2.objects.create(name="custom_role", tenant=self.tenant)
+        binding = RoleBinding.objects.create(
+            role=role, resource_type="workspace", resource_id="ws-1", tenant=self.tenant
+        )
+        self.addCleanup(binding.delete)
+        self.addCleanup(role.delete)
+
+        result = _expand_platform_roles([binding])
+
+        self.assertEqual(len(result), 1)
+        self.assertIs(result[0], binding)
+
+    def test_platform_role_expanded_to_children(self):
+        """Test that a platform role binding is expanded into one entry per child."""
+        from management.role_binding.view import _expand_platform_roles
+
+        public_tenant = self.tenant
+        platform_role = self.PlatformRoleV2.objects.create(name="Platform Test", tenant=public_tenant)
+        child_a = self.SeededRoleV2.objects.create(name="Child A", tenant=public_tenant)
+        child_b = self.SeededRoleV2.objects.create(name="Child B", tenant=public_tenant)
+        platform_role.children.add(child_a, child_b)
+
+        binding = RoleBinding.objects.create(
+            role=platform_role, resource_type="workspace", resource_id="ws-1", tenant=self.tenant
+        )
+        group = Group.objects.create(name="test_expand_group", tenant=self.tenant)
+        RoleBindingGroup.objects.create(group=group, binding=binding)
+
+        self.addCleanup(RoleBindingGroup.objects.filter(binding=binding).delete)
+        self.addCleanup(binding.delete)
+        self.addCleanup(group.delete)
+        self.addCleanup(platform_role.children.clear)
+        self.addCleanup(child_a.delete)
+        self.addCleanup(child_b.delete)
+        self.addCleanup(platform_role.delete)
+
+        result = _expand_platform_roles([binding])
+
+        self.assertEqual(len(result), 2)
+        role_uuids = {entry.role.uuid for entry in result}
+        self.assertEqual(role_uuids, {child_a.uuid, child_b.uuid})
+
+        # Verify proxy preserves binding attributes
+        for entry in result:
+            self.assertEqual(entry.resource_type, "workspace")
+            self.assertEqual(entry.resource_id, "ws-1")
+
+    def test_platform_role_no_children_produces_no_entries(self):
+        """Test that a platform role with no children produces zero entries."""
+        from management.role_binding.view import _expand_platform_roles
+
+        platform_role = self.PlatformRoleV2.objects.create(name="Empty Platform", tenant=self.tenant)
+        binding = RoleBinding.objects.create(
+            role=platform_role, resource_type="workspace", resource_id="ws-1", tenant=self.tenant
+        )
+        self.addCleanup(binding.delete)
+        self.addCleanup(platform_role.delete)
+
+        result = _expand_platform_roles([binding])
+
+        self.assertEqual(len(result), 0)
+
+
 @override_settings(ATOMIC_RETRY_DISABLED=True)
 class BatchCreateRequestSerializerTests(IdentityRequest):
     """Tests for BatchCreateRoleBindingRequestSerializer input validation."""
