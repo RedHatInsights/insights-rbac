@@ -332,11 +332,12 @@ class RoleBindingService:
 
         # Get groups that have bindings matching our filter.
         # This includes tenant-specific groups and public tenant default groups.
-        # No tenant filter needed since resource_id is tenant-specific.
         queryset = Group.objects.filter(binding_filter).distinct()
 
         if not self._allow_external_subjects:
-            queryset = queryset.filter(tenant=self.tenant)
+            queryset = queryset.filter(
+                Q(tenant=self.tenant) | Q(platform_default=True, system=True) | Q(admin_default=True, system=True)
+            )
 
         # Annotate with principal count
         queryset = queryset.annotate(
@@ -508,11 +509,11 @@ class RoleBindingService:
             Exists(RoleBindingPrincipal.objects.filter(principal=OuterRef("pk")).filter(principal_entry_filter)),
         ).distinct()
 
+        # Always filter to USER type (this endpoint is for user subjects only)
+        principal_queryset = principal_queryset.filter(type=Principal.Types.USER)
+
         if not self._allow_external_subjects:
-            principal_queryset = principal_queryset.filter(
-                tenant=self.tenant,
-                type=Principal.Types.USER,
-            )
+            principal_queryset = principal_queryset.filter(tenant=self.tenant)
 
         # Prefetch RoleBindingPrincipal entries with their bindings
         principal_entry_queryset = RoleBindingPrincipal.objects.filter(principal_entry_filter).prefetch_related(
