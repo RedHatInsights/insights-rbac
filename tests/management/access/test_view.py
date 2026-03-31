@@ -1261,3 +1261,53 @@ class AccessViewTests(IdentityRequest):
         self.assertNotIn("test_app:resource:blocked_action", cached_permissions)
         # Allowed permission should be in the cached data
         self.assertIn("test_app:resource:allowed_action", cached_permissions)
+
+    @override_settings(ROLE_CREATE_ALLOW_LIST="legacy_app,other_app")
+    @override_settings(V2_MIGRATION_APP_EXCLUDE_LIST=["legacy_app"])
+    @patch("management.access.view.is_v2_edit_enabled_for_request", return_value=True)
+    def test_access_v2_tenant_allowed_app_returns_data(self, _mock_v2):
+        """V2 orgs can query /access for applications in V2_MIGRATION_APP_EXCLUDE_LIST."""
+        perm_legacy = Permission.objects.create(permission="legacy_app:*:*", tenant=self.tenant)
+        role = Role.objects.create(name="legacy_role", tenant=self.tenant)
+        Access.objects.create(role=role, permission=perm_legacy, tenant=self.tenant)
+        policy = Policy.objects.create(name="legacy_policy", tenant=self.tenant)
+        policy.roles.add(role)
+        policy.group = self.group
+        policy.save()
+
+        client = APIClient()
+        url = f"{reverse('v1_management:access')}?application=legacy_app"
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        permissions = [row["permission"] for row in response.data.get("data", [])]
+        self.assertIn("legacy_app:*:*", permissions)
+
+    @override_settings(V2_MIGRATION_APP_EXCLUDE_LIST=["legacy_app"])
+    @patch("management.access.view.is_v2_edit_enabled_for_request", return_value=True)
+    def test_access_v2_tenant_disallowed_app_rejected(self, _mock_v2):
+        """V2 orgs are rejected when querying an app not in V2_MIGRATION_APP_EXCLUDE_LIST."""
+        client = APIClient()
+        url = f"{reverse('v1_management:access')}?application=other_app"
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("Disallowed", response.data.get("detail", ""))
+
+    @override_settings(V2_MIGRATION_APP_EXCLUDE_LIST=["legacy_app"])
+    @patch("management.access.view.is_v2_edit_enabled_for_request", return_value=True)
+    def test_access_v2_tenant_empty_application_rejected(self, _mock_v2):
+        """V2 orgs are rejected when application= is empty."""
+        client = APIClient()
+        url = f"{reverse('v1_management:access')}?application="
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("must specify", response.data.get("detail", ""))
+
+    @override_settings(V2_MIGRATION_APP_EXCLUDE_LIST=["legacy_app"])
+    @patch("management.access.view.is_v2_edit_enabled_for_request", return_value=True)
+    def test_access_v2_tenant_mixed_apps_rejected(self, _mock_v2):
+        """V2 orgs are rejected when application param contains any disallowed app."""
+        client = APIClient()
+        url = f"{reverse('v1_management:access')}?application=legacy_app,other_app"
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("other_app", response.data.get("detail", ""))

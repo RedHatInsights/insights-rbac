@@ -16,7 +16,10 @@
 #
 """Test the permission viewset."""
 
+from unittest.mock import patch
+
 from django.db.models import Q
+from django.test.utils import override_settings
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -509,6 +512,32 @@ class PermissionViewsetTests(IdentityRequest):
         response = CLIENT.get(f"{OPTION_URL}?field=application&allowed_only=foo", **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @override_settings(V2_MIGRATION_APP_EXCLUDE_LIST=["cost-management"])
+    @patch("management.permission.view.is_v2_edit_enabled_for_request", return_value=True)
+    def test_permission_list_v2_tenant_shows_only_exclude_list_apps(self, _mock_v2):
+        """V2 tenants only see permissions whose application is in V2_MIGRATION_APP_EXCLUDE_LIST."""
+        response = CLIENT.get(LIST_URL, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        apps = {p["application"] for p in response.data.get("data", [])}
+        self.assertEqual(apps, {"cost-management"})
+
+    @override_settings(V2_MIGRATION_APP_EXCLUDE_LIST=[])
+    @patch("management.permission.view.is_v2_edit_enabled_for_request", return_value=True)
+    def test_permission_list_v2_tenant_empty_exclude_list_returns_none(self, _mock_v2):
+        """V2 tenants see no permissions when the exclude list is empty."""
+        response = CLIENT.get(LIST_URL, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get("data"), [])
+
+    @override_settings(V2_MIGRATION_APP_EXCLUDE_LIST=["cost-management"])
+    @patch("management.permission.view.is_v2_edit_enabled_for_request", return_value=False)
+    def test_permission_list_v1_tenant_unaffected_by_exclude_list(self, _mock_v2):
+        """V1 tenants still see all permissions regardless of the exclude list."""
+        response = CLIENT.get(LIST_URL, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        total = Permission.objects.count()
+        self.assertEqual(response.data.get("meta", {}).get("count"), total)
 
 
 class PermissionViewsetTestsNonAdmin(IdentityRequest):

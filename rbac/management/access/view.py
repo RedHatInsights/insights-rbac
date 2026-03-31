@@ -20,9 +20,10 @@
 from django.db.models import Prefetch
 from management.cache import AccessCache
 from management.models import Access, ResourceDefinition
-from management.permissions.v2_edit_api_access import V1ApiBlockedWhenWorkspacesEnabled
+from management.permissions.v2_edit_api_access import is_v2_edit_enabled_for_request
 from management.querysets import get_access_queryset
 from management.role.serializer import AccessSerializer
+from management.role.v2_role_scope import v2_role_excluded_applications
 from management.utils import (
     APPLICATION_KEY,
     get_principal_from_request,
@@ -38,6 +39,36 @@ ORDER_FIELD = "order_by"
 VALID_ORDER_VALUES = ["application", "resource_type", "verb", "-application", "-resource_type", "-verb"]
 STATUS_KEY = "status"
 VALID_STATUS_VALUE = ["enabled", "disabled", "all"]
+
+
+def validate_v2_application_param(request):
+    """For v2-enabled orgs, ensure all requested applications are in the migration exclude list.
+
+    Returns None when the request is allowed, or a 400 Response when it must be rejected.
+    """
+    if not is_v2_edit_enabled_for_request(request):
+        return None
+
+    app_param = request.query_params.get(APPLICATION_KEY, "")
+    if not app_param:
+        return Response(
+            status=status.HTTP_400_BAD_REQUEST,
+            data={"detail": "V2 orgs must specify an application from the allowed list."},
+        )
+
+    allowed_apps = v2_role_excluded_applications()
+    requested_apps = {a.strip() for a in app_param.split(",") if a.strip()}
+    disallowed = requested_apps - allowed_apps
+    if disallowed:
+        return Response(
+            status=status.HTTP_400_BAD_REQUEST,
+            data={
+                "detail": f"V2 orgs may only query applications in the allowed list. "
+                f"Disallowed: {', '.join(sorted(disallowed))}"
+            },
+        )
+
+    return None
 
 
 class AccessView(APIView):
@@ -90,7 +121,8 @@ class AccessView(APIView):
 
     serializer_class = AccessSerializer
     pagination_class = api_settings.DEFAULT_PAGINATION_CLASS
-    permission_classes = (V1ApiBlockedWhenWorkspacesEnabled,)
+    # Read-only endpoint: no DRF permission gate (auth/enforcement via middleware & query logic).
+    permission_classes = ()
 
     def get_access_queryset_unique_by_column(self, *columns):
         """Define the access query set with DISTINCT ON clause to get unique records."""
@@ -129,6 +161,10 @@ class AccessView(APIView):
             validate_key(request.query_params, STATUS_KEY, VALID_STATUS_VALUE, "enabled")
         except ValueError as e:
             return Response(status=status.HTTP_400_BAD_REQUEST, data=e)
+
+        v2_error = validate_v2_application_param(request)
+        if v2_error is not None:
+            return v2_error
 
         principal = get_principal_from_request(request)
         cache = AccessCache(request.tenant.org_id)
