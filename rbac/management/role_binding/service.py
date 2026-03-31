@@ -194,8 +194,6 @@ class RoleBindingService:
             Ordering is handled by V2CursorPagination.get_ordering() to ensure
             cursor pagination works correctly with the requested order_by parameter.
         """
-        from management.role_binding.model import RoleBinding
-
         resource_id = params.get("resource_id")
         resource_type = params.get("resource_type")
         exclude_sources = params.get("exclude_sources", ExcludeSources.NONE)
@@ -223,7 +221,9 @@ class RoleBindingService:
         # Build resource filter based on exclude_sources logic
         if exclude_direct and binding_uuids is not None:
             # Only inherited bindings by UUID (exclude direct)
-            queryset = queryset.filter(uuid__in=binding_uuids)
+            queryset = queryset.filter(
+                Q(uuid__in=binding_uuids) & ~Q(resource_type=resource_type, resource_id=str(resource_id))
+            )
         elif binding_uuids is not None and resource_id and resource_type:
             # Both direct and inherited bindings (exclude_sources=none)
             queryset = queryset.filter(
