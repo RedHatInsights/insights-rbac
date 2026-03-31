@@ -930,6 +930,83 @@ class RoleBindingServiceTests(IdentityRequest):
         self.assertEqual(0, len(get_principals(exclude_service)))
         self.assertEqual(1, len(get_principals(include_service)))
 
+    def test_by_subject_includes_platform_default_groups(self):
+        """Test that platform default groups from the public tenant are included in by-subject results.
+
+        Platform default groups (e.g. "Default access") belong to the public tenant but should
+        still appear when querying by-subject for a specific tenant's resources.
+        Regular (non-default) groups from other tenants must still be excluded.
+        """
+        public_tenant = Tenant.objects.create(tenant_name="public", org_id="public")
+
+        platform_group = Group.objects.create(
+            name="Default access",
+            tenant=public_tenant,
+            platform_default=True,
+            system=True,
+        )
+        admin_group = Group.objects.create(
+            name="Default admin access",
+            tenant=public_tenant,
+            admin_default=True,
+            system=True,
+        )
+        # A regular group on the public tenant — should NOT be included
+        regular_public_group = Group.objects.create(
+            name="Regular public group",
+            tenant=public_tenant,
+            platform_default=False,
+            admin_default=False,
+            system=False,
+        )
+
+        # Create separate roles for each binding (unique constraint: role+resource+tenant)
+        platform_role = RoleV2.objects.create(name="platform_role", tenant=self.tenant)
+        admin_role = RoleV2.objects.create(name="admin_role", tenant=self.tenant)
+        regular_role = RoleV2.objects.create(name="regular_role", tenant=self.tenant)
+
+        # Create role bindings owned by the user's tenant, linked to public tenant groups
+        platform_binding = RoleBinding.objects.create(
+            role=platform_role,
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            tenant=self.tenant,
+        )
+        RoleBindingGroup.objects.create(group=platform_group, binding=platform_binding)
+
+        admin_binding = RoleBinding.objects.create(
+            role=admin_role,
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            tenant=self.tenant,
+        )
+        RoleBindingGroup.objects.create(group=admin_group, binding=admin_binding)
+
+        regular_binding = RoleBinding.objects.create(
+            role=regular_role,
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            tenant=self.tenant,
+        )
+        RoleBindingGroup.objects.create(group=regular_public_group, binding=regular_binding)
+
+        groups = self.service.get_role_bindings_by_subject(
+            {
+                "resource_type": "workspace",
+                "resource_id": str(self.workspace.id),
+                "subject_type": "group",
+            }
+        )
+
+        group_names = {g.name for g in groups}
+        # Should include the tenant's own group AND both platform default groups
+        self.assertIn("test_group", group_names)
+        self.assertIn("Default access", group_names)
+        self.assertIn("Default admin access", group_names)
+        # Regular non-default group from public tenant must be excluded
+        self.assertNotIn("Regular public group", group_names)
+        self.assertEqual(3, len(groups))
+
 
 class RoleBindingSerializerTests(IdentityRequest):
     """Tests for RoleBindingByGroupSerializer."""
