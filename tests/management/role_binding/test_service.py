@@ -36,7 +36,7 @@ from migration_tool.in_memory_tuples import (
     subject,
 )
 
-from management.models import Group, Permission, Principal, Workspace
+from management.models import Group, Permission, Principal, Role, Workspace
 from management.role.v2_model import PlatformRoleV2, RoleV2, SeededRoleV2
 from management.role.v2_service import RoleV2Service
 from management.exceptions import InvalidFieldError, NotFoundError, RequiredFieldError
@@ -3027,3 +3027,151 @@ class ReplaceRoleBindingsTests(_ReplicationAssertionsMixin, IdentityRequest):
         self.assertTuplesRemoved(
             set(old_role1_binding.binding_tuples()) | {old_role1_binding.subject_tuple(self.group1)}
         )
+
+
+@override_settings(ATOMIC_RETRY_DISABLED=True, V2_BOOTSTRAP_TENANT=True, REPLICATION_TO_RELATION_ENABLED=False)
+class UpdateRoleBindingsDefaultGroupCustomizationTests(IdentityRequest):
+    """Tests for automatic default group customization in update_role_bindings_for_subject."""
+
+    def setUp(self):
+        super().setUp()
+        from management.policy.model import Policy
+
+        self.public_tenant = Tenant.objects.get(tenant_name="public")
+
+        self.platform_role_v1 = Role.objects.create(
+            name="Platform Role",
+            platform_default=True,
+            system=True,
+            tenant=self.public_tenant,
+        )
+
+        # The public tenant's "Default access" group (system, shared across all tenants)
+        self.default_group = Group.objects.create(
+            name="Default access",
+            platform_default=True,
+            system=True,
+            tenant=self.public_tenant,
+        )
+        Policy.objects.create(
+            name=f"System Policy for Group {self.default_group.uuid}",
+            system=True,
+            group=self.default_group,
+            tenant=self.public_tenant,
+        )
+
+        bootstrap_result = bootstrap_tenant_for_v2_test(self.tenant)
+        self.default_workspace = bootstrap_result.default_workspace
+
+        self.workspace = Workspace.objects.create(
+            name="Test Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.default_workspace,
+        )
+
+        Permission.objects.create(permission="app:resource:read", tenant=self.tenant)
+        role_service = RoleV2Service()
+        self.role1 = role_service.create(
+            name="role1",
+            description="Test role 1",
+            permission_data=[{"application": "app", "resource_type": "resource", "operation": "read"}],
+            tenant=self.tenant,
+        )
+
+        self.service = RoleBindingService(tenant=self.tenant)
+
+    def tearDown(self):
+        from management.policy.model import Policy
+
+        RoleBindingGroup.objects.all().delete()
+        RoleBindingPrincipal.objects.all().delete()
+        RoleBinding.objects.all().delete()
+        Policy.objects.all().delete()
+        Group.objects.filter(tenant=self.tenant).delete()
+        Group.objects.filter(tenant=self.public_tenant, platform_default=True).delete()
+        Role.objects.filter(tenant=self.public_tenant, platform_default=True).delete()
+        RoleV2.objects.filter(tenant=self.tenant).delete()
+        Permission.objects.filter(tenant=self.tenant).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.STANDARD).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.DEFAULT).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.ROOT).delete()
+        TenantMapping.objects.filter(tenant=self.tenant).delete()
+        super().tearDown()
+
+    @patch("management.group.definer.OutboxReplicator")
+    def test_clones_default_group_into_custom(self, mock_replicator_cls):
+        """Passing the public default group UUID triggers a clone into a custom default group."""
+        mock_replicator_cls.return_value.replicate = lambda event: None
+
+        self.assertFalse(Group.objects.filter(platform_default=True, tenant=self.tenant).exists())
+
+        result = self.service.update_role_bindings_for_subject(
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            subject_type="group",
+            subject_id=str(self.default_group.uuid),
+            role_ids=[str(self.role1.uuid)],
+        )
+
+        # The custom group was created for this tenant
+        custom_group = Group.objects.get(platform_default=True, tenant=self.tenant)
+        self.assertEqual(custom_group.name, "Custom default access")
+        self.assertFalse(custom_group.system)
+
+        # The result references the custom group, not the public default group
+        self.assertEqual(result.subject, custom_group)
+        self.assertEqual(result.subject.tenant, self.tenant)
+
+        # The role binding was applied to the custom group
+        bindings = RoleBinding.objects.filter(
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            tenant=self.tenant,
+        )
+        self.assertTrue(bindings.filter(role=self.role1).exists())
+        self.assertTrue(RoleBindingGroup.objects.filter(group=custom_group, binding__role=self.role1).exists())
+
+    @patch("management.group.definer.OutboxReplicator")
+    def test_uses_existing_custom_group_if_already_cloned(self, mock_replicator_cls):
+        """If a custom default group already exists, use it instead of cloning again."""
+        mock_replicator_cls.return_value.replicate = lambda event: None
+
+        existing_custom = Group.objects.create(
+            name="Custom default access",
+            platform_default=True,
+            system=False,
+            tenant=self.tenant,
+        )
+
+        result = self.service.update_role_bindings_for_subject(
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            subject_type="group",
+            subject_id=str(self.default_group.uuid),
+            role_ids=[str(self.role1.uuid)],
+        )
+
+        # Should use the existing custom group
+        self.assertEqual(result.subject, existing_custom)
+
+        # Still only one custom group
+        self.assertEqual(Group.objects.filter(platform_default=True, tenant=self.tenant).count(), 1)
+
+    def test_regular_group_is_not_affected(self):
+        """A non-default group is not cloned; it proceeds normally."""
+        regular_group = Group.objects.create(
+            name="Regular Group",
+            tenant=self.tenant,
+        )
+
+        result = self.service.update_role_bindings_for_subject(
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            subject_type="group",
+            subject_id=str(regular_group.uuid),
+            role_ids=[str(self.role1.uuid)],
+        )
+
+        self.assertEqual(result.subject, regular_group)
+        self.assertFalse(Group.objects.filter(platform_default=True, tenant=self.tenant).exists())
