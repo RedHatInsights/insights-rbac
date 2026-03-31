@@ -239,6 +239,8 @@ objects:
                 optional: true
           - name: INVENTORY_API_SERVER
             value: ${INVENTORY_API_SERVER}
+          - name: REDHAT_SSO
+            value: ${REDHAT_SSO}
           - name: REPLICATION_TO_RELATION_ENABLED
             value: ${REPLICATION_TO_RELATION_ENABLED}
           - name: PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB
