@@ -2887,7 +2887,7 @@ class RoleBindingViewSetTest(IdentityRequest):
         self.assertIn(str(seeded_role.uuid), role_ids)
 
 
-@override_settings(V2_APIS_ENABLED=True)
+@override_settings(V2_APIS_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
 class DefaultBindingsAPITests(TestCase):
     """Test lazy creation of default role bindings via API calls."""
 

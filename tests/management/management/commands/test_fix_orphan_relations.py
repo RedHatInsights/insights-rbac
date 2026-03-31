@@ -381,3 +381,48 @@ class TestRemoveOrphanRelations(DualWriteTestCase):
                 )
             ),
         )
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_role_binding_deleted_no_parent_tuple(self, replicate):
+        replicator = InMemoryRelationReplicator(self.tuples)
+        replicate.side_effect = replicator.replicate
+
+        group, _ = self.given_group("group", ["p1"])
+        role = self.given_v1_system_role("a role", ["rbac:*:*"])
+
+        ensure_v2_write_activated(self.tenant)
+
+        # Remove all tuples, both so that no parent tuples exist and so that we can check for the ones we are
+        # specifically interested in.
+        self.tuples.clear()
+
+        # Create a role binding both locally and in Kessel.
+        RoleBindingService(tenant=self.tenant, replicator=replicator).batch_create(
+            [
+                CreateBindingRequest(
+                    role_id=str(role.uuid),
+                    resource_type="workspace",
+                    resource_id=self.default_workspace(),
+                    subject_type="group",
+                    subject_id=str(group.uuid),
+                )
+            ]
+        )
+
+        # Delete the role binding locally, but not in Kessel.
+        RoleBindingService(tenant=self.tenant, replicator=NoopReplicator()).update_role_bindings_for_subject(
+            resource_type="workspace",
+            resource_id=self.default_workspace(),
+            subject_type="group",
+            subject_id=str(group.uuid),
+            role_ids=[],
+        )
+
+        # One for the resource, one for the role, one for the subject.
+        self.assertEqual(len(self.tuples), 3)
+
+        self._do_fix_orphans()
+
+        # We should have removed the orphaned role binding because the workspace is known to exist locally,
+        # despite there being no parent relations in Kessel.
+        self.assertEqual(len(self.tuples), 0)
