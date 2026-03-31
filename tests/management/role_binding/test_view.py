@@ -1114,6 +1114,82 @@ class RoleBindingListViewSetTest(IdentityRequest):
         all_names = page1_names + page2_names
         self.assertEqual(all_names, sorted(all_names, reverse=True))
 
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_platform_role_expanded_to_children(self, mock_permission):
+        """Test that platform-role bindings are expanded to child roles in list response."""
+        public_tenant, _ = Tenant.objects.get_or_create(tenant_name="public")
+
+        # Create a platform role with two children
+        platform_role = PlatformRoleV2.objects.create(
+            name="Platform Admin",
+            tenant=public_tenant,
+        )
+        child_role_1 = SeededRoleV2.objects.create(name="Child Role A", tenant=public_tenant)
+        child_role_2 = SeededRoleV2.objects.create(name="Child Role B", tenant=public_tenant)
+        platform_role.children.add(child_role_1, child_role_2)
+
+        # Bind the platform role to a group
+        platform_binding = RoleBinding.objects.create(
+            role=platform_role,
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            tenant=self.tenant,
+        )
+        platform_group = Group.objects.create(name="platform_group", tenant=self.tenant)
+        RoleBindingGroup.objects.create(group=platform_group, binding=platform_binding)
+
+        # Register cleanup so resources are freed even if assertions fail
+        self.addCleanup(RoleBindingGroup.objects.filter(binding=platform_binding).delete)
+        self.addCleanup(platform_binding.delete)
+        self.addCleanup(platform_group.delete)
+        self.addCleanup(platform_role.children.clear)
+        self.addCleanup(child_role_1.delete)
+        self.addCleanup(child_role_2.delete)
+        self.addCleanup(platform_role.delete)
+
+        url = self._get_list_url()
+        response = self.client.get(
+            f"{url}?fields=role(id,name),subject(id,type),resource(id)&limit=100",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Find entries for the child roles
+        child_role_uuids = {child_role_1.uuid, child_role_2.uuid}
+        expanded_entries = [item for item in response.data["data"] if item["role"]["id"] in child_role_uuids]
+
+        # Should have 2 entries (one per child), not 1 entry with the platform role
+        self.assertEqual(len(expanded_entries), 2)
+        returned_names = {item["role"]["name"] for item in expanded_entries}
+        self.assertEqual(returned_names, {"Child Role A", "Child Role B"})
+
+        # The platform role itself should NOT appear
+        platform_entries = [item for item in response.data["data"] if item["role"]["id"] == platform_role.uuid]
+        self.assertEqual(len(platform_entries), 0)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_non_platform_role_unchanged(self, mock_permission):
+        """Test that non-platform roles are returned as-is (no expansion)."""
+        url = self._get_list_url()
+        response = self.client.get(
+            f"{url}?fields=role(id,name),subject(id,type),resource(id)&limit=100",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # All entries should match the roles we created in setUp (all custom, non-platform)
+        returned_role_uuids = {item["role"]["id"] for item in response.data["data"]}
+        expected_role_uuids = {role.uuid for role in self.roles}
+        self.assertEqual(returned_role_uuids, expected_role_uuids)
+
 
 @override_settings(V2_APIS_ENABLED=True, V2_EDIT_API_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
 class RoleBindingViewSetTest(IdentityRequest):
