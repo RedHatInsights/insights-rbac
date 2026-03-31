@@ -25,7 +25,11 @@ from django.db.models import QuerySet
 
 from api.models import Tenant
 from django.db import transaction
-from internal.utils import replicate_missing_binding_tuples, iterate_tuples_from_kessel
+from internal.utils import (
+    replicate_missing_binding_tuples,
+    iterate_tuples_from_kessel,
+    lock_binding_mappings_with_roles_by_uuid,
+)
 from management.atomic_transactions import atomic_block
 from management.role.model import BindingMapping
 from management.models import Role, Workspace
@@ -296,24 +300,7 @@ def _remove_orphaned_role_bindings(
             tenant_is_v1 = lock_tenant_version(tenant) == TenantVersion.VERSION_1
 
             if tenant_is_v1:
-                # This will lock both the bindings and custom roles.
-                # See https://docs.djangoproject.com/en/5.2/ref/models/querysets/#select-for-update
-                custom_binding_mappings: list[BindingMapping] = list(
-                    BindingMapping.objects.filter(mappings__id__in=binding_ids, role__system=False)
-                    .select_related("role")
-                    .select_for_update()
-                )
-
-                # Only lock the bindings themselves here, not the associated system roles.
-                system_binding_mappings: list[BindingMapping] = list(
-                    BindingMapping.objects.filter(mappings__id__in=binding_ids, role__system=True)
-                    .select_related("role")
-                    .select_for_update(of=["self"])
-                )
-
-                binding_mappings_by_id: dict[str, BindingMapping] = {
-                    b.mappings["id"]: b for b in [*custom_binding_mappings, *system_binding_mappings]
-                }
+                binding_mappings_by_id = lock_binding_mappings_with_roles_by_uuid(binding_ids)
             else:
                 binding_mappings_by_id = {}
 
