@@ -1,6 +1,7 @@
 from typing import Callable, Optional
 
 from api.models import Tenant
+from management.group.platform import GlobalPolicyIdService
 from management.models import Permission, Role
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.role.v2_model import SeededRoleV2
@@ -102,5 +103,8 @@ def bootstrap_tenant_for_v2_test(tenant: Tenant, tuples: Optional[InMemoryTuples
 
     Relation writes are sent to tuples, if provided, and are otherwise discarded.
     """
+    # Ensure isolation between tests.
+    GlobalPolicyIdService.clear_shared()
+
     replicator = InMemoryRelationReplicator(tuples) if tuples is not None else NoopReplicator()
     return V2TenantBootstrapService(replicator=replicator).bootstrap_tenant(tenant, force=True)

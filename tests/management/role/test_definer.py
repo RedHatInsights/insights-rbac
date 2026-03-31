@@ -73,6 +73,7 @@ def _child_predicate(parent_uuid: str | UUID, child_uuid: str | UUID):
     )
 
 
+@override_settings(ATOMIC_RETRY_DISABLED=True)
 class RoleDefinerTests(IdentityRequest):
     """Test the role definer functions."""
 
@@ -818,6 +819,7 @@ class RoleDefinerTests(IdentityRequest):
         )
 
 
+@override_settings(ATOMIC_RETRY_DISABLED=True)
 class V2RoleSeedingTests(IdentityRequest):
     """Test V2 role seeding functionality."""
 

@@ -62,6 +62,7 @@ from tests.util import (
 from tests.v2_util import seed_v2_role_from_v1, bootstrap_tenant_for_v2_test
 
 
+@override_settings(ATOMIC_RETRY_DISABLED=True)
 class BindingScopeMigrationAPITest(TestCase):
     """Tests for binding scope migration API endpoint."""
 
@@ -1040,6 +1041,7 @@ class CrossAccountRequestMigrationTest(DualWriteTestCase):
         self._assert_v1_v2_locally_consistent()
 
 
+@override_settings(ATOMIC_RETRY_DISABLED=True)
 class ComprehensiveBootstrapMigrationTest(DualWriteTestCase):
     """
     Comprehensive integration test using tenant bootstrap and group APIs.
