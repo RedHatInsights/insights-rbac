@@ -59,7 +59,7 @@ from management.tenant_mapping.v2_activation import (
     lock_tenant_version,
 )
 from management.tenant_service.relations import default_role_binding_tuples
-from management.tenant_service.v2 import TenantNotBootstrappedError
+from management.tenant_service.v2 import TenantNotBootstrappedError, lock_tenant_for_bootstrap
 from management.utils import as_uuid
 from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspaceHandler
 from migration_tool.utils import create_relationship
@@ -482,10 +482,19 @@ def lock_binding_mappings_with_roles_by_uuid(uuids: Iterable[str | uuid.UUID]) -
 @atomic
 def _do_replicate_missing_binding_tuples_batch(tenant_id: int, raw_role_bindings: list[RoleBinding]):
     tenant = Tenant.objects.get(id=tenant_id)
+    bootstrap_lock = lock_tenant_for_bootstrap(tenant)
     tenant_version = lock_tenant_version(tenant)
+
+    # We are not equipped to handle RoleBindings representing default access bindings; their representation in the
+    # database is not always the same as their relation in Kessel. The correct way to re-replicate these tuples is by
+    # forcibly re-bootstrapping the tenant.
+    #
+    # So, we will just exclude these RoleBindings from further processing entirely.
+    builtin_binding_ids = bootstrap_lock.tenant_mapping.role_binding_ids()
 
     role_bindings = list(
         RoleBinding.objects.filter(pk__in=(b.pk for b in raw_role_bindings))
+        .exclude(uuid__in=builtin_binding_ids)
         .select_related("role")
         .prefetch_related("group_entries", "principal_entries", "role__permissions")
         .select_for_update(of=["self"])
@@ -588,6 +597,8 @@ def replicate_missing_binding_tuples(
     base tuples (t_role and t_binding) in Kessel.
 
     At most one of tenant and binding_uuids can be non-None; if both are None, all bindings are re-replicated.
+
+    Default access bindings are not re-replicated; re-rebootstrapping is required for this.
 
     Args:
         tenant (Tenant, optional): The tenant for which to fix bindings.
