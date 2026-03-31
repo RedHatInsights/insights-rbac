@@ -3147,6 +3147,10 @@ class BatchCreateViewTests(IdentityRequest):
         clear_url_caches()
         super().setUp()
 
+        # Clean up any existing bootstrap data to ensure fresh state
+        TenantMapping.objects.filter(tenant=self.tenant).delete()
+        Workspace.objects.filter(tenant=self.tenant).delete()
+
         bootstrapped = V2TenantBootstrapService(InMemoryRelationReplicator()).bootstrap_tenant(self.tenant)
         self.root_workspace = bootstrapped.root_workspace
         self.default_workspace = bootstrapped.default_workspace
