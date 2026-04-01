@@ -39,7 +39,9 @@ from management.relation_replicator.relation_replicator import (
 )
 from management.relation_replicator.types import RelationTuple
 from management.role.model import BindingMapping, Role
+from management.role_binding.model import RoleBinding
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
+from management.tenant_mapping.v2_activation import is_v2_write_activated
 from management.tenant_service.relations import default_role_binding_tuples
 
 from api.models import Tenant
@@ -254,10 +256,33 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             )
 
     def prepare_to_delete_group(self, roles):
-        """Generate relations to delete."""
+        """Generate relations to delete.
+
+        When the tenant has been activated for V2 writes, removal tuples are
+        derived directly from V2 RoleBinding objects instead of BindingMapping.
+        This ensures that bindings created through the V2 role-binding-by-subject
+        API (which bypass BindingMapping) are properly cleaned up in SpiceDB.
+        """
         if not self.replication_enabled():
             return
 
+        if is_v2_write_activated(self.tenant):
+            self._prepare_to_delete_group_v2()
+        else:
+            self._prepare_to_delete_group_v1(roles)
+
+        if self.group.platform_default:
+            # If we are restoring the default role binding, we need to handle the case where *none* of the
+            # relationships exist. This can happen if we bootstrapped a tenant that already had a custom default
+            # group (in which case V2TenantBootstrapService will indeed refuse to create a default role binding at all),
+            # and now we are removing that custom default group.
+            self.relations_to_add.extend(self._default_binding(resource_binding_only=False))
+        else:
+            self.principals = self.group.principals.all()
+            self.relations_to_remove.extend(self._generate_member_relations())
+
+    def _prepare_to_delete_group_v1(self, roles):
+        """V1 path: compute removal tuples from BindingMapping."""
         system_roles = roles.public_tenant_only()
 
         # Custom roles are locked to prevent resources from being added/removed concurrently,
@@ -273,15 +298,26 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
             self._update_mapping_for_role_removal(role)
             custom_ids.append(role.id)
 
-        if self.group.platform_default:
-            # If we are restoring the default role binding, we need to handle the case where *none* of the
-            # relationships exist. This can happen if we bootstrapped a tenant that already had a custom default
-            # group (in which case V2TenantBootstrapService will indeed refuse to create a default role binding at all),
-            # and now we are removing that custom default group.
-            self.relations_to_add.extend(self._default_binding(resource_binding_only=False))
-        else:
-            self.principals = self.group.principals.all()
-            self.relations_to_remove.extend(self._generate_member_relations())
+    def _prepare_to_delete_group_v2(self):
+        """V2 path: compute removal tuples from RoleBinding objects.
+
+        Queries all RoleBinding objects linked to this group and collects
+        their full tuple sets (role, resource-binding, and subject tuples)
+        for removal from SpiceDB.
+        """
+        bindings = (
+            RoleBinding.objects.filter(
+                group_entries__group=self.group,
+                tenant=self.tenant,
+            )
+            .select_related("role")
+            .prefetch_related("group_entries__group", "principal_entries__principal")
+        )
+
+        for binding in bindings:
+            self.relations_to_remove.append(binding.subject_tuple(self.group))
+            if not binding.group_entries.exclude(group=self.group).exists() and not binding.principal_entries.exists():
+                self.relations_to_remove.extend(binding.binding_tuples())
 
     def _default_binding(
         self,
