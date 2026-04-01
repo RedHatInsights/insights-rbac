@@ -2322,6 +2322,58 @@ class RoleViewsetTests(IdentityRequest):
             f"Role '{name}' already exists for a tenant.",
         )
 
+    def test_create_role_with_system_role_name_fail(self):
+        """Test that creating a custom role with the same name as a system role is rejected."""
+        client = APIClient()
+        # Use the system role name from setUp (case-insensitive match)
+        test_data = {"name": "SYSTEM_ROLE", "access": []}
+
+        response = client.post(URL, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("conflicts with an existing system role", str(response.data))
+
+    def test_create_role_with_system_role_display_name_fail(self):
+        """Test that creating a custom role with the same display_name as a system role is rejected."""
+        client = APIClient()
+        # Use the system role display_name from setUp (case-insensitive match)
+        test_data = {"name": "unique_custom_name", "display_name": "System_Display", "access": []}
+
+        response = client.post(URL, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("conflicts with an existing system role", str(response.data))
+
+    def test_update_role_to_system_role_name_fail(self):
+        """Test that updating a custom role to have the same name as a system role is rejected."""
+        client = APIClient()
+        # Create a custom role first
+        test_data = {"name": "my_custom_role", "access": []}
+        response = client.post(URL, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role_uuid = response.data.get("uuid")
+
+        # Try to update name to match system role (case-insensitive)
+        url = reverse("v1_management:role-detail", kwargs={"uuid": role_uuid})
+        update_data = {"name": "System_Role", "display_name": "my_custom_role", "access": []}
+        response = client.put(url, update_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("conflicts with an existing system role", str(response.data))
+
+    def test_patch_role_to_system_role_name_fail(self):
+        """Test that patching a custom role to have the same name as a system role is rejected."""
+        client = APIClient()
+        # Create a custom role first
+        test_data = {"name": "my_patchable_role", "access": []}
+        response = client.post(URL, test_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        role_uuid = response.data.get("uuid")
+
+        # Try to patch name to match system role (case-insensitive)
+        url = reverse("v1_management:role-detail", kwargs={"uuid": role_uuid})
+        patch_data = {"name": "SYSTEM_ROLE"}
+        response = client.patch(url, patch_data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("conflicts with an existing system role", str(response.data))
+
     @override_settings(ROLE_CREATE_ALLOW_LIST="someApp")
     def test_create_role_with_invalid_equals_operation(self):
         """Test that we cannot create a role when a List value is paired with the 'equal' operation."""
