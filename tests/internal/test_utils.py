@@ -37,7 +37,7 @@ from management.role.definer import seed_roles
 from management.role.model import Role, ResourceDefinition
 from management.role.v2_model import RoleV2
 from management.role.v2_service import RoleV2Service
-from management.role_binding.model import RoleBinding, RoleBindingGroup
+from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
 from management.role_binding.service import RoleBindingService, CreateBindingRequest
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
 from management.tenant_mapping.v2_activation import ensure_v2_write_activated
@@ -924,14 +924,14 @@ class ExpireOrphanCrossAccountRequests(DualWriteTestCase):
             users=[self.source_user_id], tenant=self.source_tenant
         )[0]
 
+        self.role = self.given_v1_system_role("a role", ["rbac:*:*"])
+        self.group, _ = self.given_group("a group", ["p1"])
+
     @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="")
     def test_expire_orphans(self):
-        role = self.given_v1_system_role("a role", ["rbac:*:*"])
-        group, _ = self.given_group("a group", ["p1"])
+        self.given_roles_assigned_to_group(self.group, [self.role])
 
-        self.given_roles_assigned_to_group(group, [role])
-
-        car = self.given_car(self.source_user_id, [role])
+        car = self.given_car(self.source_user_id, [self.role])
 
         # Currently, we will create a RoleBinding for the CAR. (This was not always the case in the past.)
         self.assertEqual(RoleBinding.objects.filter(tenant=self.tenant).count(), 1)
@@ -943,15 +943,15 @@ class ExpireOrphanCrossAccountRequests(DualWriteTestCase):
         self.source_principal.delete()
 
         # We should also have created a BindingMapping.
-        mapping = BindingMapping.objects.get(role=role)
+        mapping = BindingMapping.objects.get(role=self.role)
 
-        self.assertEqual([str(group.uuid)], mapping.mappings["groups"])
+        self.assertEqual([str(self.group.uuid)], mapping.mappings["groups"])
         self.assertEqual({str(car.source_key()): self.source_user_id}, mapping.mappings["users"])
 
         self.expect_1_role_binding_to_workspace(
             self.default_workspace(),
-            for_v2_roles=[str(role.uuid)],
-            for_groups=[str(group.uuid)],
+            for_v2_roles=[str(self.role.uuid)],
+            for_groups=[str(self.group.uuid)],
             for_principals=[self.source_user_id],
         )
 
@@ -963,16 +963,78 @@ class ExpireOrphanCrossAccountRequests(DualWriteTestCase):
         # The binding should still exist and have the group as a subject.
         self.expect_1_role_binding_to_workspace(
             self.default_workspace(),
-            for_v2_roles=[str(role.uuid)],
-            for_groups=[str(group.uuid)],
+            for_v2_roles=[str(self.role.uuid)],
+            for_groups=[str(self.group.uuid)],
             for_principals=[],
         )
 
         # The BindingMapping should have been updated.
-        mapping = BindingMapping.objects.get(role=role)
+        mapping = BindingMapping.objects.get(role=self.role)
 
-        self.assertEqual([str(group.uuid)], mapping.mappings["groups"])
+        self.assertEqual([str(self.group.uuid)], mapping.mappings["groups"])
         self.assertEqual({}, mapping.mappings["users"])
 
         # We should not have created a RoleBinding.
         self.assertFalse(RoleBinding.objects.filter(tenant=self.tenant).exists())
+
+    def test_preserve_not_orphaned(self):
+        car = self.given_car(self.source_user_id, [self.role])
+
+        def expect_exists():
+            self.expect_1_role_binding_to_workspace(
+                self.default_workspace(),
+                for_v2_roles=[str(self.role.uuid)],
+                for_groups=[],
+                for_principals=[self.source_user_id],
+            )
+
+            self.assertEqual(
+                BindingMapping.objects.get(role=self.role).mappings["users"],
+                {str(car.source_key()): self.source_user_id},
+            )
+            self.assertTrue(
+                RoleBindingPrincipal.objects.filter(
+                    principal=self.source_principal, binding__role__v1_source=self.role
+                ).exists()
+            )
+
+        expect_exists()
+
+        expire_orphaned_cross_account_requests()
+
+        car.refresh_from_db()
+        self.assertEqual(car.status, "approved")
+
+        expect_exists()
+
+    def test_preserve_v2_tenant(self):
+        car = self.given_car(self.source_user_id, [self.role])
+
+        ensure_v2_write_activated(self.tenant)
+
+        def expect_exists():
+            self.expect_1_role_binding_to_workspace(
+                self.default_workspace(),
+                for_v2_roles=[str(self.role.uuid)],
+                for_groups=[],
+                for_principals=[self.source_user_id],
+            )
+
+            self.assertEqual(
+                BindingMapping.objects.get(role=self.role).mappings["users"],
+                {str(car.source_key()): self.source_user_id},
+            )
+            self.assertTrue(
+                RoleBindingPrincipal.objects.filter(
+                    principal=self.source_principal, binding__role__v1_source=self.role
+                ).exists()
+            )
+
+        expect_exists()
+
+        expire_orphaned_cross_account_requests()
+
+        car.refresh_from_db()
+        self.assertEqual(car.status, "approved")
+
+        expect_exists()
