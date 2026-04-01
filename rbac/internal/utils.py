@@ -37,6 +37,7 @@ from management.atomic_transactions import atomic, atomic_block
 from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
 from management.models import BindingMapping, Role, Workspace
 from management.permission.scope_service import TenantScopeResources
+from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
 from management.relation_replicator.logging_replicator import LoggingReplicator, stringify_spicedb_relationship
 from management.relation_replicator.noop_replicator import NoopReplicator
@@ -50,7 +51,7 @@ from management.relation_replicator.relation_replicator import (
 from management.relation_replicator.relations_api_replicator import RelationsApiReplicator
 from management.relation_replicator.types import RelationTuple
 from management.role.v2_model import CustomRoleV2, RoleV2
-from management.role_binding.model import RoleBinding
+from management.role_binding.model import RoleBinding, RoleBindingPrincipal
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
 from management.tenant_mapping.v2_activation import (
     TenantVersion,
@@ -64,6 +65,8 @@ from management.utils import as_uuid
 from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspaceHandler
 from migration_tool.utils import create_relationship
 
+from api.cross_access.model import CrossAccountRequest
+from api.cross_access.relation_api_dual_write_cross_access_handler import RelationApiDualWriteCrossAccessHandler
 from api.models import Tenant, User
 
 logger = logging.getLogger(__name__)
@@ -1179,3 +1182,85 @@ def remove_unassigned_system_binding_mappings(replicator: Optional[RelationRepli
 
             if role_binding is not None:
                 role_binding.delete()
+
+
+@atomic
+def _do_remove_orphaned_car(raw_car: CrossAccountRequest, replicator: RelationReplicator):
+    orphaned_car: CrossAccountRequest = CrossAccountRequest.objects.select_for_update().filter(pk=raw_car.pk).first()
+
+    if orphaned_car is None:
+        logger.info(f"Orphaned CAR vanished before it could be removed: pk={raw_car.pk!r}")
+        return
+
+    if orphaned_car.status != "approved":
+        logger.info(f"Skipping orphaned CAR is no longer approved: pk={raw_car.pk!r}")
+        return
+
+    if orphaned_car.user_id is None:
+        logger.info(f"Skipping orphaned CAR with null user_id: pk={raw_car.pk!r}")
+        return
+
+    # If the user is somehow created after this check, that's okay; at worst, they'll have to make a new
+    # cross-account request.
+    if Principal.objects.filter(user_id=orphaned_car.user_id).exists():
+        logger.info(f"Skipping CAR that is no longer orphaned: pk={raw_car.pk!r}")
+        return
+
+    target_tenant = Tenant.objects.filter(org_id=orphaned_car.target_org).first()
+
+    if target_tenant is None:
+        logger.info(f"Skipping orphaned CAR with non-existent tenant: pk={orphaned_car.pk}")
+        return
+
+    tenant_version = lock_tenant_version(target_tenant)
+
+    # Since the principals don't exist, we need to ensure that BindingMappings will be treated as authoritative (so
+    # that we can later reconstruct the correct RoleBindings from them). This is the case only for V1 tenants.
+    if tenant_version != TenantVersion.VERSION_1:
+        logger.info(f"Skipping orphaned CAR in non-V1 tenant: pk={orphaned_car.pk}")
+        return
+
+    if RoleBindingPrincipal.objects.filter(source=str(orphaned_car.source_key())).exists():
+        raise AssertionError(f"Expected no principal entries to have been created for CAR with pk={orphaned_car.pk!r}")
+
+    orphaned_car.status = "expired"
+    orphaned_car.save()
+
+    dual_write_handler = RelationApiDualWriteCrossAccessHandler(
+        cross_account_request=orphaned_car,
+        event_type=ReplicationEventType.EXPIRE_CROSS_ACCOUNT_REQUEST,
+        replicator=replicator,
+    )
+
+    # We have to suppress the migration to RoleBindings because there might be a single BindingMapping with
+    # principals from multiple CARs (in which case it still couldn't be migrated after we remove the first one).
+    # We know that the tenant is a V1 tenant, so its BindingMappings will be treated as authoritative. If a
+    # RoleBinding (without a principal entry for the CAR) does somehow exist, it will still be properly updated.
+    #
+    # It appears that, in the cases where this has happened, no corresponding RoleBindings yet exist, so we will not
+    # create any here. Actually creating the RoleBinding is left to another migration (in practice,
+    # the migrate_binding_scope migration).
+    dual_write_handler.generate_relations_to_remove_roles(orphaned_car.roles.all(), suppress_v1_migration=True)
+    dual_write_handler.replicate()
+
+    logger.info(f"Expired orphaned CAR: pk={orphaned_car.pk!r}")
+
+
+@atomic
+def expire_orphaned_cross_account_requests(replicator: Optional[RelationReplicator] = None):
+    """Expire cross-account requests that refer to a principal that no longer exists."""
+    if replicator is None:
+        replicator = OutboxReplicator()
+
+    # We must exclude user_id=None in the subquery. Otherwise, if the user_id is not present and at least one Principal
+    # user_id is null, the result of the IN operator will also be null. (I think this is bad, but oh well.) Then,
+    # when Django negates the null, it will still be null. This means the where clause will at best be (TRUE AND NULL
+    # AND TRUE), which will still filter out the row.
+    orphaned_cars = (
+        CrossAccountRequest.objects.filter(status="approved")
+        .exclude(user_id__in=Principal.objects.exclude(user_id=None).values_list("user_id", flat=True))
+        .exclude(user_id=None)
+    )
+
+    for orphaned_car in orphaned_cars.iterator():
+        _do_remove_orphaned_car(orphaned_car, replicator)

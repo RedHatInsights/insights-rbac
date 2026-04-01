@@ -52,7 +52,9 @@ def _sync_binding_mapping_to_role_binding(binding_mapping: BindingMapping, role_
 
 
 def _update_role_binding(
-    binding_mapping: BindingMapping, role_binding: RoleBinding, update_mapping: Callable[[BindingMapping], None]
+    binding_mapping: BindingMapping,
+    role_binding: Optional[RoleBinding],
+    update_mapping: Callable[[BindingMapping], None],
 ):
     def _key_attrs_for(mapping: BindingMapping):
         return (
@@ -74,7 +76,9 @@ def _update_role_binding(
             raise ValueError("Principal bindings are not supported for custom roles.")
 
     binding_mapping.save(force_update=True)
-    _sync_binding_mapping_to_role_binding(binding_mapping, role_binding)
+
+    if role_binding is not None:
+        _sync_binding_mapping_to_role_binding(binding_mapping, role_binding)
 
 
 def _get_or_migrate_binding_for_system_role(tenant: Tenant, binding_mapping: BindingMapping) -> RoleBinding:
@@ -272,7 +276,9 @@ class RelationApiDualWriteSubjectHandler:
         scope: Scope,
         update_mapping: Callable[[BindingMapping], None],
         create_default_mapping_for_system_role: Optional[Callable[[V2boundresource], BindingMapping]],
+        *,
         resource_locked: bool = False,
+        suppress_migration: bool = False,
     ):
         self._expect_v1_tenant()
 
@@ -304,18 +310,46 @@ class RelationApiDualWriteSubjectHandler:
                 .get()
             )
 
-            role_binding = _get_or_migrate_binding_for_system_role(self.tenant, mapping)
+            # If suppress_migration is set, we will not migrate the BindingMapping to a RoleBinding if the
+            # RoleBinding does not already exist. There are *very* few situations where this should be done.
+            #
+            # The particular reason this was added was to support a script that removes cross-account requests for
+            # principals that no longer exist. In general, this should probably never be done except when explicitly
+            # attempting to resolve an inconsistency.
+            if not suppress_migration:
+                role_binding = _get_or_migrate_binding_for_system_role(self.tenant, mapping)
+
+                if role_binding is None:
+                    raise AssertionError("Should always have RoleBinding after migrating.")
+            else:
+                role_binding = (
+                    RoleBinding.objects.filter(uuid=mapping.mappings["id"])
+                    .select_related("role")
+                    .select_for_update(of=["self"])
+                    .first()
+                )
+
+                if role_binding is not None:
+                    v1_state = (mapping.resource_type_name, mapping.resource_id, mapping.role_id)
+                    v2_state = (role_binding.resource_type, role_binding.resource_id, role_binding.role.v1_source_id)
+
+                    if v1_state != v2_state:
+                        raise AssertionError(
+                            f"Found mismatch between V1 and V2 state for role binding: "
+                            f"v1_state={v1_state!r}, v2_state={v2_state!r}"
+                        )
 
             _update_role_binding(binding_mapping=mapping, role_binding=role_binding, update_mapping=update_mapping)
 
             if mapping.is_unassigned():
-                assert not role_binding.group_entries.exists()
-                assert not role_binding.principal_entries.exists()
-
                 self.relations_to_remove.extend(mapping.as_tuples())
-
                 mapping.delete()
-                role_binding.delete()
+
+                if role_binding is not None:
+                    assert not role_binding.group_entries.exists()
+                    assert not role_binding.principal_entries.exists()
+
+                    role_binding.delete()
         except BindingMapping.DoesNotExist:
             # create_default_mapping_for_system_role is None if e.g. the role is being removed.
             if create_default_mapping_for_system_role is not None:
