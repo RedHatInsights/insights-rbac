@@ -16,6 +16,7 @@
 #
 """Serializers for RoleV2 API."""
 
+from django.utils.translation import gettext as _
 from management.exceptions import RequiredFieldError
 from management.role.v2_exceptions import (
     InvalidRolePermissionsError,
@@ -230,7 +231,7 @@ class RoleV2RequestSerializer(serializers.ModelSerializer):
             type__in=[RoleV2.Types.SEEDED, RoleV2.Types.PLATFORM],
             name__iexact=value,
         ).exists():
-            raise serializers.ValidationError(f"Role name '{value}' conflicts with an existing system role.")
+            raise serializers.ValidationError(_("Role name '%(name)s' conflicts with an existing system role.") % {"name": value})
 
         return value
 
