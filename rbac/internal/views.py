@@ -2534,3 +2534,21 @@ def remove_unassigned_system_binding_mappings(request):
     except Exception as e:
         logger.exception("Error removing unassigned system binding mappings", exc_info=True)
         return JsonResponse({"detail": f"Error removing unassigned system binding mappings: {str(e)}"}, status=500)
+
+
+@require_http_methods(["POST"])
+def expire_orphaned_cross_account_requests(request):
+    """
+    Expire cross-account requests that no longer correspond to an actual user.
+
+    POST /_private/api/utils/expire_orphaned_cross_account_requests/
+
+    Returns:
+        JSON response indicating the task has been queued
+    """
+    try:
+        remove_unassigned_system_binding_mappings_in_worker.delay()
+        return JsonResponse({"message": "Cleanup enqueued in background worker."}, status=202)
+    except Exception as e:
+        logger.exception("Error removing orphaned CARs", exc_info=True)
+        return JsonResponse({"detail": f"Error removing orphaned CARs: {str(e)}"}, status=500)
