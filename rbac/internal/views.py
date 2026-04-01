@@ -2289,7 +2289,12 @@ def migrate_binding_scope(request):
 
     logger.info("Running binding scope migration.")
 
-    migrate_binding_scope_in_worker.delay()
+    raw_sources = request.GET.get("sources", None)
+
+    if raw_sources is not None:
+        migrate_binding_scope_in_worker.delay(sources=set(raw_sources.split(",")))
+    else:
+        migrate_binding_scope_in_worker.delay()
 
     return JsonResponse(
         {"message": "Binding scope migration is running in a background worker."},

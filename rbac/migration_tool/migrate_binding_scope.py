@@ -325,9 +325,17 @@ def _do_migrate_all_cars(
     return cars_checked, cars_migrated
 
 
+custom_role_source = "custom_roles"
+system_role_source = "system_roles"
+car_source = "cars"
+
+_all_sources = {custom_role_source, system_role_source, car_source}
+
+
 def migrate_all_role_bindings(
     replicator: RelationReplicator = OutboxReplicator(),
     tenant: Optional[Tenant] = None,
+    sources: Optional[set[str]] = None,
 ):
     """
     Migrate all role bindings to correct scope.
@@ -338,6 +346,7 @@ def migrate_all_role_bindings(
     Args:
         replicator: Replicator to use for relation updates. Defaults to OutboxReplicator.
         tenant: Optional tenant to filter roles and groups. If None, migrates all tenants.
+        sources: a subset of "custom_roles", "system_roles", and "cars" to migrate (defaulting to everything)
 
     Returns: Tuple of (items_checked, items_migrated)
     """
@@ -352,18 +361,40 @@ def migrate_all_role_bindings(
     if settings.REPLICATION_TO_RELATION_ENABLED is not True:
         raise RuntimeError("Replication must be enabled while migrating binding scope.")
 
+    if sources is None:
+        sources = _all_sources
+
+    sources = set(sources)
+
+    if not sources.issubset(_all_sources):
+        invalid = _all_sources - sources
+        raise ValueError(f"Unexpected sources: {invalid!r}")
+
     tenant_info = f" for tenant {tenant.org_id}" if tenant else ""
-    logger.info(f"Starting binding scope migration{tenant_info}")
+    logger.info(f"Starting binding scope migration{tenant_info} with the following sources: {sources}")
     logger.info(f"ROOT_SCOPE_PERMISSIONS: {settings.ROOT_SCOPE_PERMISSIONS}")
     logger.info(f"TENANT_SCOPE_PERMISSIONS: {settings.TENANT_SCOPE_PERMISSIONS}")
     logger.info(f"DEFAULT_SCOPE_PERMISSIONS: {settings.DEFAULT_SCOPE_PERMISSIONS}")
 
-    custom_roles_checked, custom_roles_migrated = _do_migrate_all_group_custom_roles(
-        replicator=replicator, tenant=tenant
-    )
+    if custom_role_source in sources:
+        custom_roles_checked, custom_roles_migrated = _do_migrate_all_group_custom_roles(
+            replicator=replicator, tenant=tenant
+        )
+    else:
+        custom_roles_checked = 0
+        custom_roles_migrated = 0
 
-    groups_checked, groups_migrated = _do_migrate_all_group_system_roles(replicator=replicator, tenant=tenant)
-    cars_migrated, cars_checked = _do_migrate_all_cars(replicator=replicator, tenant=tenant)
+    if system_role_source in sources:
+        groups_checked, groups_migrated = _do_migrate_all_group_system_roles(replicator=replicator, tenant=tenant)
+    else:
+        groups_checked = 0
+        groups_migrated = 0
+
+    if car_source in sources:
+        cars_migrated, cars_checked = _do_migrate_all_cars(replicator=replicator, tenant=tenant)
+    else:
+        cars_checked = 0
+        cars_migrated = 0
 
     total_checked = custom_roles_checked + groups_checked + cars_checked
     total_migrated = custom_roles_migrated + groups_migrated + cars_migrated
