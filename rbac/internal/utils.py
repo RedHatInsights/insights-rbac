@@ -1233,12 +1233,13 @@ def _do_remove_orphaned_car(raw_car: CrossAccountRequest, replicator: RelationRe
     )
 
     # We have to suppress the migration to RoleBindings because there might be a single BindingMapping with
-    # principals from multiple CARs (in which case it still couldn't be migrated after we remove the first one).
-    # We know that the tenant is a V1 tenant, so its BindingMappings will be treated as authoritative. If a
-    # RoleBinding (without a principal entry for the CAR) does somehow exist, it will still be properly updated.
+    # principals from multiple orphaned CARs (in which case it still couldn't be migrated after we remove the first
+    # one). We know that the tenant is a V1 tenant, so its BindingMappings will be treated as authoritative. If a
+    # RoleBinding (without a principal entry for the CAR) does somehow exist, it will still be properly updated
+    # (though this would still cause problems if there *are* multiple orphaned CARs).
     #
-    # It appears that, in the cases where this has happened, no corresponding RoleBindings yet exist, so we will not
-    # create any here. Actually creating the RoleBinding is left to another migration (in practice,
+    # It appears that, in the cases where this has happened, no corresponding RoleBindings yet exist, so we will just
+    # not create any here. Actually creating the RoleBinding is left to another migration (in practice,
     # the migrate_binding_scope migration).
     dual_write_handler.generate_relations_to_remove_roles(orphaned_car.roles.all(), suppress_v1_migration=True)
     dual_write_handler.replicate()
