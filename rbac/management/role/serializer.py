@@ -440,11 +440,7 @@ def _validate_name_not_system_role(name, display_name, instance=None):
     if name and (not instance or instance.name != name):
         if Role.objects.filter(system=True, tenant=public_tenant, name__iexact=name).exists():
             raise serializers.ValidationError(
-                {
-                    "name": [
-                        _("Role name '%(name)s' conflicts with an existing system role.") % {"name": name}
-                    ]
-                }
+                {"name": [_("Role name '%(name)s' conflicts with an existing system role.") % {"name": name}]}
             )
 
     if display_name and (not instance or instance.display_name != display_name):
