@@ -852,7 +852,14 @@ class RoleBindingService:
 
         Returns the original subject unchanged when it is not the public default group.
         """
+        if not subject.is_group:
+            return subject
         group = subject.entity
+        if group.admin_default:
+            raise InvalidFieldError(
+                "subject_id",
+                "Role bindings for the admin default group cannot be modified.",
+            )
         if not (group.platform_default and group.system):
             return subject
 
@@ -908,8 +915,7 @@ class RoleBindingService:
 
         subject = Subject.objects.by_type(type=subject_type, id=subject_id)
 
-        if subject.is_group:
-            subject = self._maybe_customize_default_group(subject)
+        subject = self._maybe_customize_default_group(subject)
 
         self._validate_subject(subject.entity)
 

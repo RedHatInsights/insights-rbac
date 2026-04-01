@@ -2604,6 +2604,28 @@ class UpdateRoleBindingsForSubjectTests(_ReplicationAssertionsMixin, IdentityReq
                 self.assertEqual(context.exception.field_name, expected_field)
                 self.assertFalse(is_v2_write_activated(self.tenant))
 
+    def test_update_rejects_admin_default_group(self):
+        """Updating role bindings for the admin default group is not allowed."""
+        public_tenant = Tenant.objects.get(tenant_name="public")
+        admin_group = Group.objects.create(
+            name="Default admin access",
+            admin_default=True,
+            system=True,
+            tenant=public_tenant,
+        )
+
+        with self.assertRaises(InvalidFieldError) as context:
+            self.service.update_role_bindings_for_subject(
+                resource_type="workspace",
+                resource_id=str(self.workspace.id),
+                subject_type="group",
+                subject_id=str(admin_group.uuid),
+                role_ids=[str(self.role1.uuid)],
+            )
+
+        self.assertIn("admin default group", str(context.exception))
+        admin_group.delete()
+
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)
 class ReplaceRoleBindingsTests(_ReplicationAssertionsMixin, IdentityRequest):
