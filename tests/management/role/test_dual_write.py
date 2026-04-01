@@ -1133,6 +1133,44 @@ class DualWriteGroupTestCase(DualWriteTestCase):
 
         self._assert_custom_default_group_before_bootstrap(do_bootstrap)
 
+    def test_v2_group_members(self):
+        ensure_v2_write_activated(self.tenant)
+
+        group, principals = self.given_group("a group", ["p1"])
+
+        self.assertEqual(
+            1,
+            self.tuples.count_tuples(
+                all_of(
+                    resource("rbac", "group", str(group.uuid)),
+                    relation("member"),
+                    subject("rbac", "principal", principals[0].principal_resource_id()),
+                )
+            ),
+        )
+
+    def test_v2_group_role_assignment(self):
+        ensure_v2_write_activated(self.tenant)
+
+        group, _ = self.given_group("a group", ["p1"])
+        role = self.given_v1_system_role("a role", ["rbac:*:*"])
+
+        # It is not meaningful to simply assign a role to a group in a V2 tenant.
+        with self.assertRaises(RuntimeError):
+            self.given_roles_assigned_to_group(group, [role])
+
+    def test_v2_group_role_unassignment(self):
+        group, _ = self.given_group("a group", ["p1"])
+        role = self.given_v1_system_role("a role", ["rbac:*:*"])
+
+        self.given_roles_assigned_to_group(group, [role])
+
+        ensure_v2_write_activated(self.tenant)
+
+        # It is not meaningful to simply assign a role to a group in a V2 tenant.
+        with self.assertRaises(RuntimeError):
+            self.given_roles_unassigned_from_group(group, [role])
+
 
 class DualWriteSystemRolesTestCase(DualWriteTestCase):
     """Test dual write logic for system roles."""
@@ -2524,6 +2562,20 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
         self.assertNotEqual(
             root_role_id, specific_role_id, "Different permission sets should create different V2 roles"
         )
+
+    def test_create_v2_tenant(self):
+        ensure_v2_write_activated(self.tenant)
+
+        with self.assertRaises(DualWriteException):
+            self.given_v1_role("a role", default=["rbac:*:*"])
+
+    def test_update_v2_tenant(self):
+        role = self.given_v1_role("a role", default=["rbac:*:*"])
+
+        ensure_v2_write_activated(self.tenant)
+
+        with self.assertRaises(DualWriteException):
+            self.given_update_to_v1_role(role, default=["inventory:*:*"])
 
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)

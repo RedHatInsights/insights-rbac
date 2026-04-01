@@ -37,7 +37,7 @@ from management.role.model import BindingMapping, Role
 from management.role.v2_model import SeededRoleV2
 from management.role_binding.service import CreateBindingRequest, ExcludeSources, RoleBindingService
 from management.subject import SubjectType
-from management.tenant_mapping.v2_activation import TenantVersion, lock_tenant_version
+from management.tenant_mapping.v2_activation import TenantVersion
 
 from api.models import CrossAccountRequest, Tenant
 
@@ -91,8 +91,6 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
                 event_type=event_type,
                 replicator=replicator,
             )
-
-            self._tenant_version = lock_tenant_version(self.tenant)
         except Exception as e:
             logger.error(
                 f"Error initializing RelationApiDualWriteCrossAccessHandler for request id: "
@@ -159,6 +157,8 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
         )
 
     def _add_car_roles_v1(self, roles: set[Role]):
+        self._expect_v1_tenant()
+
         def add_principal_to_binding(mapping: BindingMapping):
             self.relations_to_add.append(mapping.assign_user_to_bindings(user_id, source_key))
 
@@ -225,6 +225,8 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
             raise ValueError(f"Unexpected tenant version: {self._tenant_version!r}")
 
     def _remove_car_roles_v1(self, roles: set[Role]):
+        self._expect_v1_tenant()
+
         user_id = self._user_id()
         source_key = self._source_key()
 

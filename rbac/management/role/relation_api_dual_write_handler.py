@@ -42,6 +42,7 @@ from management.role.relations import deduplicate_role_permission_relationships,
 from management.role.v2_model import CustomRoleV2
 from management.role_binding.model import RoleBinding
 from management.tenant_mapping.model import DefaultAccessType
+from management.tenant_mapping.v2_activation import assert_v1_write_allowed
 from migration_tool.migrate_role import migrate_role, relation_tuples_for_bindings
 from migration_tool.models import V2boundresource
 from migration_tool.sharedSystemRolesReplicatedRoleBindings import v1_perm_to_v2_perm
@@ -322,6 +323,8 @@ class RelationApiDualWriteHandler(BaseRelationApiDualWriteHandler):
             self.default_workspace = Workspace.objects.default(tenant=binding_tenant)
 
             self.resource_service = ImplicitResourceService.from_settings()
+
+            assert_v1_write_allowed(self.tenant)
         except Exception as e:
             logger.error(f"Failed to initialize RelationApiDualWriteHandler with error: {e}")
             raise DualWriteException(e)
