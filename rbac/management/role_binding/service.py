@@ -841,6 +841,40 @@ class RoleBindingService:
         except Exception as e:
             logger.error(f"Failed to restore default bindings for tenant {self.tenant.org_id}: {e}")
 
+    def _maybe_customize_default_group(self, subject: Subject) -> Subject:
+        """If subject is the public tenant's default access group, customize it for this tenant.
+
+        When modifying role bindings for the public tenant's system default access group,
+        we create a tenant-specific custom default access group (mirroring the V1 behavior
+        in clone_default_group_in_public_schema).
+
+        If the tenant already has a custom default group, returns that instead.
+
+        Returns the original subject unchanged when it is not the public default group.
+        """
+        if not subject.is_group:
+            return subject
+        group = subject.entity
+        if group.admin_default:
+            raise InvalidFieldError(
+                "subject_id",
+                "Role bindings for the admin default group cannot be modified.",
+            )
+        if not (group.platform_default and group.system):
+            return subject
+
+        existing_custom = Group.objects.filter(platform_default=True, tenant=self.tenant).first()
+        if existing_custom is not None:
+            return Subject(type=SubjectType.GROUP, entity=existing_custom)
+
+        from management.group.definer import clone_default_group_in_public_schema
+
+        custom_group = clone_default_group_in_public_schema(group, self.tenant)
+        if custom_group is None:
+            raise RuntimeError(f"Failed to create custom default access group for tenant {self.tenant.org_id}")
+
+        return Subject(type=SubjectType.GROUP, entity=custom_group)
+
     @atomic
     def update_role_bindings_for_subject(
         self,
@@ -854,6 +888,10 @@ class RoleBindingService:
 
         This replaces all existing role bindings for the subject on the resource
         with the provided roles.
+
+        If the subject is the public tenant's default access group, it is first
+        cloned into a tenant-specific custom default access group (matching the
+        V1 behavior), and the role binding update is applied to that custom group.
 
         Args:
             resource_type: The type of resource (e.g., 'workspace')
@@ -876,6 +914,9 @@ class RoleBindingService:
         roles = self._get_roles(role_ids)
 
         subject = Subject.objects.by_type(type=subject_type, id=subject_id)
+
+        subject = self._maybe_customize_default_group(subject)
+
         self._validate_subject(subject.entity)
 
         self._replace_role_bindings(
