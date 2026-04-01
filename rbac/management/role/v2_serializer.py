@@ -231,7 +231,9 @@ class RoleV2RequestSerializer(serializers.ModelSerializer):
             type__in=[RoleV2.Types.SEEDED, RoleV2.Types.PLATFORM],
             name__iexact=value,
         ).exists():
-            raise serializers.ValidationError(_("Role name '%(name)s' conflicts with an existing system role.") % {"name": value})
+            raise serializers.ValidationError(
+                _("Role name '%(name)s' conflicts with an existing system role.") % {"name": value}
+            )
 
         return value
 
