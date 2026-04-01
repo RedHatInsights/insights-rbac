@@ -24,9 +24,11 @@ from django.test import TestCase, override_settings
 
 from api.cross_access.model import CrossAccountRequest
 from api.cross_access.relation_api_dual_write_cross_access_handler import RelationApiDualWriteCrossAccessHandler
+from management.group.definer import seed_group
 from management.group.model import Group
 from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
 from management.models import BindingMapping, Workspace, Access, Permission
+from management.permission.scope_service import Scope
 from management.policy.model import Policy
 from management.principal.model import Principal
 from management.relation_replicator.noop_replicator import NoopReplicator
@@ -37,6 +39,7 @@ from management.role.v2_model import RoleV2
 from management.role.v2_service import RoleV2Service
 from management.role_binding.model import RoleBinding, RoleBindingGroup
 from management.role_binding.service import RoleBindingService, CreateBindingRequest
+from management.tenant_mapping.model import DefaultAccessType, TenantMapping
 from management.tenant_mapping.v2_activation import ensure_v2_write_activated
 from management.tenant_service import V2TenantBootstrapService
 from migration_tool.in_memory_tuples import (
@@ -46,6 +49,7 @@ from migration_tool.in_memory_tuples import (
     resource,
     relation,
     subject,
+    resource_type,
 )
 from api.models import Tenant
 from internal.utils import (
@@ -55,10 +59,11 @@ from internal.utils import (
 )
 from migration_tool.models import V2role, V2rolebinding, V2boundresource
 from tests.management.role.test_dual_write import DualWriteTestCase
+from tests.util import assert_v2_tuples_consistent, assert_v1_v2_tuples_fully_consistent
 from tests.v2_util import seed_v2_role_from_v1, bootstrap_tenant_for_v2_test
 
 
-@override_settings(ATOMIC_RETRY_DISABLED=True)
+@override_settings(ATOMIC_RETRY_DISABLED=True, REPLICATION_TO_RELATION_ENABLED=True)
 class ReplicateMissingBindingTuplesTest(TestCase):
     """Test the replicate_missing_binding_tuples function."""
 
@@ -75,7 +80,7 @@ class ReplicateMissingBindingTuplesTest(TestCase):
         self.root_ws = bootstrap_result.root_workspace
         self.default_ws = bootstrap_result.default_workspace
 
-    @override_settings(REPLICATION_TO_RELATION_ENABLED=True, ROOT_SCOPE_PERMISSIONS="test:resource:read")
+    @override_settings(ROOT_SCOPE_PERMISSIONS="test:resource:read")
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     def test_replicate_missing_binding_tuples_for_specific_bindings(self, mock_replicate):
         """Test that function replicates all tuples for specific binding IDs."""
@@ -292,6 +297,92 @@ class ReplicateMissingBindingTuplesTest(TestCase):
                 )
             ),
         )
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_no_replicate_default_access(self, mock_replicate):
+        mock_replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
+
+        # Ensure platform-default roles and groups exist, since we will not create default access RoleBindings if we
+        # can't find them.
+        seed_roles()
+        seed_group()
+
+        # Create tuples for default access role bindings (since we want to check how they are affected).
+        bootstrap_tenant_for_v2_test(self.tenant, tuples=self.tuples)
+
+        group = Group.objects.create(name="a group", tenant=self.tenant)
+
+        role = Role.objects.create(name="test role", system=True, tenant=self.public_tenant)
+        perm = Permission.objects.create(permission="app:resource:verb", tenant=self.public_tenant)
+        Access.objects.create(role=role, permission=perm, tenant=self.public_tenant)
+
+        seed_v2_role_from_v1(role)
+
+        tenant_mapping: TenantMapping = TenantMapping.objects.get(tenant=self.tenant)
+
+        dual_write_handler = RelationApiDualWriteGroupHandler(group=group, event_type=ReplicationEventType.ASSIGN_ROLE)
+        dual_write_handler.generate_relations_reset_roles([role])
+        dual_write_handler.replicate()
+
+        binding_service = RoleBindingService(tenant=self.tenant)
+
+        # This will create a physical RoleBinding for each of the default access role bindings for the tenant,
+        # despite the tenant still being V1.
+        binding_service.get_role_bindings_by_subject(
+            {
+                "subject_type": "group",
+                "subject_id": str(group.uuid),
+                "resource_type": "workspace",
+                "resource_id": str(self.default_ws.id),
+            }
+        )
+
+        self.assertEqual(BindingMapping.objects.filter(role=role).count(), 1)
+        self.assertEqual(
+            RoleBinding.objects.filter(tenant=self.tenant).count(), len(Scope) * len(DefaultAccessType) + 1
+        )
+
+        # Check that we actually created the default access RoleBinding.
+        self.assertTrue(RoleBinding.objects.filter(uuid=tenant_mapping.default_role_binding_uuid).exists())
+
+        def assert_group_binding_in_tuples():
+            self.assertEqual(
+                1,
+                self.tuples.count_tuples(
+                    all_of(
+                        resource_type("rbac", "role_binding"),
+                        relation("subject"),
+                        subject("rbac", "group", str(group.uuid), "member"),
+                    )
+                ),
+            )
+
+        def assert_default_binding_in_tuples(value: bool = True):
+            self.assertEqual(
+                int(value),
+                self.tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "workspace", str(self.default_ws.id)),
+                        relation("binding"),
+                        subject("rbac", "role_binding", str(tenant_mapping.default_role_binding_uuid)),
+                    )
+                ),
+            )
+
+        assert_group_binding_in_tuples()
+        assert_default_binding_in_tuples()
+
+        # Clear tuples so that we can check what is actually re-replicated.
+        self.tuples.clear()
+
+        replicate_missing_binding_tuples(tenant=self.tenant)
+
+        assert_group_binding_in_tuples()
+
+        # We should not have re-replicated the default binding.
+        assert_default_binding_in_tuples(False)
+
+        assert_v1_v2_tuples_fully_consistent(test=self, tuples=self.tuples)
 
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)

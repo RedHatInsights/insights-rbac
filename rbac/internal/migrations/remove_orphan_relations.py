@@ -25,7 +25,11 @@ from django.db.models import QuerySet
 
 from api.models import Tenant
 from django.db import transaction
-from internal.utils import replicate_missing_binding_tuples, iterate_tuples_from_kessel
+from internal.utils import (
+    replicate_missing_binding_tuples,
+    iterate_tuples_from_kessel,
+    lock_binding_mappings_with_roles_by_uuid,
+)
 from management.atomic_transactions import atomic_block
 from management.role.model import BindingMapping
 from management.models import Role, Workspace
@@ -296,24 +300,7 @@ def _remove_orphaned_role_bindings(
             tenant_is_v1 = lock_tenant_version(tenant) == TenantVersion.VERSION_1
 
             if tenant_is_v1:
-                # This will lock both the bindings and custom roles.
-                # See https://docs.djangoproject.com/en/5.2/ref/models/querysets/#select-for-update
-                custom_binding_mappings: list[BindingMapping] = list(
-                    BindingMapping.objects.filter(mappings__id__in=binding_ids, role__system=False)
-                    .select_related("role")
-                    .select_for_update()
-                )
-
-                # Only lock the bindings themselves here, not the associated system roles.
-                system_binding_mappings: list[BindingMapping] = list(
-                    BindingMapping.objects.filter(mappings__id__in=binding_ids, role__system=True)
-                    .select_related("role")
-                    .select_for_update(of=["self"])
-                )
-
-                binding_mappings_by_id: dict[str, BindingMapping] = {
-                    b.mappings["id"]: b for b in [*custom_binding_mappings, *system_binding_mappings]
-                }
+                binding_mappings_by_id = lock_binding_mappings_with_roles_by_uuid(binding_ids)
             else:
                 binding_mappings_by_id = {}
 
@@ -377,16 +364,11 @@ def _remove_orphaned_role_bindings(
 
             commit_removal(to_remove)
 
-    # Do this in a SERIALIZABLE transaction so that we have a consistent view of seeded roles.
-    with atomic_block():
-        system_role_ids = _local_system_role_ids()
-        custom_role_ids = seen_role_ids - system_role_ids
-
-        custom_roles_altered_count = _remove_orphaned_custom_role_relations(
-            custom_role_ids=custom_role_ids,
-            read_tuples_typed=read_tuples_typed,
-            commit_removal=commit_removal,
-        )
+    custom_roles_altered_count = _remove_orphaned_custom_role_relations(
+        seen_role_ids=seen_role_ids,
+        read_tuples_typed=read_tuples_typed,
+        commit_removal=commit_removal,
+    )
 
     return _RemoveRoleBindingsResult(
         ordinary_bindings_altered_count=bindings_altered_count,
@@ -396,7 +378,7 @@ def _remove_orphaned_role_bindings(
 
 
 def _remove_orphaned_custom_role_relations(
-    custom_role_ids: set[str], read_tuples_typed: _ReadTuplesTyped, commit_removal: _CommitRemoval
+    seen_role_ids: set[str], read_tuples_typed: _ReadTuplesTyped, commit_removal: _CommitRemoval
 ) -> int:
     """
     Remove orphaned relations for custom roles with the specified UUIDs.
@@ -405,27 +387,56 @@ def _remove_orphaned_custom_role_relations(
     """
     altered_count = 0
 
-    for batch_role_ids in itertools.batched(custom_role_ids, 100):
-        with transaction.atomic():
+    # We cache a non-authoritative set of system role IDs here at the start. At the beginning of each batch,
+    # we will use this to filter out any IDs known to correspond to system roles. Then, within each batch,
+    # we will load a new authoritative value, use it to fully eliminate all system roles, and then leave it there as a
+    # cache for the next batch.
+    #
+    # If a system role is created after this point, that's fine, because it will be correctly removed with the
+    # authoritative check.
+    #
+    # If a system role is removed after this point, that's fine, because the removal is assumed to correctly remove
+    # all relations for it.
+    system_role_ids = _local_system_role_ids()
+
+    for batch_raw_role_ids_tuple in itertools.batched(seen_role_ids, 100):
+        batch_raw_role_ids = set(batch_raw_role_ids_tuple)
+
+        # As described above, filter out any roles we can now, but we will still have to do the authoritative check
+        # later in a transaction.
+        batch_raw_role_ids -= system_role_ids
+
+        actual_relations_by_role_id = {
+            role_id: set(
+                _collect_custom_role_permission_relations(role_id=role_id, read_tuples_typed=read_tuples_typed)
+            )
+            for role_id in batch_raw_role_ids
+        }
+
+        # Do this in a SERIALIZABLE transaction so that we have a consistent view of seeded roles.
+        with atomic_block():
             to_remove = []
 
+            # Load an authoritative system_role_ids (valid for the rest of the transaction, then cached, as described
+            # above).
+            system_role_ids = _local_system_role_ids()
+            custom_role_ids = batch_raw_role_ids - system_role_ids
+
             # Paranoia.
-            if RoleV2.objects.filter(uuid__in=batch_role_ids).exclude(type=RoleV2.Types.CUSTOM).exists():
-                raise AssertionError(f"Unexpected non-custom role ID in {batch_role_ids}")
+            if RoleV2.objects.filter(uuid__in=custom_role_ids).exclude(type=RoleV2.Types.CUSTOM).exists():
+                raise AssertionError(f"Unexpected non-custom role ID in {custom_role_ids}")
 
             roles_by_id: dict[str, RoleV2] = {
                 str(r.uuid): r
-                for r in RoleV2.objects.filter(uuid__in=batch_role_ids)
+                for r in RoleV2.objects.filter(uuid__in=custom_role_ids)
                 .prefetch_related("permissions")
                 .select_for_update(of=["self"])
             }
 
-            for role_id in batch_role_ids:
+            for role_id in custom_role_ids:
                 local_role = roles_by_id.get(role_id)
 
-                actual_relations: set[RelationTuple] = set(
-                    _collect_custom_role_permission_relations(role_id=role_id, read_tuples_typed=read_tuples_typed)
-                )
+                actual_relations: set[RelationTuple] = actual_relations_by_role_id[role_id]
 
                 expected_relations: set[RelationTuple] = (
                     {
