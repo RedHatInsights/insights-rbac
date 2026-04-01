@@ -245,8 +245,8 @@ class RoleBindingModelTests(IdentityRequest):
         with self.assertRaises(RoleBindingGroup.DoesNotExist):
             RoleBindingGroup.objects.get(id=bg_id)
 
-    def test_rolebindinggroup_cascade_delete_on_group(self):
-        """Test that deleting a group deletes its binding entries."""
+    def test_rolebindinggroup_protect_delete_on_group(self):
+        """Test that deleting a group with existing binding entries fails."""
         binding = RoleBinding.objects.create(
             role=self.role,
             resource_type="workspace",
@@ -261,14 +261,13 @@ class RoleBindingModelTests(IdentityRequest):
 
         bg_id = bg.id
         group_id = self.group1.id
-        self.group1.delete()
 
-        with self.assertRaises(Group.DoesNotExist):
-            Group.objects.get(id=group_id)
+        with transaction.atomic():
+            with self.assertRaises(IntegrityError):
+                self.group1.delete()
 
-        # Group entry should be deleted
-        with self.assertRaises(RoleBindingGroup.DoesNotExist):
-            RoleBindingGroup.objects.get(id=bg_id)
+        self.assertTrue(Group.objects.filter(id=group_id).exists())
+        self.assertTrue(RoleBindingGroup.objects.filter(id=bg_id).exists())
 
     def test_complete_rolebinding_scenario(self):
         """Test a complete scenario with role binding and groups."""
