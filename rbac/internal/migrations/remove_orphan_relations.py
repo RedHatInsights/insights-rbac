@@ -21,10 +21,15 @@ from collections.abc import Callable, Iterable
 from typing import Protocol
 
 import pgtransaction
+from django.db.models import QuerySet
 
 from api.models import Tenant
 from django.db import transaction
-from internal.utils import replicate_missing_binding_tuples, iterate_tuples_from_kessel
+from internal.utils import (
+    replicate_missing_binding_tuples,
+    iterate_tuples_from_kessel,
+    lock_binding_mappings_with_roles_by_uuid,
+)
 from management.atomic_transactions import atomic_block
 from management.role.model import BindingMapping
 from management.models import Role, Workspace
@@ -90,13 +95,19 @@ def _make_read_tuples_typed(read_tuples: Callable[[str, str, str, str, str], Ite
     return impl
 
 
+def _local_system_role_ids() -> set[str]:
+    return set(str(u) for u in Role.objects.filter(system=True).values_list("uuid", flat=True)) | set(
+        str(u) for u in RoleV2.objects.exclude(type=RoleV2.Types.CUSTOM).values_list("uuid", flat=True)
+    )
+
+
 class _RemoteBindingState:
     _relations: set[RelationTuple]
-    _custom_role_ids: set[str]
+    _role_ids: set[str]
 
     def __init__(self):
         self._relations = set()
-        self._custom_role_ids = set()
+        self._role_ids = set()
 
     @staticmethod
     def _check_str_id(value):
@@ -106,22 +117,21 @@ class _RemoteBindingState:
     def add_relations(self, relations: Iterable[Relationship | RelationTuple]):
         self._relations.update(_as_relation_tuple(r) for r in relations)
 
-    def add_custom_role(self, custom_role_id: str):
-        self._check_str_id(custom_role_id)
-        self._custom_role_ids.add(custom_role_id)
+    def add_role(self, role_id: str):
+        self._check_str_id(role_id)
+        self._role_ids.add(role_id)
 
     def relations(self) -> set[RelationTuple]:
         return set(self._relations)
 
-    def custom_role_ids(self) -> set[str]:
-        return set(self._custom_role_ids)
+    def role_ids(self) -> set[str]:
+        return set(self._role_ids)
 
 
 def _collect_remote_relations_for_binding(
     binding_id: str,
     scope_relations: list[tuple[str, str]],
     read_tuples_typed: _ReadTuplesTyped,
-    system_role_uuids: set[str],
 ) -> _RemoteBindingState:
     """
     Collect all relations to remove for a single binding, including custom role permissions.
@@ -130,7 +140,6 @@ def _collect_remote_relations_for_binding(
         binding_id: The role_binding UUID to clean
         scope_relations: List of (resource_type, resource_id) tuples for scope bindings
         read_tuples_typed: Function to read tuples from Kessel
-        system_role_uuids: Set of system role UUIDs to exclude from custom role cleanup
 
     Returns:
         _RemoteBindingState for the binding
@@ -151,10 +160,7 @@ def _collect_remote_relations_for_binding(
     result.add_relations(role_tuples)
 
     for t in role_tuples:
-        role_id = t.subject.subject.id
-
-        if role_id not in system_role_uuids:
-            result.add_custom_role(role_id)
+        result.add_role(t.subject.subject.id)
 
     # Add relation from role binding to group subjects.
     result.add_relations(
@@ -233,7 +239,6 @@ def _remove_orphaned_role_bindings(
     resource_id: str,
     read_tuples_typed: _ReadTuplesTyped,
     commit_removal: _CommitRemoval,
-    system_role_uuids: set[str],
 ) -> _RemoveRoleBindingsResult:
     """
     Find and remove orphaned relations for role bindings attached to a resource (tenant or workspace).
@@ -252,12 +257,11 @@ def _remove_orphaned_role_bindings(
         resource_type: "tenant" or "workspace"
         resource_id: The resource ID
         read_tuples_typed: Function to read tuples from Kessel
-        system_role_uuids: Set of system role UUIDs to exclude from custom role cleanup
 
     Returns: _RemoveRoleBindingsResults indicating what was done
     """
     scope_relations = [(resource_type, resource_id)]
-    custom_role_ids: set[str] = set()
+    seen_role_ids: set[str] = set()
 
     bindings_altered_count = 0
     builtin_scope_cleaned_count = 0
@@ -278,7 +282,6 @@ def _remove_orphaned_role_bindings(
                 binding_id=b,
                 scope_relations=scope_relations,
                 read_tuples_typed=read_tuples_typed,
-                system_role_uuids=system_role_uuids,
             )
             for b in binding_ids
         }
@@ -297,24 +300,7 @@ def _remove_orphaned_role_bindings(
             tenant_is_v1 = lock_tenant_version(tenant) == TenantVersion.VERSION_1
 
             if tenant_is_v1:
-                # This will lock both the bindings and custom roles.
-                # See https://docs.djangoproject.com/en/5.2/ref/models/querysets/#select-for-update
-                custom_binding_mappings: list[BindingMapping] = list(
-                    BindingMapping.objects.filter(mappings__id__in=binding_ids, role__system=False)
-                    .select_related("role")
-                    .select_for_update()
-                )
-
-                # Only lock the bindings themselves here, not the associated system roles.
-                system_binding_mappings: list[BindingMapping] = list(
-                    BindingMapping.objects.filter(mappings__id__in=binding_ids, role__system=True)
-                    .select_related("role")
-                    .select_for_update(of=["self"])
-                )
-
-                binding_mappings_by_id: dict[str, BindingMapping] = {
-                    b.mappings["id"]: b for b in [*custom_binding_mappings, *system_binding_mappings]
-                }
+                binding_mappings_by_id = lock_binding_mappings_with_roles_by_uuid(binding_ids)
             else:
                 binding_mappings_by_id = {}
 
@@ -374,12 +360,12 @@ def _remove_orphaned_role_bindings(
                         to_remove.extend(orphan_relations)
                         bindings_altered_count += 1
 
-                    custom_role_ids.update(lookup_result.custom_role_ids())
+                    seen_role_ids.update(lookup_result.role_ids())
 
             commit_removal(to_remove)
 
     custom_roles_altered_count = _remove_orphaned_custom_role_relations(
-        custom_role_ids=custom_role_ids,
+        seen_role_ids=seen_role_ids,
         read_tuples_typed=read_tuples_typed,
         commit_removal=commit_removal,
     )
@@ -392,7 +378,7 @@ def _remove_orphaned_role_bindings(
 
 
 def _remove_orphaned_custom_role_relations(
-    custom_role_ids: set[str], read_tuples_typed: _ReadTuplesTyped, commit_removal: _CommitRemoval
+    seen_role_ids: set[str], read_tuples_typed: _ReadTuplesTyped, commit_removal: _CommitRemoval
 ) -> int:
     """
     Remove orphaned relations for custom roles with the specified UUIDs.
@@ -401,27 +387,56 @@ def _remove_orphaned_custom_role_relations(
     """
     altered_count = 0
 
-    for batch_role_ids in itertools.batched(custom_role_ids, 100):
-        with transaction.atomic():
+    # We cache a non-authoritative set of system role IDs here at the start. At the beginning of each batch,
+    # we will use this to filter out any IDs known to correspond to system roles. Then, within each batch,
+    # we will load a new authoritative value, use it to fully eliminate all system roles, and then leave it there as a
+    # cache for the next batch.
+    #
+    # If a system role is created after this point, that's fine, because it will be correctly removed with the
+    # authoritative check.
+    #
+    # If a system role is removed after this point, that's fine, because the removal is assumed to correctly remove
+    # all relations for it.
+    system_role_ids = _local_system_role_ids()
+
+    for batch_raw_role_ids_tuple in itertools.batched(seen_role_ids, 100):
+        batch_raw_role_ids = set(batch_raw_role_ids_tuple)
+
+        # As described above, filter out any roles we can now, but we will still have to do the authoritative check
+        # later in a transaction.
+        batch_raw_role_ids -= system_role_ids
+
+        actual_relations_by_role_id = {
+            role_id: set(
+                _collect_custom_role_permission_relations(role_id=role_id, read_tuples_typed=read_tuples_typed)
+            )
+            for role_id in batch_raw_role_ids
+        }
+
+        # Do this in a SERIALIZABLE transaction so that we have a consistent view of seeded roles.
+        with atomic_block():
             to_remove = []
 
+            # Load an authoritative system_role_ids (valid for the rest of the transaction, then cached, as described
+            # above).
+            system_role_ids = _local_system_role_ids()
+            custom_role_ids = batch_raw_role_ids - system_role_ids
+
             # Paranoia.
-            if RoleV2.objects.filter(uuid__in=batch_role_ids).exclude(type=RoleV2.Types.CUSTOM).exists():
-                raise AssertionError(f"Unexpected non-custom role ID in {batch_role_ids}")
+            if RoleV2.objects.filter(uuid__in=custom_role_ids).exclude(type=RoleV2.Types.CUSTOM).exists():
+                raise AssertionError(f"Unexpected non-custom role ID in {custom_role_ids}")
 
             roles_by_id: dict[str, RoleV2] = {
                 str(r.uuid): r
-                for r in RoleV2.objects.filter(uuid__in=batch_role_ids)
+                for r in RoleV2.objects.filter(uuid__in=custom_role_ids)
                 .prefetch_related("permissions")
                 .select_for_update(of=["self"])
             }
 
-            for role_id in batch_role_ids:
+            for role_id in custom_role_ids:
                 local_role = roles_by_id.get(role_id)
 
-                actual_relations: set[RelationTuple] = set(
-                    _collect_custom_role_permission_relations(role_id=role_id, read_tuples_typed=read_tuples_typed)
-                )
+                actual_relations: set[RelationTuple] = actual_relations_by_role_id[role_id]
 
                 expected_relations: set[RelationTuple] = (
                     {
@@ -538,6 +553,10 @@ def _collect_remote_workspaces(tenant_resource_id: str, read_tuples_typed: _Read
     return workspace_data
 
 
+def _local_workspace_ids_for(tenant: Tenant) -> set[str]:
+    return set(str(u) for u in Workspace.objects.filter(tenant=tenant).values_list("id", flat=True))
+
+
 def _remove_orphaned_workspace_parent_relations(
     tenant: Tenant, workspace_data: _RemoteWorkspaceData, commit_removal: _CommitRemoval
 ) -> int:
@@ -550,10 +569,8 @@ def _remove_orphaned_workspace_parent_relations(
     #
     # There is also no issue if a workspace has been locally deleted but the deletion has not yet been replicated.
     # It can't be recreated (for the reasons above), and redundantly deleting the relation will have no effect.
-    existing_local_ids = set(
-        str(u) for u in Workspace.objects.filter(tenant=tenant, id__in=remote_ids).values_list("id", flat=True)
-    )
 
+    existing_local_ids = _local_workspace_ids_for(tenant)
     orphaned_ids = remote_ids - existing_local_ids
 
     logger.info(
@@ -662,11 +679,6 @@ def cleanup_tenant_orphaned_relationships(
     builtin_scope_cleaned_count = 0
     custom_roles_altered_count = 0
 
-    # Get all non-custom role IDs.
-    system_role_uuids = set(str(u) for u in Role.objects.filter(system=True).values_list("uuid", flat=True)) | set(
-        str(u) for u in RoleV2.objects.exclude(type=RoleV2.Types.CUSTOM).values_list("uuid", flat=True)
-    )
-
     def commit_removal(relations: Iterable[Relationship | RelationTuple]):
         nonlocal removed_count
 
@@ -702,7 +714,6 @@ def cleanup_tenant_orphaned_relationships(
             resource_type=resource_type,
             resource_id=resource_id,
             read_tuples_typed=read_tuples_typed,
-            system_role_uuids=system_role_uuids,
             commit_removal=commit_removal,
         )
 
@@ -728,7 +739,10 @@ def cleanup_tenant_orphaned_relationships(
 
     do_remove_role_bindings("tenant", tenant_resource_id)
 
-    for ws_id in workspace_ids_in_kessel:
+    # We do not need to lock the workspaces here. Attempting to remove from a workspace that is later deleted is fine
+    # (since we will at worst delete some role bindings that should have already been deleted), and missing a
+    # workspace created later is fine (since we expect that any new operations will be correctly replicated).
+    for ws_id in workspace_ids_in_kessel.union(_local_workspace_ids_for(tenant)):
         do_remove_role_bindings("workspace", ws_id)
 
     logger.info(

@@ -25,6 +25,7 @@ from management.permissions.role_binding_access import (
     RoleBindingSystemUserAccessPermission,
 )
 from management.permissions.v2_edit_api_access import V2WriteRequiresWorkspacesEnabled
+from management.role.v2_model import RoleV2
 from management.role_binding.model import RoleBinding
 from management.v2_mixins import AtomicOperationsMixin
 from rest_framework import status
@@ -45,6 +46,43 @@ from .serializer import (
 from .service import RoleBindingService
 
 logger = logging.getLogger(__name__)
+
+
+class _BindingWithRole:
+    """Proxy that presents a RoleBinding with a different role.
+
+    Used to expand platform-role bindings into per-child-role entries
+    so the list endpoint returns concrete roles instead of abstract parents.
+    """
+
+    def __init__(self, binding, role):
+        self._binding = binding
+        self.role = role
+
+    def __getattr__(self, name):
+        return getattr(self._binding, name)
+
+
+def _expand_platform_roles(bindings):
+    """Replace platform-role bindings with one entry per child role.
+
+    Non-platform bindings pass through unchanged.  Platform bindings are
+    expanded: each child role produces a separate proxy entry that shares
+    the original binding's subject/resource data but overrides the role.
+
+    Note: this runs after pagination, so the actual number of items
+    returned may slightly exceed the requested page size when platform
+    roles are expanded into multiple children.  This is acceptable
+    because platform-role bindings are few (only default bindings).
+    """
+    expanded = []
+    for binding in bindings:
+        if binding.role and binding.role.type == RoleV2.Types.PLATFORM:
+            for child in binding.role.children.all():
+                expanded.append(_BindingWithRole(binding, child))
+        else:
+            expanded.append(binding)
+    return expanded
 
 
 class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
@@ -94,10 +132,11 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
             - resource_type: Filter by resource type (must be used with resource_id)
             - subject_type: Filter by subject type (e.g., 'group')
             - subject_id: Filter by subject ID (UUID)
+            - granted_subject_type: Filter by effective grant subject type ('user' or 'group')
+            - granted_subject_id: Filter by effective grant subject ID (principal UUID, user_id, or group UUID)
             - fields: Control which fields are included in the response
             - order_by: Sort by specified field(s), prefix with '-' for descending
         """
-        # Validate and parse query parameters using input serializer
         input_serializer = RoleBindingListInputSerializer(data=request.query_params)
         input_serializer.is_valid(raise_exception=True)
         validated_params = input_serializer.validated_data
@@ -116,11 +155,17 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
             subject_id=validated_params.get("subject_id"),
         )
 
+        granted_subject_type = validated_params.get("granted_subject_type")
+        granted_subject_id = validated_params.get("granted_subject_id")
+        if granted_subject_type and granted_subject_id:
+            queryset = queryset.for_granted_subject(granted_subject_type, granted_subject_id)
+
         field_selection = validated_params.get("fields")
         if field_selection is not None and "name" in field_selection.get_nested("resource"):
             queryset = queryset.with_resource_names()
 
         page = self.paginate_queryset(queryset)
+        page = _expand_platform_roles(page)
 
         context = {
             "request": request,

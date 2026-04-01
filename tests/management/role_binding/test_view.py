@@ -650,6 +650,111 @@ class RoleBindingListViewSetTest(IdentityRequest):
             user_role.delete()
             user_principal.delete()
 
+    # --- granted_subject filters ---
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_filter_by_granted_subject_type_group(self, mock_permission):
+        """Test filtering by granted_subject_type=group returns group's bindings."""
+        url = self._get_list_url()
+        target_group = self.groups[0]
+
+        response = self.client.get(
+            f"{url}?granted_subject_type=group&granted_subject_id={target_group.uuid}&limit=100",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 1)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_filter_by_granted_subject_type_user(self, mock_permission):
+        """Test that granted_subject_type=user returns direct + group bindings."""
+        url = self._get_list_url()
+
+        user_principal = Principal.objects.create(username="granted_user", tenant=self.tenant, user_id="granted-uid")
+        user_role = RoleV2.objects.create(name="granted_user_role", tenant=self.tenant)
+        user_role.permissions.add(self.permission)
+        user_binding = RoleBinding.objects.create(
+            role=user_role,
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            tenant=self.tenant,
+        )
+        RoleBindingPrincipal.objects.create(
+            principal=user_principal, binding=user_binding, source=API_PRINCIPAL_SOURCE
+        )
+
+        target_group = self.groups[0]
+        target_group.principals.add(user_principal)
+
+        try:
+            response = self.client.get(
+                f"{url}?granted_subject_type=user&granted_subject_id={user_principal.uuid}&limit=100",
+                **self.headers,
+            )
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            returned_binding_roles = {str(item["role"]["id"]) for item in response.data["data"]}
+            self.assertIn(str(user_role.uuid), returned_binding_roles)
+            self.assertIn(str(self.roles[0].uuid), returned_binding_roles)
+        finally:
+            target_group.principals.remove(user_principal)
+            RoleBindingPrincipal.objects.filter(binding=user_binding).delete()
+            user_binding.delete()
+            user_role.delete()
+            user_principal.delete()
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_filter_by_granted_subject_nonexistent_principal(self, mock_permission):
+        """Test that granted_subject_type=user with non-existent principal returns empty."""
+        url = self._get_list_url()
+        response = self.client.get(
+            f"{url}?granted_subject_type=user&granted_subject_id={uuid.uuid4()}&limit=100",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 0)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_granted_subject_mutual_exclusivity_with_subject(self, mock_permission):
+        """Test that granted_subject params cannot be combined with subject_type/subject_id."""
+        url = self._get_list_url()
+
+        cases = [
+            (
+                "with_subject_type",
+                f"granted_subject_type=user&granted_subject_id={uuid.uuid4()}&subject_type=group",
+            ),
+            (
+                "with_subject_id",
+                f"granted_subject_type=user&granted_subject_id={uuid.uuid4()}&subject_id={uuid.uuid4()}",
+            ),
+        ]
+        for label, query in cases:
+            with self.subTest(label=label):
+                response = self.client.get(f"{url}?{query}", **self.headers)
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_granted_subject_type_without_id_returns_400(self, mock_permission):
+        """Test that providing granted_subject_type without granted_subject_id returns 400."""
+        url = self._get_list_url()
+        response = self.client.get(f"{url}?granted_subject_type=user", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     # --- Combined filters ---
 
     @patch(
@@ -710,7 +815,6 @@ class RoleBindingListViewSetTest(IdentityRequest):
             ("group_order_by", f"{url}?order_by=group.name", "order_by"),
             ("unknown_fields_object", f"{url}?fields=bogus(nope)", "fields"),
             ("invalid_role_field", f"{url}?fields=role(nonexistent)", "fields"),
-            ("invalid_resource_id", f"{url}?resource_id=not-a-uuid", "resource_id"),
             ("invalid_subject_id", f"{url}?subject_id=not-a-uuid", "subject_id"),
         ]
         for label, request_url, expected_field in error_cases:
@@ -1009,6 +1113,82 @@ class RoleBindingListViewSetTest(IdentityRequest):
         page2_names = [item["role"]["name"] for item in page2_data]
         all_names = page1_names + page2_names
         self.assertEqual(all_names, sorted(all_names, reverse=True))
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_platform_role_expanded_to_children(self, mock_permission):
+        """Test that platform-role bindings are expanded to child roles in list response."""
+        public_tenant, _ = Tenant.objects.get_or_create(tenant_name="public")
+
+        # Create a platform role with two children
+        platform_role = PlatformRoleV2.objects.create(
+            name="Platform Admin",
+            tenant=public_tenant,
+        )
+        child_role_1 = SeededRoleV2.objects.create(name="Child Role A", tenant=public_tenant)
+        child_role_2 = SeededRoleV2.objects.create(name="Child Role B", tenant=public_tenant)
+        platform_role.children.add(child_role_1, child_role_2)
+
+        # Bind the platform role to a group
+        platform_binding = RoleBinding.objects.create(
+            role=platform_role,
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            tenant=self.tenant,
+        )
+        platform_group = Group.objects.create(name="platform_group", tenant=self.tenant)
+        RoleBindingGroup.objects.create(group=platform_group, binding=platform_binding)
+
+        # Register cleanup so resources are freed even if assertions fail
+        self.addCleanup(RoleBindingGroup.objects.filter(binding=platform_binding).delete)
+        self.addCleanup(platform_binding.delete)
+        self.addCleanup(platform_group.delete)
+        self.addCleanup(platform_role.children.clear)
+        self.addCleanup(child_role_1.delete)
+        self.addCleanup(child_role_2.delete)
+        self.addCleanup(platform_role.delete)
+
+        url = self._get_list_url()
+        response = self.client.get(
+            f"{url}?fields=role(id,name),subject(id,type),resource(id)&limit=100",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Find entries for the child roles
+        child_role_uuids = {child_role_1.uuid, child_role_2.uuid}
+        expanded_entries = [item for item in response.data["data"] if item["role"]["id"] in child_role_uuids]
+
+        # Should have 2 entries (one per child), not 1 entry with the platform role
+        self.assertEqual(len(expanded_entries), 2)
+        returned_names = {item["role"]["name"] for item in expanded_entries}
+        self.assertEqual(returned_names, {"Child Role A", "Child Role B"})
+
+        # The platform role itself should NOT appear
+        platform_entries = [item for item in response.data["data"] if item["role"]["id"] == platform_role.uuid]
+        self.assertEqual(len(platform_entries), 0)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_non_platform_role_unchanged(self, mock_permission):
+        """Test that non-platform roles are returned as-is (no expansion)."""
+        url = self._get_list_url()
+        response = self.client.get(
+            f"{url}?fields=role(id,name),subject(id,type),resource(id)&limit=100",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # All entries should match the roles we created in setUp (all custom, non-platform)
+        returned_role_uuids = {item["role"]["id"] for item in response.data["data"]}
+        expected_role_uuids = {role.uuid for role in self.roles}
+        self.assertEqual(returned_role_uuids, expected_role_uuids)
 
 
 @override_settings(V2_APIS_ENABLED=True, V2_EDIT_API_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
@@ -2559,7 +2739,7 @@ class RoleBindingViewSetTest(IdentityRequest):
         self.assertIn(str(seeded_role.uuid), role_ids)
 
 
-@override_settings(V2_APIS_ENABLED=True)
+@override_settings(V2_APIS_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
 class DefaultBindingsAPITests(TestCase):
     """Test lazy creation of default role bindings via API calls."""
 

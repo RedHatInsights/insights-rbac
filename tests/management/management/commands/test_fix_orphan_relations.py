@@ -10,8 +10,9 @@ from management.group.platform import GlobalPolicyIdService
 from management.permission.scope_service import Scope
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.role.definer import seed_roles
-from management.role.model import BindingMapping
+from management.role.model import BindingMapping, Role
 from management.role.platform import platform_v2_role_uuid_for
+from management.role.v2_model import RoleV2
 from management.role_binding.service import RoleBindingService, CreateBindingRequest
 from management.tenant_mapping.model import TenantMapping, DefaultAccessType
 from management.tenant_mapping.v2_activation import ensure_v2_write_activated
@@ -57,6 +58,43 @@ class TestRemoveOrphanRelations(DualWriteTestCase):
 
         # The orphan removal script requires a proper workspace hierarchy.
         bootstrap_tenant_for_v2_test(self.tenant, tuples=self.tuples)
+
+    def _do_test_preserve_valid_role(self, role: Role):
+        with patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate") as replicate:
+            replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
+
+            group, _ = self.given_group("a group", ["p1"])
+            v2_role = RoleV2.objects.get(v1_source=role)
+
+            self.given_roles_assigned_to_group(group, [role])
+
+            def expect_role_bound():
+                self.expect_1_role_binding_to_workspace(
+                    self.default_workspace(), for_v2_roles=[str(v2_role.uuid)], for_groups=[str(group.uuid)]
+                )
+
+                self.assertEqual(
+                    1,
+                    self.tuples.count_tuples(
+                        all_of(resource("rbac", "role", str(v2_role.uuid)), relation("rbac_all_all"))
+                    ),
+                )
+
+            tuples_before = set(self.tuples)
+            expect_role_bound()
+
+            self._do_fix_orphans()
+
+            expect_role_bound()
+            self.assertEqual(tuples_before, set(self.tuples))
+
+    @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="")
+    def test_preserve_valid_custom_role(self):
+        self._do_test_preserve_valid_role(self.given_v1_role(name="custom role", default=["rbac:*:*"]))
+
+    @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="")
+    def test_preserve_valid_system_role(self):
+        self._do_test_preserve_valid_role(self.given_v1_system_role(name="custom role", permissions=["rbac:*:*"]))
 
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     def test_fix_incorrect_scope_binding(self, replicate):
@@ -381,3 +419,48 @@ class TestRemoveOrphanRelations(DualWriteTestCase):
                 )
             ),
         )
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_role_binding_deleted_no_parent_tuple(self, replicate):
+        replicator = InMemoryRelationReplicator(self.tuples)
+        replicate.side_effect = replicator.replicate
+
+        group, _ = self.given_group("group", ["p1"])
+        role = self.given_v1_system_role("a role", ["rbac:*:*"])
+
+        ensure_v2_write_activated(self.tenant)
+
+        # Remove all tuples, both so that no parent tuples exist and so that we can check for the ones we are
+        # specifically interested in.
+        self.tuples.clear()
+
+        # Create a role binding both locally and in Kessel.
+        RoleBindingService(tenant=self.tenant, replicator=replicator).batch_create(
+            [
+                CreateBindingRequest(
+                    role_id=str(role.uuid),
+                    resource_type="workspace",
+                    resource_id=self.default_workspace(),
+                    subject_type="group",
+                    subject_id=str(group.uuid),
+                )
+            ]
+        )
+
+        # Delete the role binding locally, but not in Kessel.
+        RoleBindingService(tenant=self.tenant, replicator=NoopReplicator()).update_role_bindings_for_subject(
+            resource_type="workspace",
+            resource_id=self.default_workspace(),
+            subject_type="group",
+            subject_id=str(group.uuid),
+            role_ids=[],
+        )
+
+        # One for the resource, one for the role, one for the subject.
+        self.assertEqual(len(self.tuples), 3)
+
+        self._do_fix_orphans()
+
+        # We should have removed the orphaned role binding because the workspace is known to exist locally,
+        # despite there being no parent relations in Kessel.
+        self.assertEqual(len(self.tuples), 0)

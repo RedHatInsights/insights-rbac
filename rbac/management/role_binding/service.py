@@ -332,11 +332,12 @@ class RoleBindingService:
 
         # Get groups that have bindings matching our filter.
         # This includes tenant-specific groups and public tenant default groups.
-        # No tenant filter needed since resource_id is tenant-specific.
         queryset = Group.objects.filter(binding_filter).distinct()
 
         if not self._allow_external_subjects:
-            queryset = queryset.filter(tenant=self.tenant)
+            queryset = queryset.filter(
+                Q(tenant=self.tenant) | Q(platform_default=True, system=True) | Q(admin_default=True, system=True)
+            )
 
         # Annotate with principal count
         queryset = queryset.annotate(
@@ -347,18 +348,29 @@ class RoleBindingService:
         # Also prefetch children for platform roles (which will be returned instead of the platform role)
         # When binding_uuids is provided (inherited bindings), include those bindings in the prefetch
         # so groups with only inherited roles get their roles populated correctly
-        binding_filter_q = Q(resource_type=resource_type, resource_id=resource_id)
-        if binding_uuids:
-            binding_filter_q = binding_filter_q | Q(uuid__in=binding_uuids)
+        # Must respect exclude_direct to avoid including direct binding roles in the response
+        binding_filter_q = self._build_binding_filter(
+            resource_id=resource_id,
+            resource_type=resource_type,
+            binding_uuids=binding_uuids,
+            exclude_direct=exclude_direct,
+        )
         binding_queryset = (
             RoleBinding.objects.filter(binding_filter_q).select_related("role").prefetch_related("role__children")
         )
 
         # Prefetch the join table entries with the filtered bindings
         # Include both direct bindings and inherited bindings (when binding_uuids provided)
-        rolebinding_group_filter = Q(binding__resource_type=resource_type, binding__resource_id=resource_id)
-        if binding_uuids:
-            rolebinding_group_filter = rolebinding_group_filter | Q(binding__uuid__in=binding_uuids)
+        # Must respect exclude_direct to avoid including direct binding roles in the response
+        if exclude_direct:
+            # Only inherited bindings - exclude any that match this resource directly
+            rolebinding_group_filter = Q(binding__uuid__in=binding_uuids) & ~Q(
+                binding__resource_type=resource_type, binding__resource_id=resource_id
+            )
+        else:
+            rolebinding_group_filter = Q(binding__resource_type=resource_type, binding__resource_id=resource_id)
+            if binding_uuids:
+                rolebinding_group_filter = rolebinding_group_filter | Q(binding__uuid__in=binding_uuids)
         rolebinding_group_queryset = RoleBindingGroup.objects.filter(rolebinding_group_filter).prefetch_related(
             Prefetch("binding", queryset=binding_queryset)
         )
@@ -508,11 +520,11 @@ class RoleBindingService:
             Exists(RoleBindingPrincipal.objects.filter(principal=OuterRef("pk")).filter(principal_entry_filter)),
         ).distinct()
 
+        # Always filter to USER type (this endpoint is for user subjects only)
+        principal_queryset = principal_queryset.filter(type=Principal.Types.USER)
+
         if not self._allow_external_subjects:
-            principal_queryset = principal_queryset.filter(
-                tenant=self.tenant,
-                type=Principal.Types.USER,
-            )
+            principal_queryset = principal_queryset.filter(tenant=self.tenant)
 
         # Prefetch RoleBindingPrincipal entries with their bindings
         principal_entry_queryset = RoleBindingPrincipal.objects.filter(principal_entry_filter).prefetch_related(
@@ -930,6 +942,7 @@ class RoleBindingService:
 
         Uses RoleV2.objects.assignable() to filter to roles that can be
         assigned to bindings (custom + seeded, not platform).
+        Also excludes roles with permissions from migration-excluded applications.
         Empty role_ids is valid and returns [] to support removing all bindings.
 
         Raises:
@@ -938,7 +951,7 @@ class RoleBindingService:
         if not role_ids:
             return []
 
-        roles = list(RoleV2.objects.filter(uuid__in=role_ids).assignable())
+        roles = list(RoleV2.objects.filter(uuid__in=role_ids).assignable().excluding_out_of_scope_v2_roles())
 
         found_ids = {str(r.uuid) for r in roles}
         requested_ids = set(role_ids)

@@ -137,7 +137,7 @@ class Command(BaseCommand):
                     )
                     failed = True
 
-                if result["cleanup"]["relations_removed_count"] > 0:
+                if result.get("cleanup", {}).get("relations_removed_count", 0) > 0:
                     modified = True
             except Exception as e:
                 logger.error(f"Failed to remove orphan relations for tenant with org_id={tenant.org_id!r}", exc_info=e)
