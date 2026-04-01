@@ -309,7 +309,7 @@ class RoleBinding(TenantAwareModel):
 class RoleBindingGroup(models.Model):
     """The relationship between a RoleBinding and one of its group subjects."""
 
-    group = models.ForeignKey(Group, on_delete=models.CASCADE, related_name="role_binding_entries")
+    group = models.ForeignKey(Group, on_delete=models.PROTECT, related_name="role_binding_entries")
     binding = models.ForeignKey(RoleBinding, on_delete=models.CASCADE, related_name="group_entries")
     created = models.DateTimeField(default=timezone.now, editable=False)
 
@@ -320,7 +320,7 @@ class RoleBindingGroup(models.Model):
 class RoleBindingPrincipal(models.Model):
     """The relationship between a RoleBinding and one of its principal subjects."""
 
-    principal = models.ForeignKey(Principal, on_delete=models.CASCADE, related_name="role_binding_entries")
+    principal = models.ForeignKey(Principal, on_delete=models.PROTECT, related_name="role_binding_entries")
     binding = models.ForeignKey(RoleBinding, on_delete=models.CASCADE, related_name="principal_entries")
     source = models.CharField(max_length=128, null=False)
     created = models.DateTimeField(default=timezone.now, editable=False)
