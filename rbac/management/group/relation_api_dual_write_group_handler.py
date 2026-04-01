@@ -41,7 +41,7 @@ from management.relation_replicator.types import RelationTuple
 from management.role.model import BindingMapping, Role
 from management.role_binding.model import RoleBinding
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
-from management.tenant_mapping.v2_activation import is_v2_write_activated
+from management.tenant_mapping.v2_activation import TenantVersion
 from management.tenant_service.relations import default_role_binding_tuples
 
 from api.models import Tenant
@@ -266,10 +266,12 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
         if not self.replication_enabled():
             return
 
-        if is_v2_write_activated(self.tenant):
+        if self._tenant_version == TenantVersion.VERSION_1:
+            self._prepare_to_delete_group_v1(roles)
+        elif self._tenant_version == TenantVersion.VERSION_2:
             self._prepare_to_delete_group_v2()
         else:
-            self._prepare_to_delete_group_v1(roles)
+            raise AssertionError(f"Unexpected tenant version: {self._tenant_version}")
 
         if self.group.platform_default:
             # If we are restoring the default role binding, we need to handle the case where *none* of the
@@ -283,6 +285,8 @@ class RelationApiDualWriteGroupHandler(RelationApiDualWriteSubjectHandler):
 
     def _prepare_to_delete_group_v1(self, roles):
         """V1 path: compute removal tuples from BindingMapping."""
+        self._expect_v1_tenant()
+
         system_roles = roles.public_tenant_only()
 
         # Custom roles are locked to prevent resources from being added/removed concurrently,

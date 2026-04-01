@@ -23,6 +23,7 @@ from unittest.mock import Mock, call, patch
 from django.test import TestCase
 
 from management.workspace.service import WorkspaceService
+from tests.v2_util import bootstrap_tenant_for_v2_test
 
 
 @dataclass
@@ -168,10 +169,11 @@ class WorkspaceServiceTestBase(TestCase):
         """Set up workspace service tests."""
         cls.service = WorkspaceService()
         cls.tenant = Tenant.objects.create(tenant_name="Foo Tenant", org_id="1234567", account_id="7654321")
-        cls.root_workspace = Workspace.objects.create(name="Root", type=Workspace.Types.ROOT, tenant=cls.tenant)
-        cls.default_workspace = Workspace.objects.create(
-            name="Default", type=Workspace.Types.DEFAULT, tenant=cls.tenant, parent=cls.root_workspace
-        )
+
+        bootstrap_result = bootstrap_tenant_for_v2_test(cls.tenant)
+        cls.default_workspace = bootstrap_result.default_workspace
+        cls.root_workspace = bootstrap_result.root_workspace
+
         cls.standard_workspace = Workspace.objects.create(
             name="Standard", type=Workspace.Types.STANDARD, tenant=cls.tenant, parent=cls.default_workspace
         )

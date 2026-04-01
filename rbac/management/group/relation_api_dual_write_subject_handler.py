@@ -33,6 +33,7 @@ from management.relation_replicator.relation_replicator import (
 )
 from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
 from management.role.v2_model import SeededRoleV2
+from management.tenant_mapping.v2_activation import TenantVersion, lock_tenant_version
 from migration_tool.models import V2boundresource, V2role, V2rolebinding
 
 from api.models import Tenant
@@ -141,6 +142,8 @@ class RelationApiDualWriteSubjectHandler:
 
             self.event_type = event_type
             self._replicator = replicator if replicator else OutboxReplicator()
+
+            self._tenant_version = lock_tenant_version(self.tenant)
         except Exception as e:
             logger.error(f"Initialization of RelationApiDualWriteSubjectHandler failed: {e}")
             raise DualWriteException(e)
@@ -200,6 +203,10 @@ class RelationApiDualWriteSubjectHandler:
             )
 
         return deduplicated
+
+    def _expect_v1_tenant(self):
+        if self._tenant_version != TenantVersion.VERSION_1:
+            raise RuntimeError("This operation is only supported for V1 tenants.")
 
     def _create_default_mapping_for_system_role(
         self,
@@ -267,6 +274,8 @@ class RelationApiDualWriteSubjectHandler:
         create_default_mapping_for_system_role: Optional[Callable[[V2boundresource], BindingMapping]],
         resource_locked: bool = False,
     ):
+        self._expect_v1_tenant()
+
         if role.system is False:
             raise DualWriteException("Expected system role.")
 
@@ -337,6 +346,8 @@ class RelationApiDualWriteSubjectHandler:
     def _update_mappings_for_custom_role(
         self, role: Role, update_mapping: Callable[[BindingMapping], None], migrated: bool = False
     ):
+        self._expect_v1_tenant()
+
         # NOTE: The custom Role MUST be locked before this point in Read Committed isolation.
         # There is a risk of write skew here otherwise, in the case that permissions are added
         # to a custom role that currently has no permissions.
