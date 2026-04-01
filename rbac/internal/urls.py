@@ -118,9 +118,7 @@ urlpatterns = [
     path("api/utils/bulk_cleanup_orphan_bindings/", views.bulk_cleanup_orphan_bindings),
     path("api/utils/rebuild_tenant_workspace_relations/<str:org_id>/", views.rebuild_tenant_workspace_relations),
     path("api/utils/remove_unassigned_system_binding_mappings/", views.remove_unassigned_system_binding_mappings),
-    path(
-        "api/utils/expire_orphaned_cross_account_requests_in_worker/", views.remove_unassigned_system_binding_mappings
-    ),
+    path("api/utils/expire_orphaned_cross_account_requests/", views.expire_orphaned_cross_account_requests),
 ]
 
 urlpatterns.extend(integration_urlpatterns)
