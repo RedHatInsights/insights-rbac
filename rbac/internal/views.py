@@ -88,6 +88,7 @@ from management.role.serializer import BindingMappingSerializer
 from management.tasks import (
     bulk_cleanup_orphan_bindings_in_worker,
     clean_invalid_workspace_resource_definitions_in_worker,
+    expire_orphaned_cross_account_requests_in_worker,
     fix_missing_binding_base_tuples_in_worker,
     migrate_binding_scope_in_worker,
     migrate_data_in_worker,
@@ -2547,7 +2548,7 @@ def expire_orphaned_cross_account_requests(request):
         JSON response indicating the task has been queued
     """
     try:
-        remove_unassigned_system_binding_mappings_in_worker.delay()
+        expire_orphaned_cross_account_requests_in_worker.delay()
         return JsonResponse({"message": "Cleanup enqueued in background worker."}, status=202)
     except Exception as e:
         logger.exception("Error removing orphaned CARs", exc_info=True)
