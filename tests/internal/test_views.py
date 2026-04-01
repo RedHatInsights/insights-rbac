@@ -119,14 +119,13 @@ class BaseInternalViewsetTests(IdentityRequest):
     @abstractmethod
     def tearDown(self):
         """Tear down base internal viewset tests."""
-        Group.objects.all().delete()
-        Role.objects.all().delete()
-        Policy.objects.all().delete()
         logging.disable(self._prior_logging_disable_level)
         # Clear the principal cache to avoid test isolation issues
         from management.utils import PRINCIPAL_CACHE
 
         PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
+
+        super().tearDown()
 
 
 @override_settings(
@@ -3026,15 +3025,6 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
             type=Workspace.Types.DEFAULT,
             defaults={"name": "Tenant Default Workspace", "parent": tenant_root_workspace},
         )
-
-    def tearDown(self):
-        """Tear down access view tests."""
-        Group.objects.all().delete()
-        Principal.objects.all().delete()
-        Role.objects.all().delete()
-        Policy.objects.all().delete()
-        Workspace.objects.filter(parent__isnull=False).delete()
-        Workspace.objects.filter(parent__isnull=True).delete()
 
     def create_role(self, role_name, headers, in_access_data=None):
         """Create a role."""
