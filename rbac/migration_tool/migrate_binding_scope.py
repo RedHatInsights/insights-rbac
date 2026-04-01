@@ -164,44 +164,15 @@ def _migrate_car_bindings(car: CrossAccountRequest, replicator: RelationReplicat
     return bindings_cleaned
 
 
-def migrate_all_role_bindings(
+def _do_migrate_all_group_custom_roles(
     replicator: RelationReplicator = OutboxReplicator(),
     tenant: Optional[Tenant] = None,
-):
-    """
-    Migrate all role bindings to correct scope.
-
-    - Custom roles: Migrated individually using RelationApiDualWriteHandler
-    - System roles: Migrated per group using RelationApiDualWriteGroupHandler
-
-    Args:
-        replicator: Replicator to use for relation updates. Defaults to OutboxReplicator.
-        tenant: Optional tenant to filter roles and groups. If None, migrates all tenants.
-
-    Returns: Tuple of (items_checked, items_migrated)
-    """
-    if tenant:
-        if tenant.tenant_name == "public":
-            raise ValueError("Cannot migrate binding scope for the public tenant.")
-
-        if tenant.org_id is None:
-            raise ValueError("Cannot migrate binding scope for a tenant without an org_id.")
-
-    # We check for instance equality here to mirror RelationApiDualWriteSubjectHandler.replication_enabled.
-    if settings.REPLICATION_TO_RELATION_ENABLED is not True:
-        raise RuntimeError("Replication must be enabled while migrating binding scope.")
-
-    tenant_info = f" for tenant {tenant.org_id}" if tenant else ""
-    logger.info(f"Starting binding scope migration{tenant_info}")
-    logger.info(f"ROOT_SCOPE_PERMISSIONS: {settings.ROOT_SCOPE_PERMISSIONS}")
-    logger.info(f"TENANT_SCOPE_PERMISSIONS: {settings.TENANT_SCOPE_PERMISSIONS}")
-    logger.info(f"DEFAULT_SCOPE_PERMISSIONS: {settings.DEFAULT_SCOPE_PERMISSIONS}")
-
-    # Part 1: Migrate custom role bindings
+) -> tuple[int, int]:
     # Include all custom roles with access (permissions), even if they have no policies (groups) assigned yet.
     # This ensures v2 roles and bindings are created at the correct scope for roles that were created
     # before replication was enabled or before scope configuration was corrected.
     # Roles without access won't have any v2 models created (nothing to migrate).
+
     custom_roles = Role.objects.filter(system=False).distinct().order_by("pk")
     if tenant:
         custom_roles = custom_roles.filter(tenant=tenant)
@@ -245,7 +216,13 @@ def migrate_all_role_bindings(
 
     logger.info(f"Completed custom role migration: {custom_roles_checked} checked, {custom_roles_migrated} migrated")
 
-    # Part 2: Migrate system role bindings via groups
+    return custom_roles_checked, custom_roles_migrated
+
+
+def _do_migrate_all_group_system_roles(
+    replicator: RelationReplicator = OutboxReplicator(),
+    tenant: Optional[Tenant] = None,
+) -> tuple[int, int]:
     # Get all groups that have system roles
     groups_with_system_roles = (
         Group.objects.filter(policies__roles__system=True)
@@ -295,8 +272,13 @@ def migrate_all_role_bindings(
         f"Completed system role migration via groups: {groups_checked} groups checked, {groups_migrated} migrated"
     )
 
-    # Part 3: migrate cross-account requests
+    return groups_checked, groups_migrated
 
+
+def _do_migrate_all_cars(
+    replicator: RelationReplicator = OutboxReplicator(),
+    tenant: Optional[Tenant] = None,
+) -> tuple[int, int]:
     cars = CrossAccountRequest.objects.filter(status="approved")
 
     if tenant:
@@ -339,6 +321,49 @@ def migrate_all_role_bindings(
             logger.info(f"Progress (CARs): processed {cars_checked}/{total_cars}, migrated {cars_migrated}")
 
     logger.info(f"Completed cross-account request migration: {cars_checked} CARs checked, {cars_migrated} migrated")
+
+    return cars_checked, cars_migrated
+
+
+def migrate_all_role_bindings(
+    replicator: RelationReplicator = OutboxReplicator(),
+    tenant: Optional[Tenant] = None,
+):
+    """
+    Migrate all role bindings to correct scope.
+
+    - Custom roles: Migrated individually using RelationApiDualWriteHandler
+    - System roles: Migrated per group using RelationApiDualWriteGroupHandler
+
+    Args:
+        replicator: Replicator to use for relation updates. Defaults to OutboxReplicator.
+        tenant: Optional tenant to filter roles and groups. If None, migrates all tenants.
+
+    Returns: Tuple of (items_checked, items_migrated)
+    """
+    if tenant:
+        if tenant.tenant_name == "public":
+            raise ValueError("Cannot migrate binding scope for the public tenant.")
+
+        if tenant.org_id is None:
+            raise ValueError("Cannot migrate binding scope for a tenant without an org_id.")
+
+    # We check for instance equality here to mirror RelationApiDualWriteSubjectHandler.replication_enabled.
+    if settings.REPLICATION_TO_RELATION_ENABLED is not True:
+        raise RuntimeError("Replication must be enabled while migrating binding scope.")
+
+    tenant_info = f" for tenant {tenant.org_id}" if tenant else ""
+    logger.info(f"Starting binding scope migration{tenant_info}")
+    logger.info(f"ROOT_SCOPE_PERMISSIONS: {settings.ROOT_SCOPE_PERMISSIONS}")
+    logger.info(f"TENANT_SCOPE_PERMISSIONS: {settings.TENANT_SCOPE_PERMISSIONS}")
+    logger.info(f"DEFAULT_SCOPE_PERMISSIONS: {settings.DEFAULT_SCOPE_PERMISSIONS}")
+
+    custom_roles_checked, custom_roles_migrated = _do_migrate_all_group_custom_roles(
+        replicator=replicator, tenant=tenant
+    )
+
+    groups_checked, groups_migrated = _do_migrate_all_group_system_roles(replicator=replicator, tenant=tenant)
+    cars_migrated, cars_checked = _do_migrate_all_cars(replicator=replicator, tenant=tenant)
 
     total_checked = custom_roles_checked + groups_checked + cars_checked
     total_migrated = custom_roles_migrated + groups_migrated + cars_migrated
