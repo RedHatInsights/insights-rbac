@@ -87,9 +87,9 @@ def migrate_data_in_worker(kwargs):
 
 
 @shared_task
-def migrate_binding_scope_in_worker(sources: Optional[set[str]] = None):
+def migrate_binding_scope_in_worker(sources: Optional[list[str]] = None):
     """Celery task to migrate role binding scopes."""
-    return migrate_all_role_bindings(sources=sources)
+    return migrate_all_role_bindings(sources=set(sources) if sources is not None else None)
 
 
 @shared_task

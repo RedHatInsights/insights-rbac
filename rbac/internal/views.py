@@ -2292,7 +2292,7 @@ def migrate_binding_scope(request):
     raw_sources = request.GET.get("sources", None)
 
     if raw_sources is not None:
-        migrate_binding_scope_in_worker.delay(sources=set(raw_sources.split(",")))
+        migrate_binding_scope_in_worker.delay(sources=raw_sources.split(","))
     else:
         migrate_binding_scope_in_worker.delay()
 
