@@ -391,7 +391,7 @@ def migrate_all_role_bindings(
         groups_migrated = 0
 
     if car_source in sources:
-        cars_migrated, cars_checked = _do_migrate_all_cars(replicator=replicator, tenant=tenant)
+        cars_checked, cars_migrated = _do_migrate_all_cars(replicator=replicator, tenant=tenant)
     else:
         cars_checked = 0
         cars_migrated = 0
