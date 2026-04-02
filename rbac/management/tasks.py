@@ -18,6 +18,8 @@
 
 from __future__ import absolute_import, unicode_literals
 
+from typing import Optional
+
 from celery import shared_task
 from django.core.management import call_command
 from internal.migrations.remove_orphan_relations import cleanup_tenant_orphan_bindings
@@ -85,9 +87,9 @@ def migrate_data_in_worker(kwargs):
 
 
 @shared_task
-def migrate_binding_scope_in_worker():
+def migrate_binding_scope_in_worker(sources: Optional[list[str]] = None):
     """Celery task to migrate role binding scopes."""
-    return migrate_all_role_bindings()
+    return migrate_all_role_bindings(sources=set(sources) if sources is not None else None)
 
 
 @shared_task
