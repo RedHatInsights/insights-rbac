@@ -367,7 +367,7 @@ def migrate_all_role_bindings(
     sources = set(sources)
 
     if not sources.issubset(_all_sources):
-        invalid = _all_sources - sources
+        invalid = sources - _all_sources
         raise ValueError(f"Unexpected sources: {invalid!r}")
 
     tenant_info = f" for tenant {tenant.org_id}" if tenant else ""
