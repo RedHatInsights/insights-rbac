@@ -114,9 +114,7 @@ class PermissionViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
         if is_v2_edit_enabled_for_request(self.request):
             excluded_apps = v2_role_excluded_applications()
             if excluded_apps:
-                queryset = queryset.filter(application__in=list(excluded_apps))
-            else:
-                queryset = queryset.none()
+                queryset = queryset.exclude(application__in=list(excluded_apps))
 
         return queryset
 

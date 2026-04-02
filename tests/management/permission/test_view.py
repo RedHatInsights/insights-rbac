@@ -515,20 +515,14 @@ class PermissionViewsetTests(IdentityRequest):
 
     @override_settings(V2_MIGRATION_APP_EXCLUDE_LIST=["cost-management"])
     @patch("management.permission.view.is_v2_edit_enabled_for_request", return_value=True)
-    def test_permission_list_v2_tenant_shows_only_exclude_list_apps(self, _mock_v2):
-        """V2 tenants only see permissions whose application is in V2_MIGRATION_APP_EXCLUDE_LIST."""
+    def test_permission_list_v2_tenant_excludes_exclude_list_apps(self, _mock_v2):
+        """V2 tenants do not see permissions whose application is in V2_MIGRATION_APP_EXCLUDE_LIST."""
         response = CLIENT.get(LIST_URL, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         apps = {p["application"] for p in response.data.get("data", [])}
-        self.assertEqual(apps, {"cost-management"})
-
-    @override_settings(V2_MIGRATION_APP_EXCLUDE_LIST=[])
-    @patch("management.permission.view.is_v2_edit_enabled_for_request", return_value=True)
-    def test_permission_list_v2_tenant_empty_exclude_list_returns_none(self, _mock_v2):
-        """V2 tenants see no permissions when the exclude list is empty."""
-        response = CLIENT.get(LIST_URL, **self.headers)
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(response.data.get("data"), [])
+        self.assertNotIn("cost-management", apps)
+        expected_count = Permission.objects.exclude(application="cost-management").count()
+        self.assertEqual(response.data["meta"]["count"], expected_count)
 
     @override_settings(V2_MIGRATION_APP_EXCLUDE_LIST=["cost-management"])
     @patch("management.permission.view.is_v2_edit_enabled_for_request", return_value=False)
