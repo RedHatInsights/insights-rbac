@@ -1186,6 +1186,8 @@ def remove_unassigned_system_binding_mappings(replicator: Optional[RelationRepli
 
 @atomic
 def _do_remove_orphaned_car(raw_car: CrossAccountRequest, replicator: RelationReplicator):
+    logger.info(f"Processing orphaned CAR: pk={raw_car.pk!r}")
+
     orphaned_car: CrossAccountRequest = CrossAccountRequest.objects.select_for_update().filter(pk=raw_car.pk).first()
 
     if orphaned_car is None:
@@ -1263,5 +1265,21 @@ def expire_orphaned_cross_account_requests(replicator: Optional[RelationReplicat
         .exclude(user_id=None)
     )
 
+    logger.info(f"About to process ~{orphaned_cars.count()} orphaned cross-account requests.")
+
+    count = 0
+    failed = 0
+
     for orphaned_car in orphaned_cars.iterator():
-        _do_remove_orphaned_car(orphaned_car, replicator)
+        count += 1
+
+        try:
+            _do_remove_orphaned_car(orphaned_car, replicator)
+        except Exception:
+            logger.error(f"Failed to remove orphaned CAR: pk={orphaned_car.pk!r}", exc_info=True)
+            failed += 1
+
+    logger.info(f"Processed {count} orphaned CARs, of which {failed} failed.")
+
+    if failed > 0:
+        raise RuntimeError(f"Failed to expire {failed} orphan CARs")
