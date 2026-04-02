@@ -67,11 +67,12 @@ def _migrate_bindings_for_scope_change(v1_role, old_scope, new_scope):
     # Find all groups (non-public tenant) that have this system role assigned
     groups_with_role = Group.objects.filter(policies__roles=v1_role).exclude(tenant__tenant_name="public").distinct()
 
-    count = groups_with_role.count()
-    if count == 0:
+    groups = list(groups_with_role)
+    if not groups:
         logger.info(f"No groups found with role {v1_role.name}, skipping binding migration")
         return
 
+    count = len(groups)
     logger.info(
         f"Found {count} group(s) with system role {v1_role.name}. "
         f"Migrating bindings from {old_scope.name} to {new_scope.name} scope."
