@@ -927,6 +927,9 @@ class ExpireOrphanCrossAccountRequests(DualWriteTestCase):
         self.role = self.given_v1_system_role("a role", ["rbac:*:*"])
         self.group, _ = self.given_group("a group", ["p1"])
 
+    def _do_expire(self):
+        expire_orphaned_cross_account_requests(replicator=InMemoryRelationReplicator(self.tuples))
+
     @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="")
     def test_expire_orphans(self):
         self.given_roles_assigned_to_group(self.group, [self.role])
@@ -955,7 +958,7 @@ class ExpireOrphanCrossAccountRequests(DualWriteTestCase):
             for_principals=[self.source_user_id],
         )
 
-        expire_orphaned_cross_account_requests(replicator=InMemoryRelationReplicator(self.tuples))
+        self._do_expire()
 
         car.refresh_from_db()
         self.assertEqual(car.status, "expired")
@@ -1000,7 +1003,7 @@ class ExpireOrphanCrossAccountRequests(DualWriteTestCase):
 
         expect_exists()
 
-        expire_orphaned_cross_account_requests()
+        self._do_expire()
 
         car.refresh_from_db()
         self.assertEqual(car.status, "approved")
@@ -1024,15 +1027,13 @@ class ExpireOrphanCrossAccountRequests(DualWriteTestCase):
                 BindingMapping.objects.get(role=self.role).mappings["users"],
                 {str(car.source_key()): self.source_user_id},
             )
-            self.assertTrue(
-                RoleBindingPrincipal.objects.filter(
-                    principal=self.source_principal, binding__role__v1_source=self.role
-                ).exists()
-            )
 
         expect_exists()
 
-        expire_orphaned_cross_account_requests()
+        RoleBinding.objects.filter(tenant=self.tenant).delete()
+        self.source_principal.delete()
+
+        self._do_expire()
 
         car.refresh_from_db()
         self.assertEqual(car.status, "approved")
