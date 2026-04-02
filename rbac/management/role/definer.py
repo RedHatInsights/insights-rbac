@@ -48,6 +48,60 @@ from api.models import Tenant
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
+def _migrate_bindings_for_scope_change(v1_role, old_scope, new_scope):
+    """
+    Migrate bindings for a system role when its scope changes during seeding.
+
+    This ensures that all tenant bindings for this role are updated to use the
+    correct resource (workspace or tenant) based on the new scope.
+
+    Args:
+        v1_role: The V1 system role whose scope has changed
+        old_scope: The previous scope
+        new_scope: The new scope
+    """
+    from management.group.model import Group
+    from migration_tool.migrate_binding_scope import migrate_system_role_bindings_for_group
+    from management.relation_replicator.outbox_replicator import OutboxReplicator
+
+    # Find all groups (non-public tenant) that have this system role assigned
+    groups_with_role = Group.objects.filter(policies__roles=v1_role).exclude(tenant__tenant_name="public").distinct()
+
+    count = groups_with_role.count()
+    if count == 0:
+        logger.info(f"No groups found with role {v1_role.name}, skipping binding migration")
+        return
+
+    logger.info(
+        f"Found {count} group(s) with system role {v1_role.name}. "
+        f"Migrating bindings from {old_scope.name} to {new_scope.name} scope."
+    )
+
+    replicator = OutboxReplicator()
+    migrated_count = 0
+
+    for group in groups_with_role:
+        try:
+            # Use the existing migration function to migrate bindings for this group
+            # This will update all system role bindings for the group to the correct scope
+            result = migrate_system_role_bindings_for_group(group, replicator)
+            if result > 0:
+                migrated_count += 1
+                logger.info(
+                    f"Migrated bindings for group {group.name} (uuid={group.uuid}) " f"with system role {v1_role.name}"
+                )
+        except Exception as e:
+            logger.error(
+                f"Failed to migrate bindings for group {group.uuid} with role {v1_role.name}: {e}",
+                exc_info=True,
+            )
+
+    logger.info(
+        f"Completed binding migration for system role {v1_role.name}: "
+        f"{migrated_count}/{count} groups migrated successfully"
+    )
+
+
 def _add_ext_relation_if_it_exists(external_relation, role):
     if not external_relation:
         return
@@ -336,6 +390,23 @@ def _create_single_platform_role(access_type, scope, policy_service, public_tena
 def _seed_v2_role_from_v1(v1_role, display_name, description, public_tenant, platform_roles, resource_service):
     """Create or update V2 role from V1 role during seeding."""
     try:
+        # Check if V2 role already exists to detect scope changes
+        existing_v2_role = SeededRoleV2.objects.filter(uuid=v1_role.uuid).first()
+        old_scope = None
+        if existing_v2_role is not None:
+            # Determine old scope by checking which platform role(s) this role is a child of
+            # Check USER platform roles first (for platform_default roles)
+            # Then check ADMIN platform roles (for admin_default-only roles)
+            for check_scope in [Scope.DEFAULT, Scope.TENANT, Scope.ROOT]:
+                user_platform_role_uuid = platform_roles[(DefaultAccessType.USER, check_scope)].uuid
+                admin_platform_role_uuid = platform_roles[(DefaultAccessType.ADMIN, check_scope)].uuid
+                if (
+                    existing_v2_role.parents.filter(uuid=user_platform_role_uuid).exists()
+                    or existing_v2_role.parents.filter(uuid=admin_platform_role_uuid).exists()
+                ):
+                    old_scope = check_scope
+                    break
+
         v2_role, v2_created = SeededRoleV2.objects.update_or_create(
             uuid=v1_role.uuid,
             defaults={
@@ -370,6 +441,14 @@ def _seed_v2_role_from_v1(v1_role, display_name, description, public_tenant, pla
         if v1_role.admin_default:
             admin_platform_role.children.add(v2_role)
             logger.info("Added %s as child of admin platform role %s", display_name, admin_platform_role.name)
+
+        # If scope changed, migrate existing bindings to the new scope
+        if old_scope is not None and old_scope != scope:
+            logger.info(
+                f"Scope changed for system role {display_name} from {old_scope.name} to {scope.name}. "
+                "Triggering binding migration for all groups with this role."
+            )
+            _migrate_bindings_for_scope_change(v1_role, old_scope, scope)
 
         return v2_role
     except Exception as e:
