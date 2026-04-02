@@ -59,7 +59,7 @@ def _determine_old_scope(existing_v2_role, platform_roles):
     Returns:
         The Scope of the role, or None if no parent platform role found
     """
-    if existing_v2_role is None:
+    if existing_v2_role is None or not platform_roles:
         return None
 
     # Build a uuid -> scope map once (more efficient than repeated queries)
@@ -71,13 +71,10 @@ def _determine_old_scope(existing_v2_role, platform_roles):
     # Single query to get all parent UUIDs
     parent_uuids = set(existing_v2_role.parents.values_list("uuid", flat=True))
 
-    # Return the first matching scope in priority order
-    for scope in (Scope.DEFAULT, Scope.TENANT, Scope.ROOT):
-        if (
-            platform_roles[(DefaultAccessType.USER, scope)].uuid in parent_uuids
-            or platform_roles[(DefaultAccessType.ADMIN, scope)].uuid in parent_uuids
-        ):
-            return scope
+    # Find which scope the role belongs to by checking parent UUIDs against the map
+    for parent_uuid in parent_uuids:
+        if parent_uuid in uuid_to_scope:
+            return uuid_to_scope[parent_uuid]
     return None
 
 

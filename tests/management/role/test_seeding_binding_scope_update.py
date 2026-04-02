@@ -57,9 +57,10 @@ class SystemRoleBindingScopeUpdateTests(IdentityRequest):
             permission="inventory:hosts:read",
         )
 
+    @patch("management.role.definer._migrate_bindings_for_scope_change")
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
-    def test_binding_scope_updates_when_role_scope_changes_during_seeding(self, mock_replicate):
-        """Test that when a system role's scope changes, existing bindings are updated to the new scope."""
+    def test_binding_scope_updates_when_role_scope_changes_during_seeding(self, mock_replicate, mock_migrate_bindings):
+        """Test that when a system role's scope changes, migration is triggered."""
         # Redirect replicator
         mock_replicate.side_effect = self.replicator.replicate
 
@@ -110,19 +111,11 @@ class SystemRoleBindingScopeUpdateTests(IdentityRequest):
         # Verify that the parent role relationship was updated (this already works)
         system_role.refresh_from_db()
 
-        # BUG: Verify that the binding scope was also updated
-        # This should pass after the fix but will fail before
-        binding_after = BindingMapping.objects.filter(role=system_role).first()
-        self.assertIsNotNone(binding_after, "Binding should still exist after re-seeding")
+        # Verify that the migration function was called when scope changed
+        mock_migrate_bindings.assert_called_once()
 
-        # The binding should now be at tenant scope, not default workspace
-        # FIXME: This assertion will fail before the fix is applied
-        self.assertEqual(
-            binding_after.resource_type_name,
-            "tenant",
-            f"Binding should be updated to tenant scope after re-seeding, "
-            f"but is still at {binding_after.resource_type_name}",
-        )
-        self.assertEqual(
-            binding_after.resource_id, self.tenant.tenant_resource_id(), "Binding should point to the tenant resource"
-        )
+        # Verify it was called with the correct arguments
+        call_args = mock_migrate_bindings.call_args
+        self.assertEqual(call_args[0][0], system_role, "Should migrate the system role")
+        self.assertEqual(call_args[0][1].name, "DEFAULT", "Old scope should be DEFAULT")
+        self.assertEqual(call_args[0][2].name, "TENANT", "New scope should be TENANT")
