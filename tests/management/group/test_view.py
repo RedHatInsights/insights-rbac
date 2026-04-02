@@ -285,17 +285,13 @@ class GroupViewsetTests(IdentityRequest):
 
     def tearDown(self):
         """Tear down group viewset tests."""
-        Group.objects.all().delete()
-        Principal.objects.all().delete()
-        Role.objects.all().delete()
-        Policy.objects.all().delete()
-        Workspace.objects.filter(parent__isnull=False).delete()
-        Workspace.objects.filter(parent__isnull=True).delete()
         # Clear the principal cache for the test tenant to avoid test isolation issues
         from management.utils import PRINCIPAL_CACHE
 
         PRINCIPAL_CACHE.delete_all_principals_for_tenant("100001")
         PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
+
+        super().tearDown()
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
@@ -4549,18 +4545,12 @@ class GroupViewNonAdminTests(IdentityRequest):
 
     def tearDown(self):
         """Tear down group view tests."""
-        Group.objects.all().delete()
-        Principal.objects.all().delete()
-        Permission.objects.all().delete()
-        Access.objects.all().delete()
-        Role.objects.all().delete()
-        Policy.objects.all().delete()
-        Workspace.objects.filter(parent__isnull=False).delete()
-        Workspace.objects.filter(parent__isnull=True).delete()
         # Clear the principal cache for the test tenant to avoid test isolation issues
         from management.utils import PRINCIPAL_CACHE
 
         PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
+
+        super().tearDown()
 
     @staticmethod
     def _create_group_with_user_access_administrator_role(tenant: Tenant) -> Group:

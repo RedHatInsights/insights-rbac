@@ -22,10 +22,11 @@ from django.conf import settings
 
 
 def v2_role_excluded_applications() -> frozenset[str]:
-    """Return permission `application` values excluded for v2 **role list** filtering.
+    """Return permission ``application`` values in ``V2_MIGRATION_APP_EXCLUDE_LIST``.
 
-    Derived from ``V2_MIGRATION_APP_EXCLUDE_LIST``. Roles with any permission in these
-    applications are omitted from the v2 roles list API only.
+    Roles that include any permission in these applications are omitted from v2 role
+    list and retrieve, cannot be assigned on role bindings, and cannot be created or
+    updated as custom v2 roles with such permissions.
     """
     return frozenset(app.strip() for app in settings.V2_MIGRATION_APP_EXCLUDE_LIST if app and str(app).strip())
 

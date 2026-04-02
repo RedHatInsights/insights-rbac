@@ -19,6 +19,7 @@
 from django.test import override_settings
 from management.exceptions import InvalidFieldError
 from management.models import Permission
+from management.role.v2_exceptions import InvalidRolePermissionsError
 from management.role.v2_model import RoleV2
 from management.role.v2_role_scope import (
     v2_role_excluded_application_permission_ids_cache,
@@ -102,3 +103,50 @@ class V2RoleScopeTests(IdentityRequest):
         roles = service._get_roles([str(self.inventory_role.uuid)])
         self.assertEqual(len(roles), 1)
         self.assertEqual(roles[0].uuid, self.inventory_role.uuid)
+
+    @override_settings(V2_MIGRATION_APP_EXCLUDE_LIST=["cost-management"])
+    def test_create_custom_role_rejects_excluded_application(self):
+        """Creating a V2 role with only migration-excluded permissions fails."""
+        with self.assertRaises(InvalidRolePermissionsError):
+            self.service.create(
+                name="excluded_only",
+                description="",
+                permission_data=[
+                    {"application": "cost-management", "resource_type": "cost", "operation": "read"},
+                ],
+                tenant=self.tenant,
+            )
+
+    @override_settings(V2_MIGRATION_APP_EXCLUDE_LIST=["cost-management"])
+    def test_create_custom_role_rejects_mixed_if_any_excluded(self):
+        """Creating a V2 role fails if any permission uses a migration-excluded application."""
+        with self.assertRaises(InvalidRolePermissionsError):
+            self.service.create(
+                name="mixed_bad",
+                description="",
+                permission_data=[
+                    {"application": "inventory", "resource_type": "hosts", "operation": "read"},
+                    {"application": "cost-management", "resource_type": "cost", "operation": "read"},
+                ],
+                tenant=self.tenant,
+            )
+
+    @override_settings(V2_MIGRATION_APP_EXCLUDE_LIST=["cost-management"])
+    def test_update_custom_role_rejects_excluded_application(self):
+        """Updating a V2 role to add migration-excluded permissions fails."""
+        role = self.service.create(
+            name="then_update",
+            description="",
+            permission_data=[{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
+            tenant=self.tenant,
+        )
+        with self.assertRaises(InvalidRolePermissionsError):
+            self.service.update(
+                role_uuid=str(role.uuid),
+                name="then_update",
+                description="",
+                permission_data=[
+                    {"application": "cost-management", "resource_type": "cost", "operation": "read"},
+                ],
+                tenant=self.tenant,
+            )
