@@ -1244,7 +1244,9 @@ def _do_remove_orphaned_car(raw_car: CrossAccountRequest, replicator: RelationRe
     # such RoleBindings and require them to be re-created later. (This is a valid state for a V1 tenant to be in,
     # but it must be fixed before the tenant migrates to V2.)
     bad_role_bindings = list(
-        RoleBinding.objects.select_for_update().filter(uuid__in=(bm.mappings["id"] for bm in car_binding_mappings))
+        RoleBinding.objects.select_for_update()
+        .filter(tenant=target_tenant)
+        .filter(uuid__in=(bm.mappings["id"] for bm in car_binding_mappings))
     )
 
     if len(bad_role_bindings) > 0:
