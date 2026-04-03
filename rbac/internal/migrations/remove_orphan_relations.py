@@ -24,7 +24,7 @@ import pgtransaction
 from django.db.models import QuerySet
 
 from api.models import Tenant
-from django.db import transaction
+from django.db import transaction, OperationalError
 from internal.utils import (
     replicate_missing_binding_tuples,
     iterate_tuples_from_kessel,
@@ -47,6 +47,7 @@ from management.tenant_service.v2 import lock_tenant_for_bootstrap, TenantBootst
 from migration_tool.in_memory_tuples import RelationTuple
 from migration_tool.models import V2boundresource, role_permission_tuple
 from migration_tool.utils import create_relationship
+from psycopg2.errors import DeadlockDetected, SerializationFailure
 from kessel.relations.v1beta1.common_pb2 import Relationship
 
 logger = logging.getLogger(__name__)
@@ -780,6 +781,32 @@ def cleanup_tenant_orphaned_relationships(
     }
 
 
+def _run_removal_with_retry(tenant: Tenant, read_tuples_fn, dry_run: bool):
+    attempts_remaining = 3
+
+    while True:
+        try:
+            return cleanup_tenant_orphaned_relationships(
+                tenant=tenant,
+                read_tuples_fn=read_tuples_fn,
+                dry_run=dry_run,
+            )
+
+        # OperationalError is here based on actual serialization failures we've seen.
+        # DeadlockDetected and SerializationFailure are here based on the psycopg code.
+        except (OperationalError, DeadlockDetected, SerializationFailure) as e:
+            attempts_remaining -= 1
+
+            logger.info(
+                f"Got database error while attempting to fix orphans for tenant with org_id={tenant.org_id!r}. "
+                f"{attempts_remaining} attempts left.",
+                exc_info=True,
+            )
+
+            if attempts_remaining <= 0:
+                raise e
+
+
 def cleanup_tenant_orphan_bindings(org_id: str, dry_run: bool = False, *, read_tuples_fn=None) -> dict:
     """
     Remove orphaned role binding relationships for a tenant and re-replicate all binding mappings.
@@ -808,7 +835,7 @@ def cleanup_tenant_orphan_bindings(org_id: str, dry_run: bool = False, *, read_t
 
     try:
         # Clean orphaned relationships
-        cleanup_result = cleanup_tenant_orphaned_relationships(
+        cleanup_result = _run_removal_with_retry(
             tenant=tenant,
             read_tuples_fn=(read_tuples_fn if read_tuples_fn is not None else iterate_tuples_from_kessel),
             dry_run=dry_run,
