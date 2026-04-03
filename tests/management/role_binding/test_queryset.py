@@ -462,12 +462,12 @@ class RoleBindingQuerySetTest(IdentityRequest):
         )
         self.assertEqual(qs.count(), 0)
 
-    def test_granted_subject_principal_without_user_id_returns_all(self):
-        """Test that for_granted_subject with type=principal and no user_id is a no-op."""
+    def test_granted_subject_principal_without_user_id_returns_empty(self):
+        """Test that for_granted_subject with type=principal and no user_id returns nothing."""
         qs = RoleBinding.objects.for_tenant(self.tenant).for_granted_subject(
             granted_subject_type="principal",
         )
-        self.assertEqual(set(qs), {self.binding_a, self.binding_b})
+        self.assertEqual(qs.count(), 0)
 
     def test_granted_subject_principal_user_id_only_matches_user_id_not_uuid(self):
         """Test that principal type resolves by user_id only, not by UUID."""

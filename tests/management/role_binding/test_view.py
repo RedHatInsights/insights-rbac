@@ -808,8 +808,7 @@ class RoleBindingListViewSetTest(IdentityRequest):
         """Test that granted_subject_type=principal with non-existent user_id returns empty."""
         url = self._get_list_url()
         response = self.client.get(
-            f"{url}?granted_subject_type=principal"
-            f"&granted_subject.principal.user_id=nonexistent-user&limit=100",
+            f"{url}?granted_subject_type=principal" f"&granted_subject.principal.user_id=nonexistent-user&limit=100",
             **self.headers,
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -819,15 +818,14 @@ class RoleBindingListViewSetTest(IdentityRequest):
         "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
         return_value=True,
     )
-    def test_list_filter_by_granted_subject_type_principal_without_user_id(self, mock_permission):
-        """Test that granted_subject_type=principal without user_id returns all bindings."""
+    def test_list_filter_by_granted_subject_type_principal_without_user_id_returns_400(self, mock_permission):
+        """Test that granted_subject_type=principal without user_id returns 400."""
         url = self._get_list_url()
         response = self.client.get(
             f"{url}?granted_subject_type=principal&limit=100",
             **self.headers,
         )
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(response.data["data"]), 15)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     # --- resource.tenant.org_id ---
 

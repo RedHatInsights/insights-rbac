@@ -26,6 +26,8 @@ from management.permissions.workspace_inventory_access import (
 from management.principal.proxy import get_kessel_principal_id
 from rest_framework import permissions
 
+from api.models import Tenant
+
 logger = logging.getLogger(__name__)
 
 
@@ -142,8 +144,6 @@ class RoleBindingKesselAccessPermission(permissions.BasePermission):
         """
         org_id = request.query_params.get("resource.tenant.org_id", "").replace("\x00", "")
         if org_id:
-            from api.models import Tenant
-
             return "tenant", Tenant.org_id_to_tenant_resource_id(org_id)
 
         resource_id = request.query_params.get("resource_id", "").replace("\x00", "")

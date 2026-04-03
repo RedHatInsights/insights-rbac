@@ -18,7 +18,6 @@
 
 import logging
 
-from api.models import Tenant
 from management.base_viewsets import BaseV2ViewSet
 from management.group.model import Group
 from management.permissions.role_binding_access import (
@@ -34,6 +33,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from api.common.pagination import V2CursorPagination
+from api.models import Tenant
 from .serializer import (
     BatchCreateRoleBindingRequestSerializer,
     BatchCreateRoleBindingResponseItemSerializer,
@@ -133,8 +133,9 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
             - resource_type: Filter by resource type (must be used with resource_id)
             - subject_type: Filter by subject type (e.g., 'group')
             - subject_id: Filter by subject ID (UUID)
-            - granted_subject_type: Filter by effective grant subject type ('user' or 'group')
-            - granted_subject_id: Filter by effective grant subject ID (principal UUID, user_id, or group UUID)
+            - granted_subject_type: Filter by effective grant subject type ('user', 'group', or 'principal')
+            - granted_subject_id: Required for 'user'/'group' (principal UUID, user_id, or group UUID)
+            - granted_subject.principal.user_id: Required for 'principal' (external user ID)
             - fields: Control which fields are included in the response
             - order_by: Sort by specified field(s), prefix with '-' for descending
         """

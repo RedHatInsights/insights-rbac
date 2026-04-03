@@ -163,7 +163,7 @@ class ByTypeLookupTests(SubjectManagerTests):
                 with self.assertRaises(UnsupportedSubjectTypeError) as context:
                     Subject.objects.by_type(type=subject_type, id=str(self.group.uuid))
 
-                expected = UnsupportedSubjectTypeError(subject_type)
+                expected = UnsupportedSubjectTypeError(subject_type, supported=[SubjectType.GROUP, SubjectType.USER])
                 self.assertEqual(str(context.exception), str(expected))
 
     def test_by_type_raises_not_found_for_invalid_group(self):

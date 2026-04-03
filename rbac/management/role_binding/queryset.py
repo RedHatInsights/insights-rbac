@@ -111,8 +111,12 @@ class RoleBindingQuerySet(QuerySet):
             raise ValueError("for_granted_subject() requires for_tenant() to be called first")
 
         if granted_subject_type == SubjectType.GROUP:
+            if not granted_subject_id:
+                return self.none()
             return self.filter(group_entries__group__uuid=granted_subject_id)
         elif granted_subject_type == SubjectType.USER:
+            if not granted_subject_id:
+                return self.none()
             principal = _resolve_principal(granted_subject_id, tenant)
             if not principal:
                 return self.none()
@@ -121,16 +125,15 @@ class RoleBindingQuerySet(QuerySet):
                 Q(principal_entries__principal__uuid=principal.uuid) | Q(group_entries__group__uuid__in=group_uuids)
             ).distinct()
         elif granted_subject_type == SubjectType.PRINCIPAL:
-            if granted_subject_principal_user_id:
-                principal = _resolve_principal_by_user_id(granted_subject_principal_user_id, tenant)
-                if not principal:
-                    return self.none()
-                group_uuids = _group_uuids_for_principal(principal, tenant)
-                return self.filter(
-                    Q(principal_entries__principal__uuid=principal.uuid)
-                    | Q(group_entries__group__uuid__in=group_uuids)
-                ).distinct()
-            return self
+            if not granted_subject_principal_user_id:
+                return self.none()
+            principal = _resolve_principal_by_user_id(granted_subject_principal_user_id, tenant)
+            if not principal:
+                return self.none()
+            group_uuids = _group_uuids_for_principal(principal, tenant)
+            return self.filter(
+                Q(principal_entries__principal__uuid=principal.uuid) | Q(group_entries__group__uuid__in=group_uuids)
+            ).distinct()
         return self.none()
 
     def with_resource_names(self):

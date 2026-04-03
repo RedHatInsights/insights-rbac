@@ -110,7 +110,7 @@ class RoleBindingListInputSerializer(RoleBindingInputSerializerMixin, serializer
     )
     granted_subject_id = serializers.CharField(
         required=False,
-        help_text="ID of the subject effectively granted access (principal UUID, user_id, or group UUID)",
+        help_text=("ID effectively granted access: for 'user', principal UUID or user_id; for 'group', group UUID"),
     )
     granted_subject_principal_user_id = serializers.CharField(
         required=False,
@@ -139,9 +139,7 @@ class RoleBindingListInputSerializer(RoleBindingInputSerializerMixin, serializer
         resource_tenant_org_id = attrs.get("resource_tenant_org_id")
         if resource_tenant_org_id:
             if attrs.get("resource_id"):
-                raise serializers.ValidationError(
-                    "resource.tenant.org_id cannot be combined with resource_id."
-                )
+                raise serializers.ValidationError("resource.tenant.org_id cannot be combined with resource_id.")
             resource_type = attrs.get("resource_type")
             if resource_type and resource_type != "tenant":
                 raise serializers.ValidationError(
@@ -168,6 +166,14 @@ class RoleBindingListInputSerializer(RoleBindingInputSerializerMixin, serializer
             if attrs.get("subject_type") or attrs.get("subject_id"):
                 raise serializers.ValidationError(
                     "granted_subject_type/granted_subject_id cannot be combined with subject_type/subject_id."
+                )
+            if granted_type in (SubjectType.USER, SubjectType.GROUP) and not granted_id:
+                raise serializers.ValidationError(
+                    "granted_subject_id is required when granted_subject_type is 'user' or 'group'."
+                )
+            if granted_type == SubjectType.PRINCIPAL and not granted_principal_user_id:
+                raise serializers.ValidationError(
+                    "granted_subject.principal.user_id is required when granted_subject_type is 'principal'."
                 )
 
         return attrs
@@ -925,10 +931,12 @@ class UpdateRoleBindingRequestSerializer(RoleBindingInputSerializerMixin, serial
         except FieldSelectionValidationError as e:
             raise serializers.ValidationError(e.message)
 
+    SUPPORTED_SUBJECT_TYPES = (SubjectType.GROUP, SubjectType.USER)
+
     def validate_subject_type(self, value):
-        """Validate subject_type is a supported enum value."""
-        if not SubjectType.is_valid(value):
-            supported = ", ".join(SubjectType.values())
+        """Validate subject_type is a supported enum value for by-subject operations."""
+        if value not in self.SUPPORTED_SUBJECT_TYPES:
+            supported = ", ".join(self.SUPPORTED_SUBJECT_TYPES)
             raise serializers.ValidationError(f"Unsupported subject type: '{value}'. Supported types: {supported}")
         return value
 
