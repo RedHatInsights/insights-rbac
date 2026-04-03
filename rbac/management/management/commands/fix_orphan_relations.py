@@ -117,6 +117,8 @@ class Command(BaseCommand):
         modified_count = 0
         failed_orgs = []
 
+        consecutive_failures = 0
+
         for index, tenant in enumerate(tenants):
             start_time = datetime.datetime.now(datetime.timezone.utc)
             modified = False
@@ -147,6 +149,7 @@ class Command(BaseCommand):
 
             if failed:
                 failed_orgs.append(tenant.org_id)
+                consecutive_failures += 1
 
                 logger.info(
                     f"Failed migration of tenant with org_id={tenant.org_id!r} at {end_time}; "
@@ -159,13 +162,14 @@ class Command(BaseCommand):
                 )
 
                 success_count += 1
+                consecutive_failures = 0
 
                 if modified:
                     modified_count += 1
 
-            if len(failed_orgs) >= _abort_threshold:
+            if consecutive_failures >= _abort_threshold:
                 stop_reason = _StopReason.ABORTED
-                logger.error(f"Aborting after {_abort_threshold} tenants failed.")
+                logger.error(f"Aborting after {consecutive_failures} consecutive tenants failed.")
                 break
 
         return _MigrateResult(
