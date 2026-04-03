@@ -166,6 +166,11 @@ class AccessView(APIView):
         if v2_error is not None:
             return v2_error
 
+        # Include is_org_admin in the cache sub_key so that a flag change
+        # triggers a cache miss and returns up-to-date permissions.
+        is_org_admin = bool(request.user.admin)
+        sub_key = f"{sub_key}&is_org_admin:{is_org_admin}"
+
         principal = get_principal_from_request(request)
         cache = AccessCache(request.tenant.org_id)
         access_policy = cache.get_policy(principal.uuid, sub_key)
