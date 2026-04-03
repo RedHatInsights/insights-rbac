@@ -48,33 +48,50 @@ from api.models import Tenant
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-def _determine_old_scope(existing_v2_role, platform_roles):
+def _determine_old_scope(existing_v2_role, platform_roles, resource_service=None):
     """
     Determine the scope of an existing V2 role by checking its platform role parents.
+
+    For roles without parents (neither platform_default nor admin_default), falls back to
+    calculating scope from the role's current permissions.
 
     Args:
         existing_v2_role: The existing SeededRoleV2 instance (or None)
         platform_roles: Dictionary mapping (DefaultAccessType, Scope) to platform roles
+        resource_service: ImplicitResourceService for calculating scope from permissions (optional)
 
     Returns:
-        The Scope of the role, or None if no parent platform role found
+        The Scope of the role, or None if scope cannot be determined
     """
-    if existing_v2_role is None or not platform_roles:
+    if existing_v2_role is None:
         return None
 
-    # Build a uuid -> scope map once (more efficient than repeated queries)
-    uuid_to_scope = {}
-    for scope in (Scope.DEFAULT, Scope.TENANT, Scope.ROOT):
-        uuid_to_scope[platform_roles[(DefaultAccessType.USER, scope)].uuid] = scope
-        uuid_to_scope[platform_roles[(DefaultAccessType.ADMIN, scope)].uuid] = scope
+    # Method 1: Try to determine scope from platform role parents (fast path for platform_default/admin_default roles)
+    if platform_roles:
+        # Build a uuid -> scope map once (more efficient than repeated queries)
+        uuid_to_scope = {}
+        for scope in (Scope.DEFAULT, Scope.TENANT, Scope.ROOT):
+            uuid_to_scope[platform_roles[(DefaultAccessType.USER, scope)].uuid] = scope
+            uuid_to_scope[platform_roles[(DefaultAccessType.ADMIN, scope)].uuid] = scope
 
-    # Single query to get all parent UUIDs
-    parent_uuids = set(existing_v2_role.parents.values_list("uuid", flat=True))
+        # Single query to get all parent UUIDs
+        parent_uuids = set(existing_v2_role.parents.values_list("uuid", flat=True))
 
-    # Find which scope the role belongs to by checking parent UUIDs against the map
-    for parent_uuid in parent_uuids:
-        if parent_uuid in uuid_to_scope:
-            return uuid_to_scope[parent_uuid]
+        # Find which scope the role belongs to by checking parent UUIDs against the map
+        for parent_uuid in parent_uuids:
+            if parent_uuid in uuid_to_scope:
+                return uuid_to_scope[parent_uuid]
+
+    # Method 2: For roles without parents, calculate scope from existing permissions
+    # This handles roles where platform_default=False and admin_default=False
+    if resource_service:
+        permission_strings = list(existing_v2_role.permissions.values_list("permission", flat=True))
+        if permission_strings:
+            try:
+                return resource_service.highest_scope_for_permissions(permission_strings)
+            except Exception as e:
+                logger.warning(f"Failed to calculate scope from permissions for role {existing_v2_role.uuid}: {e}")
+
     return None
 
 
@@ -445,7 +462,7 @@ def _seed_v2_role_from_v1(v1_role, display_name, description, public_tenant, pla
     try:
         # Check if V2 role already exists to detect scope changes
         existing_v2_role = SeededRoleV2.objects.filter(uuid=v1_role.uuid).first()
-        old_scope = _determine_old_scope(existing_v2_role, platform_roles)
+        old_scope = _determine_old_scope(existing_v2_role, platform_roles, resource_service)
 
         v2_role, v2_created = SeededRoleV2.objects.update_or_create(
             uuid=v1_role.uuid,

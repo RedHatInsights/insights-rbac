@@ -206,6 +206,47 @@ class SystemRoleBindingScopeUpdateTests(IdentityRequest):
         result = _determine_old_scope(mock_role, platform_roles)
         self.assertIsNone(result, "Should return None when no parent matches")
 
+    def test_determine_old_scope_from_permissions_for_role_without_parents(self):
+        """Test that _determine_old_scope falls back to permissions for roles without parents."""
+        from unittest.mock import MagicMock
+        from management.permission.scope_service import ImplicitResourceService
+
+        # Create a mock role with no parents but with permissions
+        mock_role = MagicMock()
+        mock_role.parents.values_list.return_value = []  # No parents
+        mock_role.permissions.values_list.return_value = ["inventory:hosts:read", "inventory:hosts:write"]
+
+        # Create a mock resource service
+        mock_resource_service = MagicMock(spec=ImplicitResourceService)
+        mock_resource_service.highest_scope_for_permissions.return_value = Scope.DEFAULT
+
+        # Test that scope is determined from permissions
+        result = _determine_old_scope(mock_role, {}, mock_resource_service)
+        self.assertEqual(result, Scope.DEFAULT, "Should detect DEFAULT scope from permissions")
+
+        # Verify the resource service was called with the permission strings
+        mock_resource_service.highest_scope_for_permissions.assert_called_once_with(
+            ["inventory:hosts:read", "inventory:hosts:write"]
+        )
+
+    def test_determine_old_scope_permissions_fallback_when_no_perms(self):
+        """Test that _determine_old_scope returns None when role has no parents and no permissions."""
+        from unittest.mock import MagicMock
+        from management.permission.scope_service import ImplicitResourceService
+
+        # Create a mock role with no parents and no permissions
+        mock_role = MagicMock()
+        mock_role.parents.values_list.return_value = []
+        mock_role.permissions.values_list.return_value = []  # No permissions
+
+        mock_resource_service = MagicMock(spec=ImplicitResourceService)
+
+        result = _determine_old_scope(mock_role, {}, mock_resource_service)
+        self.assertIsNone(result, "Should return None when role has no parents and no permissions")
+
+        # Resource service should not be called since there are no permissions
+        mock_resource_service.highest_scope_for_permissions.assert_not_called()
+
     def test_determine_old_scope_detects_scope_from_user_parent(self):
         """Test that _determine_old_scope correctly identifies scope from USER parent."""
         # Use actual seeded roles to test scope detection
