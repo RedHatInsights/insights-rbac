@@ -804,7 +804,7 @@ def _run_removal_with_retry(tenant: Tenant, read_tuples_fn, dry_run: bool):
             )
 
             if attempts_remaining <= 0:
-                raise e
+                raise
 
 
 def cleanup_tenant_orphan_bindings(org_id: str, dry_run: bool = False, *, read_tuples_fn=None) -> dict:
