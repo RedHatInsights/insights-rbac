@@ -273,6 +273,39 @@ class RoleDefinerTests(IdentityRequest):
                     "Unready tenant should not be notified",
                 )
 
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    def test_role_create_skip_notifications(self, send_kafka_message):
+        """Test that skip_notifications suppresses RH notifications during role seeding."""
+        kafka_mock = copy_call_args(send_kafka_message)
+        with self.settings(NOTIFICATIONS_RH_ENABLED=True, NOTIFICATIONS_ENABLED=True):
+            from management.seeds import role_seeding
+
+            role_seeding(skip_notifications=True)
+
+        notification_calls = [
+            c for c in kafka_mock.call_args_list if c.args[0] == settings.NOTIFICATIONS_TOPIC
+        ]
+        self.assertEqual(len(notification_calls), 0, "No notifications should be sent when skip_notifications=True")
+
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    def test_role_update_skip_notifications(self, send_kafka_message):
+        """Test that skip_notifications suppresses RH notifications during role update seeding."""
+        kafka_mock = copy_call_args(send_kafka_message)
+        self.try_seed_roles()
+
+        # Force an update by zeroing the version
+        Role.objects.filter(platform_default=True).update(version=0)
+
+        with self.settings(NOTIFICATIONS_RH_ENABLED=True, NOTIFICATIONS_ENABLED=True):
+            from management.seeds import role_seeding
+
+            role_seeding(skip_notifications=True)
+
+        notification_calls = [
+            c for c in kafka_mock.call_args_list if c.args[0] == settings.NOTIFICATIONS_TOPIC
+        ]
+        self.assertEqual(len(notification_calls), 0, "No notifications should be sent when skip_notifications=True")
+
     def try_seed_roles(self):
         """Try to seed roles"""
         try:

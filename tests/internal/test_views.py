@@ -363,7 +363,29 @@ class InternalViewsetTests(BaseInternalViewsetTests):
         seed_mock.assert_not_called()
         self.assertEqual(
             response.content.decode(),
-            "Valid query parameters: ['seed_types', 'force_create_relationships', 'force_update_relationships'].",
+            "Valid query parameters: ['seed_types', 'force_create_relationships', 'force_update_relationships', 'skip_notifications'].",
+        )
+
+    @patch("management.tasks.run_seeds_in_worker.delay")
+    def test_run_seeds_with_skip_notifications(self, seed_mock):
+        """Test that we can trigger seeds with skip_notifications=true."""
+        response = self.client.post(
+            f"/_private/api/seeds/run/?seed_types=roles&skip_notifications=true", **self.request.META
+        )
+        seed_mock.assert_called_once_with({"roles": True, "skip_notifications": True})
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+
+    @patch("management.tasks.run_seeds_in_worker.delay")
+    def test_run_seeds_with_invalid_skip_notifications(self, seed_mock):
+        """Test that we get a 400 when an invalid skip_notifications value is supplied."""
+        response = self.client.post(
+            f"/_private/api/seeds/run/?skip_notifications=yes", **self.request.META
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        seed_mock.assert_not_called()
+        self.assertEqual(
+            response.content.decode(),
+            "Valid options for \"skip_notifications\": ['true', 'false'].",
         )
 
     @patch("api.tasks.populate_tenant_account_id_in_worker.delay")
