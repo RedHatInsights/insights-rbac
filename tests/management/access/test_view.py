@@ -1264,7 +1264,7 @@ class AccessViewTests(IdentityRequest):
 
         # Request as org admin (self.test_headers uses is_org_admin=True)
         client.get(url, **self.test_headers)
-        _, admin_sub_key, _ = mock_get_policy.call_args[0]
+        _, admin_sub_key = mock_get_policy.call_args[0]
         self.assertIn("is_org_admin:True", admin_sub_key)
 
         mock_get_policy.reset_mock()
@@ -1280,7 +1280,7 @@ class AccessViewTests(IdentityRequest):
         non_admin_headers = non_admin_request_context["request"].META
 
         client.get(url, **non_admin_headers)
-        _, non_admin_sub_key, _ = mock_get_policy.call_args[0]
+        _, non_admin_sub_key = mock_get_policy.call_args[0]
         self.assertIn("is_org_admin:False", non_admin_sub_key)
 
         # The two sub_keys must differ so the cache returns separate entries
