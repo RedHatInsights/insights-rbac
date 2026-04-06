@@ -282,9 +282,7 @@ class RoleDefinerTests(IdentityRequest):
 
             role_seeding(skip_notifications=True)
 
-        notification_calls = [
-            c for c in kafka_mock.call_args_list if c.args[0] == settings.NOTIFICATIONS_TOPIC
-        ]
+        notification_calls = [c for c in kafka_mock.call_args_list if c.args[0] == settings.NOTIFICATIONS_TOPIC]
         self.assertEqual(len(notification_calls), 0, "No notifications should be sent when skip_notifications=True")
 
     @patch("core.kafka.RBACProducer.send_kafka_message")
@@ -301,9 +299,7 @@ class RoleDefinerTests(IdentityRequest):
 
             role_seeding(skip_notifications=True)
 
-        notification_calls = [
-            c for c in kafka_mock.call_args_list if c.args[0] == settings.NOTIFICATIONS_TOPIC
-        ]
+        notification_calls = [c for c in kafka_mock.call_args_list if c.args[0] == settings.NOTIFICATIONS_TOPIC]
         self.assertEqual(len(notification_calls), 0, "No notifications should be sent when skip_notifications=True")
 
     def try_seed_roles(self):
