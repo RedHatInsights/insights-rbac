@@ -32,15 +32,17 @@ class SubjectTypeTests(IdentityRequest):
         """Test that values() returns all valid subject types."""
         values = SubjectType.values()
 
-        self.assertEqual(set(values), {"group", "user"})
+        self.assertEqual(set(values), {"group", "user", "principal"})
 
     def test_is_valid_returns_true_for_valid_types(self):
         """Test that is_valid returns True for valid subject types."""
         test_cases = [
             ("group", True),
             ("user", True),
+            ("principal", True),
             (SubjectType.GROUP, True),
             (SubjectType.USER, True),
+            (SubjectType.PRINCIPAL, True),
         ]
 
         for value, expected in test_cases:
@@ -49,7 +51,7 @@ class SubjectTypeTests(IdentityRequest):
 
     def test_is_valid_returns_false_for_invalid_types(self):
         """Test that is_valid returns False for invalid subject types."""
-        test_cases = ["invalid", "", "GROUP", "USER", "principal"]
+        test_cases = ["invalid", "", "GROUP", "USER", "PRINCIPAL"]
 
         for value in test_cases:
             with self.subTest(value=value):
@@ -161,7 +163,7 @@ class ByTypeLookupTests(SubjectManagerTests):
                 with self.assertRaises(UnsupportedSubjectTypeError) as context:
                     Subject.objects.by_type(type=subject_type, id=str(self.group.uuid))
 
-                expected = UnsupportedSubjectTypeError(subject_type)
+                expected = UnsupportedSubjectTypeError(subject_type, supported=[SubjectType.GROUP, SubjectType.USER])
                 self.assertEqual(str(context.exception), str(expected))
 
     def test_by_type_raises_not_found_for_invalid_group(self):

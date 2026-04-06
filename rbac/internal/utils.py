@@ -33,7 +33,7 @@ from django.db.models import Q
 from django.urls import resolve
 from internal.schemas import INVENTORY_INPUT_SCHEMAS, RELATION_INPUT_SCHEMAS
 from jsonschema import validate
-from management.atomic_transactions import atomic, atomic_block
+from management.atomic_transactions import atomic, atomic_block, atomic_with_retry
 from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
 from management.models import BindingMapping, Role, Workspace
 from management.permission.scope_service import TenantScopeResources
@@ -482,7 +482,7 @@ def lock_binding_mappings_with_roles_by_uuid(uuids: Iterable[str | uuid.UUID]) -
 #
 # Unfortunately, we must *also* use select_for_update() here because we are potentially interacting with
 # concurrent V1 writers (which all use SELECT FOR UPDATE rather than SERIALIZABLE).
-@atomic
+@atomic_with_retry(retries=3)
 def _do_replicate_missing_binding_tuples_batch(tenant_id: int, raw_role_bindings: list[RoleBinding]):
     tenant = Tenant.objects.get(id=tenant_id)
     bootstrap_lock = lock_tenant_for_bootstrap(tenant)

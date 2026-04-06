@@ -58,7 +58,7 @@ class SubjectQuerySet:
             return self.group(id=id)
         elif type == SubjectType.USER:
             return self.user(id=id)
-        raise UnsupportedSubjectTypeError(type)
+        raise UnsupportedSubjectTypeError(type, supported=[SubjectType.GROUP, SubjectType.USER])
 
     def group(self, id: str) -> "Subject":
         """Get a group subject by UUID.
