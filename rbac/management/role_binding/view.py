@@ -33,6 +33,7 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from api.common.pagination import V2CursorPagination
+from api.models import Tenant
 from .serializer import (
     BatchCreateRoleBindingRequestSerializer,
     BatchCreateRoleBindingResponseItemSerializer,
@@ -132,8 +133,9 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
             - resource_type: Filter by resource type (must be used with resource_id)
             - subject_type: Filter by subject type (e.g., 'group')
             - subject_id: Filter by subject ID (UUID)
-            - granted_subject_type: Filter by effective grant subject type ('user' or 'group')
-            - granted_subject_id: Filter by effective grant subject ID (principal UUID, user_id, or group UUID)
+            - granted_subject_type: Filter by effective grant subject type ('user', 'group', or 'principal')
+            - granted_subject_id: Required for 'user'/'group' (principal UUID, user_id, or group UUID)
+            - granted_subject.principal.user_id: Required for 'principal' (external user ID)
             - fields: Control which fields are included in the response
             - order_by: Sort by specified field(s), prefix with '-' for descending
         """
@@ -147,9 +149,17 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         if role_id:
             queryset = queryset.for_role(role_id)
 
+        resource_type = validated_params.get("resource_type")
+        resource_id = validated_params.get("resource_id")
+
+        resource_tenant_org_id = validated_params.get("resource_tenant_org_id")
+        if resource_tenant_org_id:
+            resource_id = Tenant.org_id_to_tenant_resource_id(resource_tenant_org_id)
+            resource_type = resource_type or "tenant"
+
         queryset = queryset.for_resource_filter(
-            resource_type=validated_params.get("resource_type"),
-            resource_id=validated_params.get("resource_id"),
+            resource_type=resource_type,
+            resource_id=resource_id,
         ).for_subject(
             subject_type=validated_params.get("subject_type"),
             subject_id=validated_params.get("subject_id"),
@@ -157,8 +167,13 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
 
         granted_subject_type = validated_params.get("granted_subject_type")
         granted_subject_id = validated_params.get("granted_subject_id")
-        if granted_subject_type and granted_subject_id:
-            queryset = queryset.for_granted_subject(granted_subject_type, granted_subject_id)
+        granted_subject_principal_user_id = validated_params.get("granted_subject_principal_user_id")
+        if granted_subject_type:
+            queryset = queryset.for_granted_subject(
+                granted_subject_type,
+                granted_subject_id=granted_subject_id,
+                granted_subject_principal_user_id=granted_subject_principal_user_id,
+            )
 
         field_selection = validated_params.get("fields")
         if field_selection is not None and "name" in field_selection.get_nested("resource"):
