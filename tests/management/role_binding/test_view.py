@@ -755,6 +755,142 @@ class RoleBindingListViewSetTest(IdentityRequest):
         response = self.client.get(f"{url}?granted_subject_type=user", **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
+    # --- granted_subject_type=principal ---
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_filter_by_granted_subject_type_principal_with_user_id(self, mock_permission):
+        """Test that granted_subject_type=principal with user_id returns direct + group bindings."""
+        url = self._get_list_url()
+
+        user_principal = Principal.objects.create(
+            username="principal_user", tenant=self.tenant, user_id="ext-principal-uid"
+        )
+        user_role = RoleV2.objects.create(name="principal_user_role", tenant=self.tenant)
+        user_role.permissions.add(self.permission)
+        user_binding = RoleBinding.objects.create(
+            role=user_role,
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            tenant=self.tenant,
+        )
+        RoleBindingPrincipal.objects.create(
+            principal=user_principal, binding=user_binding, source=API_PRINCIPAL_SOURCE
+        )
+
+        target_group = self.groups[0]
+        target_group.principals.add(user_principal)
+
+        try:
+            response = self.client.get(
+                f"{url}?granted_subject_type=principal"
+                f"&granted_subject.principal.user_id=ext-principal-uid&limit=100",
+                **self.headers,
+            )
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            returned_binding_roles = {str(item["role"]["id"]) for item in response.data["data"]}
+            self.assertIn(str(user_role.uuid), returned_binding_roles)
+            self.assertIn(str(self.roles[0].uuid), returned_binding_roles)
+        finally:
+            target_group.principals.remove(user_principal)
+            RoleBindingPrincipal.objects.filter(binding=user_binding).delete()
+            user_binding.delete()
+            user_role.delete()
+            user_principal.delete()
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_filter_by_granted_subject_type_principal_nonexistent_user(self, mock_permission):
+        """Test that granted_subject_type=principal with non-existent user_id returns empty."""
+        url = self._get_list_url()
+        response = self.client.get(
+            f"{url}?granted_subject_type=principal" f"&granted_subject.principal.user_id=nonexistent-user&limit=100",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 0)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_filter_by_granted_subject_type_principal_without_user_id_returns_400(self, mock_permission):
+        """Test that granted_subject_type=principal without user_id returns 400."""
+        url = self._get_list_url()
+        response = self.client.get(
+            f"{url}?granted_subject_type=principal&limit=100",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    # --- resource.tenant.org_id ---
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_filter_by_resource_tenant_org_id(self, mock_permission):
+        """Test that resource.tenant.org_id filters by tenant resource ID."""
+        url = self._get_list_url()
+        org_id = self.tenant.org_id
+        tenant_resource_id = Tenant.org_id_to_tenant_resource_id(org_id)
+
+        role = RoleV2.objects.create(name="tenant_role", tenant=self.tenant)
+        role.permissions.add(self.permission)
+        binding = RoleBinding.objects.create(
+            role=role,
+            resource_type="tenant",
+            resource_id=tenant_resource_id,
+            tenant=self.tenant,
+        )
+        group = Group.objects.create(name="tenant_group", tenant=self.tenant)
+        RoleBindingGroup.objects.create(group=group, binding=binding)
+
+        try:
+            response = self.client.get(
+                f"{url}?resource.tenant.org_id={org_id}&limit=100",
+                **self.headers,
+            )
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertEqual(len(response.data["data"]), 1)
+            self.assertEqual(response.data["data"][0]["resource"]["id"], tenant_resource_id)
+        finally:
+            RoleBindingGroup.objects.filter(binding=binding).delete()
+            binding.delete()
+            group.delete()
+            role.delete()
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_filter_by_resource_tenant_org_id_no_match(self, mock_permission):
+        """Test that resource.tenant.org_id with non-matching org returns empty."""
+        url = self._get_list_url()
+        response = self.client.get(
+            f"{url}?resource.tenant.org_id=nonexistent-org&limit=100",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 0)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_list_filter_by_resource_tenant_org_id_with_resource_id_returns_400(self, mock_permission):
+        """Test that combining resource.tenant.org_id with resource_id returns 400."""
+        url = self._get_list_url()
+        response = self.client.get(
+            f"{url}?resource.tenant.org_id=12345&resource_id=redhat/12345",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     # --- Combined filters ---
 
     @patch(
