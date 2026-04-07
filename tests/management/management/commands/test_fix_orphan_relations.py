@@ -448,3 +448,53 @@ class TestRemoveOrphanRelations(DualWriteTestCase):
         # We should have removed the orphaned role binding because the workspace is known to exist locally,
         # despite there being no parent relations in Kessel.
         self.assertEqual(len(self.tuples), 0)
+
+    def _log_group_delete(self, group: Group):
+        request_factory = RequestFactory()
+        request = request_factory.get(reverse("v1_management:group-detail", kwargs={"uuid": str(group.uuid)}))
+
+        user = User(username="a_username", org_id=self.tenant.org_id)
+
+        request.user = user
+        request._user = user
+
+        audit_log = AuditLog()
+        audit_log.log_delete(request, AuditLog.GROUP, group)
+
+    def test_fix_with_audit_log(self):
+        """Test that a tenant without roles or groups is processed if it has an AuditLog entry."""
+        group, _ = self.given_group("group", ["p1"])
+        role = self.given_v1_system_role("system role", ["rbac:*:*"])
+
+        def assert_binding(exists: bool):
+            self.assertEqual(
+                int(exists),
+                self.tuples.count_tuples(
+                    all_of(
+                        resource_type("rbac", "role_binding"),
+                        relation("subject"),
+                        subject("rbac", "group", str(group.uuid), "member"),
+                    )
+                ),
+            )
+
+        self.given_roles_assigned_to_group(group, [role])
+        assert_binding(True)
+
+        # Create an AuditLog entry for the group, then delete the group without replicating it.
+        self._log_group_delete(group)
+        self.given_group_removed(group, replicator=NoopReplicator())
+        assert_binding(True)
+
+        self.assertFalse(Group.objects.filter(tenant=self.tenant).exists())
+        self.assertFalse(Role.objects.filter(tenant=self.tenant).exists())
+        self.assertFalse(RoleV2.objects.filter(tenant=self.tenant).exists())
+        self.assertFalse(RoleBinding.objects.filter(tenant=self.tenant).exists())
+
+        self.assertTrue(AuditLog.objects.filter(tenant=self.tenant).exists())
+
+        # The AuditLog entry should be enough for the tenant to be processed, even if no Group, Role, or RoleBinding
+        # exists in the tenant.
+        self._do_fix_orphans()
+
+        assert_binding(False)

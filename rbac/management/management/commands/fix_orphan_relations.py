@@ -27,12 +27,14 @@ from typing import Optional
 from django.core.management import BaseCommand, CommandError
 from django.db.models import Q, QuerySet
 from internal.migrations.remove_orphan_relations import cleanup_tenant_orphan_bindings
+from management.audit_log.model import AuditLog
 from management.group.model import Group
 from management.role.model import Role
 from management.role.v2_model import RoleV2
 from management.role_binding.model import RoleBinding
 from management.workspace.model import Workspace
 
+from api.cross_access.model import CrossAccountRequest
 from api.models import Tenant
 
 logger = logging.getLogger(__name__)
@@ -79,35 +81,34 @@ class Command(BaseCommand):
             help="maximum number of tenants to process",
         )
 
-    def _base_query(self) -> QuerySet:
-        return Tenant.objects.exclude(tenant_name="public").filter(org_id__isnull=False)
+    def _tenants_query(self) -> QuerySet[Tenant]:
+        base = Tenant.objects.exclude(tenant_name="public").filter(org_id__isnull=False)
 
-    def _prioritized_tenants(self) -> Iterable[Tenant]:
-        # We unfortunately must look through every tenant, since any tenant could have previously had an entity in
-        # it, replicated it incorrectly, and later had the entity deleted. Since this is rather unlikely (a tenant that
-        # has had something deleted has at some point been used, and thus has probably not been entirely cleared),
-        # we prioritize any tenants that still have at least one thing in them over any tenants that don't.
-        base = self._base_query()
-
+        # We consider only the tenants where it is known that meaningful operations have taken place. Empty tenants
+        # are presumed not to have orphans (since there is no known way this could have occurred).
+        #
+        # We specifically include tenants with AuditLog entries because they could have had roles or groups that were
+        # incorrectly processed (e.g. by a binding scope migration that was run incorrectly) but were since deleted
+        # (which, in that case, would have resulted in role bindings that exist locally but not in Kessel being
+        # "deleted" from Kessel, while the role bindings that *did* still exist in Kessel remained unaffected). The
+        # deletion of the roles/groups would have resulted in AuditLogs being created (at least since June 2024,
+        # which is before the source of any known issues), so we can use that to determine which tenants to process.
         interesting_tenants = base.filter(
             Q(id__in=(Group.objects.all().values_list("tenant_id", flat=True)))
             | Q(id__in=(Role.objects.all().values_list("tenant_id", flat=True)))
             | Q(id__in=(RoleV2.objects.all().values_list("tenant_id", flat=True)))
             | Q(id__in=(RoleBinding.objects.all().values_list("tenant_id", flat=True)))
             | Q(id__in=(Workspace.objects.filter(type=Workspace.Types.STANDARD).values_list("tenant_id", flat=True)))
+            | Q(org_id__in=(CrossAccountRequest.objects.values_list("target_org", flat=True)))
+            | Q(id__in=(AuditLog.objects.values_list("tenant_id", flat=True)))
         ).distinct()
 
-        logger.info(f"About to load ~{interesting_tenants.count()} with an extant role, group, or workspace.")
+        logger.info(
+            f"About to load ~{interesting_tenants.count()} with an extant role, group, standard workspace, "
+            f"role binding, or audit log entry."
+        )
 
-        seen = set()
-
-        for tenant in interesting_tenants.iterator():
-            seen.add(tenant.pk)
-            yield tenant
-
-        logger.info(f"Yielded a total of {len(seen)} tenants with an extant role, group, or workspace.")
-
-        yield from base.exclude(pk__in=seen).distinct().iterator()
+        return interesting_tenants
 
     @staticmethod
     def _try_migrate(tenants: Iterable[Tenant], estimated_count: int) -> _MigrateResult:
@@ -180,12 +181,13 @@ class Command(BaseCommand):
         )
 
     def _limited_tenants(self, limit: Optional[int]) -> tuple[Iterable[Tenant], int]:
-        base_count = self._base_query().count()
+        base_query = self._tenants_query()
+        base_count = base_query.count()
 
         if limit is None:
-            return self._prioritized_tenants(), base_count
+            return base_query.iterator(), base_count
 
-        return itertools.islice(self._prioritized_tenants(), limit), min(base_count, limit)
+        return itertools.islice(base_query.iterator(), limit), min(base_count, limit)
 
     def handle(self, *args, **options):
         """Execute the command."""
