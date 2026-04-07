@@ -91,15 +91,19 @@ class RoleBindingQuerySet(QuerySet):
             ).distinct()
         return self
 
-    def for_granted_subject(self, granted_subject_type, granted_subject_id):
+    def for_granted_subject(
+        self, granted_subject_type, granted_subject_id=None, granted_subject_principal_user_id=None
+    ):
         """Filter by effective access grant, including transitive group membership.
 
         Requires for_tenant() to have been called first.
 
         For groups: returns bindings where the group is a direct subject.
-        For users: looks up the principal and resolves their group memberships
-        (explicitly assigned + platform default groups), then returns bindings
-        where the user is a direct subject OR any of their groups is a subject.
+        For users: looks up the principal (by UUID or user_id) and resolves
+        their group memberships, then returns bindings where the user is a
+        direct subject OR any of their groups is a subject.
+        For principals: looks up by external user_id only (no UUID fallback),
+        with the same membership resolution as users.
         Returns an empty queryset if the principal is not found.
         """
         tenant = getattr(self, "_tenant", None)
@@ -107,9 +111,23 @@ class RoleBindingQuerySet(QuerySet):
             raise ValueError("for_granted_subject() requires for_tenant() to be called first")
 
         if granted_subject_type == SubjectType.GROUP:
+            if not granted_subject_id:
+                return self.none()
             return self.filter(group_entries__group__uuid=granted_subject_id)
         elif granted_subject_type == SubjectType.USER:
+            if not granted_subject_id:
+                return self.none()
             principal = _resolve_principal(granted_subject_id, tenant)
+            if not principal:
+                return self.none()
+            group_uuids = _group_uuids_for_principal(principal, tenant)
+            return self.filter(
+                Q(principal_entries__principal__uuid=principal.uuid) | Q(group_entries__group__uuid__in=group_uuids)
+            ).distinct()
+        elif granted_subject_type == SubjectType.PRINCIPAL:
+            if not granted_subject_principal_user_id:
+                return self.none()
+            principal = _resolve_principal_by_user_id(granted_subject_principal_user_id, tenant)
             if not principal:
                 return self.none()
             group_uuids = _group_uuids_for_principal(principal, tenant)
@@ -159,6 +177,13 @@ def _resolve_principal(granted_subject_id, tenant):
     if not principal:
         principal = Principal.objects.filter(user_id=granted_subject_id, tenant=tenant).first()
     return principal
+
+
+def _resolve_principal_by_user_id(user_id, tenant):
+    """Look up a Principal by external user_id only (no UUID fallback)."""
+    from management.principal.model import Principal
+
+    return Principal.objects.filter(user_id=user_id, tenant=tenant).first()
 
 
 def _group_uuids_for_principal(principal, tenant):
