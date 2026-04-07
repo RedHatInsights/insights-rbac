@@ -232,6 +232,7 @@ class V2TenantBootstrapService:
             type=Workspace.Types.UNGROUPED_HOSTS,
             name=Workspace.SpecialNames.UNGROUPED_HOSTS,
             parent=default,
+            defaults={"description": Workspace.SpecialDescriptions.UNGROUPED_HOSTS},
         )
 
         relationship = create_relationship(
@@ -842,12 +843,18 @@ class V2TenantBootstrapService:
     def _built_in_workspaces(self, tenant: Tenant) -> tuple[Workspace, Workspace, list[RelationTuple]]:
         relationships = []
 
-        root = Workspace(tenant=tenant, type=Workspace.Types.ROOT, name=Workspace.SpecialNames.ROOT)
+        root = Workspace(
+            tenant=tenant,
+            type=Workspace.Types.ROOT,
+            name=Workspace.SpecialNames.ROOT,
+            description=Workspace.SpecialDescriptions.ROOT,
+        )
         default = Workspace(
             parent_id=root.id,
             tenant=tenant,
             type=Workspace.Types.DEFAULT,
             name=Workspace.SpecialNames.DEFAULT,
+            description=Workspace.SpecialDescriptions.DEFAULT,
         )
 
         root_workspace_id = root.id
