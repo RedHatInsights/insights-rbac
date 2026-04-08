@@ -17,6 +17,7 @@
 """Model for workspace management."""
 
 import uuid_utils.compat as uuid
+from django.contrib.postgres.indexes import GinIndex
 from django.core.exceptions import ValidationError
 from django.db import connection, models
 from django.db.models import Q, UniqueConstraint
@@ -72,6 +73,9 @@ class Workspace(TenantAwareModel):
                 name="unique_workspace_name_per_parent",
                 condition=Q(parent__isnull=False),
             ),
+        ]
+        indexes = [
+            GinIndex(fields=["name"], name="workspace_name_trgm_idx", opclasses=["gin_trgm_ops"]),
         ]
 
     def save(self, *args, **kwargs):
