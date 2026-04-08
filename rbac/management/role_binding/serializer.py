@@ -144,11 +144,22 @@ class RoleBindingListInputSerializer(RoleBindingInputSerializerMixin, serializer
         resource_id = attrs.get("resource_id")
         resource_type = attrs.get("resource_type")
 
+        # resource.tenant.org_id validations
+        resource_tenant_org_id = attrs.get("resource_tenant_org_id")
+        if resource_tenant_org_id:
+            if resource_id:
+                raise serializers.ValidationError("resource.tenant.org_id cannot be combined with resource_id.")
+            if resource_type and resource_type != "tenant":
+                raise serializers.ValidationError(
+                    "resource_type must be 'tenant' when resource.tenant.org_id is provided."
+                )
+
         # Inherited binding lookups require both resource_id and resource_type.
         # This applies when exclude_sources is 'none' (include all) or 'direct' (inherited only).
         # When exclude_sources is 'indirect', only direct bindings are returned, so no lookup needed.
+        # Skip this check when resource_tenant_org_id is provided, as it will be converted to resource_id in the view.
         needs_inherited_lookup = exclude_sources in (ExcludeSources.NONE, ExcludeSources.DIRECT)
-        if needs_inherited_lookup:
+        if needs_inherited_lookup and not resource_tenant_org_id:
             if resource_id and not resource_type:
                 raise serializers.ValidationError(
                     {
@@ -168,17 +179,6 @@ class RoleBindingListInputSerializer(RoleBindingInputSerializerMixin, serializer
         granted_type = attrs.get("granted_subject_type")
         granted_id = attrs.get("granted_subject_id")
         granted_principal_user_id = attrs.get("granted_subject_principal_user_id")
-
-        # resource.tenant.org_id validations
-        resource_tenant_org_id = attrs.get("resource_tenant_org_id")
-        if resource_tenant_org_id:
-            if attrs.get("resource_id"):
-                raise serializers.ValidationError("resource.tenant.org_id cannot be combined with resource_id.")
-            resource_type = attrs.get("resource_type")
-            if resource_type and resource_type != "tenant":
-                raise serializers.ValidationError(
-                    "resource_type must be 'tenant' when resource.tenant.org_id is provided."
-                )
 
         # granted_subject.principal.user_id requires granted_subject_type=principal
         if granted_principal_user_id and granted_type != SubjectType.PRINCIPAL:
