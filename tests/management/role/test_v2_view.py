@@ -36,6 +36,7 @@ from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.role.definer import seed_roles
 from management.role.v2_model import CustomRoleV2, PlatformRoleV2, RoleV2, SeededRoleV2
+from management.role.v2_role_scope import v2_role_excluded_application_permission_ids_cache
 from management.role.v2_service import RoleV2Service
 from management.tenant_service import V2TenantBootstrapService
 from management.utils import PRINCIPAL_CACHE, as_uuid
@@ -148,8 +149,6 @@ class RoleV2RetrieveViewTest(IdentityRequest):
     @override_settings(V2_MIGRATION_APP_EXCLUDE_LIST=["cost"])
     def test_retrieve_excluded_app_role_returns_404(self):
         """Test that retrieving a role whose permissions are all from an excluded app returns 404."""
-        from management.role.v2_role_scope import v2_role_excluded_application_permission_ids_cache
-
         v2_role_excluded_application_permission_ids_cache.invalidate()
         try:
             excluded_role = CustomRoleV2.objects.create(
@@ -1343,6 +1342,22 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertGreater(len(response.data["errors"]), 0)
         self.assertEqual(response.data["errors"][0]["field"], "name")
 
+    @override_settings(V2_MIGRATION_APP_EXCLUDE_LIST=["cost"])
+    def test_create_role_rejects_migration_excluded_application(self):
+        """Permissions in V2_MIGRATION_APP_EXCLUDE_LIST cannot be used on create."""
+        v2_role_excluded_application_permission_ids_cache.invalidate()
+        try:
+            data = {
+                "name": "Excluded App API Role",
+                "description": "Should fail",
+                "permissions": [{"application": "cost", "resource_type": "reports", "operation": "read"}],
+            }
+            response = self.client.post(self.url, data, format="json")
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+            self.assertIn("migration-excluded", response.data["detail"])
+        finally:
+            v2_role_excluded_application_permission_ids_cache.invalidate()
+
     # ==========================================================================
     # Tests for PUT /api/v2/roles/{uuid}/ (update)
     # ==========================================================================
@@ -1802,7 +1817,7 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
         self.assertFalse(RoleV2.objects.filter(uuid=create_response["id"]).exists())
 
-        self._assert_audit_log(action=AuditLog.DELETE, description=f"Deleted V2 role: {create_response["name"]}")
+        self._assert_audit_log(action=AuditLog.DELETE, description=f"Deleted V2 role: {create_response['name']}")
 
     def test_delete_empty(self):
         """Test that deleting 0 roles is successful."""

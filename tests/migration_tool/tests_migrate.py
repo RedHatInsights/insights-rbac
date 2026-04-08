@@ -90,12 +90,11 @@ class MigrateTests(TestCase):
         # two organizations
         # tenant 1 - org_id=1234567
         self.tenant = Tenant.objects.create(org_id="1234567", tenant_name="tenant", ready=True)
-        self.root_workspace = Workspace.objects.create(
-            type=Workspace.Types.ROOT, tenant=self.tenant, name="Root Workspace"
-        )
-        self.default_workspace = Workspace.objects.create(
-            type=Workspace.Types.DEFAULT, tenant=self.tenant, name="Default Workspace", parent=self.root_workspace
-        )
+
+        tenant_bootstrap_result = bootstrap_tenant_for_v2_test(self.tenant)
+        self.default_workspace = tenant_bootstrap_result.default_workspace
+        self.root_workspace = tenant_bootstrap_result.root_workspace
+
         # setup data for organization 1234567
         # Create actual workspaces for the test
         workspace_1 = Workspace.objects.create(

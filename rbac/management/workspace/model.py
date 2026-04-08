@@ -38,6 +38,11 @@ class Workspace(TenantAwareModel):
         ROOT = "Root Workspace"
         UNGROUPED_HOSTS = "Ungrouped Hosts"
 
+    class SpecialDescriptions:
+        DEFAULT = "The default workspace for your organization"
+        ROOT = "The top-level workspace containing all other workspaces"
+        UNGROUPED_HOSTS = "System workspace for ungrouped hosts"
+
     class Types(models.TextChoices):
         STANDARD = "standard"
         DEFAULT = "default"
@@ -76,6 +81,15 @@ class Workspace(TenantAwareModel):
 
     def clean(self):
         """Validate the model."""
+        # Auto-set description for system workspaces if not already set
+        if not self.description:
+            if self.type == self.Types.ROOT:
+                self.description = self.SpecialDescriptions.ROOT
+            elif self.type == self.Types.DEFAULT:
+                self.description = self.SpecialDescriptions.DEFAULT
+            elif self.type == self.Types.UNGROUPED_HOSTS:
+                self.description = self.SpecialDescriptions.UNGROUPED_HOSTS
+
         if self.type == self.Types.ROOT:
             if self.parent is not None:
                 raise serializers.ValidationError({"root_parent": "Root workspace must not have a parent."})

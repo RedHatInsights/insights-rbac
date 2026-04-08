@@ -48,6 +48,7 @@ from management.role.v2_exceptions import (
     RolesNotFoundError,
 )
 from management.role.v2_model import CustomRoleV2, RoleV2
+from management.role.v2_role_scope import v2_role_excluded_applications
 from management.role_binding.model import RoleBinding
 from management.utils import as_uuid
 
@@ -102,6 +103,15 @@ class RoleV2Service:
         not_found = requested - found
         if not_found:
             raise PermissionsNotFoundError(list(not_found))
+
+        excluded_apps = v2_role_excluded_applications()
+        if excluded_apps:
+            bad_apps = sorted({p.application for p in permissions if p.application in excluded_apps})
+            if bad_apps:
+                raise InvalidRolePermissionsError(
+                    "Permissions from migration-excluded applications cannot be used in V2 custom roles: "
+                    + ", ".join(bad_apps)
+                )
 
         return permissions
 

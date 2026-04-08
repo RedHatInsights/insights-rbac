@@ -28,6 +28,7 @@ class SubjectType(StrEnum):
 
     GROUP = "group"
     USER = "user"
+    PRINCIPAL = "principal"
 
     @classmethod
     def is_valid(cls, value: str) -> bool:

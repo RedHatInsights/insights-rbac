@@ -77,12 +77,22 @@
             "explode": false
           },
           {
+            "name": "resource.tenant.org_id",
+            "in": "query",
+            "required": false,
+            "description": "Org ID of the tenant resource to filter by. Cannot be combined with resource_id. When provided, resource_type is implicitly 'tenant'.",
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          },
+          {
             "name": "subject_type",
             "in": "query",
             "required": false,
-            "description": "Filter by subject type (e.g., 'group' or 'user')",
+            "description": "Filter by binding subject type (group or user) on each row. Distinct from granted_subject_type.",
             "schema": {
-              "$ref": "#/components/schemas/RoleBindings.SubjectType"
+              "$ref": "#/components/schemas/RoleBindings.BindingSubjectType"
             },
             "explode": false
           },
@@ -114,9 +124,9 @@
             "name": "granted_subject_type",
             "in": "query",
             "required": false,
-            "description": "Filter by the type of subject effectively granted access. When 'user', returns role bindings granted directly to the user and through their group memberships. When 'group', returns role bindings granted to the group. Cannot be combined with subject_type/subject_id.",
+            "description": "Filter by the type of subject effectively granted access. When 'user', returns role bindings granted directly to the user and through their group memberships. When 'group', returns role bindings granted to the group. When 'principal', filters by external user ID via granted_subject.principal.user_id. Cannot be combined with subject_type/subject_id.",
             "schema": {
-              "$ref": "#/components/schemas/RoleBindings.SubjectType"
+              "$ref": "#/components/schemas/RoleBindings.GrantedSubjectFilterType"
             },
             "explode": false
           },
@@ -124,7 +134,17 @@
             "name": "granted_subject_id",
             "in": "query",
             "required": false,
-            "description": "ID of the subject effectively granted access. Accepts a principal UUID, user_id, or group UUID. Required when granted_subject_type is provided.",
+            "description": "ID of the subject effectively granted access. Accepts a principal UUID or group UUID. Required when granted_subject_type is 'user' or 'group'.",
+            "schema": {
+              "type": "string"
+            },
+            "explode": false
+          },
+          {
+            "name": "granted_subject.principal.user_id",
+            "in": "query",
+            "required": false,
+            "description": "External user ID of the principal effectively granted access. Required when granted_subject_type is 'principal'.",
             "schema": {
               "type": "string"
             },
@@ -301,7 +321,7 @@
       "get": {
         "operationId": "RoleBindings_listBySubject",
         "summary": "List role bindings grouped by subject",
-        "description": "List role bindings grouped by subject",
+        "description": "List role bindings grouped by subject. subject_type (optional) is user or group only, with subject_id as UUID. granted_subject_type, granted_subject_id, and granted_subject.principal.user_id are not query parameters on this path—use GET /role-bindings/ for those filters.",
         "parameters": [
           {
             "name": "limit",
@@ -351,9 +371,9 @@
             "name": "subject_type",
             "in": "query",
             "required": false,
-            "description": "Filter by subject type",
+            "description": "Filter by binding subject kind: group or user (principal UUID). There is no granted_subject.* on this endpoint.",
             "schema": {
-              "$ref": "#/components/schemas/RoleBindings.SubjectType"
+              "$ref": "#/components/schemas/RoleBindings.BindingSubjectType"
             },
             "explode": false
           },
@@ -361,7 +381,7 @@
             "name": "subject_id",
             "in": "query",
             "required": false,
-            "description": "Filter by subject ID",
+            "description": "Filter by subject ID (group UUID or user/principal UUID)",
             "schema": {
               "type": "string"
             },
@@ -603,7 +623,7 @@
       "put": {
         "operationId": "RoleBindings_update",
         "summary": "Update role bindings",
-        "description": "Update roles for a specific subject on a resource. Replaces all existing roles with the provided roles.",
+        "description": "Update roles for a specific subject on a resource. Replaces all existing roles with the provided roles. subject_type is user or group only (UUID via subject_id). granted_subject.* query params are not supported here; use GET /role-bindings/ to filter by external user ID.",
         "parameters": [
           {
             "name": "resource_id",
@@ -639,9 +659,9 @@
             "name": "subject_type",
             "in": "query",
             "required": true,
-            "description": "Identify the subject type for the set of role bindings to replace",
+            "description": "Subject kind: group or user (principal UUID). No granted_subject.* params on this path.",
             "schema": {
-              "$ref": "#/components/schemas/RoleBindings.SubjectType"
+              "$ref": "#/components/schemas/RoleBindings.BindingSubjectType"
             },
             "explode": false
           },
@@ -3416,6 +3436,14 @@
         },
         "description": "Response containing the created role bindings"
       },
+      "RoleBindings.BindingSubjectType": {
+        "type": "string",
+        "enum": [
+          "user",
+          "group"
+        ],
+        "description": "Subject kind for create/batch, by-subject, and list filters on the binding's subject (group UUID or user/principal UUID). Does not include principal as a separate type string; for external user ID use GET /role-bindings/ with granted_subject_type=principal and granted_subject.principal.user_id."
+      },
       "RoleBindings.CreateRoleBindingsRequest": {
         "type": "object",
         "required": [
@@ -3461,7 +3489,7 @@
               "type": {
                 "allOf": [
                   {
-                    "$ref": "#/components/schemas/RoleBindings.SubjectType"
+                    "$ref": "#/components/schemas/RoleBindings.BindingSubjectType"
                   }
                 ],
                 "description": "Type of subject"
@@ -3505,6 +3533,15 @@
             "id": "550e8400-e29b-41d4-a716-446655440002"
           }
         }
+      },
+      "RoleBindings.GrantedSubjectFilterType": {
+        "type": "string",
+        "enum": [
+          "user",
+          "group",
+          "principal"
+        ],
+        "description": "Effective-grant filter for GET /role-bindings/ only. With type principal, use query granted_subject.principal.user_id. Cannot be combined with subject_type/subject_id on the same request. Not used on /role-bindings/by-subject/."
       },
       "RoleBindings.GroupDetails": {
         "type": "object",
@@ -3711,14 +3748,6 @@
             }
           ]
         }
-      },
-      "RoleBindings.SubjectType": {
-        "type": "string",
-        "enum": [
-          "user",
-          "group"
-        ],
-        "description": "Type of subject for role bindings"
       },
       "RoleBindings.UpdateRoleBindingsRequest": {
         "type": "object",

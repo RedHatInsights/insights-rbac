@@ -119,14 +119,13 @@ class BaseInternalViewsetTests(IdentityRequest):
     @abstractmethod
     def tearDown(self):
         """Tear down base internal viewset tests."""
-        Group.objects.all().delete()
-        Role.objects.all().delete()
-        Policy.objects.all().delete()
         logging.disable(self._prior_logging_disable_level)
         # Clear the principal cache to avoid test isolation issues
         from management.utils import PRINCIPAL_CACHE
 
         PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
+
+        super().tearDown()
 
 
 @override_settings(
@@ -364,7 +363,27 @@ class InternalViewsetTests(BaseInternalViewsetTests):
         seed_mock.assert_not_called()
         self.assertEqual(
             response.content.decode(),
-            "Valid query parameters: ['seed_types', 'force_create_relationships', 'force_update_relationships'].",
+            "Valid query parameters: ['seed_types', 'force_create_relationships', 'force_update_relationships', 'skip_notifications'].",
+        )
+
+    @patch("management.tasks.run_seeds_in_worker.delay")
+    def test_run_seeds_with_skip_notifications(self, seed_mock):
+        """Test that we can trigger seeds with skip_notifications=true."""
+        response = self.client.post(
+            f"/_private/api/seeds/run/?seed_types=roles&skip_notifications=true", **self.request.META
+        )
+        seed_mock.assert_called_once_with({"roles": True, "skip_notifications": True})
+        self.assertEqual(response.status_code, status.HTTP_202_ACCEPTED)
+
+    @patch("management.tasks.run_seeds_in_worker.delay")
+    def test_run_seeds_with_invalid_skip_notifications(self, seed_mock):
+        """Test that we get a 400 when an invalid skip_notifications value is supplied."""
+        response = self.client.post(f"/_private/api/seeds/run/?skip_notifications=yes", **self.request.META)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        seed_mock.assert_not_called()
+        self.assertEqual(
+            response.content.decode(),
+            "Valid options for \"skip_notifications\": ['true', 'false'].",
         )
 
     @patch("api.tasks.populate_tenant_account_id_in_worker.delay")
@@ -3027,15 +3046,6 @@ class InternalViewsetResourceDefinitionTests(IdentityRequest):
             defaults={"name": "Tenant Default Workspace", "parent": tenant_root_workspace},
         )
 
-    def tearDown(self):
-        """Tear down access view tests."""
-        Group.objects.all().delete()
-        Principal.objects.all().delete()
-        Role.objects.all().delete()
-        Policy.objects.all().delete()
-        Workspace.objects.filter(parent__isnull=False).delete()
-        Workspace.objects.filter(parent__isnull=True).delete()
-
     def create_role(self, role_name, headers, in_access_data=None):
         """Create a role."""
         access_data = self.access_data
@@ -4816,26 +4826,20 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
 class InternalInventoryViewsetTests(BaseInternalViewsetTests):
     """Test the /_private/api/inventory/ endpoints from internal viewset."""
 
+    def setUp(self):
+        super().setUp()
+
+        bootstrap_result = bootstrap_tenant_for_v2_test(tenant=self.tenant)
+
+        self.default_workspace = bootstrap_result.default_workspace
+        self.root_workspace = bootstrap_result.root_workspace
+
     @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
     @patch("management.utils.create_client_channel")
     @patch("management.inventory_checker.inventory_api_check.GroupPrincipalInventoryChecker.check_relationships")
     def test_inventory_group_assignments(self, mock_check_relationships, mock_create_channel, mock_get_token):
         """Test a request to check group assignments of inventory returns correct response."""
         group_uuid = str(self.group.uuid)
-
-        # Create the required workspaces for this check
-        self.root_workspace = Workspace.objects.create(
-            name="Root Workspace",
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-        )
-        self.default_workspace = Workspace.objects.create(
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            name="Default Workspace",
-            description="Default Description",
-            parent_id=self.root_workspace.id,
-        )
 
         mock_stub = MagicMock()
         mock_stub.Check.return_value = check_response_pb2.CheckResponse(allowed=allowed_pb2.Allowed.ALLOWED_TRUE)
@@ -4870,20 +4874,6 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
         """Test the expected grpc error is returned in cases of grpc error for group assignments check"""
         group_uuid = str(self.group.uuid)
 
-        # Create the required workspaces for this check
-        self.root_workspace = Workspace.objects.create(
-            name="Root Workspace",
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-        )
-        self.default_workspace = Workspace.objects.create(
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            name="Default Workspace",
-            description="Default Description",
-            parent_id=self.root_workspace.id,
-        )
-
         response = self.client.get(
             f"/_private/api/inventory/group_assignments/{group_uuid}/",
             format="json",
@@ -4904,20 +4894,6 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
     def test_inventory_group_assignments_error(self, mock_check_relationships):
         """Test the expected error is returned in cases of unexpected error for group assignments check"""
         group_uuid = str(self.group.uuid)
-
-        # Create the required workspaces for this check
-        self.root_workspace = Workspace.objects.create(
-            name="Root Workspace",
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-        )
-        self.default_workspace = Workspace.objects.create(
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            name="Default Workspace",
-            description="Default Description",
-            parent_id=self.root_workspace.id,
-        )
 
         response = self.client.get(
             f"/_private/api/inventory/group_assignments/{group_uuid}/",
@@ -4941,21 +4917,6 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
         self, mock_check_bootstrapped_tenants, mock_create_channel, mock_get_token
     ):
         """Test a request to check bootstrapped tenants on inventory returns correct response."""
-        # Create the required objects for this test
-        TenantMapping.objects.create(tenant=self.tenant)
-        self.root_workspace = Workspace.objects.create(
-            name="Root Workspace",
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-        )
-        self.default_workspace = Workspace.objects.create(
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            name="Default Workspace",
-            description="Default Description",
-            parent_id=self.root_workspace.id,
-        )
-
         # Mock returns tuple of (bool, list of check strings)
         mock_relations_checked = [
             "rbac/workspace:ws-123/parent#rbac/workspace:ws-456",
@@ -4984,20 +4945,6 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
     def test_inventory_bootstrapped_tenants_grpc_error(self, mock_check_relationships):
         """Test the expected grpc error is returned in cases of grpc error for bootstrapped tenant check"""
         # Create the required objects for this test
-        TenantMapping.objects.create(tenant=self.tenant)
-        self.root_workspace = Workspace.objects.create(
-            name="Root Workspace",
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-        )
-        self.default_workspace = Workspace.objects.create(
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            name="Default Workspace",
-            description="Default Description",
-            parent_id=self.root_workspace.id,
-        )
-
         response = self.client.get(
             f"/_private/api/inventory/bootstrap_tenants/{self.tenant.org_id}/",
             format="json",
@@ -5019,20 +4966,6 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
     def test_inventory_bootstrapped_tenants_error(self, mock_check_relationships):
         """Test the expected error is returned in cases of generic error for bootstrapped tenant check"""
         # Create the required objects for this test
-        TenantMapping.objects.create(tenant=self.tenant)
-        self.root_workspace = Workspace.objects.create(
-            name="Root Workspace",
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-        )
-        self.default_workspace = Workspace.objects.create(
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            name="Default Workspace",
-            description="Default Description",
-            parent_id=self.root_workspace.id,
-        )
-
         response = self.client.get(
             f"/_private/api/inventory/bootstrap_tenants/{self.tenant.org_id}/",
             format="json",
@@ -5056,19 +4989,6 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
     ):
         """Test a request to check workspace relation on inventory returns correct response."""
         # Create the required objects for this test
-        TenantMapping.objects.create(tenant=self.tenant)
-        self.root_workspace = Workspace.objects.create(
-            name="Root Workspace",
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-        )
-        self.default_workspace = Workspace.objects.create(
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            name="Default Workspace",
-            description="Default Description",
-            parent_id=self.root_workspace.id,
-        )
         self.test_workspace = Workspace.objects.create(
             tenant=self.tenant,
             type=Workspace.Types.STANDARD,
@@ -5114,20 +5034,6 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
         self, mock_workspace_view, mock_check_workspace_relation, mock_create_channel, mock_get_token
     ):
         """Test a request to check workspace relation descendants on inventory returns correct response."""
-        # Create the required objects for this test
-        TenantMapping.objects.create(tenant=self.tenant)
-        self.root_workspace = Workspace.objects.create(
-            name="Root Workspace",
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-        )
-        self.default_workspace = Workspace.objects.create(
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            name="Default Workspace",
-            description="Default Description",
-            parent_id=self.root_workspace.id,
-        )
         self.test_workspace = Workspace.objects.create(
             tenant=self.tenant,
             type=Workspace.Types.STANDARD,
@@ -5182,19 +5088,6 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
     def test_inventory_workspace_relation_grpc_error(self, mock_check_workspace):
         """Test the expected grpc error is returned in cases of grpc error for workspace relation check"""
         # Create the required objects for this test
-        TenantMapping.objects.create(tenant=self.tenant)
-        self.root_workspace = Workspace.objects.create(
-            name="Root Workspace",
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-        )
-        self.default_workspace = Workspace.objects.create(
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            name="Default Workspace",
-            description="Default Description",
-            parent_id=self.root_workspace.id,
-        )
         self.test_workspace = Workspace.objects.create(
             tenant=self.tenant,
             type=Workspace.Types.STANDARD,
@@ -5224,19 +5117,6 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
     def test_inventory_workspace_relation_error(self, mock_check_workspace):
         """Test the expected error is returned in cases of generic error for workspace relation check"""
         # Create the required objects for this test
-        TenantMapping.objects.create(tenant=self.tenant)
-        self.root_workspace = Workspace.objects.create(
-            name="Root Workspace",
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-        )
-        self.default_workspace = Workspace.objects.create(
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            name="Default Workspace",
-            description="Default Description",
-            parent_id=self.root_workspace.id,
-        )
         self.test_workspace = Workspace.objects.create(
             tenant=self.tenant,
             type=Workspace.Types.STANDARD,
@@ -5266,19 +5146,6 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
     def test_inventory_workspace_root_error(self, mock_check_workspace):
         """Test the expected error is returned in cases of a root workspace uuid being provided for workspace relation check"""
         # Create the required objects for this test
-        TenantMapping.objects.create(tenant=self.tenant)
-        self.root_workspace = Workspace.objects.create(
-            name="Root Workspace",
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-        )
-        self.default_workspace = Workspace.objects.create(
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            name="Default Workspace",
-            description="Default Description",
-            parent_id=self.root_workspace.id,
-        )
         self.test_workspace = Workspace.objects.create(
             tenant=self.tenant,
             type=Workspace.Types.STANDARD,
@@ -5309,19 +5176,6 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
     def test_inventory_workspace_descendants_relation_grpc_error(self, mock_check_workspace):
         """Test the expected grpc error is returned in cases of grpc error for workspace relation descendants check"""
         # Create the required objects for this test
-        TenantMapping.objects.create(tenant=self.tenant)
-        self.root_workspace = Workspace.objects.create(
-            name="Root Workspace",
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-        )
-        self.default_workspace = Workspace.objects.create(
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            name="Default Workspace",
-            description="Default Description",
-            parent_id=self.root_workspace.id,
-        )
         self.test_workspace = Workspace.objects.create(
             tenant=self.tenant,
             type=Workspace.Types.STANDARD,
@@ -5353,19 +5207,6 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
     def test_inventory_workspace_descendants_relation_error(self, mock_check_workspace):
         """Test the expected error is returned in cases of generic error for workspace relation descendants check"""
         # Create the required objects for this test
-        TenantMapping.objects.create(tenant=self.tenant)
-        self.root_workspace = Workspace.objects.create(
-            name="Root Workspace",
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-        )
-        self.default_workspace = Workspace.objects.create(
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            name="Default Workspace",
-            description="Default Description",
-            parent_id=self.root_workspace.id,
-        )
         self.test_workspace = Workspace.objects.create(
             tenant=self.tenant,
             type=Workspace.Types.STANDARD,
@@ -5396,18 +5237,6 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
     @patch("internal.views.check_role")
     def test_inventory_check_role(self, mock_bootstrapped_view, mock_check_role, mock_create_channel, mock_get_token):
         """Test a request to check role endpoint on inventory returns correct response."""
-        self.root_workspace = Workspace.objects.create(
-            name="Root Workspace",
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-        )
-        self.default_workspace = Workspace.objects.create(
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            name="Default Workspace",
-            description="Default Description",
-            parent_id=self.root_workspace.id,
-        )
         mock_stub = MagicMock()
         mock_stub.Check.return_value = True
 
@@ -5461,19 +5290,6 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
         self, mock_bootstrapped_view, mock_check_role, mock_create_channel, mock_get_token
     ):
         """Test a request to check role endpoint on inventory returns correct response."""
-        self.root_workspace = Workspace.objects.create(
-            name="Root Workspace",
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-        )
-        self.default_workspace = Workspace.objects.create(
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            name="Default Workspace",
-            description="Default Description",
-            parent_id=self.root_workspace.id,
-        )
-
         custom_role = Role.objects.create(
             tenant=self.tenant,
             name="Custom role",
@@ -5529,19 +5345,6 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
     )
     def test_inventory_check_role_grpc_error(self, mock_check_role):
         """Test a request to check role endpoint on inventory returns correct response in case of grpc error."""
-        self.root_workspace = Workspace.objects.create(
-            name="Root Workspace",
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-        )
-        self.default_workspace = Workspace.objects.create(
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            name="Default Workspace",
-            description="Default Description",
-            parent_id=self.root_workspace.id,
-        )
-
         with patch(
             "management.inventory_checker.inventory_api_check.inventory_service_pb2_grpc.KesselInventoryServiceStub"
         ):
@@ -5566,19 +5369,6 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
     )
     def test_inventory_check_role_error(self, mock_check_role):
         """Test a request to check role endpoint on inventory returns correct response in case of generic error."""
-        self.root_workspace = Workspace.objects.create(
-            name="Root Workspace",
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-        )
-        self.default_workspace = Workspace.objects.create(
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            name="Default Workspace",
-            description="Default Description",
-            parent_id=self.root_workspace.id,
-        )
-
         with patch(
             "management.inventory_checker.inventory_api_check.inventory_service_pb2_grpc.KesselInventoryServiceStub"
         ):

@@ -157,7 +157,7 @@ class AccessView(APIView):
         """Provide access data for principal."""
         # Parameter extraction and validation
         try:
-            sub_key, ordering = self.validate_and_get_param(request.query_params)
+            sub_key, ordering = self.validate_and_get_param(request)
             validate_key(request.query_params, STATUS_KEY, VALID_STATUS_VALUE, "enabled")
         except ValueError as e:
             return Response(status=status.HTTP_400_BAD_REQUEST, data=e)
@@ -204,11 +204,16 @@ class AccessView(APIView):
         assert self.paginator is not None
         return self.paginator.get_paginated_response(data)
 
-    def validate_and_get_param(self, params):
+    def validate_and_get_param(self, request):
         """Validate input parameters and get ordering and sub_key."""
+        params = request.query_params
         app = params.get(APPLICATION_KEY)
         sub_key = app
         ordering = validate_and_get_key(params, ORDER_FIELD, VALID_ORDER_VALUES, required=False)
         if ordering:
             sub_key = f"{app}&order:{ordering}"
+        # Include is_org_admin in the cache sub_key so that a flag change
+        # triggers a cache miss and returns up-to-date permissions.
+        is_org_admin = bool(request.user.admin)
+        sub_key = f"{sub_key}&is_org_admin:{is_org_admin}"
         return sub_key, ordering

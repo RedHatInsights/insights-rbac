@@ -24,9 +24,11 @@ from django.test import TestCase, override_settings
 
 from api.cross_access.model import CrossAccountRequest
 from api.cross_access.relation_api_dual_write_cross_access_handler import RelationApiDualWriteCrossAccessHandler
+from management.group.definer import seed_group
 from management.group.model import Group
 from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
 from management.models import BindingMapping, Workspace, Access, Permission
+from management.permission.scope_service import Scope
 from management.policy.model import Policy
 from management.principal.model import Principal
 from management.relation_replicator.noop_replicator import NoopReplicator
@@ -35,8 +37,9 @@ from management.role.definer import seed_roles
 from management.role.model import Role, ResourceDefinition
 from management.role.v2_model import RoleV2
 from management.role.v2_service import RoleV2Service
-from management.role_binding.model import RoleBinding, RoleBindingGroup
+from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
 from management.role_binding.service import RoleBindingService, CreateBindingRequest
+from management.tenant_mapping.model import DefaultAccessType, TenantMapping
 from management.tenant_mapping.v2_activation import ensure_v2_write_activated
 from management.tenant_service import V2TenantBootstrapService
 from migration_tool.in_memory_tuples import (
@@ -46,19 +49,23 @@ from migration_tool.in_memory_tuples import (
     resource,
     relation,
     subject,
+    resource_type,
 )
 from api.models import Tenant
 from internal.utils import (
     replicate_missing_binding_tuples,
     clean_invalid_workspace_resource_definitions,
     remove_unassigned_system_binding_mappings,
+    expire_orphaned_cross_account_requests,
 )
 from migration_tool.models import V2role, V2rolebinding, V2boundresource
+from rbac.settings import ROOT_SCOPE_PERMISSIONS, TENANT_SCOPE_PERMISSIONS
 from tests.management.role.test_dual_write import DualWriteTestCase
+from tests.util import assert_v2_tuples_consistent, assert_v1_v2_tuples_fully_consistent
 from tests.v2_util import seed_v2_role_from_v1, bootstrap_tenant_for_v2_test
 
 
-@override_settings(ATOMIC_RETRY_DISABLED=True)
+@override_settings(ATOMIC_RETRY_DISABLED=True, REPLICATION_TO_RELATION_ENABLED=True)
 class ReplicateMissingBindingTuplesTest(TestCase):
     """Test the replicate_missing_binding_tuples function."""
 
@@ -75,7 +82,7 @@ class ReplicateMissingBindingTuplesTest(TestCase):
         self.root_ws = bootstrap_result.root_workspace
         self.default_ws = bootstrap_result.default_workspace
 
-    @override_settings(REPLICATION_TO_RELATION_ENABLED=True, ROOT_SCOPE_PERMISSIONS="test:resource:read")
+    @override_settings(ROOT_SCOPE_PERMISSIONS="test:resource:read")
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     def test_replicate_missing_binding_tuples_for_specific_bindings(self, mock_replicate):
         """Test that function replicates all tuples for specific binding IDs."""
@@ -292,6 +299,92 @@ class ReplicateMissingBindingTuplesTest(TestCase):
                 )
             ),
         )
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_no_replicate_default_access(self, mock_replicate):
+        mock_replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
+
+        # Ensure platform-default roles and groups exist, since we will not create default access RoleBindings if we
+        # can't find them.
+        seed_roles()
+        seed_group()
+
+        # Create tuples for default access role bindings (since we want to check how they are affected).
+        bootstrap_tenant_for_v2_test(self.tenant, tuples=self.tuples)
+
+        group = Group.objects.create(name="a group", tenant=self.tenant)
+
+        role = Role.objects.create(name="test role", system=True, tenant=self.public_tenant)
+        perm = Permission.objects.create(permission="app:resource:verb", tenant=self.public_tenant)
+        Access.objects.create(role=role, permission=perm, tenant=self.public_tenant)
+
+        seed_v2_role_from_v1(role)
+
+        tenant_mapping: TenantMapping = TenantMapping.objects.get(tenant=self.tenant)
+
+        dual_write_handler = RelationApiDualWriteGroupHandler(group=group, event_type=ReplicationEventType.ASSIGN_ROLE)
+        dual_write_handler.generate_relations_reset_roles([role])
+        dual_write_handler.replicate()
+
+        binding_service = RoleBindingService(tenant=self.tenant)
+
+        # This will create a physical RoleBinding for each of the default access role bindings for the tenant,
+        # despite the tenant still being V1.
+        binding_service.get_role_bindings_by_subject(
+            {
+                "subject_type": "group",
+                "subject_id": str(group.uuid),
+                "resource_type": "workspace",
+                "resource_id": str(self.default_ws.id),
+            }
+        )
+
+        self.assertEqual(BindingMapping.objects.filter(role=role).count(), 1)
+        self.assertEqual(
+            RoleBinding.objects.filter(tenant=self.tenant).count(), len(Scope) * len(DefaultAccessType) + 1
+        )
+
+        # Check that we actually created the default access RoleBinding.
+        self.assertTrue(RoleBinding.objects.filter(uuid=tenant_mapping.default_role_binding_uuid).exists())
+
+        def assert_group_binding_in_tuples():
+            self.assertEqual(
+                1,
+                self.tuples.count_tuples(
+                    all_of(
+                        resource_type("rbac", "role_binding"),
+                        relation("subject"),
+                        subject("rbac", "group", str(group.uuid), "member"),
+                    )
+                ),
+            )
+
+        def assert_default_binding_in_tuples(value: bool = True):
+            self.assertEqual(
+                int(value),
+                self.tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "workspace", str(self.default_ws.id)),
+                        relation("binding"),
+                        subject("rbac", "role_binding", str(tenant_mapping.default_role_binding_uuid)),
+                    )
+                ),
+            )
+
+        assert_group_binding_in_tuples()
+        assert_default_binding_in_tuples()
+
+        # Clear tuples so that we can check what is actually re-replicated.
+        self.tuples.clear()
+
+        replicate_missing_binding_tuples(tenant=self.tenant)
+
+        assert_group_binding_in_tuples()
+
+        # We should not have re-replicated the default binding.
+        assert_default_binding_in_tuples(False)
+
+        assert_v1_v2_tuples_fully_consistent(test=self, tuples=self.tuples)
 
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)
@@ -818,3 +911,178 @@ class RemoveOrphanBindingMappingsTest(DualWriteTestCase):
 
         self.assertTrue(BindingMapping.objects.filter(pk=binding_mapping.pk).exists())
         self.assertEqual(set(self.tuples), tuples_before)
+
+
+@override_settings(ATOMIC_RETRY_DISABLED=True)
+class ExpireOrphanCrossAccountRequests(DualWriteTestCase):
+    def setUp(self):
+        super().setUp()
+
+        self.source_tenant = self.fixture.new_tenant(org_id="car_source").tenant
+        self.source_user_id = "car_user"
+        self.source_principal = self.fixture.new_principals_in_tenant(
+            users=[self.source_user_id], tenant=self.source_tenant
+        )[0]
+
+        self.role = self.given_v1_system_role("a role", ["rbac:*:*"])
+        self.group, _ = self.given_group("a group", ["p1"])
+
+    def _do_expire(self):
+        expire_orphaned_cross_account_requests(replicator=InMemoryRelationReplicator(self.tuples))
+
+    @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="")
+    def test_expire_orphans(self):
+        self.given_roles_assigned_to_group(self.group, [self.role])
+
+        car = self.given_car(self.source_user_id, [self.role])
+
+        # Currently, we will create a RoleBinding for the CAR. (This was not always the case in the past.)
+        self.assertEqual(RoleBinding.objects.filter(tenant=self.tenant).count(), 1)
+
+        # Emulate an orphaned CAR created before the RoleBinding model existed (and orphaned before RoleBindings were
+        # backfilled for all-cross account requests). The CAR will still be approved, and a BindingMapping will
+        # exist, but no RoleBinding will exist.
+        RoleBinding.objects.filter(tenant=self.tenant).delete()
+        self.source_principal.delete()
+
+        # We should also have created a BindingMapping.
+        mapping = BindingMapping.objects.get(role=self.role)
+
+        self.assertEqual([str(self.group.uuid)], mapping.mappings["groups"])
+        self.assertEqual({str(car.source_key()): self.source_user_id}, mapping.mappings["users"])
+
+        self.expect_1_role_binding_to_workspace(
+            self.default_workspace(),
+            for_v2_roles=[str(self.role.uuid)],
+            for_groups=[str(self.group.uuid)],
+            for_principals=[self.source_user_id],
+        )
+
+        self._do_expire()
+
+        car.refresh_from_db()
+        self.assertEqual(car.status, "expired")
+
+        # The binding should still exist and have the group as a subject.
+        self.expect_1_role_binding_to_workspace(
+            self.default_workspace(),
+            for_v2_roles=[str(self.role.uuid)],
+            for_groups=[str(self.group.uuid)],
+            for_principals=[],
+        )
+
+        # The BindingMapping should have been updated.
+        mapping = BindingMapping.objects.get(role=self.role)
+
+        self.assertEqual([str(self.group.uuid)], mapping.mappings["groups"])
+        self.assertEqual({}, mapping.mappings["users"])
+
+        # We should not have created a RoleBinding.
+        self.assertFalse(RoleBinding.objects.filter(tenant=self.tenant).exists())
+
+    def test_expire_orphans_with_bad_role_binding(self):
+        car_a = self.given_car(self.source_user_id, [self.role])
+        car_b = self.given_car(self.source_user_id, [self.role])
+
+        # Currently, we will create a RoleBinding for the CAR. (This was not always the case in the past.)
+        self.assertEqual(RoleBinding.objects.filter(tenant=self.tenant).count(), 1)
+
+        # Orphan the CAR, but leave an empty RoleBinding around. (This apparently happened in production, possibly as a
+        # result of migrating the CAR and then deleting the principal?)
+        RoleBindingGroup.objects.filter(binding__tenant=self.tenant).delete()
+        RoleBindingPrincipal.objects.filter(binding__tenant=self.tenant).delete()
+        self.source_principal.delete()
+
+        # We should also have created a BindingMapping.
+        mapping = BindingMapping.objects.get(role=self.role)
+
+        # Ensure that this RoleBinding exists and fetch it so that we can ensure it's deleted later.
+        role_binding = RoleBinding.objects.filter(uuid=mapping.mappings["id"]).get()
+
+        def expect_binding_count(count: int):
+            self.assertEqual(
+                count,
+                self.tuples.count_tuples(
+                    all_of(resource("rbac", "workspace", self.default_workspace()), relation("binding"))
+                ),
+            )
+
+        # The CARs should have created a binding in Kessel.
+        expect_binding_count(1)
+
+        self._do_expire()
+
+        # The role binding should have been removed from Kessel.
+        expect_binding_count(0)
+
+        # Both the BindingMapping and RoleBinding should have been deleted (the former because it now has no subjects,
+        # the latter because it was incorrect).
+
+        self.assertFalse(BindingMapping.objects.filter(pk=mapping.pk).exists())
+        self.assertFalse(RoleBinding.objects.filter(pk=role_binding.pk).exists())
+
+        car_a.refresh_from_db()
+        car_b.refresh_from_db()
+
+        self.assertEqual(car_a.status, "expired")
+        self.assertEqual(car_b.status, "expired")
+
+    def test_preserve_not_orphaned(self):
+        car = self.given_car(self.source_user_id, [self.role])
+
+        def expect_exists():
+            self.expect_1_role_binding_to_workspace(
+                self.default_workspace(),
+                for_v2_roles=[str(self.role.uuid)],
+                for_groups=[],
+                for_principals=[self.source_user_id],
+            )
+
+            self.assertEqual(
+                BindingMapping.objects.get(role=self.role).mappings["users"],
+                {str(car.source_key()): self.source_user_id},
+            )
+            self.assertTrue(
+                RoleBindingPrincipal.objects.filter(
+                    principal=self.source_principal, binding__role__v1_source=self.role
+                ).exists()
+            )
+
+        expect_exists()
+
+        self._do_expire()
+
+        car.refresh_from_db()
+        self.assertEqual(car.status, "approved")
+
+        expect_exists()
+
+    def test_preserve_v2_tenant(self):
+        car = self.given_car(self.source_user_id, [self.role])
+
+        ensure_v2_write_activated(self.tenant)
+
+        def expect_exists():
+            self.expect_1_role_binding_to_workspace(
+                self.default_workspace(),
+                for_v2_roles=[str(self.role.uuid)],
+                for_groups=[],
+                for_principals=[self.source_user_id],
+            )
+
+            self.assertEqual(
+                BindingMapping.objects.get(role=self.role).mappings["users"],
+                {str(car.source_key()): self.source_user_id},
+            )
+
+        expect_exists()
+
+        RoleBinding.objects.filter(tenant=self.tenant).delete()
+        self.source_principal.delete()
+
+        self._do_expire()
+
+        car.refresh_from_db()
+        self.assertEqual(car.status, "approved")
+
+        expect_exists()

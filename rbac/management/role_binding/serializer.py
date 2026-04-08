@@ -91,18 +91,31 @@ class RoleBindingListInputSerializer(RoleBindingInputSerializerMixin, serializer
     GET /role-bindings/
     """
 
+    DOTTED_PARAM_MAP = {
+        "resource.tenant.org_id": "resource_tenant_org_id",
+        "granted_subject.principal.user_id": "granted_subject_principal_user_id",
+    }
+
     role_id = serializers.UUIDField(required=False, help_text="Filter by role ID")
     resource_id = serializers.CharField(required=False, max_length=256, help_text="Filter by resource ID")
     resource_type = serializers.CharField(required=False, help_text="Filter by resource type")
+    resource_tenant_org_id = serializers.CharField(
+        required=False,
+        help_text="Org ID of the tenant resource to filter by",
+    )
     subject_type = serializers.CharField(required=False, help_text="Filter by subject type")
     subject_id = serializers.UUIDField(required=False, help_text="Filter by subject ID")
     granted_subject_type = serializers.CharField(
         required=False,
-        help_text="Filter by the type of subject effectively granted access ('user' or 'group')",
+        help_text="Filter by the type of subject effectively granted access ('user', 'group', or 'principal')",
     )
     granted_subject_id = serializers.CharField(
         required=False,
-        help_text="ID of the subject effectively granted access (principal UUID, user_id, or group UUID)",
+        help_text=("ID effectively granted access: for 'user', principal UUID or user_id; for 'group', group UUID"),
+    )
+    granted_subject_principal_user_id = serializers.CharField(
+        required=False,
+        help_text="External user ID of the principal effectively granted access",
     )
     fields = serializers.CharField(required=False, help_text="Control which fields are included")
     order_by = serializers.CharField(required=False, help_text="Sort by specified field(s)")
@@ -114,8 +127,16 @@ class RoleBindingListInputSerializer(RoleBindingInputSerializerMixin, serializer
         "Requires both resource_id and resource_type to be specified for inherited binding lookups.",
     )
 
+    def to_internal_value(self, data):
+        """Remap dotted query param keys to underscore field names."""
+        remapped = {key: data[key] for key in data}
+        for dotted, underscored in self.DOTTED_PARAM_MAP.items():
+            if dotted in remapped:
+                remapped[underscored] = remapped.pop(dotted)
+        return super().to_internal_value(remapped)
+
     def validate(self, attrs):
-        """Cross-field validation for exclude_sources, granted_subject, and subject params."""
+        """Cross-field validation for exclude_sources, granted_subject, resource, and subject params."""
         attrs = super().validate(attrs)
 
         # Validate exclude_sources with resource_id/resource_type
@@ -146,8 +167,27 @@ class RoleBindingListInputSerializer(RoleBindingInputSerializerMixin, serializer
         # Validate granted_subject params
         granted_type = attrs.get("granted_subject_type")
         granted_id = attrs.get("granted_subject_id")
+        granted_principal_user_id = attrs.get("granted_subject_principal_user_id")
 
-        if bool(granted_type) != bool(granted_id):
+        # resource.tenant.org_id validations
+        resource_tenant_org_id = attrs.get("resource_tenant_org_id")
+        if resource_tenant_org_id:
+            if attrs.get("resource_id"):
+                raise serializers.ValidationError("resource.tenant.org_id cannot be combined with resource_id.")
+            resource_type = attrs.get("resource_type")
+            if resource_type and resource_type != "tenant":
+                raise serializers.ValidationError(
+                    "resource_type must be 'tenant' when resource.tenant.org_id is provided."
+                )
+
+        # granted_subject.principal.user_id requires granted_subject_type=principal
+        if granted_principal_user_id and granted_type != SubjectType.PRINCIPAL:
+            raise serializers.ValidationError(
+                "granted_subject_type must be 'principal' when granted_subject.principal.user_id is provided."
+            )
+
+        # granted_subject_id without granted_subject_type is invalid
+        if granted_id and not granted_type:
             raise serializers.ValidationError(
                 "Both granted_subject_type and granted_subject_id must be provided together."
             )
@@ -160,6 +200,14 @@ class RoleBindingListInputSerializer(RoleBindingInputSerializerMixin, serializer
             if attrs.get("subject_type") or attrs.get("subject_id"):
                 raise serializers.ValidationError(
                     "granted_subject_type/granted_subject_id cannot be combined with subject_type/subject_id."
+                )
+            if granted_type in (SubjectType.USER, SubjectType.GROUP) and not granted_id:
+                raise serializers.ValidationError(
+                    "granted_subject_id is required when granted_subject_type is 'user' or 'group'."
+                )
+            if granted_type == SubjectType.PRINCIPAL and not granted_principal_user_id:
+                raise serializers.ValidationError(
+                    "granted_subject.principal.user_id is required when granted_subject_type is 'principal'."
                 )
 
         return attrs
@@ -943,10 +991,12 @@ class UpdateRoleBindingRequestSerializer(RoleBindingInputSerializerMixin, serial
         except FieldSelectionValidationError as e:
             raise serializers.ValidationError(e.message)
 
+    SUPPORTED_SUBJECT_TYPES = (SubjectType.GROUP, SubjectType.USER)
+
     def validate_subject_type(self, value):
-        """Validate subject_type is a supported enum value."""
-        if not SubjectType.is_valid(value):
-            supported = ", ".join(SubjectType.values())
+        """Validate subject_type is a supported enum value for by-subject operations."""
+        if value not in self.SUPPORTED_SUBJECT_TYPES:
+            supported = ", ".join(self.SUPPORTED_SUBJECT_TYPES)
             raise serializers.ValidationError(f"Unsupported subject type: '{value}'. Supported types: {supported}")
         return value
 
