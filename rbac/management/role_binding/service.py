@@ -108,6 +108,33 @@ class RoleBindingService:
         else:
             self._replicator = NoopReplicator()
 
+    def _resolve_inherited_bindings(
+        self,
+        exclude_sources: ExcludeSources,
+        resource_type: Optional[str],
+        resource_id: Optional[str],
+    ) -> tuple[Optional[list[str]], bool]:
+        """Resolve inherited binding UUIDs based on exclude_sources parameter.
+
+        Args:
+            exclude_sources: ExcludeSources enum value controlling which bindings to include
+            resource_type: The resource type (required for inherited lookups)
+            resource_id: The resource ID (required for inherited lookups)
+
+        Returns:
+            Tuple of (binding_uuids, exclude_direct):
+            - binding_uuids: List of inherited binding UUIDs, or None if not applicable
+            - exclude_direct: True if direct bindings should be excluded
+        """
+        exclude_direct = exclude_sources == ExcludeSources.DIRECT
+        include_inherited = exclude_sources in (ExcludeSources.DIRECT, ExcludeSources.NONE)
+
+        binding_uuids = None
+        if include_inherited and resource_type and resource_id:
+            binding_uuids = self._lookup_binding_uuids_via_relations(resource_type, str(resource_id))
+
+        return binding_uuids, exclude_direct
+
     def get_role_bindings_by_subject(self, params: dict) -> QuerySet:
         """Get role bindings grouped by subject from a dictionary of parameters.
 
@@ -131,12 +158,7 @@ class RoleBindingService:
         # Ensure default bindings exist (lazy creation)
         self._ensure_default_bindings_exist()
 
-        binding_uuids = None
-        exclude_direct = exclude_sources == ExcludeSources.DIRECT
-        include_inherited = exclude_sources in (ExcludeSources.DIRECT, ExcludeSources.NONE)
-
-        if include_inherited:
-            binding_uuids = self._lookup_binding_uuids_via_relations(resource_type, resource_id)
+        binding_uuids, exclude_direct = self._resolve_inherited_bindings(exclude_sources, resource_type, resource_id)
 
         if subject_type == SubjectType.USER:
             # Build user queryset
@@ -150,6 +172,69 @@ class RoleBindingService:
                 resource_id, resource_type, binding_uuids, exclude_direct=exclude_direct
             )
             queryset = self._apply_subject_filters(queryset, subject_type, subject_id)
+
+        return queryset
+
+    def get_role_bindings_for_list(self, params: dict) -> QuerySet:
+        """Get role bindings for the list endpoint with inherited binding support.
+
+        Args:
+            params: Dictionary of validated query parameters (from input serializer)
+                - role_id: Optional role UUID filter
+                - resource_id: Optional resource ID filter
+                - resource_type: Optional resource type filter
+                - subject_type: Optional subject type filter
+                - subject_id: Optional subject ID filter
+                - exclude_sources: ExcludeSources enum value
+
+        Returns:
+            QuerySet of RoleBinding objects
+
+        Note:
+            Ordering is handled by V2CursorPagination.get_ordering() to ensure
+            cursor pagination works correctly with the requested order_by parameter.
+        """
+        resource_id = params.get("resource_id")
+        resource_type = params.get("resource_type")
+        exclude_sources = params.get("exclude_sources", ExcludeSources.NONE)
+
+        binding_uuids, exclude_direct = self._resolve_inherited_bindings(exclude_sources, resource_type, resource_id)
+
+        # Handle edge case: exclude_direct but no inherited bindings available
+        if exclude_direct and binding_uuids is None:
+            # Relations API failed or not configured — cannot determine inherited bindings
+            return RoleBinding.objects.for_tenant(self.tenant).none()
+
+        queryset = RoleBinding.objects.for_tenant(self.tenant)
+
+        # Apply role filter
+        role_id = params.get("role_id")
+        if role_id:
+            queryset = queryset.for_role(role_id)
+
+        # Apply subject filters
+        queryset = queryset.for_subject(
+            subject_type=params.get("subject_type"),
+            subject_id=params.get("subject_id"),
+        )
+
+        # Build resource filter based on exclude_sources logic
+        if exclude_direct and binding_uuids is not None:
+            # Only inherited bindings by UUID (exclude direct)
+            queryset = queryset.filter(
+                Q(uuid__in=binding_uuids) & ~Q(resource_type=resource_type, resource_id=str(resource_id))
+            )
+        elif binding_uuids is not None and resource_id and resource_type:
+            # Both direct and inherited bindings (exclude_sources=none)
+            queryset = queryset.filter(
+                Q(resource_type=resource_type, resource_id=str(resource_id)) | Q(uuid__in=binding_uuids)
+            )
+        else:
+            # Only direct bindings (exclude_sources=indirect or no resource filter)
+            queryset = queryset.for_resource_filter(
+                resource_type=resource_type,
+                resource_id=str(resource_id) if resource_id else None,
+            )
 
         return queryset
 
