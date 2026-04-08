@@ -289,6 +289,25 @@ class WorkspaceServiceUpdateTests(WorkspaceServiceTestBase):
         self.assertEqual(updated_instance.name, validated_data["name"])
         self.assertEqual(updated_instance.description, validated_data["description"])
 
+    @override_settings(WORKSPACE_RESTRICT_DEFAULT_PEERS=True)
+    def test_update_default_workspace_with_current_parent_id(self):
+        """Test updating the default workspace while confirming its current parent_id (root workspace) succeeds.
+
+        The default workspace's parent is the root workspace. When the caller includes parent_id
+        equal to the root workspace's id (as required by the spec), the update must succeed.
+        Previously _enforce_hierarchy_depth was called with the root workspace's id, which
+        incorrectly raised 'Sub-workspaces may only be created under the default workspace.'
+        """
+        validated_data = {
+            "name": "Updated Default",
+            "description": "Updated description",
+            "parent_id": self.root_workspace.id,
+        }
+        updated_instance = self.service.update(self.default_workspace, validated_data)
+        self.assertEqual(updated_instance.name, validated_data["name"])
+        self.assertEqual(updated_instance.description, validated_data["description"])
+        self.assertEqual(updated_instance.parent_id, self.root_workspace.id)
+
     def test_update_ungrouped_workspace(self):
         """Test we cannot update the ungrouped workspace."""
         validated_data = {"name": "Bar Name", "description": "Bar Desc"}
