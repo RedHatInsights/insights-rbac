@@ -14,7 +14,7 @@ class Migration(migrations.Migration):
     operations = [
         # Enable the pg_trgm extension (idempotent — safe if already enabled).
         TrigramExtension(),
-        # GIN trigram index on RoleV2.name for iexact / iregex queries.
+        # GIN trigram index on RoleV2.name for icontains / iregex pattern-matching queries.
         migrations.AddIndex(
             model_name="rolev2",
             index=GinIndex(
