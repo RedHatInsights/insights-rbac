@@ -50,14 +50,11 @@ logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 def _determine_old_scope(existing_v2_role, platform_roles, resource_service=None):
     """
-    Determine the scope of an existing V2 role by checking its platform role parents.
-
-    For roles without parents (neither platform_default nor admin_default), falls back to
-    calculating scope from the role's current permissions.
+    Determine the scope of an existing V2 role by calculating it from the role's permissions.
 
     Args:
         existing_v2_role: The existing SeededRoleV2 instance (or None)
-        platform_roles: Dictionary mapping (DefaultAccessType, Scope) to platform roles
+        platform_roles: Dictionary mapping (DefaultAccessType, Scope) to platform roles (unused, kept for compatibility)
         resource_service: ImplicitResourceService for calculating scope from permissions (optional)
 
     Returns:
@@ -66,24 +63,7 @@ def _determine_old_scope(existing_v2_role, platform_roles, resource_service=None
     if existing_v2_role is None:
         return None
 
-    # Method 1: Try to determine scope from platform role parents (fast path for platform_default/admin_default roles)
-    if platform_roles:
-        # Build a uuid -> scope map once (more efficient than repeated queries)
-        uuid_to_scope = {}
-        for scope in (Scope.DEFAULT, Scope.TENANT, Scope.ROOT):
-            uuid_to_scope[platform_roles[(DefaultAccessType.USER, scope)].uuid] = scope
-            uuid_to_scope[platform_roles[(DefaultAccessType.ADMIN, scope)].uuid] = scope
-
-        # Single query to get all parent UUIDs
-        parent_uuids = set(existing_v2_role.parents.values_list("uuid", flat=True))
-
-        # Find which scope the role belongs to by checking parent UUIDs against the map
-        for parent_uuid in parent_uuids:
-            if parent_uuid in uuid_to_scope:
-                return uuid_to_scope[parent_uuid]
-
-    # Method 2: For roles without parents, calculate scope from existing permissions
-    # This handles roles where platform_default=False and admin_default=False
+    # Calculate scope from existing permissions
     if resource_service:
         permission_strings = list(existing_v2_role.permissions.values_list("permission", flat=True))
         if permission_strings:
