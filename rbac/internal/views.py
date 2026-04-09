@@ -561,8 +561,9 @@ def run_seeds(request):
         type_option = "seed_types"
         force_create_option = "force_create_relationships"
         force_update_option = "force_update_relationships"
+        skip_notifications_option = "skip_notifications"
 
-        valid_options = [type_option, force_create_option, force_update_option]
+        valid_options = [type_option, force_create_option, force_update_option, skip_notifications_option]
         valid_values = ["permissions", "roles", "groups"]
 
         for option in request.GET.keys():
@@ -578,7 +579,7 @@ def run_seeds(request):
                 return HttpResponse(f'Valid options for "{type_option}": {valid_values}.', status=400)
             args = {type: True for type in seed_types}
 
-        for option in [force_create_option, force_update_option]:
+        for option in [force_create_option, force_update_option, skip_notifications_option]:
             value: Optional[str] = request.GET.get(option)
 
             if value is not None:
@@ -2289,7 +2290,12 @@ def migrate_binding_scope(request):
 
     logger.info("Running binding scope migration.")
 
-    migrate_binding_scope_in_worker.delay()
+    raw_sources = request.GET.get("sources", None)
+
+    if raw_sources is not None:
+        migrate_binding_scope_in_worker.delay(sources=raw_sources.split(","))
+    else:
+        migrate_binding_scope_in_worker.delay()
 
     return JsonResponse(
         {"message": "Binding scope migration is running in a background worker."},

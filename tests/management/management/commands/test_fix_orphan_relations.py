@@ -4,8 +4,11 @@ from typing import Optional
 from unittest.mock import patch
 
 from django.core.management import call_command
+from django.urls import reverse
 
-from api.models import Tenant
+from api.models import Tenant, User
+from management.audit_log.model import AuditLog
+from management.group.model import Group
 from management.group.platform import GlobalPolicyIdService
 from management.permission.scope_service import Scope
 from management.relation_replicator.noop_replicator import NoopReplicator
@@ -13,6 +16,7 @@ from management.role.definer import seed_roles
 from management.role.model import BindingMapping, Role
 from management.role.platform import platform_v2_role_uuid_for
 from management.role.v2_model import RoleV2
+from management.role_binding.model import RoleBinding
 from management.role_binding.service import RoleBindingService, CreateBindingRequest
 from management.tenant_mapping.model import TenantMapping, DefaultAccessType
 from management.tenant_mapping.v2_activation import ensure_v2_write_activated
@@ -29,6 +33,7 @@ from migration_tool.migrate_binding_scope import migrate_all_role_bindings
 from migration_tool.models import V2role, V2rolebinding
 from tests.management.role.test_dual_write import DualWriteTestCase
 
+from django.test import RequestFactory
 from django.test.utils import override_settings
 
 from tests.util import assert_v1_v2_tuples_fully_consistent
@@ -38,17 +43,22 @@ from tests.v2_util import make_read_tuples_mock, bootstrap_tenant_for_v2_test
 @override_settings(
     V2_BOOTSTRAP_TENANT=True,
     REPLICATION_TO_RELATION_ENABLED=True,
+    ATOMIC_RETRY_DISABLED=True,
+    ROOT_SCOPE_PERMISSIONS="",
+    TENANT_SCOPE_PERMISSIONS="",
 )
-@override_settings(ATOMIC_RETRY_DISABLED=True)
 class TestRemoveOrphanRelations(DualWriteTestCase):
 
     def _do_fix_orphans(self, args: Optional[list[str]] = None):
         if args is None:
             args = ["--all"]
 
-        with patch("internal.migrations.remove_orphan_relations.iterate_tuples_from_kessel") as iterate_mock:
-            iterate_mock.side_effect = make_read_tuples_mock(self.tuples)
-            call_command("fix_orphan_relations", *args)
+        with patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate") as replicate_mock:
+            replicate_mock.side_effect = self.replicator.replicate
+
+            with patch("internal.migrations.remove_orphan_relations.iterate_tuples_from_kessel") as iterate_mock:
+                iterate_mock.side_effect = make_read_tuples_mock(self.tuples)
+                call_command("fix_orphan_relations", *args)
 
     def _expect_v2_consistent(self):
         assert_v1_v2_tuples_fully_consistent(test=self, tuples=self.tuples)
@@ -56,50 +66,44 @@ class TestRemoveOrphanRelations(DualWriteTestCase):
     def setUp(self):
         super().setUp()
 
+        self.replicator = InMemoryRelationReplicator(self.tuples)
+
         # The orphan removal script requires a proper workspace hierarchy.
         bootstrap_tenant_for_v2_test(self.tenant, tuples=self.tuples)
 
     def _do_test_preserve_valid_role(self, role: Role):
-        with patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate") as replicate:
-            replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
+        group, _ = self.given_group("a group", ["p1"])
+        v2_role = RoleV2.objects.get(v1_source=role)
 
-            group, _ = self.given_group("a group", ["p1"])
-            v2_role = RoleV2.objects.get(v1_source=role)
+        self.given_roles_assigned_to_group(group, [role])
 
-            self.given_roles_assigned_to_group(group, [role])
+        def expect_role_bound():
+            self.expect_1_role_binding_to_workspace(
+                self.default_workspace(), for_v2_roles=[str(v2_role.uuid)], for_groups=[str(group.uuid)]
+            )
 
-            def expect_role_bound():
-                self.expect_1_role_binding_to_workspace(
-                    self.default_workspace(), for_v2_roles=[str(v2_role.uuid)], for_groups=[str(group.uuid)]
-                )
+            self.assertEqual(
+                1,
+                self.tuples.count_tuples(
+                    all_of(resource("rbac", "role", str(v2_role.uuid)), relation("rbac_all_all"))
+                ),
+            )
 
-                self.assertEqual(
-                    1,
-                    self.tuples.count_tuples(
-                        all_of(resource("rbac", "role", str(v2_role.uuid)), relation("rbac_all_all"))
-                    ),
-                )
+        tuples_before = set(self.tuples)
+        expect_role_bound()
 
-            tuples_before = set(self.tuples)
-            expect_role_bound()
+        self._do_fix_orphans()
 
-            self._do_fix_orphans()
+        expect_role_bound()
+        self.assertEqual(tuples_before, set(self.tuples))
 
-            expect_role_bound()
-            self.assertEqual(tuples_before, set(self.tuples))
-
-    @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="")
     def test_preserve_valid_custom_role(self):
         self._do_test_preserve_valid_role(self.given_v1_role(name="custom role", default=["rbac:*:*"]))
 
-    @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="")
     def test_preserve_valid_system_role(self):
         self._do_test_preserve_valid_role(self.given_v1_system_role(name="custom role", permissions=["rbac:*:*"]))
 
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
-    def test_fix_incorrect_scope_binding(self, replicate):
-        replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
-
+    def test_fix_incorrect_scope_binding(self):
         role = self.given_v1_system_role("system role", ["rbac:roles:read"])
         g, _ = self.given_group("group", ["u1"])
 
@@ -162,10 +166,7 @@ class TestRemoveOrphanRelations(DualWriteTestCase):
             self.default_workspace(), for_v2_roles=[str(role.uuid)], for_groups=[str(g.uuid)]
         )
 
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
-    def test_custom_default_group_access(self, replicate):
-        replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
-
+    def test_custom_default_group_access(self):
         self.given_custom_default_group(replicator=NoopReplicator())
         self._expect_v2_consistent()
 
@@ -210,10 +211,7 @@ class TestRemoveOrphanRelations(DualWriteTestCase):
         # The default user access binding should no longer be bound to the default workspace.
         assert_user_count(0)
 
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
-    def test_limit(self, replicate):
-        replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
-
+    def test_limit(self):
         # Ensure we know exactly what tenants exist.
         Tenant.objects.exclude(tenant_name="public").exclude(pk=self.tenant.pk).delete()
 
@@ -260,10 +258,7 @@ class TestRemoveOrphanRelations(DualWriteTestCase):
         # which one).
         self.assertEqual(has_default_binding(t1) + has_default_binding(t2), 1)
 
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
-    def test_reused_platform_default_role(self, replicate):
-        replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
-
+    def test_reused_platform_default_role(self):
         seed_roles()
         g, _ = self.given_group("test group", ["p1"])
 
@@ -292,10 +287,7 @@ class TestRemoveOrphanRelations(DualWriteTestCase):
         # We should successfully be back where we started (with the orphan binding removed).
         self.assertEqual(set(self.tuples), initial_tuples)
 
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
-    def test_preserve_v2(self, replicate):
-        replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
-
+    def test_preserve_v2(self):
         system_role = self.given_v1_system_role("system role", ["rbac:*:*"])
         group, _ = self.given_group("group", ["p1"])
         service = RoleBindingService(tenant=self.tenant, replicator=InMemoryRelationReplicator(self.tuples))
@@ -329,11 +321,7 @@ class TestRemoveOrphanRelations(DualWriteTestCase):
             self.default_workspace(), for_v2_roles=[str(system_role.uuid)], for_groups=[str(group.uuid)]
         )
 
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
-    @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="")
-    def test_v2_role_binding_deleted(self, replicate):
-        replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
-
+    def test_v2_role_binding_deleted(self):
         target_role = self.given_v1_system_role("target role", ["rbac:*:*"])
         alternate_role = self.given_v1_system_role("alternate role", ["rbac:*:*"])
         group, _ = self.given_group("group", ["p1"])
@@ -420,11 +408,7 @@ class TestRemoveOrphanRelations(DualWriteTestCase):
             ),
         )
 
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
-    def test_role_binding_deleted_no_parent_tuple(self, replicate):
-        replicator = InMemoryRelationReplicator(self.tuples)
-        replicate.side_effect = replicator.replicate
-
+    def test_role_binding_deleted_no_parent_tuple(self):
         group, _ = self.given_group("group", ["p1"])
         role = self.given_v1_system_role("a role", ["rbac:*:*"])
 
@@ -435,7 +419,7 @@ class TestRemoveOrphanRelations(DualWriteTestCase):
         self.tuples.clear()
 
         # Create a role binding both locally and in Kessel.
-        RoleBindingService(tenant=self.tenant, replicator=replicator).batch_create(
+        RoleBindingService(tenant=self.tenant, replicator=self.replicator).batch_create(
             [
                 CreateBindingRequest(
                     role_id=str(role.uuid),
@@ -464,3 +448,53 @@ class TestRemoveOrphanRelations(DualWriteTestCase):
         # We should have removed the orphaned role binding because the workspace is known to exist locally,
         # despite there being no parent relations in Kessel.
         self.assertEqual(len(self.tuples), 0)
+
+    def _log_group_delete(self, group: Group):
+        request_factory = RequestFactory()
+        request = request_factory.get(reverse("v1_management:group-detail", kwargs={"uuid": str(group.uuid)}))
+
+        user = User(username="a_username", org_id=self.tenant.org_id)
+
+        request.user = user
+        request._user = user
+
+        audit_log = AuditLog()
+        audit_log.log_delete(request, AuditLog.GROUP, group)
+
+    def test_fix_with_audit_log(self):
+        """Test that a tenant without roles or groups is processed if it has an AuditLog entry."""
+        group, _ = self.given_group("group", ["p1"])
+        role = self.given_v1_system_role("system role", ["rbac:*:*"])
+
+        def assert_binding(exists: bool):
+            self.assertEqual(
+                int(exists),
+                self.tuples.count_tuples(
+                    all_of(
+                        resource_type("rbac", "role_binding"),
+                        relation("subject"),
+                        subject("rbac", "group", str(group.uuid), "member"),
+                    )
+                ),
+            )
+
+        self.given_roles_assigned_to_group(group, [role])
+        assert_binding(True)
+
+        # Create an AuditLog entry for the group, then delete the group without replicating it.
+        self._log_group_delete(group)
+        self.given_group_removed(group, replicator=NoopReplicator())
+        assert_binding(True)
+
+        self.assertFalse(Group.objects.filter(tenant=self.tenant).exists())
+        self.assertFalse(Role.objects.filter(tenant=self.tenant).exists())
+        self.assertFalse(RoleV2.objects.filter(tenant=self.tenant).exists())
+        self.assertFalse(RoleBinding.objects.filter(tenant=self.tenant).exists())
+
+        self.assertTrue(AuditLog.objects.filter(tenant=self.tenant).exists())
+
+        # The AuditLog entry should be enough for the tenant to be processed, even if no Group, Role, or RoleBinding
+        # exists in the tenant.
+        self._do_fix_orphans()
+
+        assert_binding(False)
