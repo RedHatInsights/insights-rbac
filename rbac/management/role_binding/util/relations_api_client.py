@@ -17,6 +17,7 @@
 """Client for the Kessel Relations API for role binding lookups."""
 
 import logging
+import uuid
 from typing import Optional
 
 from django.conf import settings
@@ -117,7 +118,11 @@ def lookup_binding_subjects(
                 subject = payload.get("subject", {})
                 subject_id = subject.get("id") or subject.get("subject", {}).get("id")
                 if subject_id:
-                    subject_ids.add(subject_id)
+                    try:
+                        uuid.UUID(subject_id)
+                        subject_ids.add(subject_id)
+                    except ValueError:
+                        logger.warning("Skipping non-UUID subject_id from Relations API: %s", subject_id)
 
         result = list(subject_ids)
         logger.info(
