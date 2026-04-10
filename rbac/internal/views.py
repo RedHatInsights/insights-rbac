@@ -88,6 +88,7 @@ from management.role.serializer import BindingMappingSerializer
 from management.tasks import (
     bulk_cleanup_orphan_bindings_in_worker,
     clean_invalid_workspace_resource_definitions_in_worker,
+    expire_orphaned_cross_account_requests_in_worker,
     fix_missing_binding_base_tuples_in_worker,
     migrate_binding_scope_in_worker,
     migrate_data_in_worker,
@@ -560,8 +561,9 @@ def run_seeds(request):
         type_option = "seed_types"
         force_create_option = "force_create_relationships"
         force_update_option = "force_update_relationships"
+        skip_notifications_option = "skip_notifications"
 
-        valid_options = [type_option, force_create_option, force_update_option]
+        valid_options = [type_option, force_create_option, force_update_option, skip_notifications_option]
         valid_values = ["permissions", "roles", "groups"]
 
         for option in request.GET.keys():
@@ -577,7 +579,7 @@ def run_seeds(request):
                 return HttpResponse(f'Valid options for "{type_option}": {valid_values}.', status=400)
             args = {type: True for type in seed_types}
 
-        for option in [force_create_option, force_update_option]:
+        for option in [force_create_option, force_update_option, skip_notifications_option]:
             value: Optional[str] = request.GET.get(option)
 
             if value is not None:
@@ -2288,7 +2290,12 @@ def migrate_binding_scope(request):
 
     logger.info("Running binding scope migration.")
 
-    migrate_binding_scope_in_worker.delay()
+    raw_sources = request.GET.get("sources", None)
+
+    if raw_sources is not None:
+        migrate_binding_scope_in_worker.delay(sources=raw_sources.split(","))
+    else:
+        migrate_binding_scope_in_worker.delay()
 
     return JsonResponse(
         {"message": "Binding scope migration is running in a background worker."},
@@ -2534,3 +2541,21 @@ def remove_unassigned_system_binding_mappings(request):
     except Exception as e:
         logger.exception("Error removing unassigned system binding mappings", exc_info=True)
         return JsonResponse({"detail": f"Error removing unassigned system binding mappings: {str(e)}"}, status=500)
+
+
+@require_http_methods(["POST"])
+def expire_orphaned_cross_account_requests(request):
+    """
+    Expire cross-account requests that no longer correspond to an actual user.
+
+    POST /_private/api/utils/expire_orphaned_cross_account_requests/
+
+    Returns:
+        JSON response indicating the task has been queued
+    """
+    try:
+        expire_orphaned_cross_account_requests_in_worker.delay()
+        return JsonResponse({"message": "Cleanup enqueued in background worker."}, status=202)
+    except Exception as e:
+        logger.exception("Error removing orphaned CARs", exc_info=True)
+        return JsonResponse({"detail": f"Error removing orphaned CARs: {str(e)}"}, status=500)

@@ -17,6 +17,7 @@
 
 """Utilities for Internal RBAC use."""
 
+import itertools
 import json
 import logging
 import uuid
@@ -32,10 +33,11 @@ from django.db.models import Q
 from django.urls import resolve
 from internal.schemas import INVENTORY_INPUT_SCHEMAS, RELATION_INPUT_SCHEMAS
 from jsonschema import validate
-from management.atomic_transactions import atomic_block
+from management.atomic_transactions import atomic, atomic_block, atomic_with_retry
 from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
 from management.models import BindingMapping, Role, Workspace
 from management.permission.scope_service import TenantScopeResources
+from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
 from management.relation_replicator.logging_replicator import LoggingReplicator, stringify_spicedb_relationship
 from management.relation_replicator.noop_replicator import NoopReplicator
@@ -47,13 +49,24 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEventType,
 )
 from management.relation_replicator.relations_api_replicator import RelationsApiReplicator
+from management.relation_replicator.types import RelationTuple
 from management.role.v2_model import CustomRoleV2, RoleV2
-from management.role_binding.model import RoleBinding
+from management.role_binding.model import RoleBinding, RoleBindingPrincipal
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
+from management.tenant_mapping.v2_activation import (
+    TenantVersion,
+    V1WriteBlockedError,
+    assert_v1_write_allowed,
+    lock_tenant_version,
+)
 from management.tenant_service.relations import default_role_binding_tuples
+from management.tenant_service.v2 import TenantNotBootstrappedError, lock_tenant_for_bootstrap
+from management.utils import as_uuid
 from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspaceHandler
 from migration_tool.utils import create_relationship
 
+from api.cross_access.model import CrossAccountRequest
+from api.cross_access.relation_api_dual_write_cross_access_handler import RelationApiDualWriteCrossAccessHandler
 from api.models import Tenant, User
 
 logger = logging.getLogger(__name__)
@@ -437,6 +450,146 @@ def rebuild_tenant_workspace_relations(
     }
 
 
+def lock_binding_mappings_with_roles_by_uuid(uuids: Iterable[str | uuid.UUID]) -> dict[str, BindingMapping]:
+    """
+    Look up BindingMappings by UUID and lock them along with any associated custom roles.
+
+    Returns a dict from UUID strings to BindingMappings.
+    """
+    converted_uuids = {str(as_uuid(u)) for u in uuids}
+
+    # This will lock both the bindings and the roles for bindings to custom roles.
+    custom_binding_mappings = list(
+        BindingMapping.objects.filter(mappings__id__in=converted_uuids)
+        .filter(role__system=False)
+        .select_related("role")
+        .select_for_update(of=["self", "role"])
+    )
+
+    # This will lock only the bindings for bindings to system roles, as V1 does.
+    system_binding_mappings = list(
+        BindingMapping.objects.filter(mappings__id__in=converted_uuids)
+        .filter(role__system=True)
+        .select_related("role")
+        .select_for_update(of=["self"])
+    )
+
+    return {b.mappings["id"]: b for b in [*custom_binding_mappings, *system_binding_mappings]}
+
+
+# We must use SERIALIZABLE here because we are potentially interacting with concurrent V2 writers (which all
+# use SERIALIZABLE rather than explicit locking).
+#
+# Unfortunately, we must *also* use select_for_update() here because we are potentially interacting with
+# concurrent V1 writers (which all use SELECT FOR UPDATE rather than SERIALIZABLE).
+@atomic_with_retry(retries=3)
+def _do_replicate_missing_binding_tuples_batch(tenant_id: int, raw_role_bindings: list[RoleBinding]):
+    tenant = Tenant.objects.get(id=tenant_id)
+    bootstrap_lock = lock_tenant_for_bootstrap(tenant)
+    tenant_version = lock_tenant_version(tenant)
+
+    # We are not equipped to handle RoleBindings representing default access bindings; their representation in the
+    # database is not always the same as their relation in Kessel. The correct way to re-replicate these tuples is by
+    # forcibly re-bootstrapping the tenant.
+    #
+    # So, we will just exclude these RoleBindings from further processing entirely.
+    builtin_binding_ids = bootstrap_lock.tenant_mapping.role_binding_ids()
+
+    role_bindings = list(
+        RoleBinding.objects.filter(pk__in=(b.pk for b in raw_role_bindings))
+        .exclude(uuid__in=builtin_binding_ids)
+        .select_related("role")
+        .prefetch_related("group_entries", "principal_entries", "role__permissions")
+        .select_for_update(of=["self"])
+    )
+
+    binding_uuids = {str(b.uuid) for b in role_bindings}
+
+    if tenant_version == TenantVersion.VERSION_1:
+        binding_mappings_by_uuid = lock_binding_mappings_with_roles_by_uuid(binding_uuids)
+        binding_mapping_uuids = set(binding_mappings_by_uuid.keys())
+
+        if binding_uuids != binding_mapping_uuids:
+            raise AssertionError(
+                "Mismatch between BindingMappings and RoleBindings in V1 tenant: "
+                f"BindingMapping UUIDs={binding_mapping_uuids}, "
+                f"RoleBinding UUIDs={binding_uuids}"
+            )
+
+        for role_binding in role_bindings:
+            binding_mapping = binding_mappings_by_uuid[str(role_binding.uuid)]
+
+            if role_binding.role.v1_source_id != binding_mapping.role_id:
+                raise AssertionError(
+                    f"Mismatch between BindingMapping role and RoleBinding role: "
+                    f"UUID={str(role_binding.uuid)}; "
+                    f"BindingMapping pk={binding_mapping.pk!r}, V1 role ID={binding_mapping.role_id}; "
+                    f"RoleBinding pk={role_binding.pk!r}, V2 role ID={role_binding.role_id}, "
+                    f"V1 source ID={role_binding.role.v1_source_id}"
+                )
+
+    all_binding_tuples: list[RelationTuple] = []
+    role_tuples_by_role_id: dict[int, list[RelationTuple]] = {}
+
+    bindings_processed = 0
+
+    for role_binding in role_bindings:
+        bindings_processed += 1
+
+        # Ensure we re-replicate all tuples for the binding.
+        all_binding_tuples.extend(role_binding.all_tuples())
+
+        # Ensure that we additionally re-replicate the relevant role (if it's a custom role).
+        if role_binding.role.type == RoleV2.Types.CUSTOM:
+            if role_binding.role.id not in role_tuples_by_role_id:
+                to_add, to_remove = CustomRoleV2.replication_tuples(
+                    role=role_binding.role, new_permissions=list(role_binding.role.permissions.all())
+                )
+
+                if len(to_remove) > 0:
+                    raise AssertionError(f"Should not have relations to remove, but got: {to_remove}")
+
+                role_tuples_by_role_id[role_binding.role.id] = to_add
+
+    replicator = OutboxReplicator()
+
+    for binding_tuples_batch in itertools.batched(all_binding_tuples, 1000):
+        replicator.replicate(
+            ReplicationEvent(
+                event_type=ReplicationEventType.REMIGRATE_ROLE_BINDING,
+                info={
+                    "binding_uuids": binding_uuids,
+                    "org_id": str(tenant.org_id),
+                    "fix": "missing_binding_tuples_batch",
+                    "source": "bindings",
+                },
+                partition_key=PartitionKey.byEnvironment(),
+                add=list(binding_tuples_batch),
+            )
+        )
+
+    role_tuples_processed = 0
+
+    for role_tuples_batch in itertools.batched(itertools.chain.from_iterable(role_tuples_by_role_id.values()), 1000):
+        role_tuples_processed += len(role_tuples_batch)
+
+        replicator.replicate(
+            ReplicationEvent(
+                event_type=ReplicationEventType.REMIGRATE_ROLE_BINDING,
+                info={
+                    "binding_uuids": binding_uuids,
+                    "org_id": str(tenant.org_id),
+                    "fix": "missing_binding_tuples_batch",
+                    "source": "roles",
+                },
+                partition_key=PartitionKey.byEnvironment(),
+                add=list(role_tuples_batch),
+            )
+        )
+
+    return bindings_processed, len(all_binding_tuples) + role_tuples_processed
+
+
 def replicate_missing_binding_tuples(
     tenant: Optional[Tenant] = None, binding_uuids: Optional[list[str]] = None
 ) -> dict:
@@ -447,6 +600,8 @@ def replicate_missing_binding_tuples(
     base tuples (t_role and t_binding) in Kessel.
 
     At most one of tenant and binding_uuids can be non-None; if both are None, all bindings are re-replicated.
+
+    Default access bindings are not re-replicated; re-rebootstrapping is required for this.
 
     Args:
         tenant (Tenant, optional): The tenant for which to fix bindings.
@@ -462,7 +617,7 @@ def replicate_missing_binding_tuples(
 
     # Get bindings to fix
     if binding_uuids is not None:
-        bindings_query = RoleBinding.objects.filter(uuid__in=binding_uuids)
+        bindings_query = RoleBinding.objects.filter(uuid__in=binding_uuids).order_by("tenant")
         logger.info(f"Fixing {len(binding_uuids)} specific bindings: {binding_uuids}")
     elif tenant is not None:
         # We do not need to lock anything here. We assume that replication is currently working correctly, so any
@@ -476,7 +631,7 @@ def replicate_missing_binding_tuples(
 
         logger.info(f"Fixing {bindings_query.count()} bindings from tenant pk={tenant.pk!r}, org_id={tenant.org_id!r}")
     else:
-        bindings_query = RoleBinding.objects.all()
+        bindings_query = RoleBinding.objects.all().order_by("tenant")
         logger.warning(f"Fixing ALL bindings ({bindings_query.count()} total) - this may take a while")
 
     bindings_checked = 0
@@ -484,103 +639,31 @@ def replicate_missing_binding_tuples(
     total_tuples = 0
 
     # Process each binding in a separate transaction with locking
-    for raw_binding in bindings_query.iterator(chunk_size=2000):
+    for raw_binding_batch in itertools.batched(bindings_query.iterator(chunk_size=2000), 100):
+        raw_bindings_by_tenant_id: dict[int, list[RoleBinding]] = {}
+
+        for raw_binding in raw_binding_batch:
+            raw_bindings_by_tenant_id.setdefault(raw_binding.tenant_id, []).append(raw_binding)
+
+        # We should not get an empty batch.
+        assert len(raw_bindings_by_tenant_id) > 0
+
         if tenant is not None:
-            if raw_binding.tenant_id != tenant.id:
-                raise AssertionError(
-                    f"Unexpected tenant for binding with UUID {str(raw_binding.uuid)}: got {raw_binding.tenant_id}, "
-                    f"but expected {tenant.id}"
-                )
+            actual_tenants = list(raw_bindings_by_tenant_id.keys())
 
-        # We must use SERIALIZABLE here because we are potentially interacting with concurrent V2 writers (which all
-        # use SERIALIZABLE rather than explicit locking).
-        #
-        # Unfortunately, we must *also* use select_for_update() here because we are potentially interacting with
-        # concurrent V1 writers (which all use SELECT FOR UPDATE rather than SERIALIZABLE).
-        with atomic_block():
-            # Lock the BindingMapping (if any) first to avoid deadlock (since this is what the V1 code does).
-            binding_mapping = (
-                BindingMapping.objects.select_for_update().filter(mappings__id=str(raw_binding.uuid)).first()
+            if actual_tenants != [tenant.id]:
+                raise AssertionError(f"Found unexpected tenant IDs: expected={[tenant.id]}, actual={actual_tenants}")
+
+        for tenant_id, raw_bindings in raw_bindings_by_tenant_id.items():
+            tenant_bindings_fixed, tenant_tuples_added = _do_replicate_missing_binding_tuples_batch(
+                tenant_id=tenant_id, raw_role_bindings=raw_bindings
             )
 
-            # If there is a BindingMapping, we must also lock its role if the role is custom (since some code
-            # modifies BindingMappings without locking them).
-            if (binding_mapping is not None) and (not binding_mapping.role.system):
-                locked_v1_role = Role.objects.select_for_update().filter(id=binding_mapping.role_id).first()
+            bindings_checked += len(raw_bindings)
+            bindings_fixed += tenant_bindings_fixed
+            total_tuples += tenant_tuples_added
 
-                if locked_v1_role is None:
-                    logger.warning(
-                        f"V1 role vanished before its binding could be fixed: binding pk={raw_binding.pk!r}, "
-                        f"role pk={raw_binding.role.pk!r}"
-                    )
-
-                    continue
-
-            role_binding = (
-                RoleBinding.objects.filter(pk=raw_binding.pk)
-                .select_related("role")
-                .prefetch_related("group_entries", "principal_entries")
-                .select_for_update(of=["self"])
-                .first()
-            )
-
-            if role_binding is None:
-                if binding_mapping is not None:
-                    raise AssertionError(
-                        f"A RoleBinding must exist if a BindingMapping does, but this was not the "
-                        f"case for UUID {binding_mapping.mappings['id']}"
-                    )
-
-                logger.warning(f"Binding vanished before it could be fixed: pk={raw_binding.pk!r}")
-                continue
-
-            v1_role_id = binding_mapping.role_id if binding_mapping is not None else None
-
-            if (role_binding.role.type == RoleV2.Types.CUSTOM) and (role_binding.role.v1_source_id != v1_role_id):
-                raise AssertionError(
-                    f"Mismatch between custom V2 role's v1_source and BindingMapping's role. "
-                    f"{role_binding.role.v1_source_id=}, {v1_role_id=}"
-                )
-
-            bindings_checked += 1
-
-            # Get ALL tuples for this binding (t_role, t_binding, and all subject tuples)
-            # Kessel/SpiceDB handles duplicates gracefully, so it's safe to replicate existing tuples
-            all_tuples = role_binding.all_tuples()
-
-            # Ensure that we additionally re-replicate the relevant role (if it's a custom role).
-            if role_binding.role.type == RoleV2.Types.CUSTOM:
-                to_add, to_remove = CustomRoleV2.replication_tuples(
-                    role=role_binding.role, new_permissions=list(role_binding.role.permissions.all())
-                )
-
-                if len(to_remove) > 0:
-                    raise AssertionError(f"Should not have relations to remove, but got: {to_remove}")
-
-                all_tuples.extend(to_add)
-
-            # Replicate ALL tuples - any that already exist will be handled as duplicates
-            replicator = OutboxReplicator()
-            replicator.replicate(
-                ReplicationEvent(
-                    event_type=ReplicationEventType.REMIGRATE_ROLE_BINDING,
-                    info={
-                        "binding_uuid": str(role_binding.uuid),
-                        "role_uuid": str(role_binding.role.uuid),
-                        "org_id": str(role_binding.tenant.org_id),
-                        "fix": "missing_binding_tuples",
-                    },
-                    partition_key=PartitionKey.byEnvironment(),
-                    add=all_tuples,
-                )
-            )
-
-            bindings_fixed += 1
-            total_tuples += len(all_tuples)
-
-        # Log progress for large batches (outside transaction)
-        if bindings_checked % 100 == 0:
-            logger.info(f"Progress: {bindings_checked} bindings processed, {total_tuples} tuples added")
+        logger.info(f"Progress: {bindings_checked} bindings processed, {total_tuples} tuples added")
 
     results = {
         "bindings_checked": bindings_checked,
@@ -625,10 +708,16 @@ def clean_invalid_workspace_resource_definitions(dry_run: bool = False) -> dict:
 
         with transaction.atomic():
             # Lock the role to prevent concurrent modifications
-            role = Role.objects.select_for_update().filter(pk=raw_role.pk).first()
+            role = Role.objects.select_for_update(of=["self"]).select_related("tenant").filter(pk=raw_role.pk).first()
 
             if role is None:
                 logger.warning(f"Role vanished before it could be cleaned: pk={raw_role.pk!r}")
+                continue
+
+            try:
+                assert_v1_write_allowed(role.tenant)
+            except V1WriteBlockedError:
+                logger.info(f"Skipping fixing resource definitions for role in V2 tenant: role pk={role.pk!r}")
                 continue
 
             roles_checked += 1
@@ -647,7 +736,12 @@ def clean_invalid_workspace_resource_definitions(dry_run: bool = False) -> dict:
                         continue
 
                     # Get workspace IDs from resource definition
-                    workspace_ids = get_workspace_ids_from_resource_definition(rd.attributeFilter)
+                    workspace_ids, malformed_workspace_ids = get_workspace_ids_from_resource_definition_with_malformed(
+                        rd.attributeFilter
+                    )
+
+                    # null is acceptable for us.
+                    malformed_workspace_ids = [x for x in malformed_workspace_ids if x is not None]
 
                     # Check if the resource definition has None (for ungrouped workspace)
                     operation = rd.attributeFilter.get("operation")
@@ -659,8 +753,10 @@ def clean_invalid_workspace_resource_definitions(dry_run: bool = False) -> dict:
                     elif operation == "equal":
                         has_none_value = original_value is None
 
-                    if not workspace_ids:
-                        continue
+                    # Previously, we would attempt to exit early if workspace_ids is empty (believing there would be
+                    # nothing to process). However, this isn't always valid. If the resource definition contains only
+                    # malformed workspace IDs (e.g. invalid UUIDs or values that aren't strings), we still need to
+                    # remove all of those values, but workspace_ids will be empty.
 
                     # Check which workspaces exist in the role's tenant
                     valid_workspace_ids = set(
@@ -672,7 +768,7 @@ def clean_invalid_workspace_resource_definitions(dry_run: bool = False) -> dict:
 
                     invalid_workspace_ids = set(str(ws_id) for ws_id in workspace_ids) - valid_workspace_ids
 
-                    if invalid_workspace_ids:
+                    if invalid_workspace_ids or malformed_workspace_ids:
                         role_had_invalid_rds = True
 
                         # Calculate what the new value would be
@@ -702,6 +798,7 @@ def clean_invalid_workspace_resource_definitions(dry_run: bool = False) -> dict:
                             "original_value": original_value,
                             "new_value": new_value,
                             "invalid_workspaces": list(invalid_workspace_ids),
+                            "malformed_workspaces": list(malformed_workspace_ids),
                             "valid_workspaces": list(valid_workspace_ids),
                             "preserved_none": has_none_value,
                         }
@@ -831,19 +928,36 @@ def is_resource_a_workspace(application: str, resource_type: str, attributeFilte
     return is_workspace_application and is_workspace_resource_type and is_workspace_group_filter
 
 
-def get_workspace_ids_from_resource_definition(attributeFilter: dict) -> list[uuid.UUID]:
-    """Get workspace id from a resource definition."""
+def get_workspace_ids_from_resource_definition_with_malformed(attributeFilter: dict) -> tuple[list[uuid.UUID], list]:
+    """Get workspace id from a resource definition. Returns a tuple of the valid entries and the invalid entries."""
     operation = attributeFilter.get("operation")
-    ret = []
+
+    valid = []
+    invalid = []
+
     if operation == "in":
         value = attributeFilter.get("value", [])
-        ret.extend(uuid.UUID(val) for val in value if is_str_valid_uuid(val))
+
+        for val in value:
+            if is_str_valid_uuid(val):
+                valid.append(uuid.UUID(val))
+            else:
+                invalid.append(val)
+
     elif operation == "equal":
         value = attributeFilter.get("value", "")
-        if is_str_valid_uuid(value):
-            ret.append(uuid.UUID(value))
 
-    return ret
+        if is_str_valid_uuid(value):
+            valid.append(uuid.UUID(value))
+        else:
+            invalid.append(value)
+
+    return valid, invalid
+
+
+def get_workspace_ids_from_resource_definition(attributeFilter: dict) -> list[uuid.UUID]:
+    """Get workspace id from a resource definition."""
+    return get_workspace_ids_from_resource_definition_with_malformed(attributeFilter)[0]
 
 
 def is_str_valid_uuid(uuid_str: str) -> bool:
@@ -991,6 +1105,46 @@ def remove_unassigned_system_binding_mappings(replicator: Optional[RelationRepli
                     f"pk={mapping.pk!r}, mappings={mapping.mappings}"
                 )
 
+            if not (
+                (mapping.resource_type_namespace == "rbac") and (mapping.resource_type_name in ("tenant", "workspace"))
+            ):
+                logger.warning(
+                    f"Unexpected role binding resource type: "
+                    f"{mapping.resource_type_namespace}/{mapping.resource_type_name}"
+                )
+
+                continue
+
+            tenant: Tenant | None = None
+
+            if mapping.resource_type_name == "workspace":
+                workspace = Workspace.objects.filter(id=mapping.resource_id).first()
+
+                if workspace is None:
+                    logger.warning(f"Unknown workspace ID for binding: {mapping.resource_id}")
+                    continue
+
+                tenant = workspace.tenant
+            elif mapping.resource_type_name == "tenant":
+                org_id = Tenant.tenant_resource_id_to_org_id(mapping.resource_id)
+                tenant = Tenant.objects.filter(org_id=org_id).first()
+
+                if tenant is None:
+                    logger.warning(f"Unknown tenant resource ID for binding: {mapping.resource_id}")
+                    continue
+
+            if tenant is None:
+                raise AssertionError("Tenant should have been found")
+
+            try:
+                assert_v1_write_allowed(tenant)
+            except V1WriteBlockedError:
+                logger.info(f"Not processing BindingMapping for V2 tenant: pk={mapping.pk!r}, tenant pk={tenant.pk!r}")
+                continue
+            except TenantNotBootstrappedError:
+                logger.warning(f"Tenant not bootstrapped: pk={tenant.pk!r}. Not processing BindingMapping.")
+                continue
+
             # Because a BindingMapping exists for this role binding, and BindingMappings for system roles are always
             # locked for update, we know that this binding cannot be concurrently updated by V1 code.
             #
@@ -1028,3 +1182,134 @@ def remove_unassigned_system_binding_mappings(replicator: Optional[RelationRepli
 
             if role_binding is not None:
                 role_binding.delete()
+
+
+@atomic
+def _do_remove_orphaned_car(raw_car: CrossAccountRequest, replicator: RelationReplicator):
+    logger.info(f"Processing orphaned CAR: pk={raw_car.pk!r}")
+
+    orphaned_car: CrossAccountRequest = CrossAccountRequest.objects.select_for_update().filter(pk=raw_car.pk).first()
+
+    if orphaned_car is None:
+        logger.info(f"Orphaned CAR vanished before it could be removed: pk={raw_car.pk!r}")
+        return
+
+    if orphaned_car.status != "approved":
+        logger.info(f"Skipping orphaned CAR is no longer approved: pk={raw_car.pk!r}")
+        return
+
+    if orphaned_car.user_id is None:
+        logger.info(f"Skipping orphaned CAR with null user_id: pk={raw_car.pk!r}")
+        return
+
+    # If the user is somehow created after this check, that's okay; at worst, they'll have to make a new
+    # cross-account request.
+    if Principal.objects.filter(user_id=orphaned_car.user_id).exists():
+        logger.info(f"Skipping CAR that is no longer orphaned: pk={raw_car.pk!r}")
+        return
+
+    target_tenant = Tenant.objects.filter(org_id=orphaned_car.target_org).first()
+
+    if target_tenant is None:
+        logger.info(f"Skipping orphaned CAR with non-existent tenant: pk={orphaned_car.pk}")
+        return
+
+    tenant_version = lock_tenant_version(target_tenant)
+
+    # Since the principals don't exist, we need to ensure that BindingMappings will be treated as authoritative (so
+    # that we can later reconstruct the correct RoleBindings from them). This is the case only for V1 tenants.
+    if tenant_version != TenantVersion.VERSION_1:
+        logger.info(f"Skipping orphaned CAR in non-V1 tenant: pk={orphaned_car.pk}")
+        return
+
+    if RoleBindingPrincipal.objects.filter(source=str(orphaned_car.source_key())).exists():
+        raise AssertionError(f"Expected no principal entries to have been created for CAR with pk={orphaned_car.pk!r}")
+
+    car_binding_mappings = list(
+        BindingMapping.objects.select_for_update().filter(mappings__users__has_key=str(orphaned_car.source_key()))
+    )
+
+    for binding_mapping in car_binding_mappings:
+        if binding_mapping.mappings["users"][str(orphaned_car.source_key())] != orphaned_car.user_id:
+            raise AssertionError(
+                f"Unexpected mapping: "
+                f"mapping pk={binding_mapping.pk!r}, "
+                f"mappings={binding_mapping.mappings['users']}, "
+                f"CAR pk={orphaned_car.pk!r}"
+            )
+
+    # Any RoleBindings corresponding to the found BindingMappings cannot *possibly* be correct. The BindingMappings
+    # all include the CAR's user ID, but we have already determined that no Principal with that user ID exists,
+    # so there cannot possibly be a RoleBindingPrincipal that refers to such a Principal. Thus, we should delete any
+    # such RoleBindings and require them to be re-created later. (This is a valid state for a V1 tenant to be in,
+    # but it must be fixed before the tenant migrates to V2.)
+    bad_role_bindings = list(
+        RoleBinding.objects.select_for_update()
+        .filter(tenant=target_tenant)
+        .filter(uuid__in=(bm.mappings["id"] for bm in car_binding_mappings))
+    )
+
+    if len(bad_role_bindings) > 0:
+        logger.warning(
+            "Removing mismatched RoleBindings: "
+            + ", ".join(f"pk={rb.pk!r}, uuid={str(rb.uuid)}" for rb in bad_role_bindings)
+        )
+
+        RoleBinding.objects.filter(pk__in=(rb.pk for rb in bad_role_bindings)).delete()
+
+    orphaned_car.status = "expired"
+    orphaned_car.save()
+
+    dual_write_handler = RelationApiDualWriteCrossAccessHandler(
+        cross_account_request=orphaned_car,
+        event_type=ReplicationEventType.EXPIRE_CROSS_ACCOUNT_REQUEST,
+        replicator=replicator,
+    )
+
+    # We have to suppress the migration to RoleBindings because there might be a single BindingMapping with
+    # principals from multiple orphaned CARs (in which case it still couldn't be migrated after we remove the first
+    # one). We know that the tenant is a V1 tenant, so its BindingMappings will be treated as authoritative.
+    #
+    # We have just deleted any RoleBindings that could exist for the CAR, and we will just not create any here.
+    # Actually re-creating the RoleBindings is left to another migration (in practice, the migrate_binding_scope
+    # migration).
+    dual_write_handler.generate_relations_to_remove_roles(orphaned_car.roles.all(), suppress_v1_migration=True)
+    dual_write_handler.replicate()
+
+    logger.info(f"Expired orphaned CAR: pk={orphaned_car.pk!r}")
+
+
+@atomic
+def expire_orphaned_cross_account_requests(replicator: Optional[RelationReplicator] = None):
+    """Expire cross-account requests that refer to a principal that no longer exists."""
+    if replicator is None:
+        replicator = OutboxReplicator()
+
+    # We must exclude user_id=None in the subquery. Otherwise, if the user_id is not present and at least one Principal
+    # user_id is null, the result of the IN operator will also be null. (I think this is bad, but oh well.) Then,
+    # when Django negates the null, it will still be null. This means the where clause will at best be (TRUE AND NULL
+    # AND TRUE), which will still filter out the row.
+    orphaned_cars = (
+        CrossAccountRequest.objects.filter(status="approved")
+        .exclude(user_id__in=Principal.objects.exclude(user_id=None).values_list("user_id", flat=True))
+        .exclude(user_id=None)
+    )
+
+    logger.info(f"About to process ~{orphaned_cars.count()} orphaned cross-account requests.")
+
+    count = 0
+    failed = 0
+
+    for orphaned_car in orphaned_cars.iterator():
+        count += 1
+
+        try:
+            _do_remove_orphaned_car(orphaned_car, replicator)
+        except Exception:
+            logger.error(f"Failed to remove orphaned CAR: pk={orphaned_car.pk!r}", exc_info=True)
+            failed += 1
+
+    logger.info(f"Processed {count} orphaned CARs, of which {failed} failed.")
+
+    if failed > 0:
+        raise RuntimeError(f"Failed to expire {failed} orphan CARs")

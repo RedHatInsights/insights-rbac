@@ -135,13 +135,16 @@ class V2CursorPagination(CursorPagination):
     - group.name, group.description, group.user_count, group.uuid,
       group.created, group.modified
     - role.name, role.uuid, role.created, role.modified
+    - last_modified (max RoleBindingGroup/RoleBindingPrincipal created for the resource)
 
     Available ordering fields (for subject_type=user):
     - user.username, user.uuid
     - role.name, role.uuid, role.created, role.modified
+    - last_modified (max RoleBindingGroup/RoleBindingPrincipal created for the resource)
 
     Available ordering fields (for list endpoint, RoleBinding model):
-    - Custom ordering not yet supported; default is by role creation time (UUIDv7).
+    - role.name, role.uuid, role.id, role.created, role.modified
+    - resource.id, resource.type
     """
 
     page_size = 10
@@ -149,6 +152,29 @@ class V2CursorPagination(CursorPagination):
     max_page_size = 1000
     ordering = "-modified"
     cursor_query_param = "cursor"
+    NO_LIMIT_ENFORCED_VALUE = "-1"
+
+    def paginate_queryset(self, queryset, request, view=None):
+        """Override paginate_queryset to support limit=-1 for no pagination.
+
+        Only overrides default behavior when limit=-1 is explicitly requested.
+        All other cases (no limit, limit=0, limit=10, etc.) use standard pagination.
+        """
+        request_limit = request.query_params.get(self.page_size_query_param)
+
+        # Only disable pagination when limit=-1 is explicitly requested
+        # If no limit is provided (None), falls through to default pagination
+        if request_limit == self.NO_LIMIT_ENFORCED_VALUE:
+            self.request = request
+            # Apply ordering before converting to list
+            ordering = self.get_ordering(request, queryset, view)
+            if ordering:
+                queryset = queryset.order_by(*ordering)
+            self.page = list(queryset)
+            return self.page
+
+        # Use default cursor pagination for all other cases
+        return super().paginate_queryset(queryset, request, view)
 
     # Mapping of dot notation fields to Django ORM fields for Group queryset
     GROUP_FIELD_MAPPING = {
@@ -164,6 +190,8 @@ class V2CursorPagination(CursorPagination):
         "role.uuid": "role_binding_entries__binding__role__uuid",
         "role.modified": "role_binding_entries__binding__role__modified",
         "role.created": "role_binding_entries__binding__role__created",
+        # Annotated in RoleBindingService (assignment time for this resource)
+        "last_modified": "latest_modified",
     }
 
     # Mapping of dot notation fields to Django ORM fields for Principal (user) queryset
@@ -175,20 +203,20 @@ class V2CursorPagination(CursorPagination):
         "role.uuid": "role_binding_entries__binding__role__uuid",
         "role.modified": "role_binding_entries__binding__role__modified",
         "role.created": "role_binding_entries__binding__role__created",
+        "last_modified": "latest_modified",
     }
 
     # For role binding list endpoint, the queryset is on RoleBinding model.
-    # TODO: Custom ordering is not yet supported for the list endpoint.
-    # The default ordering is by role creation time (UUIDv7).
-    # This mapping will be redesigned when custom ordering support is added.
+    # Values map to annotations defined in RoleBindingQuerySet.for_tenant()
+    # so that CursorPagination can extract cursor positions via getattr().
     ROLE_BINDING_FIELD_MAPPING = {
-        # Role fields (direct access from RoleBinding)
-        "role.id": "role__uuid",
-        "role.name": "role__name",
-        "role.uuid": "role__uuid",
-        "role.modified": "role__modified",
-        "role.created": "role_created",  # Annotated for cursor pagination
-        # Resource fields
+        # Role fields (annotated in RoleBindingQuerySet.for_tenant)
+        "role.id": "role_uuid",
+        "role.name": "role_name",
+        "role.uuid": "role_uuid",
+        "role.modified": "role_modified",
+        "role.created": "role_created",
+        # Resource fields (direct model attributes)
         "resource.id": "resource_id",
         "resource.type": "resource_type",
     }
@@ -392,7 +420,28 @@ class V2CursorPagination(CursorPagination):
         return V2CursorPagination.link_rewrite(self.request, previous_link)
 
     def get_paginated_response(self, data):
-        """Override pagination output to match V2 API spec."""
+        """Override pagination output to match V2 API spec.
+
+        Returns different response format only when limit=-1 is explicitly requested.
+        All other cases (no limit, limit=10, etc.) use standard V2 pagination format.
+        """
+        request_limit = self.request.query_params.get(self.page_size_query_param)
+
+        # Special case: when limit=-1 is explicitly requested, return all results
+        # with meta.limit set to actual count and no pagination links
+        if request_limit == self.NO_LIMIT_ENFORCED_VALUE:
+            return Response(
+                {
+                    "meta": {"limit": len(data)},
+                    "links": {
+                        "next": None,
+                        "previous": None,
+                    },
+                    "data": data,
+                }
+            )
+
+        # Default V2 API pagination response for all other cases
         return Response(
             {
                 "meta": {"limit": self.get_page_size(self.request)},

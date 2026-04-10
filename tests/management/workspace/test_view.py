@@ -531,7 +531,7 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
     @override_settings(WORKSPACE_ORG_CREATION_LIMIT=4)
     def test_create_workspaces_exceed_limit(self):
         """
-        Test that when creating workspaces if the limit exceeds the organisations workspace limit
+        Test that when creating workspaces if the limit exceeds the organization's workspace limit
         the correct response is returned.
         """
         workspace_names = ["Workspace A", "Workspace B", "Workspace C", "Workspace D"]
@@ -554,13 +554,13 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         resp_body = json.loads(response.content.decode())
         self.assertEqual(
-            resp_body.get("detail"), "The total number of workspaces allowed for this organisation has been exceeded."
+            resp_body.get("detail"), "The total number of workspaces allowed for this organization has been exceeded."
         )
 
     @override_settings(WORKSPACE_ORG_CREATION_LIMIT=9)
     def test_create_workspaces_not_exceed_limit(self):
         """
-        Test that when creating workspaces if the limit does not exceed the organisations workspace limit
+        Test that when creating workspaces if the limit does not exceed the organization's workspace limit
         the correct response is returned.
         """
         workspace_names = ["Workspace A", "Workspace B", "Workspace C", "Workspace D"]
@@ -1519,11 +1519,11 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
     @patch("management.base_viewsets.BaseV2ViewSet.create")
     def test_create_retry_exhausted_after_three_failures(self, mock_super_create):
         """
-        Test that create operation returns 409 CONFLICT after all retry attempts fail.
+        Test that create operation returns 503 SERVICE UNAVAILABLE after all retry attempts fail.
 
         The retry=3 parameter means: 1 initial attempt + 3 retries = 4 total attempts.
         If all attempts fail with SerializationFailure, the exception should propagate
-        and be caught by the create() method, returning a 409 response.
+        and be caught by the create() method, returning a 503 response with Retry-After header.
         """
         # Mock to always fail with SerializationFailure
         serialization_error = OperationalError("could not serialize access")
@@ -1537,9 +1537,10 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
         data = {"name": "Test Workspace", "parent_id": str(self.default_workspace.id)}
         response = client.post(url, data, format="json", **self.headers)
 
-        # Verify returns 409 CONFLICT after all retries exhausted
-        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
-        self.assertIn("Too many concurrent updates", str(response.data["detail"]))
+        # Verify returns 503 SERVICE UNAVAILABLE after all retries exhausted
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertIn("temporarily unable to handle this request", str(response.data["detail"]))
+        self.assertEqual(response["Retry-After"], "1")
 
         # Verify the method was called 4 times (1 initial + 3 retries)
         self.assertEqual(mock_super_create.call_count, 4)
@@ -1674,6 +1675,74 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
 
         # Verify method was called only once (no retries for ValidationError)
         self.assertEqual(mock_super_create.call_count, 1)
+
+    @patch(
+        "management.workspace.relation_api_dual_write_workspace_handler.RelationApiDualWriteWorkspaceHandler._replicate"
+    )
+    def test_create_dual_write_operational_error_propagates_for_retry(self, mock_replicate):
+        """
+        Test that OperationalError from dual write handler propagates through for pgtransaction retry.
+
+        Previously, _replicate() wrapped all exceptions in DualWriteException, which prevented
+        pgtransaction from recognizing the error as retryable. After the fix, OperationalError
+        (wrapping SerializationFailure) should propagate directly, allowing pgtransaction to retry.
+        When retries are exhausted, the view returns 503 with Retry-After header.
+        """
+        serialization_error = OperationalError("could not serialize access")
+        serialization_error.__cause__ = SerializationFailure("could not serialize access due to concurrent update")
+
+        mock_replicate.side_effect = serialization_error
+
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        data = {"name": "Test Workspace DW", "parent_id": str(self.default_workspace.id)}
+        response = client.post(url, data, format="json", **self.headers)
+
+        # OperationalError propagates through _replicate -> pgtransaction retries -> exhausted -> 503
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertIn("temporarily unable to handle this request", str(response.data["detail"]))
+        self.assertEqual(response["Retry-After"], "1")
+
+    @patch(
+        "management.workspace.relation_api_dual_write_workspace_handler.RelationApiDualWriteWorkspaceHandler._replicate"
+    )
+    def test_create_dual_write_non_db_exception_raises_dual_write_error(self, mock_replicate):
+        """
+        Test that non-database exceptions from _replicate() are still wrapped in DualWriteException.
+
+        Only OperationalError (serialization/deadlock) should propagate for retry.
+        Other exceptions should remain wrapped in DualWriteException and bubble up.
+        """
+        from management.relation_replicator.relation_replicator import DualWriteException
+
+        mock_replicate.side_effect = DualWriteException(ValueError("some other error"))
+
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        data = {"name": "Test Workspace DW2", "parent_id": str(self.default_workspace.id)}
+
+        # Non-DB DualWriteException bubbles up as unhandled (not caught by the view)
+        with self.assertRaises(DualWriteException):
+            client.post(url, data, format="json", **self.headers)
+
+    @patch("management.base_viewsets.BaseV2ViewSet.create")
+    def test_create_bare_operational_error_propagates(self, mock_super_create):
+        """
+        Test that OperationalError without __cause__ re-raises as unhandled.
+
+        If OperationalError has no __cause__ (e.g., connection error, not serialization),
+        it should propagate as an unhandled exception rather than being silently swallowed.
+        """
+        bare_error = OperationalError("connection reset by peer")
+
+        mock_super_create.side_effect = bare_error
+
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        data = {"name": "Test Workspace Bare", "parent_id": str(self.default_workspace.id)}
+
+        with self.assertRaises(OperationalError):
+            client.post(url, data, format="json", **self.headers)
 
 
 @override_settings(V2_APIS_ENABLED=True, WORKSPACE_HIERARCHY_DEPTH_LIMIT=5)
@@ -2378,11 +2447,11 @@ class WorkspaceMove(TransactionalWorkspaceViewTests):
     @patch("management.workspace.serializer.WorkspaceSerializer.move")
     def test_move_retry_exhausted_after_three_failures(self, mock_serializer_move):
         """
-        Test that move operation returns 409 CONFLICT after all retry attempts fail.
+        Test that move operation returns 503 SERVICE UNAVAILABLE after all retry attempts fail.
 
         The retry=3 parameter means: 1 initial attempt + 3 retries = 4 total attempts.
         If all attempts fail with SerializationFailure, the exception should propagate
-        and be caught by the move() method, returning a 409 response.
+        and be caught by the move() method, returning a 503 response with Retry-After header.
         """
         # Mock to always fail with SerializationFailure
         serialization_error = OperationalError("could not serialize access")
@@ -2396,9 +2465,10 @@ class WorkspaceMove(TransactionalWorkspaceViewTests):
         data = {"parent_id": str(self.default_workspace.id)}
         response = client.post(url, data, format="json", **self.headers)
 
-        # Verify returns 409 CONFLICT after all retries exhausted
-        self.assertEqual(response.status_code, status.HTTP_409_CONFLICT)
-        self.assertIn("Too many concurrent updates", str(response.data["detail"]))
+        # Verify returns 503 SERVICE UNAVAILABLE after all retries exhausted
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertIn("temporarily unable to handle this request", str(response.data["detail"]))
+        self.assertEqual(response["Retry-After"], "1")
 
         # Verify the method was called 4 times (1 initial + 3 retries)
         self.assertEqual(mock_serializer_move.call_count, 4)
@@ -2525,6 +2595,31 @@ class WorkspaceMove(TransactionalWorkspaceViewTests):
         # Verify the method was only called once (no retries for ValidationError)
         self.assertEqual(mock_serializer_move.call_count, 1)
 
+    @patch(
+        "management.workspace.relation_api_dual_write_workspace_handler.RelationApiDualWriteWorkspaceHandler._replicate"
+    )
+    def test_move_dual_write_operational_error_propagates_for_retry(self, mock_replicate):
+        """
+        Test that OperationalError from dual write handler propagates through for pgtransaction retry on move.
+
+        Same fix as create path: _replicate() now re-raises OperationalError instead of wrapping
+        in DualWriteException, allowing pgtransaction to retry. When retries are exhausted, returns 503.
+        """
+        serialization_error = OperationalError("could not serialize access")
+        serialization_error.__cause__ = SerializationFailure("could not serialize access due to concurrent update")
+
+        mock_replicate.side_effect = serialization_error
+
+        url = reverse("v2_management:workspace-move", kwargs={"pk": self.test_workspace.id})
+        client = APIClient()
+        data = {"parent_id": str(self.default_workspace.id)}
+        response = client.post(url, data, format="json", **self.headers)
+
+        # OperationalError propagates through _replicate -> pgtransaction retries -> exhausted -> 503
+        self.assertEqual(response.status_code, status.HTTP_503_SERVICE_UNAVAILABLE)
+        self.assertIn("temporarily unable to handle this request", str(response.data["detail"]))
+        self.assertEqual(response["Retry-After"], "1")
+
 
 @override_settings(V2_APIS_ENABLED=True)
 class WorkspaceTestsList(WorkspaceViewTests):
@@ -2617,11 +2712,18 @@ class WorkspaceTestsList(WorkspaceViewTests):
         self.assertType(payload, "root")
 
     def test_workspace_list_filter_by_name(self):
-        """List workspaces filtered by name."""
-        ws_name_1 = "Workspace for filter 1"
-        ws_name_2 = "Workspace for filter 2"
-        workspaces = Workspace.objects.bulk_create(
+        """List workspaces filtered by name using case-insensitive substring matching."""
+        ws_name_1 = "Sales Team Alpha"
+        ws_name_2 = "Sales Team Beta"
+        ws_name_3 = "Engineering Squad"
+        Workspace.objects.bulk_create(
             [
+                Workspace(
+                    name=ws_name_1,
+                    tenant=self.tenant,
+                    type="standard",
+                    parent_id=self.default_workspace.id,
+                ),
                 Workspace(
                     name=ws_name_2,
                     tenant=self.tenant,
@@ -2629,7 +2731,7 @@ class WorkspaceTestsList(WorkspaceViewTests):
                     parent_id=self.default_workspace.id,
                 ),
                 Workspace(
-                    name=ws_name_1.upper(),
+                    name=ws_name_3,
                     tenant=self.tenant,
                     type="standard",
                     parent_id=self.default_workspace.id,
@@ -2639,13 +2741,58 @@ class WorkspaceTestsList(WorkspaceViewTests):
 
         url = reverse("v2_management:workspace-list")
         client = APIClient()
-        response = client.get(f"{url}?name={ws_name_1}", None, format="json", **self.headers)
-        payload = response.data
 
+        # Substring "Sales" matches Sales Team Alpha and Sales Team Beta
+        response = client.get(f"{url}?name=Sales", None, format="json", **self.headers)
+        payload = response.data
+        self.assertSuccessfulList(response, payload)
+        self.assertEqual(payload.get("meta").get("count"), 2)
+
+        # Substring "Alpha" matches only Sales Team Alpha
+        response = client.get(f"{url}?name=Alpha", None, format="json", **self.headers)
+        payload = response.data
         self.assertSuccessfulList(response, payload)
         self.assertEqual(payload.get("meta").get("count"), 1)
-        self.assertType(payload, "standard")
-        assert payload.get("data")[0]["name"] == ws_name_1.upper()
+        self.assertEqual(payload.get("data")[0]["name"], ws_name_1)
+
+        # Substring "Squad" matches only Engineering Squad
+        response = client.get(f"{url}?name=Squad", None, format="json", **self.headers)
+        payload = response.data
+        self.assertSuccessfulList(response, payload)
+        self.assertEqual(payload.get("meta").get("count"), 1)
+        self.assertEqual(payload.get("data")[0]["name"], ws_name_3)
+
+        # Middle substring "Team" matches both Sales Team workspaces
+        response = client.get(f"{url}?name=Team", None, format="json", **self.headers)
+        payload = response.data
+        self.assertSuccessfulList(response, payload)
+        self.assertEqual(payload.get("meta").get("count"), 2)
+
+    def test_workspace_list_filter_by_name_is_case_insensitive(self):
+        """Test that name filter is case-insensitive substring matching."""
+        Workspace.objects.create(
+            name="Sales Team Alpha",
+            tenant=self.tenant,
+            type="standard",
+            parent_id=self.default_workspace.id,
+        )
+
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+
+        # Lowercase substring should match "Sales Team Alpha"
+        response = client.get(f"{url}?name=sales", None, format="json", **self.headers)
+        payload = response.data
+        self.assertSuccessfulList(response, payload)
+        self.assertEqual(payload.get("meta").get("count"), 1)
+        self.assertEqual(payload.get("data")[0]["name"], "Sales Team Alpha")
+
+        # Uppercase substring should also match
+        response = client.get(f"{url}?name=SALES", None, format="json", **self.headers)
+        payload = response.data
+        self.assertSuccessfulList(response, payload)
+        self.assertEqual(payload.get("meta").get("count"), 1)
+        self.assertEqual(payload.get("data")[0]["name"], "Sales Team Alpha")
 
     def test_workspace_list_filter_by_name_empty_string(self):
         """Test that filtering by empty name string returns all workspaces."""

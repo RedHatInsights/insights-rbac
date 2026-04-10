@@ -18,7 +18,6 @@
 
 import logging
 
-from django.db import OperationalError
 from management.base_viewsets import BaseV2ViewSet
 from management.group.model import Group
 from management.permissions.role_binding_access import (
@@ -26,13 +25,14 @@ from management.permissions.role_binding_access import (
     RoleBindingSystemUserAccessPermission,
 )
 from management.permissions.v2_edit_api_access import V2WriteRequiresWorkspacesEnabled
-from management.role_binding.model import RoleBinding
+from management.role.v2_model import RoleV2
 from management.v2_mixins import AtomicOperationsMixin
 from rest_framework import status
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
 from api.common.pagination import V2CursorPagination
+from api.models import Tenant
 from .serializer import (
     BatchCreateRoleBindingRequestSerializer,
     BatchCreateRoleBindingResponseItemSerializer,
@@ -46,6 +46,43 @@ from .serializer import (
 from .service import RoleBindingService
 
 logger = logging.getLogger(__name__)
+
+
+class _BindingWithRole:
+    """Proxy that presents a RoleBinding with a different role.
+
+    Used to expand platform-role bindings into per-child-role entries
+    so the list endpoint returns concrete roles instead of abstract parents.
+    """
+
+    def __init__(self, binding, role):
+        self._binding = binding
+        self.role = role
+
+    def __getattr__(self, name):
+        return getattr(self._binding, name)
+
+
+def _expand_platform_roles(bindings):
+    """Replace platform-role bindings with one entry per child role.
+
+    Non-platform bindings pass through unchanged.  Platform bindings are
+    expanded: each child role produces a separate proxy entry that shares
+    the original binding's subject/resource data but overrides the role.
+
+    Note: this runs after pagination, so the actual number of items
+    returned may slightly exceed the requested page size when platform
+    roles are expanded into multiple children.  This is acceptable
+    because platform-role bindings are few (only default bindings).
+    """
+    expanded = []
+    for binding in bindings:
+        if binding.role and binding.role.type == RoleV2.Types.PLATFORM:
+            for child in binding.role.children.all():
+                expanded.append(_BindingWithRole(binding, child))
+        else:
+            expanded.append(binding)
+    return expanded
 
 
 class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
@@ -91,51 +128,70 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
 
         Optional query parameters:
             - role_id: Filter by role ID (UUID)
-            - resource_id: Filter by resource ID (must be used with resource_type)
-            - resource_type: Filter by resource type (must be used with resource_id)
+            - resource_id: Filter by resource ID (must be used with resource_type for inherited bindings)
+            - resource_type: Filter by resource type (must be used with resource_id for inherited bindings)
             - subject_type: Filter by subject type (e.g., 'group')
             - subject_id: Filter by subject ID (UUID)
+            - granted_subject_type: Filter by effective grant subject type ('user', 'group', or 'principal')
+            - granted_subject_id: Required for 'user'/'group' (principal UUID, user_id, or group UUID)
+            - granted_subject.principal.user_id: Required for 'principal' (external user ID)
             - fields: Control which fields are included in the response
             - order_by: Sort by specified field(s), prefix with '-' for descending
+            - exclude_sources: 'none' (default) shows all, 'indirect' hides inherited, 'direct' hides direct
         """
-        # Validate and parse query parameters using input serializer
         input_serializer = RoleBindingListInputSerializer(data=request.query_params)
         input_serializer.is_valid(raise_exception=True)
         validated_params = input_serializer.validated_data
 
-        queryset = RoleBinding.objects.for_tenant(request.tenant)
+        # Convert resource_tenant_org_id to resource_id before passing to service
+        resource_id = validated_params.get("resource_id")
+        resource_type = validated_params.get("resource_type")
+        resource_tenant_org_id = validated_params.get("resource_tenant_org_id")
+        if resource_tenant_org_id:
+            resource_id = Tenant.org_id_to_tenant_resource_id(resource_tenant_org_id)
+            resource_type = resource_type or "tenant"
+            # Update params so service uses converted values
+            validated_params = {**validated_params, "resource_id": resource_id, "resource_type": resource_type}
 
-        role_id = validated_params.get("role_id")
-        if role_id:
-            queryset = queryset.for_role(role_id)
+        service = RoleBindingService(tenant=request.tenant)
+        queryset = service.get_role_bindings_for_list(validated_params)
 
-        queryset = queryset.for_resource_filter(
-            resource_type=validated_params.get("resource_type"),
-            resource_id=validated_params.get("resource_id"),
-        ).for_subject(
-            subject_type=validated_params.get("subject_type"),
-            subject_id=validated_params.get("subject_id"),
-        )
+        granted_subject_type = validated_params.get("granted_subject_type")
+        granted_subject_id = validated_params.get("granted_subject_id")
+        granted_subject_principal_user_id = validated_params.get("granted_subject_principal_user_id")
+        if granted_subject_type:
+            queryset = queryset.for_granted_subject(
+                granted_subject_type,
+                granted_subject_id=granted_subject_id,
+                granted_subject_principal_user_id=granted_subject_principal_user_id,
+            )
+
+        field_selection = validated_params.get("fields")
+        if field_selection is not None:
+            needs_resource_names = "name" in field_selection.get_nested(
+                "resource"
+            ) or "name" in field_selection.get_nested("sources")
+            if needs_resource_names:
+                queryset = queryset.with_resource_names()
+
+        page = self.paginate_queryset(queryset)
+        page = _expand_platform_roles(page)
 
         # Build context for output serializer
         context = {
             "request": request,
-            "field_selection": validated_params.get("fields"),
+            "field_selection": field_selection,
+            "queried_resource_id": str(resource_id) if resource_id else None,
+            "queried_resource_type": resource_type,
+            "service": service,
         }
 
-        page = self.paginate_queryset(queryset)
         serializer = self.get_serializer(page, many=True, context=context)
         return self.get_paginated_response(serializer.data)
 
     def batch_create(self, request, *args, **kwargs):
         """Grant access to a resource to a set of subjects with a set of roles."""
-        try:
-            return self._run_atomic(self._perform_batch_create, request, *args, **kwargs)
-        except OperationalError as e:
-            response = self._handle_concurrency_error(e, "batch_create")
-            if response:
-                return response
-            raise
+        return self._atomic_action(self._perform_batch_create, "batch_create", request, *args, **kwargs)
 
     def _perform_batch_create(self, request, *args, **kwargs):
         """Core batch create logic."""
@@ -196,6 +252,10 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
 
     def _update_by_subject(self, request):
         """Update role bindings for a specific subject on a resource."""
+        return self._atomic_action(self._perform_update_by_subject, "update_by_subject", request)
+
+    def _perform_update_by_subject(self, request):
+        """Core update-by-subject logic."""
         data = {**request.query_params.dict(), **request.data}
 
         serializer = UpdateRoleBindingRequestSerializer(data=data, context={"request": request})

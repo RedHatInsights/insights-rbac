@@ -22,20 +22,11 @@ from management.role.v2_exceptions import (
     PermissionsNotFoundError,
     RoleAlreadyExistsError,
     RoleDatabaseError,
-    RolesNotFoundError,
 )
 from management.role.v2_model import RoleV2
 from management.role.v2_service import RoleV2Service
 from management.utils import FieldSelection, FieldSelectionValidationError, UUIDStringField
 from rest_framework import serializers
-
-# Centralized mapping from domain exceptions to API error fields
-ERROR_MAPPING = {
-    InvalidRolePermissionsError: "permissions",
-    PermissionsNotFoundError: "permissions",
-    RoleAlreadyExistsError: "name",
-    RoleDatabaseError: "detail",
-}
 
 
 class PermissionSerializer(serializers.Serializer):
@@ -70,20 +61,29 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
             for field_name in set(self.fields) - allowed:
                 self.fields.pop(field_name)
 
+    def _get_permissions_iterable(self, obj):
+        """Return iterable of permissions using resolved/prefetched/query fallback."""
+        if hasattr(obj, "_resolved_permissions"):
+            return list(obj._resolved_permissions)
+
+        cache = getattr(obj, "_prefetched_objects_cache", None)
+        if cache and "permissions" in cache:
+            return list(cache["permissions"])
+
+        return list(obj.permissions.all())
+
     def get_permissions(self, obj):
         """Return permissions, ordered by input order if available, otherwise alphabetically."""
-        permissions = list(obj.permissions.all())
-        input_permissions = self.context.get("input_permissions")
+        permissions = self._get_permissions_iterable(obj)
 
+        input_permissions = self.context.get("input_permissions")
         if input_permissions:
-            # Sort by input order (for create responses)
-            order_map = {}
-            for i, p in enumerate(input_permissions):
-                key = f"{p.get('application')}:{p.get('resource_type')}:{p.get('operation')}"
-                order_map[key] = i
+            order_map = {
+                f"{p.get('application')}:{p.get('resource_type')}:{p.get('operation')}": i
+                for i, p in enumerate(input_permissions)
+            }
             permissions.sort(key=lambda p: order_map.get(p.permission, float("inf")))
         else:
-            # Sort alphabetically by permission string (for retrieve/list responses)
             permissions.sort(key=lambda p: p.permission)
 
         return PermissionSerializer(permissions, many=True).data
@@ -93,7 +93,8 @@ class RoleV2ResponseSerializer(serializers.ModelSerializer):
         count = getattr(obj, "permissions_count_annotation", None)
         if count is not None:
             return count
-        return len(obj.permissions.all())
+
+        return len(self._get_permissions_iterable(obj))
 
     def get_org_id(self, obj):
         """Return org_id from the role."""
@@ -106,19 +107,21 @@ class RoleFieldSelection(FieldSelection):
     VALID_ROOT_FIELDS = set(RoleV2ResponseSerializer.Meta.fields)
 
 
-def _validate_fields_parameter(value: str, default_fields: set) -> set:
+def validate_fields_parameter(value: str, default_fields: set, strict: bool = False) -> set:
     """
     Validate and parse the fields parameter for role endpoints.
 
     Args:
         value: The raw fields parameter value from request
         default_fields: The default fields to return when value is empty
+        strict: If True, raise ValidationError for invalid fields (write operations per AIP-161).
+                If False, silently filter invalid fields (read operations per AIP-161).
 
     Returns:
         Set of field names to include in response
 
     Raises:
-        ValidationError: If fields parameter has invalid syntax
+        ValidationError: If fields parameter has invalid syntax or (when strict=True) invalid field names
     """
     if not value:
         return default_fields
@@ -131,7 +134,18 @@ def _validate_fields_parameter(value: str, default_fields: set) -> set:
     if not field_selection:
         return default_fields
 
-    resolved = field_selection.root_fields & set(RoleV2ResponseSerializer.Meta.fields)
+    valid_fields = set(RoleV2ResponseSerializer.Meta.fields)
+    requested = field_selection.root_fields
+
+    if strict:
+        invalid = requested - valid_fields
+        if invalid:
+            raise serializers.ValidationError(
+                f"Invalid field(s): {', '.join(sorted(invalid))}. "
+                f"Valid fields are: {', '.join(sorted(valid_fields))}"
+            )
+
+    resolved = requested & valid_fields
     return resolved or default_fields
 
 
@@ -164,7 +178,7 @@ class RoleV2ListSerializer(serializers.Serializer):
 
     def validate_fields(self, value):
         """Parse, validate, and resolve fields parameter into a set of field names."""
-        return _validate_fields_parameter(value, RoleV2Service.DEFAULT_LIST_FIELDS)
+        return validate_fields_parameter(value, RoleV2Service.DEFAULT_LIST_FIELDS)
 
     def validate(self, data):
         """Cross-field validation: resource_id requires resource_type."""
@@ -199,6 +213,12 @@ class RoleV2RequestSerializer(serializers.ModelSerializer):
         model = RoleV2
         fields = ("id", "name", "description", "permissions")
 
+    def validate_name(self, value):
+        """Reject names containing '*' which conflicts with glob/wildcard search syntax."""
+        if isinstance(value, str) and "*" in value:
+            raise serializers.ValidationError("Role name must not contain asterisks (*).")
+        return value
+
     @property
     def service(self):
         """Return the service instance from context or create a new one."""
@@ -222,9 +242,12 @@ class RoleV2RequestSerializer(serializers.ModelSerializer):
             )
         except RequiredFieldError as e:
             raise serializers.ValidationError({e.field_name: str(e)})
-        except tuple(ERROR_MAPPING.keys()) as e:
-            field = ERROR_MAPPING[type(e)]
-            raise serializers.ValidationError({field: str(e)})
+        except (InvalidRolePermissionsError, PermissionsNotFoundError) as e:
+            raise serializers.ValidationError({"permissions": str(e)})
+        except RoleAlreadyExistsError as e:
+            raise serializers.ValidationError({"name": str(e)})
+        except RoleDatabaseError as e:
+            raise serializers.ValidationError({"detail": str(e)})
 
     def update(self, instance, validated_data):
         """Update an existing RoleV2 using the service layer."""
@@ -239,15 +262,14 @@ class RoleV2RequestSerializer(serializers.ModelSerializer):
                 permission_data=permission_data,
                 tenant=tenant,
             )
-        except RolesNotFoundError as e:
-            from rest_framework.exceptions import NotFound
-
-            raise NotFound(str(e))
         except RequiredFieldError as e:
             raise serializers.ValidationError({e.field_name: str(e)})
-        except tuple(ERROR_MAPPING.keys()) as e:
-            field = ERROR_MAPPING[type(e)]
-            raise serializers.ValidationError({field: str(e)})
+        except (InvalidRolePermissionsError, PermissionsNotFoundError) as e:
+            raise serializers.ValidationError({"permissions": str(e)})
+        except RoleAlreadyExistsError as e:
+            raise serializers.ValidationError({"name": str(e)})
+        except RoleDatabaseError as e:
+            raise serializers.ValidationError({"detail": str(e)})
 
 
 class RoleV2BulkDeleteRequestSerializer(serializers.Serializer):

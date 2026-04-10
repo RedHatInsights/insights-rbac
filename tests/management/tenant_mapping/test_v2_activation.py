@@ -26,6 +26,8 @@ from management.tenant_mapping.v2_activation import (
     assert_v1_write_allowed,
     ensure_v2_write_activated,
     is_v2_write_activated,
+    lock_tenant_version,
+    TenantVersion,
 )
 from management.tenant_service.v2 import TenantNotBootstrappedError
 from tests.management.role.test_dual_write import RbacFixture
@@ -98,3 +100,22 @@ class V2ActivationTests(TestCase):
         with self.assertRaises(TenantNotBootstrappedError):
             with transaction.atomic():
                 ensure_v2_write_activated(unbootstrapped)
+
+    def test_lock_version_v1(self):
+        """Test that lock_tenant_version returns VERSION_1 for a V1 tenant."""
+        with transaction.atomic():
+            self.assertEqual(lock_tenant_version(self.tenant), TenantVersion.VERSION_1)
+
+    def test_lock_version_v2(self):
+        """Test that lock_tenant_version returns VERSION_2 for a V2 tenant."""
+        with transaction.atomic():
+            ensure_v2_write_activated(self.tenant)
+            self.assertEqual(lock_tenant_version(self.tenant), TenantVersion.VERSION_2)
+
+    def test_lock_version_unbootstrapped(self):
+        """Test that lock_tenant_version fails for an unbootstrapped tenant."""
+        unbootstrapped = self.fixture.new_unbootstrapped_tenant(org_id="unboot-org")
+
+        with self.assertRaises(TenantNotBootstrappedError):
+            with transaction.atomic():
+                lock_tenant_version(unbootstrapped)

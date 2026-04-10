@@ -32,7 +32,7 @@ objects:
     - topicName: ${RBAC_KAFKA_CONSUMER_TOPIC}
       partitions: 1
       replicas: 3
-    dependencies:
+    optionalDependencies:
       - kessel-inventory
       - kessel-relations
     deployments:
@@ -239,6 +239,8 @@ objects:
                 optional: true
           - name: INVENTORY_API_SERVER
             value: ${INVENTORY_API_SERVER}
+          - name: REDHAT_SSO
+            value: ${REDHAT_SSO}
           - name: REPLICATION_TO_RELATION_ENABLED
             value: ${REPLICATION_TO_RELATION_ENABLED}
           - name: PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB
@@ -275,6 +277,8 @@ objects:
             value: ${ROOT_SCOPE_PERMISSIONS}
           - name: TENANT_SCOPE_PERMISSIONS
             value: ${TENANT_SCOPE_PERMISSIONS}
+          - name: DEFAULT_SCOPE_PERMISSIONS
+            value: ${DEFAULT_SCOPE_PERMISSIONS}
           ####### Following envs are for scheduler, doesn't hurt to put in worker
           - name: PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB
             value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB}
@@ -568,6 +572,8 @@ objects:
             value: ${ROOT_SCOPE_PERMISSIONS}
           - name: TENANT_SCOPE_PERMISSIONS
             value: ${TENANT_SCOPE_PERMISSIONS}
+          - name: DEFAULT_SCOPE_PERMISSIONS
+            value: ${DEFAULT_SCOPE_PERMISSIONS}
           - name: WORKSPACE_ACCESS_TIMING_ENABLED
             value: ${WORKSPACE_ACCESS_TIMING_ENABLED}
           - name: RBAC_KAFKA_CONSUMER_TOPIC
@@ -676,6 +682,8 @@ objects:
             value: ${ROOT_SCOPE_PERMISSIONS}
           - name: TENANT_SCOPE_PERMISSIONS
             value: ${TENANT_SCOPE_PERMISSIONS}
+          - name: DEFAULT_SCOPE_PERMISSIONS
+            value: ${DEFAULT_SCOPE_PERMISSIONS}
 
     - name: rbac-kafka-consumer
       minReplicas: ${{RBAC_KAFKA_CONSUMER_REPLICAS}}
@@ -761,6 +769,8 @@ objects:
             value: ${ROOT_SCOPE_PERMISSIONS}
           - name: TENANT_SCOPE_PERMISSIONS
             value: ${TENANT_SCOPE_PERMISSIONS}
+          - name: DEFAULT_SCOPE_PERMISSIONS
+            value: ${DEFAULT_SCOPE_PERMISSIONS}
           - name: REDHAT_SSO
             value: ${REDHAT_SSO}
         livenessProbe:
@@ -788,62 +798,6 @@ objects:
             memory: ${RBAC_KAFKA_CONSUMER_MEMORY_REQUEST}
 
     jobs:
-      - name: tenant-org-id-populator
-        podSpec:
-          image: quay.io/cloudservices/tenant-utils:latest
-          command:
-            - ./org-id-column-populator
-            - -C
-            - -a
-            - account_id
-            - -o
-            - org_id
-            - -t
-            - api_tenant
-            - --ean-translator-addr
-            - http://${TENANT_TRANSLATOR_HOST}:${TENANT_TRANSLATOR_PORT}
-            - --batch-size
-            - "50"
-          env:
-            - name: LOG_FORMAT
-              value: ${LOG_FORMAT}
-            - name: LOG_BATCH_FREQUENCY
-              value: '1'
-          resources:
-            limits:
-              cpu: 300m
-              memory: 1Gi
-            requests:
-              cpu: 50m
-              memory: 512Mi
-      - name: cross-account-request-target-org-populator
-        podSpec:
-          image: quay.io/cloudservices/tenant-utils:latest
-          command:
-            - ./org-id-column-populator
-            - -C
-            - -a
-            - target_account
-            - -o
-            - target_org
-            - -t
-            - api_crossaccountrequest
-            - --ean-translator-addr
-            - http://${TENANT_TRANSLATOR_HOST}:${TENANT_TRANSLATOR_PORT}
-            - --batch-size
-            - "50"
-          env:
-            - name: LOG_FORMAT
-              value: ${LOG_FORMAT}
-            - name: LOG_BATCH_FREQUENCY
-              value: '1'
-          resources:
-            limits:
-              cpu: 300m
-              memory: 1Gi
-            requests:
-              cpu: 50m
-              memory: 512Mi
       - name: user-id-populator
         podSpec:
           image: quay.io/cloudservices/rbac:latest
@@ -1220,6 +1174,8 @@ objects:
               value: ${ROOT_SCOPE_PERMISSIONS}
             - name: TENANT_SCOPE_PERMISSIONS
               value: ${TENANT_SCOPE_PERMISSIONS}
+            - name: DEFAULT_SCOPE_PERMISSIONS
+              value: ${DEFAULT_SCOPE_PERMISSIONS}
             ######## Following envs are different from worker
             - name: S3_AWS_ACCESS_KEY_ID
               valueFrom:
@@ -1478,9 +1434,9 @@ parameters:
 - description: Application allow list for role creation in RBAC
   name: ROLE_CREATE_ALLOW_LIST
   value: cost-management,remediations,inventory,policies,advisor,vulnerability,compliance,automation-analytics,notifications,patch,integrations,ros,staleness,config-manager,idmsvc,subscriptions
-- description: Application exclude list for v2 migration (all permissions)
+- description: Comma-separated apps excluded from v2 migration; same list filters the v2 roles list API only
   name: V2_MIGRATION_APP_EXCLUDE_LIST
-  value: approval
+  value: ansible,automation-analytics,cost-management,hybrid-committed-spend,idmsvc,ocm,ocp-advisor,policies,sources
 - description: Whether or not to bootstrap tenants using V2 logic (i.e. creating workspaces and relations).
   name: V2_BOOTSTRAP_TENANT
   value: 'True'
@@ -1699,7 +1655,7 @@ parameters:
   value: 'False'
 - name: V1_ROLE_PERMISSION_BLOCK_LIST
   description: Comma-separated list of exact permission strings to hide from v1 API (e.g., rbac:role:read,rbac:group:write)
-  value: 'rbac:workspaces:role_binding_view,rbac:workspaces:role_binding_grant,rbac:workspaces:role_binding_revoke'
+  value: 'rbac:role_binding:view,rbac:role_binding:grant,rbac:role_binding:revoke'
 - name: READ_ONLY_API_MODE
   description: Enforce GET only on RBAC APIs
   value: 'False'
@@ -1737,7 +1693,7 @@ parameters:
   description: Remove null value from the list of workspace id
   value: 'False'
 - name: WORKSPACE_ORG_CREATION_LIMIT
-  description: The limit of workspaces for all organisations
+  description: The limit of workspaces for all organizations
   value: '3000'
 - name: WORKSPACE_HIERARCHY_DEPTH_LIMIT
   description: The limit of workspace hierarchy depth
@@ -1801,6 +1757,9 @@ parameters:
   value: ''
 - name: TENANT_SCOPE_PERMISSIONS
   description: Comma-separated list of permissions that bind to tenant scope (supports wildcards like rbac:*:*)
+  value: ''
+- name: DEFAULT_SCOPE_PERMISSIONS
+  description: Comma-separated list of permissions that bind to default workspace scope (more specific patterns override broader TENANT_SCOPE_PERMISSIONS entries)
   value: ''
 - name: WORKSPACE_ACCESS_TIMING_ENABLED
   description: Enable detailed timing logs for v2 workspace access checks (for performance investigation)

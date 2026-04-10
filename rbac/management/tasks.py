@@ -18,11 +18,14 @@
 
 from __future__ import absolute_import, unicode_literals
 
+from typing import Optional
+
 from celery import shared_task
 from django.core.management import call_command
 from internal.migrations.remove_orphan_relations import cleanup_tenant_orphan_bindings
 from internal.utils import (
     clean_invalid_workspace_resource_definitions,
+    expire_orphaned_cross_account_requests,
     remove_unassigned_system_binding_mappings,
     replicate_missing_binding_tuples,
 )
@@ -84,9 +87,9 @@ def migrate_data_in_worker(kwargs):
 
 
 @shared_task
-def migrate_binding_scope_in_worker():
+def migrate_binding_scope_in_worker(sources: Optional[list[str]] = None):
     """Celery task to migrate role binding scopes."""
-    return migrate_all_role_bindings()
+    return migrate_all_role_bindings(sources=set(sources) if sources is not None else None)
 
 
 @shared_task
@@ -147,3 +150,9 @@ def bulk_cleanup_orphan_bindings_in_worker(tenant_limit: int):
 def remove_unassigned_system_binding_mappings_in_worker():
     """Celery to remove unassigned system BindingMappings."""
     return remove_unassigned_system_binding_mappings()
+
+
+@shared_task
+def expire_orphaned_cross_account_requests_in_worker():
+    """Celery task to expire orphaned cross-account requests."""
+    return expire_orphaned_cross_account_requests()

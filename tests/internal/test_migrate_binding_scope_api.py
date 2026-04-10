@@ -32,8 +32,10 @@ from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.definer import seed_roles
 from management.role.model import Role
-from management.role.v2_model import CustomRoleV2, SeededRoleV2
+from management.role.v2_model import CustomRoleV2, RoleV2, SeededRoleV2
+from management.role.v2_service import RoleV2Service
 from management.role_binding.model import RoleBinding
+from management.tenant_mapping.v2_activation import ensure_v2_write_activated
 from management.tenant_service.v2 import V2TenantBootstrapService
 from migration_tool.in_memory_tuples import (
     InMemoryTuples,
@@ -47,13 +49,23 @@ from migration_tool.migrate_binding_scope import (
     migrate_custom_role_bindings,
     migrate_system_role_bindings_for_group,
     migrate_all_role_bindings,
+    car_source,
+    system_role_source,
+    custom_role_source,
 )
 from migration_tool.utils import create_relationship
 from api.models import Tenant
+from tests.management.group.test_view import find_relation_in_list
 from tests.management.role.test_dual_write import DualWriteTestCase, RbacFixture
-from tests.v2_util import seed_v2_role_from_v1, assert_v2_roles_consistent
+from tests.util import (
+    assert_v1_v2_locally_consistent,
+    assert_v1_v2_tuples_fully_consistent,
+    assert_v2_tuples_consistent,
+)
+from tests.v2_util import seed_v2_role_from_v1, bootstrap_tenant_for_v2_test
 
 
+@override_settings(ATOMIC_RETRY_DISABLED=True)
 class BindingScopeMigrationAPITest(TestCase):
     """Tests for binding scope migration API endpoint."""
 
@@ -72,15 +84,10 @@ class BindingScopeMigrationAPITest(TestCase):
         self.tenant = Tenant.objects.create(tenant_name="test_tenant", account_id="12345", org_id="67890")
 
         # Get or create workspaces
-        self.root_workspace, _ = Workspace.objects.get_or_create(
-            tenant=self.tenant, type=Workspace.Types.ROOT, defaults={"name": "Root Workspace"}
-        )
+        bootstrap_result = bootstrap_tenant_for_v2_test(self.tenant)
 
-        self.default_workspace, _ = Workspace.objects.get_or_create(
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            defaults={"name": "Default Workspace", "parent": self.root_workspace},
-        )
+        self.root_workspace = bootstrap_result.root_workspace
+        self.default_workspace = bootstrap_result.default_workspace
 
         # Create permissions
         self.default_permission = Permission.objects.create(
@@ -97,7 +104,7 @@ class BindingScopeMigrationAPITest(TestCase):
 
     def tearDown(self):
         with self.subTest(msg="V2 consistency"):
-            assert_v2_roles_consistent(test=self, tuples=None)
+            assert_v1_v2_locally_consistent(test=self)
 
         super().tearDown()
 
@@ -154,15 +161,10 @@ class BindingScopeMigrationReplicatorTest(TestCase):
         self.tenant = Tenant.objects.create(tenant_name="noop_test_tenant", account_id="noop123", org_id="noop456")
 
         # Get or create workspaces
-        self.root_workspace, _ = Workspace.objects.get_or_create(
-            tenant=self.tenant, type=Workspace.Types.ROOT, defaults={"name": "Root Workspace"}
-        )
+        bootstrap_result = bootstrap_tenant_for_v2_test(self.tenant)
 
-        self.default_workspace, _ = Workspace.objects.get_or_create(
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            defaults={"name": "Default Workspace", "parent": self.root_workspace},
-        )
+        self.root_workspace = bootstrap_result.root_workspace
+        self.default_workspace = bootstrap_result.default_workspace
 
         # Create permission
         self.permission = Permission.objects.create(
@@ -175,7 +177,7 @@ class BindingScopeMigrationReplicatorTest(TestCase):
 
     def tearDown(self):
         with self.subTest(msg="V2 consistency"):
-            assert_v2_roles_consistent(test=self, tuples=None)
+            assert_v1_v2_locally_consistent(test=self)
 
         super().tearDown()
 
@@ -226,6 +228,7 @@ class BindingScopeMigrationReplicatorTest(TestCase):
         mock_outbox_replicate.assert_not_called()
 
 
+@override_settings(REPLICATION_TO_RELATION_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
 class BindingScopeMigrationTupleVerificationTest(TestCase):
     """Tests that verify actual tuple changes during migration (integration tests without mocking handlers)."""
 
@@ -235,15 +238,10 @@ class BindingScopeMigrationTupleVerificationTest(TestCase):
         self.tenant = Tenant.objects.create(tenant_name="test_tenant", account_id="12345", org_id="67890")
 
         # Get or create workspaces
-        self.root_workspace, _ = Workspace.objects.get_or_create(
-            tenant=self.tenant, type=Workspace.Types.ROOT, defaults={"name": "Root Workspace"}
-        )
+        bootstrap_result = bootstrap_tenant_for_v2_test(self.tenant, tuples=self.tuples)
 
-        self.default_workspace, _ = Workspace.objects.get_or_create(
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            defaults={"name": "Default Workspace", "parent": self.root_workspace},
-        )
+        self.root_workspace = bootstrap_result.root_workspace
+        self.default_workspace = bootstrap_result.default_workspace
 
         # Create permissions
         self.default_permission = Permission.objects.create(
@@ -269,15 +267,14 @@ class BindingScopeMigrationTupleVerificationTest(TestCase):
     def tearDown(self):
         # Not all tests use self.tuples
         with self.subTest(msg="V2 consistency"):
-            assert_v2_roles_consistent(test=self, tuples=None)
+            assert_v2_tuples_consistent(test=self, tuples=self.tuples)
 
         super().tearDown()
 
-    @override_settings(
-        ROOT_SCOPE_PERMISSIONS="rbac:*:*",
-        TENANT_SCOPE_PERMISSIONS="",
-        REPLICATION_TO_RELATION_ENABLED=True,
-    )
+    def _assert_v1_v2_fully_consistent(self):
+        assert_v1_v2_tuples_fully_consistent(test=self, tuples=self.tuples)
+
+    @override_settings(ROOT_SCOPE_PERMISSIONS="rbac:*:*", TENANT_SCOPE_PERMISSIONS="")
     def test_role_with_root_scope_permissions_migrates_to_root_workspace(self):
         """Test that custom role with root-scope permissions creates binding at root workspace."""
         # Create custom role with root-scope permission (rbac:group:read matches rbac:*:*)
@@ -321,7 +318,9 @@ class BindingScopeMigrationTupleVerificationTest(TestCase):
         )
         self.assertEqual(len(root_ws_tuples_after), 1, "Root workspace binding should be created")
 
-    @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="", REPLICATION_TO_RELATION_ENABLED=True)
+        self._assert_v1_v2_fully_consistent()
+
+    @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="")
     def test_role_with_multiple_bindings_consolidates_correctly(self):
         """Test that when a role has multiple bindings, migration consolidates them correctly."""
         # Create role with default-scope permission
@@ -390,7 +389,9 @@ class BindingScopeMigrationTupleVerificationTest(TestCase):
             )
             self.assertGreater(len(binding_tuples), 0)
 
-    @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="", REPLICATION_TO_RELATION_ENABLED=True)
+        self._assert_v1_v2_fully_consistent()
+
+    @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="")
     def test_role_without_policy_is_migrated(self):
         """Test that custom role without any policy (not assigned to any group) is still migrated."""
         # Create custom role with access but NO policy (not assigned to any group)
@@ -427,7 +428,9 @@ class BindingScopeMigrationTupleVerificationTest(TestCase):
         binding_tuples = self.tuples.find_tuples(all_of(resource("rbac", "role_binding", binding_id)))
         self.assertGreater(len(binding_tuples), 0, "Should have tuples for the binding")
 
-    @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="", REPLICATION_TO_RELATION_ENABLED=True)
+        self._assert_v1_v2_fully_consistent()
+
+    @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="")
     def test_role_migration_is_idempotent(self):
         """Test that running migration multiple times on the same role is safe."""
         # Create role
@@ -479,6 +482,40 @@ class BindingScopeMigrationTupleVerificationTest(TestCase):
             "Tuples should be identical after second migration (idempotent)",
         )
 
+        self._assert_v1_v2_fully_consistent()
+
+    def test_v2_tenant_not_migrated(self):
+        replicator = InMemoryRelationReplicator(self.tuples)
+
+        v1_role = Role.objects.create(tenant=self.tenant, name="test role A", system=False)
+        Access.objects.create(role=v1_role, permission=self.default_permission, tenant=self.tenant)
+
+        migrate_all_role_bindings(replicator, self.tenant)
+
+        v2_role = CustomRoleV2.objects.filter(v1_source=v1_role).get()
+
+        def assert_role_binding_count(count: int):
+            self.assertEqual(RoleBinding.objects.filter(role=v2_role).count(), count)
+            self.assertEqual(self.tuples.count_tuples(resource("rbac", "role", str(v2_role.uuid))), count)
+
+        # Convert the tenant to V2.
+        ensure_v2_write_activated(self.tenant)
+
+        assert_role_binding_count(1)
+
+        RoleV2Service(tenant=self.tenant, replicator=replicator).bulk_delete([str(v2_role.uuid)])
+
+        assert_role_binding_count(0)
+
+        # This should not revive the V2 role, even though the V1 role still exists.
+        migrate_all_role_bindings(replicator, self.tenant)
+
+        assert_role_binding_count(0)
+
+        # We do not assert that V1 and V2 are consistent, since we are testing for what happens when they
+        # deliberately diverge.
+        assert_v2_tuples_consistent(test=self, tuples=self.tuples)
+
 
 class SystemRoleBindingMigrationTest(TestCase):
     """Tests for system role binding migration via group operations."""
@@ -495,14 +532,10 @@ class SystemRoleBindingMigrationTest(TestCase):
         self.tenant = Tenant.objects.create(tenant_name="test_tenant", account_id="12345", org_id="67890")
 
         # Create workspaces
-        self.root_workspace, _ = Workspace.objects.get_or_create(
-            tenant=self.tenant, type=Workspace.Types.ROOT, defaults={"name": "Root Workspace"}
-        )
-        self.default_workspace, _ = Workspace.objects.get_or_create(
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            defaults={"name": "Default Workspace", "parent": self.root_workspace},
-        )
+        bootstrap_result = bootstrap_tenant_for_v2_test(self.tenant, tuples=self.tuples)
+
+        self.root_workspace = bootstrap_result.root_workspace
+        self.default_workspace = bootstrap_result.default_workspace
 
         # Create permissions in public tenant
         self.root_permission = Permission.objects.create(
@@ -516,7 +549,7 @@ class SystemRoleBindingMigrationTest(TestCase):
     def tearDown(self):
         # Not all tests actually use self.tuples.
         with self.subTest(msg="V2 consistency"):
-            assert_v2_roles_consistent(self, tuples=None)
+            assert_v1_v2_locally_consistent(test=self)
 
         super().tearDown()
 
@@ -568,7 +601,7 @@ class SystemRoleBindingMigrationTest(TestCase):
             workspace.type, Workspace.Types.ROOT, "System role with ROOT scope should be at root workspace"
         )
 
-        assert_v2_roles_consistent(self, tuples=self.tuples)
+        assert_v1_v2_tuples_fully_consistent(test=self, tuples=self.tuples)
 
     @override_settings(
         ROOT_SCOPE_PERMISSIONS="rbac:*:*",
@@ -733,7 +766,7 @@ class SystemRoleBindingMigrationTest(TestCase):
         self.assertIn(str(groupA.uuid), group_uuids_in_tuples, "GroupA UUID should be in tuples")
         self.assertIn(str(groupB.uuid), group_uuids_in_tuples, "GroupB UUID should be in tuples")
 
-        assert_v2_roles_consistent(self, tuples=self.tuples)
+        assert_v1_v2_tuples_fully_consistent(test=self, tuples=self.tuples)
 
     @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="", REPLICATION_TO_RELATION_ENABLED=True)
     def test_migration_creates_bindings_for_roles_with_no_bindings(self):
@@ -822,7 +855,63 @@ class SystemRoleBindingMigrationTest(TestCase):
         # Should have at least the group subject tuple
         self.assertGreater(len(all_tuples), 0, "Should have tuples for the new binding")
 
+    @override_settings(
+        ROOT_SCOPE_PERMISSIONS="",
+        TENANT_SCOPE_PERMISSIONS="",
+        REPLICATION_TO_RELATION_ENABLED=True,
+    )
+    def test_v2_tenant_not_migrated(self):
+        fixture = RbacFixture()
 
+        system_role = fixture.new_system_role(name="system role", permissions=["rbac:*:*"])
+
+        group = Group.objects.create(name="Test Group No Bindings", tenant=self.tenant)
+        fixture.add_role_to_group(system_role, group)
+
+        replicator = InMemoryRelationReplicator(self.tuples)
+
+        dual_write = RelationApiDualWriteGroupHandler(
+            group=group, event_type=ReplicationEventType.ASSIGN_ROLE, replicator=replicator
+        )
+
+        dual_write.generate_relations_reset_roles([system_role])
+        dual_write.replicate()
+
+        binding = RoleBinding.objects.get(role__v1_source=system_role)
+
+        self.assertEqual(
+            1,
+            self.tuples.count_tuples(
+                all_of(
+                    resource("rbac", "workspace", str(self.default_workspace.id)),
+                    relation("binding"),
+                    subject("rbac", "role_binding", str(binding.uuid)),
+                )
+            ),
+        )
+
+        ensure_v2_write_activated(self.tenant)
+
+        with self.settings(ROOT_SCOPE_PERMISSIONS="rbac:*:*"):
+            migrate_all_role_bindings(replicator)
+
+        # The migration should not have affected the binding, since the tenant is now a V2 tenant.
+
+        self.assertTrue(RoleBinding.objects.filter(pk=binding.pk).exists())
+
+        self.assertEqual(
+            1,
+            self.tuples.count_tuples(
+                all_of(
+                    resource("rbac", "workspace", str(self.default_workspace.id)),
+                    relation("binding"),
+                    subject("rbac", "role_binding", str(binding.uuid)),
+                )
+            ),
+        )
+
+
+@override_settings(ATOMIC_RETRY_DISABLED=True)
 class CrossAccountRequestMigrationTest(DualWriteTestCase):
     def setUp(self):
         super().setUp()
@@ -835,16 +924,16 @@ class CrossAccountRequestMigrationTest(DualWriteTestCase):
         CrossAccountRequest.objects.all().delete()
 
     def tearDown(self):
-        with self.subTest(msg="V2 consistency"):
-            assert_v2_roles_consistent(test=self, tuples=None)
-
+        assert_v2_tuples_consistent(test=self, tuples=self.tuples)
         super().tearDown()
+
+    def _assert_v1_v2_locally_consistent(self):
+        assert_v1_v2_locally_consistent(test=self)
 
     def _do_migrate(self):
         migrate_all_role_bindings(replicator=InMemoryRelationReplicator(self.tuples), tenant=self.tenant)
 
-    def test_migrate_car(self):
-        """Test that migrating the scope of a binding from a cross-account request works."""
+    def _do_test_migrate_car(self):
         system_role = self.given_v1_system_role(name="system role", permissions=["root:resource:verb"])
 
         def expect_default_count(count: int):
@@ -877,6 +966,16 @@ class CrossAccountRequestMigrationTest(DualWriteTestCase):
 
         expect_default_count(0)
         expect_root_count(1)
+
+    def test_migrate_car(self):
+        """Test that migrating the scope of a binding from a cross-account request works."""
+        self._do_test_migrate_car()
+        self._assert_v1_v2_locally_consistent()
+
+    def test_migrate_car_v2_tenant(self):
+        """Test that migrating the scope of a binding from a cross-account request works in a V2 tenant."""
+        ensure_v2_write_activated(self.tenant)
+        self._do_test_migrate_car()
 
     def test_migrate_car_with_group(self):
         """Test that migrating the scope of a binding from both a group and a cross-account request works."""
@@ -914,6 +1013,8 @@ class CrossAccountRequestMigrationTest(DualWriteTestCase):
         expect_default_count(0)
         expect_root_count(1)
 
+        self._assert_v1_v2_locally_consistent()
+
     @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="")
     def test_migrate_expired_car(self):
         """Test that the migration does not revive expired cross-cacount requests."""
@@ -940,7 +1041,85 @@ class CrossAccountRequestMigrationTest(DualWriteTestCase):
         self._do_migrate()
         expect_binding_count(0)
 
+        self._assert_v1_v2_locally_consistent()
 
+
+@override_settings(ATOMIC_RETRY_DISABLED=True)
+class SourceRestrictionTest(DualWriteTestCase):
+    def _do_migrate(self, sources: set[str]):
+        migrate_all_role_bindings(replicator=InMemoryRelationReplicator(self.tuples), sources=sources)
+
+    @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="")
+    def test_by_source(self):
+        direct_system_role = self.given_v1_system_role("system role", ["rbac:*:*"])
+        car_system_role = self.given_v1_system_role("another system role", ["rbac:*:*"])
+        custom_role = self.given_v1_role("custom role", default=["rbac:*:*"])
+
+        car_tenant = self.fixture.new_tenant(org_id="car_source").tenant
+        car_principal = self.fixture.new_principals_in_tenant(["car_principal"], car_tenant)[0]
+
+        group, _ = self.given_group("group", ["p1"])
+
+        self.given_roles_assigned_to_group(group, [direct_system_role, custom_role])
+        self.given_car(user_id=car_principal.user_id, roles=[car_system_role])
+
+        def expect_bindings(system_group_workspace: str, system_car_workspace: str, custom_workspace: str):
+            v2_custom_role = RoleV2.objects.get(v1_source=custom_role)
+
+            self.expect_1_role_binding_to_workspace(
+                system_group_workspace,
+                for_v2_roles=[str(direct_system_role.uuid)],
+                for_groups=[str(group.uuid)],
+            )
+
+            self.expect_1_role_binding_to_workspace(
+                system_car_workspace,
+                for_v2_roles=[str(car_system_role.uuid)],
+                for_groups=[],
+                for_principals=[car_principal.user_id],
+            )
+
+            self.expect_1_role_binding_to_workspace(
+                custom_workspace,
+                for_v2_roles=[str(v2_custom_role.uuid)],
+                for_groups=[str(group.uuid)],
+            )
+
+        # Test that a source is migrated only when it is provided. We just cursorily check the relations here. The
+        # details are tested more thoroughly elsewhere.
+        with self.settings(ROOT_SCOPE_PERMISSIONS="rbac:*:*"):
+            expect_bindings(
+                system_group_workspace=self.default_workspace(),
+                system_car_workspace=self.default_workspace(),
+                custom_workspace=self.default_workspace(),
+            )
+
+            self._do_migrate({system_role_source})
+
+            expect_bindings(
+                system_group_workspace=self.root_workspace(),
+                system_car_workspace=self.default_workspace(),
+                custom_workspace=self.default_workspace(),
+            )
+
+            self._do_migrate({car_source})
+
+            expect_bindings(
+                system_group_workspace=self.root_workspace(),
+                system_car_workspace=self.root_workspace(),
+                custom_workspace=self.default_workspace(),
+            )
+
+            self._do_migrate({custom_role_source})
+
+            expect_bindings(
+                system_group_workspace=self.root_workspace(),
+                system_car_workspace=self.root_workspace(),
+                custom_workspace=self.root_workspace(),
+            )
+
+
+@override_settings(ATOMIC_RETRY_DISABLED=True)
 class ComprehensiveBootstrapMigrationTest(DualWriteTestCase):
     """
     Comprehensive integration test using tenant bootstrap and group APIs.
@@ -969,7 +1148,7 @@ class ComprehensiveBootstrapMigrationTest(DualWriteTestCase):
 
     def tearDown(self):
         with self.subTest(msg="V2 consistency"):
-            assert_v2_roles_consistent(test=self, tuples=None)
+            assert_v1_v2_locally_consistent(test=self)
 
         super().tearDown()
 

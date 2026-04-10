@@ -20,30 +20,34 @@ import concurrent.futures
 import uuid
 from unittest.mock import patch
 
+from api.models import Tenant
 from django.test import TestCase, override_settings
 from management.principal.model import Principal as PrincipalModel
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import RelationReplicator, ReplicationEventType
+from management.tenant_mapping.v2_activation import assert_v1_write_allowed, is_v2_write_activated
 from migration_tool.in_memory_tuples import (
     InMemoryRelationReplicator,
     InMemoryTuples,
     all_of,
     relation,
     resource,
+    resource_type,
     subject,
 )
 
-from management.models import Group, Permission, Principal, Workspace
+from management.models import Group, Permission, Principal, Role, Workspace
 from management.role.v2_model import PlatformRoleV2, RoleV2, SeededRoleV2
 from management.role.v2_service import RoleV2Service
-from management.exceptions import InvalidFieldError, NotFoundError
+from management.exceptions import InvalidFieldError, NotFoundError, RequiredFieldError
 from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
 from management.role_binding.serializer import RoleBindingByGroupSerializer, RoleBindingFieldSelection
-from management.role_binding.service import CreateBindingRequest, RoleBindingService
+from management.role_binding.service import CreateBindingRequest, RoleBindingService, API_PRINCIPAL_SOURCE
 from management.role_binding.util import parse_resource_type
 from management.tenant_mapping.model import TenantMapping
 from management.utils import FieldSelectionValidationError
 from tests.identity_request import IdentityRequest
+from tests.v2_util import bootstrap_tenant_for_v2_test
 
 
 class _ReplicationTracker(RelationReplicator):
@@ -294,15 +298,17 @@ class RoleBindingServiceTests(IdentityRequest):
             resource_id=str(self.workspace.id),
             tenant=self.tenant,
         )
-        RoleBindingGroup.objects.create(
+
+        self.binding_group_entry = RoleBindingGroup.objects.create(
             group=self.group,
             binding=self.binding,
         )
+
         # Create RoleBindingPrincipal for user-type queries
-        RoleBindingPrincipal.objects.create(
+        self.binding_principal_entry = RoleBindingPrincipal.objects.create(
             principal=self.principal,
             binding=self.binding,
-            source="test",
+            source=API_PRINCIPAL_SOURCE,
         )
 
         self.service = RoleBindingService(tenant=self.tenant)
@@ -833,6 +839,174 @@ class RoleBindingServiceTests(IdentityRequest):
         parent_binding.delete()
         parent_group.delete()
 
+    def test_exclude_principal_different_source(self):
+        """Test that a principal with only entries from a different source is not returned."""
+
+        def subjects_for_service(service: RoleBindingService):
+            return service.get_role_bindings_by_subject(
+                {
+                    "resource_type": self.binding.resource_type,
+                    "resource_id": self.binding.resource_id,
+                    "subject_type": "user",
+                }
+            )
+
+        self.assertCountEqual([self.principal], subjects_for_service(self.service))
+
+        self.binding_principal_entry.source = "another source"
+        self.binding_principal_entry.save()
+
+        self.assertCountEqual([], subjects_for_service(self.service))
+
+        self.assertCountEqual(
+            [self.principal],
+            subjects_for_service(RoleBindingService(tenant=self.tenant, principal_source="another source")),
+        )
+
+    def test_exclude_entries_different_source(self):
+        """Test that principal.filtered_bindings includes only entries with the correct source."""
+
+        def check_entries(service: RoleBindingService, entries: list[RoleBindingPrincipal]):
+            principals = service.get_role_bindings_by_subject(
+                {
+                    "resource_type": self.binding.resource_type,
+                    "resource_id": self.binding.resource_id,
+                    "subject_type": "user",
+                }
+            )
+
+            self.assertCountEqual([self.principal], principals)
+            self.assertCountEqual(entries, principals[0].filtered_bindings)
+
+        check_entries(self.service, [self.binding_principal_entry])
+
+        another_entry = RoleBindingPrincipal.objects.create(
+            binding=self.binding, principal=self.principal, source="another source"
+        )
+
+        check_entries(self.service, [self.binding_principal_entry])
+        check_entries(RoleBindingService(tenant=self.tenant, principal_source="another source"), [another_entry])
+
+    def test_exclude_entries_external_tenant(self):
+        """Test that external subjects are retrieved if and only if requested."""
+        exclude_service = RoleBindingService(tenant=self.tenant)
+        include_service = RoleBindingService(tenant=self.tenant, allow_external_subjects=True)
+
+        ext_tenant = Tenant.objects.create(tenant_name="another tenant", org_id="789")
+
+        def get_groups(service: RoleBindingService):
+            return service.get_role_bindings_by_subject(
+                {
+                    "resource_type": self.binding.resource_type,
+                    "resource_id": self.binding.resource_id,
+                    "subject_type": "group",
+                }
+            )
+
+        def get_principals(service: RoleBindingService):
+            return service.get_role_bindings_by_subject(
+                {
+                    "resource_type": self.binding.resource_type,
+                    "resource_id": self.binding.resource_id,
+                    "subject_type": "user",
+                }
+            )
+
+        self.assertEqual(1, len(get_groups(exclude_service)))
+        self.assertEqual(1, len(get_principals(exclude_service)))
+
+        self.assertEqual(1, len(get_groups(include_service)))
+        self.assertEqual(1, len(get_principals(include_service)))
+
+        self.group.tenant = ext_tenant
+        self.group.save()
+
+        self.assertEqual(0, len(get_groups(exclude_service)))
+        self.assertEqual(1, len(get_groups(include_service)))
+
+        self.principal.tenant = ext_tenant
+        self.principal.save()
+
+        self.assertEqual(0, len(get_principals(exclude_service)))
+        self.assertEqual(1, len(get_principals(include_service)))
+
+    def test_by_subject_includes_platform_default_groups(self):
+        """Test that platform default groups from the public tenant are included in by-subject results.
+
+        Platform default groups (e.g. "Default access") belong to the public tenant but should
+        still appear when querying by-subject for a specific tenant's resources.
+        Regular (non-default) groups from other tenants must still be excluded.
+        """
+        public_tenant = Tenant.objects.create(tenant_name="public", org_id="public")
+
+        platform_group = Group.objects.create(
+            name="Default access",
+            tenant=public_tenant,
+            platform_default=True,
+            system=True,
+        )
+        admin_group = Group.objects.create(
+            name="Default admin access",
+            tenant=public_tenant,
+            admin_default=True,
+            system=True,
+        )
+        # A regular group on the public tenant — should NOT be included
+        regular_public_group = Group.objects.create(
+            name="Regular public group",
+            tenant=public_tenant,
+            platform_default=False,
+            admin_default=False,
+            system=False,
+        )
+
+        # Create separate roles for each binding (unique constraint: role+resource+tenant)
+        platform_role = RoleV2.objects.create(name="platform_role", tenant=self.tenant)
+        admin_role = RoleV2.objects.create(name="admin_role", tenant=self.tenant)
+        regular_role = RoleV2.objects.create(name="regular_role", tenant=self.tenant)
+
+        # Create role bindings owned by the user's tenant, linked to public tenant groups
+        platform_binding = RoleBinding.objects.create(
+            role=platform_role,
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            tenant=self.tenant,
+        )
+        RoleBindingGroup.objects.create(group=platform_group, binding=platform_binding)
+
+        admin_binding = RoleBinding.objects.create(
+            role=admin_role,
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            tenant=self.tenant,
+        )
+        RoleBindingGroup.objects.create(group=admin_group, binding=admin_binding)
+
+        regular_binding = RoleBinding.objects.create(
+            role=regular_role,
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            tenant=self.tenant,
+        )
+        RoleBindingGroup.objects.create(group=regular_public_group, binding=regular_binding)
+
+        groups = self.service.get_role_bindings_by_subject(
+            {
+                "resource_type": "workspace",
+                "resource_id": str(self.workspace.id),
+                "subject_type": "group",
+            }
+        )
+
+        group_names = {g.name for g in groups}
+        # Should include the tenant's own group AND both platform default groups
+        self.assertIn("test_group", group_names)
+        self.assertIn("Default access", group_names)
+        self.assertIn("Default admin access", group_names)
+        # Regular non-default group from public tenant must be excluded
+        self.assertNotIn("Regular public group", group_names)
+        self.assertEqual(3, len(groups))
+
 
 class RoleBindingSerializerTests(IdentityRequest):
     """Tests for RoleBindingByGroupSerializer."""
@@ -1069,17 +1243,11 @@ class BatchCreateRoleBindingTests(IdentityRequest):
         """Set up test data using services."""
         super().setUp()
 
-        self.root_workspace = Workspace.objects.create(
-            name=Workspace.SpecialNames.ROOT,
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-        )
-        self.default_workspace = Workspace.objects.create(
-            name=Workspace.SpecialNames.DEFAULT,
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            parent=self.root_workspace,
-        )
+        bootstrap_result = bootstrap_tenant_for_v2_test(self.tenant)
+
+        self.default_workspace = bootstrap_result.default_workspace
+        self.root_workspace = bootstrap_result.root_workspace
+
         self.workspace = Workspace.objects.create(
             name="Test Workspace",
             description="Test workspace description",
@@ -1143,6 +1311,12 @@ class BatchCreateRoleBindingTests(IdentityRequest):
             subject_id=str(subject_id),
         )
 
+    def test_batch_create_empty(self):
+        with self.assertRaises(RequiredFieldError) as error:
+            self.service.batch_create([])
+
+        self.assertEqual(error.exception.field_name, "requests")
+
     def test_batch_create_for_group(self):
         """Create a single binding with a group subject."""
         results = self.service.batch_create(
@@ -1177,6 +1351,8 @@ class BatchCreateRoleBindingTests(IdentityRequest):
         self.assertEqual(result["resource_id"], str(self.workspace.id))
         self.assertEqual(result["resource_name"], "Test Workspace")
 
+        self.assertTrue(is_v2_write_activated(self.tenant))
+
     def test_batch_create_multiple_bindings(self):
         """Create two bindings in one call with different roles and subject types."""
         results = self.service.batch_create(
@@ -1195,6 +1371,8 @@ class BatchCreateRoleBindingTests(IdentityRequest):
         self.assertEqual(results[1]["role"], self.role2)
         self.assertEqual(results[1]["subject"], self.principal)
         self.assertEqual(results[1]["subject_type"], "user")
+
+        self.assertTrue(is_v2_write_activated(self.tenant))
 
     def test_batch_create_raises_roles_not_found(self):
         """Pass a non-existent role UUID."""
@@ -1215,6 +1393,8 @@ class BatchCreateRoleBindingTests(IdentityRequest):
         self.assertEqual(ctx.exception.field, "roles")
         self.assertIn(fake_role_id, str(ctx.exception))
 
+        self.assertFalse(is_v2_write_activated(self.tenant))
+
     def test_batch_create_raises_subjects_not_found_group(self):
         """Pass a non-existent group UUID."""
         fake_group_id = str(uuid.uuid4())
@@ -1228,6 +1408,8 @@ class BatchCreateRoleBindingTests(IdentityRequest):
         self.assertEqual(ctx.exception.resource_type, "group")
         self.assertIn(fake_group_id, str(ctx.exception))
 
+        self.assertFalse(is_v2_write_activated(self.tenant))
+
     def test_batch_create_raises_subjects_not_found_user(self):
         """Pass a non-existent principal UUID."""
         fake_user_id = str(uuid.uuid4())
@@ -1240,6 +1422,8 @@ class BatchCreateRoleBindingTests(IdentityRequest):
 
         self.assertEqual(ctx.exception.resource_type, "user")
         self.assertIn(fake_user_id, str(ctx.exception))
+
+        self.assertFalse(is_v2_write_activated(self.tenant))
 
     def test_batch_create_idempotent_same_subject(self):
         """Granting the same role to the same subject twice is idempotent."""
@@ -1327,6 +1511,8 @@ class BatchCreateRoleBindingTests(IdentityRequest):
         self.assertEqual(ctx.exception.field, "roles")
         self.assertIn(str(platform.uuid), str(ctx.exception))
 
+        self.assertFalse(is_v2_write_activated(self.tenant))
+
     def test_batch_create_fails_fast_when_one_role_missing(self):
         """Batch with valid role1 and non-existent role2 fails before any DB writes."""
         fake_role_id = str(uuid.uuid4())
@@ -1352,6 +1538,8 @@ class BatchCreateRoleBindingTests(IdentityRequest):
             ).exists()
         )
 
+        self.assertFalse(is_v2_write_activated(self.tenant))
+
     def test_batch_create_fails_fast_when_one_subject_missing(self):
         """Batch with valid group and non-existent group fails before any DB writes."""
         fake_group_id = str(uuid.uuid4())
@@ -1369,6 +1557,8 @@ class BatchCreateRoleBindingTests(IdentityRequest):
             RoleBinding.objects.filter(resource_id=str(self.workspace.id), resource_type="workspace").exists()
         )
 
+        self.assertFalse(is_v2_write_activated(self.tenant))
+
     def test_batch_create_rejects_user_without_user_id(self):
         """A principal without user_id is rejected."""
         unsynced = Principal.objects.create(
@@ -1377,8 +1567,11 @@ class BatchCreateRoleBindingTests(IdentityRequest):
             user_id=None,
             type=Principal.Types.USER,
         )
+
         with self.assertRaises(InvalidFieldError):
             self.service.batch_create([self._make_request(self.role1, "user", unsynced.uuid)])
+
+        self.assertFalse(is_v2_write_activated(self.tenant))
 
     def test_batch_create_shared_binding_two_groups(self):
         """Same role+resource with two different groups shares one RoleBinding."""
@@ -1515,6 +1708,8 @@ class BatchCreateRoleBindingTests(IdentityRequest):
         self.assertEqual(len(store), 3)
 
         binding = RoleBinding.objects.get(role=self.role1, resource_id=str(self.workspace.id))
+        self.assertCountEqual([API_PRINCIPAL_SOURCE], [p.source for p in binding.principal_entries.all()])
+
         binding_uuid = str(binding.uuid)
         principal_resource_id = PrincipalModel.user_id_to_principal_resource_id(self.principal.user_id)
 
@@ -1829,6 +2024,108 @@ class BatchCreateRoleBindingTests(IdentityRequest):
         )
         self.assertEqual(len(role_tuples), 1)
 
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    def test_batch_create_multiple_source(self):
+        """Test creating a role binding for a principal when it already exists with a different source."""
+        tuples = InMemoryTuples()
+        replicator = InMemoryRelationReplicator(tuples)
+
+        def create_with(service: RoleBindingService):
+            service.batch_create(
+                [
+                    CreateBindingRequest(
+                        role_id=str(self.role1.uuid),
+                        resource_type="workspace",
+                        resource_id=str(self.workspace.id),
+                        subject_type="user",
+                        subject_id=str(self.principal.uuid),
+                    )
+                ]
+            )
+
+        def assert_principal_bound():
+            self.assertEqual(
+                1,
+                tuples.count_tuples(
+                    all_of(
+                        resource_type("rbac", "role_binding"),
+                        relation("subject"),
+                        subject("rbac", "principal", self.principal.principal_resource_id()),
+                    )
+                ),
+            )
+
+        api_service = RoleBindingService(tenant=self.tenant, replicator=replicator)
+        alt_service = RoleBindingService(tenant=self.tenant, replicator=replicator, principal_source="another source")
+
+        create_with(api_service)
+        assert_principal_bound()
+
+        tuples.clear()
+
+        create_with(alt_service)
+
+        # We haven't changed whether the principal is actually assigned to the role binding, but we still want to
+        # replicate the subject tuple (just in case something went wrong previously).
+        assert_principal_bound()
+
+        self.assertCountEqual(
+            [API_PRINCIPAL_SOURCE, "another source"],
+            [p.source for p in RoleBinding.objects.get(role=self.role1).principal_entries.all()],
+        )
+
+    def test_batch_create_external_principal(self):
+        """Test that external principals are rejected in batch_create unless enabled."""
+        ext_tenant = Tenant.objects.create(tenant_name="external tenant", org_id="34567")
+        ext_principal = Principal.objects.create(tenant=ext_tenant, username="some_user", user_id="some_user")
+
+        def do_create_with(service: RoleBindingService):
+            service.batch_create(
+                [
+                    CreateBindingRequest(
+                        role_id=str(self.role1.uuid),
+                        resource_type="workspace",
+                        resource_id=str(self.default_workspace.id),
+                        subject_type="user",
+                        subject_id=str(ext_principal.uuid),
+                    )
+                ]
+            )
+
+        with self.assertRaises(NotFoundError):
+            do_create_with(RoleBindingService(tenant=self.tenant, allow_external_subjects=False))
+
+        try:
+            do_create_with(RoleBindingService(tenant=self.tenant, allow_external_subjects=True))
+        except NotFoundError as e:
+            self.fail(f"Unexpected NotFoundError: {e}")
+
+    def test_batch_create_external_group(self):
+        """Test that external groups are rejected in batch_create unless enabled."""
+        ext_tenant = Tenant.objects.create(tenant_name="external tenant", org_id="34567")
+        ext_group = Group.objects.create(tenant=ext_tenant, name="a group")
+
+        def do_create_with(service: RoleBindingService):
+            service.batch_create(
+                [
+                    CreateBindingRequest(
+                        role_id=str(self.role1.uuid),
+                        resource_type="workspace",
+                        resource_id=str(self.default_workspace.id),
+                        subject_type="group",
+                        subject_id=str(ext_group.uuid),
+                    )
+                ]
+            )
+
+        with self.assertRaises(NotFoundError):
+            do_create_with(RoleBindingService(tenant=self.tenant, allow_external_subjects=False))
+
+        try:
+            do_create_with(RoleBindingService(tenant=self.tenant, allow_external_subjects=True))
+        except NotFoundError as e:
+            self.fail(f"Unexpected NotFoundError: {e}")
+
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)
 class UpdateRoleBindingsForSubjectTests(_ReplicationAssertionsMixin, IdentityRequest):
@@ -1839,17 +2136,11 @@ class UpdateRoleBindingsForSubjectTests(_ReplicationAssertionsMixin, IdentityReq
         super().setUp()
 
         # Create workspace hierarchy
-        self.root_workspace = Workspace.objects.create(
-            name=Workspace.SpecialNames.ROOT,
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-        )
-        self.default_workspace = Workspace.objects.create(
-            name=Workspace.SpecialNames.DEFAULT,
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            parent=self.root_workspace,
-        )
+        bootstrap_result = bootstrap_tenant_for_v2_test(self.tenant)
+
+        self.default_workspace = bootstrap_result.default_workspace
+        self.root_workspace = bootstrap_result.root_workspace
+
         self.workspace = Workspace.objects.create(
             name="Test Workspace",
             description="Test workspace description",
@@ -1937,6 +2228,8 @@ class UpdateRoleBindingsForSubjectTests(_ReplicationAssertionsMixin, IdentityReq
         }
         self.assertEqual(actual, expected)
 
+        self.assertTrue(is_v2_write_activated(self.tenant))
+
     def test_update_role_bindings_for_principal(self):
         """Test updating role bindings for a principal."""
         result = self.service.update_role_bindings_for_subject(
@@ -1962,6 +2255,8 @@ class UpdateRoleBindingsForSubjectTests(_ReplicationAssertionsMixin, IdentityReq
             "role_uuids": {r.uuid for r in result.roles},
         }
         self.assertEqual(actual, expected)
+
+        self.assertTrue(is_v2_write_activated(self.tenant))
 
     def test_update_replaces_existing_bindings(self):
         """Test that update replaces existing bindings."""
@@ -2000,6 +2295,62 @@ class UpdateRoleBindingsForSubjectTests(_ReplicationAssertionsMixin, IdentityReq
         }
         self.assertEqual(actual, expected)
 
+        self.assertTrue(is_v2_write_activated(self.tenant))
+
+    def test_update_multiple_sources(self):
+        tuples = InMemoryTuples()
+        replicator = InMemoryRelationReplicator(tuples)
+
+        def update_with(service: RoleBindingService, roles: list[RoleV2]):
+            service.update_role_bindings_for_subject(
+                resource_type="workspace",
+                resource_id=str(self.workspace.id),
+                subject_type="user",
+                subject_id=str(self.principal.uuid),
+                role_ids=[str(r.uuid) for r in roles],
+            )
+
+        api_service = RoleBindingService(tenant=self.tenant, replicator=replicator)
+        alt_service = RoleBindingService(tenant=self.tenant, replicator=replicator, principal_source="another source")
+
+        update_with(api_service, [self.role1])
+        update_with(alt_service, [self.role1])
+
+        binding = self._get_binding(self.role1)
+
+        def assert_principal_bound(is_bound: bool = True):
+            self.assertEqual(
+                int(is_bound),
+                tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "role_binding", str(binding.uuid)),
+                        relation("subject"),
+                        subject("rbac", "principal", self.principal.principal_resource_id()),
+                    )
+                ),
+            )
+
+        def assert_sources(sources: list[str]):
+            self.assertEqual(
+                sources,
+                [p.source for p in binding.principal_entries.all()],
+            )
+
+        assert_principal_bound()
+        assert_sources([API_PRINCIPAL_SOURCE, "another source"])
+
+        # We can't currently pass an empty list of roles, so just use another role instead.
+        # See https://github.com/RedHatInsights/insights-rbac/pull/2629
+        update_with(api_service, [self.role2])
+
+        assert_principal_bound()
+        assert_sources(["another source"])
+
+        update_with(alt_service, [self.role2])
+
+        assert_principal_bound(False)
+        self.assertFalse(RoleBinding.objects.filter(pk=binding.pk).exists())
+
     def test_update_replicates_tuples_for_group(self):
         """Test that updating role bindings replicates correct tuples for a group."""
         self.tracker.clear()
@@ -2031,6 +2382,52 @@ class UpdateRoleBindingsForSubjectTests(_ReplicationAssertionsMixin, IdentityReq
         binding = self._get_binding(self.role1)
         self.assertTuplesAdded(set(binding.binding_tuples()) | {binding.subject_tuple(self.principal)})
         self.assertTuplesRemoved(set())
+
+    def test_update_external_principal(self):
+        """Test that updating an external principal is rejected unless enabled."""
+        ext_tenant = Tenant.objects.create(tenant_name="a tenant", org_id="34567")
+        ext_principal = Principal.objects.create(
+            tenant=ext_tenant, username="test_principal", user_id="test_principal"
+        )
+
+        def do_update_with(service: RoleBindingService):
+            service.update_role_bindings_for_subject(
+                resource_type="workspace",
+                resource_id=str(self.default_workspace.id),
+                subject_type="user",
+                subject_id=str(ext_principal.uuid),
+                role_ids=[str(self.role1.uuid)],
+            )
+
+        with self.assertRaises(NotFoundError):
+            do_update_with(RoleBindingService(tenant=self.tenant, allow_external_subjects=False))
+
+        try:
+            do_update_with(RoleBindingService(tenant=self.tenant, allow_external_subjects=True))
+        except NotFoundError as e:
+            self.fail(f"Unexpected NotFoundError: {e}")
+
+    def test_update_external_group(self):
+        """Test that updating an external group is rejected unless enabled."""
+        ext_tenant = Tenant.objects.create(tenant_name="a tenant", org_id="34567")
+        ext_group = Group.objects.create(tenant=ext_tenant, name="test_group")
+
+        def do_update_with(service: RoleBindingService):
+            service.update_role_bindings_for_subject(
+                resource_type="workspace",
+                resource_id=str(self.default_workspace.id),
+                subject_type="group",
+                subject_id=str(ext_group.uuid),
+                role_ids=[str(self.role1.uuid)],
+            )
+
+        with self.assertRaises(NotFoundError):
+            do_update_with(RoleBindingService(tenant=self.tenant, allow_external_subjects=False))
+
+        try:
+            do_update_with(RoleBindingService(tenant=self.tenant, allow_external_subjects=True))
+        except NotFoundError as e:
+            self.fail(f"Unexpected NotFoundError: {e}")
 
     def test_update_raises_not_found_error(self):
         """Test that update raises NotFoundError for non-existent entities."""
@@ -2107,6 +2504,8 @@ class UpdateRoleBindingsForSubjectTests(_ReplicationAssertionsMixin, IdentityReq
                 self.assertEqual(context.exception.resource_id, expected_resource_id)
                 self.assertIn(expected_resource_id, str(context.exception))
 
+                self.assertFalse(is_v2_write_activated(self.tenant))
+
     def test_update_raises_error_for_invalid_role(self):
         """Test that update raises InvalidFieldError for non-existent role."""
         import uuid
@@ -2125,6 +2524,8 @@ class UpdateRoleBindingsForSubjectTests(_ReplicationAssertionsMixin, IdentityReq
 
         self.assertEqual(context.exception.field, "roles")
         self.assertIn(fake_uuid, str(context.exception))
+
+        self.assertFalse(is_v2_write_activated(self.tenant))
 
     def test_update_raises_error_for_unsupported_subject_type(self):
         """Test that update raises UnsupportedSubjectTypeError for invalid subject type."""
@@ -2149,6 +2550,8 @@ class UpdateRoleBindingsForSubjectTests(_ReplicationAssertionsMixin, IdentityReq
                 self.assertEqual(context.exception.subject_type, subject_type)
                 self.assertIn("group", context.exception.supported)
                 self.assertIn("user", context.exception.supported)
+
+                self.assertFalse(is_v2_write_activated(self.tenant))
 
     def test_update_raises_error_for_missing_required_fields(self):
         """Test that update raises RequiredFieldError for missing required fields."""
@@ -2191,18 +2594,6 @@ class UpdateRoleBindingsForSubjectTests(_ReplicationAssertionsMixin, IdentityReq
                 },
                 "subject_id",
             ),
-            # Empty roles list - caught by model validation
-            (
-                "empty_roles",
-                {
-                    "resource_type": "workspace",
-                    "resource_id": str(self.workspace.id),
-                    "subject_type": "group",
-                    "subject_id": str(self.group.uuid),
-                    "role_ids": [],
-                },
-                "roles",
-            ),
         ]
 
         for description, params, expected_field in test_cases:
@@ -2211,6 +2602,29 @@ class UpdateRoleBindingsForSubjectTests(_ReplicationAssertionsMixin, IdentityReq
                     self.service.update_role_bindings_for_subject(**params)
 
                 self.assertEqual(context.exception.field_name, expected_field)
+                self.assertFalse(is_v2_write_activated(self.tenant))
+
+    def test_update_rejects_admin_default_group(self):
+        """Updating role bindings for the admin default group is not allowed."""
+        public_tenant = Tenant.objects.get(tenant_name="public")
+        admin_group = Group.objects.create(
+            name="Default admin access",
+            admin_default=True,
+            system=True,
+            tenant=public_tenant,
+        )
+
+        with self.assertRaises(InvalidFieldError) as context:
+            self.service.update_role_bindings_for_subject(
+                resource_type="workspace",
+                resource_id=str(self.workspace.id),
+                subject_type="group",
+                subject_id=str(admin_group.uuid),
+                role_ids=[str(self.role1.uuid)],
+            )
+
+        self.assertIn("admin default group", str(context.exception))
+        admin_group.delete()
 
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)
@@ -2321,6 +2735,27 @@ class ReplaceRoleBindingsTests(_ReplicationAssertionsMixin, IdentityRequest):
         binding = self._get_binding(self.role3)
         self.assertTuplesAdded(set(binding.binding_tuples()) | {binding.subject_tuple(self.user1)})
         self.assertTuplesRemoved(set())
+
+    # -- 1b. Empty roles removes all bindings -------------------------------
+
+    def test_empty_roles_removes_all_bindings(self):
+        """Empty roles list removes all bindings for the subject."""
+        # Given: user1 linked to RoleBinding(ws, role1), only subject
+        self._update_access(self.user1, [self.role1])
+        self.assertTrue(self._binding_exists(self.role1))
+        old_binding = self._get_binding(self.role1)
+        self.tracker.clear()
+
+        # When: PUT roles=[]
+        self._update_access(self.user1, [])
+
+        # Then — removed: user1 unlinked, binding deleted (orphaned)
+        self.assertFalse(self._binding_exists(self.role1))
+        self.assertEqual(self._roles_for_principal(self.user1), set())
+
+        # Then — replication: old binding fully removed
+        self.assertTuplesAdded(set())
+        self.assertTuplesRemoved(set(old_binding.binding_tuples()) | {old_binding.subject_tuple(self.user1)})
 
     # -- 2. Complete replacement, old binding orphaned --------------------
 
@@ -2614,3 +3049,457 @@ class ReplaceRoleBindingsTests(_ReplicationAssertionsMixin, IdentityRequest):
         self.assertTuplesRemoved(
             set(old_role1_binding.binding_tuples()) | {old_role1_binding.subject_tuple(self.group1)}
         )
+
+
+@override_settings(ATOMIC_RETRY_DISABLED=True, V2_BOOTSTRAP_TENANT=True, REPLICATION_TO_RELATION_ENABLED=False)
+class UpdateRoleBindingsDefaultGroupCustomizationTests(IdentityRequest):
+    """Tests for automatic default group customization in update_role_bindings_for_subject."""
+
+    def setUp(self):
+        super().setUp()
+        from management.policy.model import Policy
+
+        self.public_tenant = Tenant.objects.get(tenant_name="public")
+
+        self.platform_role_v1 = Role.objects.create(
+            name="Platform Role",
+            platform_default=True,
+            system=True,
+            tenant=self.public_tenant,
+        )
+
+        # The public tenant's "Default access" group (system, shared across all tenants)
+        self.default_group = Group.objects.create(
+            name="Default access",
+            platform_default=True,
+            system=True,
+            tenant=self.public_tenant,
+        )
+        Policy.objects.create(
+            name=f"System Policy for Group {self.default_group.uuid}",
+            system=True,
+            group=self.default_group,
+            tenant=self.public_tenant,
+        )
+
+        bootstrap_result = bootstrap_tenant_for_v2_test(self.tenant)
+        self.default_workspace = bootstrap_result.default_workspace
+
+        self.workspace = Workspace.objects.create(
+            name="Test Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.default_workspace,
+        )
+
+        Permission.objects.create(permission="app:resource:read", tenant=self.tenant)
+        role_service = RoleV2Service()
+        self.role1 = role_service.create(
+            name="role1",
+            description="Test role 1",
+            permission_data=[{"application": "app", "resource_type": "resource", "operation": "read"}],
+            tenant=self.tenant,
+        )
+
+        self.service = RoleBindingService(tenant=self.tenant)
+
+    def tearDown(self):
+        from management.policy.model import Policy
+
+        RoleBindingGroup.objects.all().delete()
+        RoleBindingPrincipal.objects.all().delete()
+        RoleBinding.objects.all().delete()
+        Policy.objects.all().delete()
+        Group.objects.filter(tenant=self.tenant).delete()
+        Group.objects.filter(tenant=self.public_tenant, platform_default=True).delete()
+        Role.objects.filter(tenant=self.public_tenant, platform_default=True).delete()
+        RoleV2.objects.filter(tenant=self.tenant).delete()
+        Permission.objects.filter(tenant=self.tenant).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.STANDARD).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.DEFAULT).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.ROOT).delete()
+        TenantMapping.objects.filter(tenant=self.tenant).delete()
+        super().tearDown()
+
+    @patch("management.group.definer.OutboxReplicator")
+    def test_clones_default_group_into_custom(self, mock_replicator_cls):
+        """Passing the public default group UUID triggers a clone into a custom default group."""
+        mock_replicator_cls.return_value.replicate = lambda event: None
+
+        self.assertFalse(Group.objects.filter(platform_default=True, tenant=self.tenant).exists())
+
+        result = self.service.update_role_bindings_for_subject(
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            subject_type="group",
+            subject_id=str(self.default_group.uuid),
+            role_ids=[str(self.role1.uuid)],
+        )
+
+        # The custom group was created for this tenant
+        custom_group = Group.objects.get(platform_default=True, tenant=self.tenant)
+        self.assertEqual(custom_group.name, "Custom default access")
+        self.assertFalse(custom_group.system)
+
+        # The result references the custom group, not the public default group
+        self.assertEqual(result.subject, custom_group)
+        self.assertEqual(result.subject.tenant, self.tenant)
+
+        # The role binding was applied to the custom group
+        bindings = RoleBinding.objects.filter(
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            tenant=self.tenant,
+        )
+        self.assertTrue(bindings.filter(role=self.role1).exists())
+        self.assertTrue(RoleBindingGroup.objects.filter(group=custom_group, binding__role=self.role1).exists())
+
+    @patch("management.group.definer.OutboxReplicator")
+    def test_uses_existing_custom_group_if_already_cloned(self, mock_replicator_cls):
+        """If a custom default group already exists, use it instead of cloning again."""
+        mock_replicator_cls.return_value.replicate = lambda event: None
+
+        existing_custom = Group.objects.create(
+            name="Custom default access",
+            platform_default=True,
+            system=False,
+            tenant=self.tenant,
+        )
+
+        result = self.service.update_role_bindings_for_subject(
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            subject_type="group",
+            subject_id=str(self.default_group.uuid),
+            role_ids=[str(self.role1.uuid)],
+        )
+
+        # Should use the existing custom group
+        self.assertEqual(result.subject, existing_custom)
+
+        # Still only one custom group
+        self.assertEqual(Group.objects.filter(platform_default=True, tenant=self.tenant).count(), 1)
+
+    def test_regular_group_is_not_affected(self):
+        """A non-default group is not cloned; it proceeds normally."""
+        regular_group = Group.objects.create(
+            name="Regular Group",
+            tenant=self.tenant,
+        )
+
+        result = self.service.update_role_bindings_for_subject(
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            subject_type="group",
+            subject_id=str(regular_group.uuid),
+            role_ids=[str(self.role1.uuid)],
+        )
+
+        self.assertEqual(result.subject, regular_group)
+        self.assertFalse(Group.objects.filter(platform_default=True, tenant=self.tenant).exists())
+
+
+@override_settings(ATOMIC_RETRY_DISABLED=True, REPLICATION_TO_RELATION_ENABLED=True)
+class PrepareToDeleteGroupV2Tests(_ReplicationAssertionsMixin, IdentityRequest):
+    """Tests for the V2 path of prepare_to_delete_group.
+
+    When a tenant has V2 writes activated, prepare_to_delete_group should derive
+    removal tuples from V2 RoleBinding objects instead of BindingMapping.
+    """
+
+    def setUp(self):
+        super().setUp()
+        from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
+
+        bootstrap_result = bootstrap_tenant_for_v2_test(self.tenant)
+        self.default_workspace = bootstrap_result.default_workspace
+        self.root_workspace = bootstrap_result.root_workspace
+
+        self.workspace = Workspace.objects.create(
+            name="Test Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.default_workspace,
+        )
+
+        Permission.objects.create(permission="app:resource:read", tenant=self.tenant)
+        Permission.objects.create(permission="app:resource:write", tenant=self.tenant)
+        role_service = RoleV2Service()
+        self.role1 = role_service.create(
+            name="role1",
+            description="Test role 1",
+            permission_data=[{"application": "app", "resource_type": "resource", "operation": "read"}],
+            tenant=self.tenant,
+        )
+        self.role2 = role_service.create(
+            name="role2",
+            description="Test role 2",
+            permission_data=[{"application": "app", "resource_type": "resource", "operation": "write"}],
+            tenant=self.tenant,
+        )
+
+        self.group = Group.objects.create(name="test_group", tenant=self.tenant)
+
+        self.tracker = _ReplicationTracker()
+        self.binding_service = RoleBindingService(tenant=self.tenant, replicator=self.tracker)
+
+        # Create role bindings via the V2 service (this also activates V2 writes)
+        self.binding_service.update_role_bindings_for_subject(
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            subject_type="group",
+            subject_id=str(self.group.uuid),
+            role_ids=[str(self.role1.uuid), str(self.role2.uuid)],
+        )
+        self.tracker.clear()
+
+        self.RelationApiDualWriteGroupHandler = RelationApiDualWriteGroupHandler
+
+    def tearDown(self):
+        RoleBindingGroup.objects.all().delete()
+        RoleBindingPrincipal.objects.all().delete()
+        RoleBinding.objects.all().delete()
+        Group.objects.filter(tenant=self.tenant).delete()
+        RoleV2.objects.filter(tenant=self.tenant).delete()
+        Permission.objects.filter(tenant=self.tenant).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.STANDARD).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.DEFAULT).delete()
+        Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.ROOT).delete()
+        TenantMapping.objects.filter(tenant=self.tenant).delete()
+        super().tearDown()
+
+    def test_v2_path_removes_binding_tuples(self):
+        """When tenant is V2-activated, prepare_to_delete_group uses RoleBinding to compute removal tuples."""
+        from management.tenant_mapping.v2_activation import is_v2_write_activated
+
+        self.assertTrue(is_v2_write_activated(self.tenant))
+
+        bindings = list(
+            RoleBinding.objects.filter(group_entries__group=self.group, tenant=self.tenant).select_related("role")
+        )
+        self.assertEqual(len(bindings), 2)
+
+        expected_tuples_to_remove = set()
+        for binding in bindings:
+            expected_tuples_to_remove.add(binding.subject_tuple(self.group))
+            expected_tuples_to_remove.update(binding.binding_tuples())
+
+        dual_write_handler = self.RelationApiDualWriteGroupHandler(
+            self.group,
+            ReplicationEventType.DELETE_GROUP,
+            replicator=self.tracker,
+        )
+
+        roles = Role.objects.filter(policies__group=self.group)
+        dual_write_handler.prepare_to_delete_group(roles)
+
+        self.assertEqual(set(dual_write_handler.relations_to_remove), expected_tuples_to_remove)
+
+    def test_v2_path_preserves_shared_binding_tuples(self):
+        """When another subject shares a binding, only the subject tuple is removed (not binding tuples)."""
+        other_group = Group.objects.create(name="other_group", tenant=self.tenant)
+
+        # Link the other group to the same binding via the service
+        self.binding_service.update_role_bindings_for_subject(
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            subject_type="group",
+            subject_id=str(other_group.uuid),
+            role_ids=[str(self.role1.uuid)],
+        )
+        self.tracker.clear()
+
+        shared_binding = RoleBinding.objects.select_related("role").get(
+            role=self.role1, resource_id=str(self.workspace.id), tenant=self.tenant
+        )
+        sole_binding = RoleBinding.objects.select_related("role").get(
+            role=self.role2, resource_id=str(self.workspace.id), tenant=self.tenant
+        )
+
+        dual_write_handler = self.RelationApiDualWriteGroupHandler(
+            self.group,
+            ReplicationEventType.DELETE_GROUP,
+            replicator=self.tracker,
+        )
+
+        roles = Role.objects.filter(policies__group=self.group)
+        dual_write_handler.prepare_to_delete_group(roles)
+
+        removals = set(dual_write_handler.relations_to_remove)
+
+        # Subject tuples for both bindings are removed
+        self.assertIn(shared_binding.subject_tuple(self.group), removals)
+        self.assertIn(sole_binding.subject_tuple(self.group), removals)
+
+        # Binding tuples for the shared binding are NOT removed (other_group still uses it)
+        for t in shared_binding.binding_tuples():
+            self.assertNotIn(t, removals)
+
+        # Binding tuples for the sole binding ARE removed (it will be orphaned)
+        for t in sole_binding.binding_tuples():
+            self.assertIn(t, removals)
+
+    def test_v2_path_preserves_binding_when_principal_exists(self):
+        """When a binding has a principal entry, binding tuples are kept even if the group is the only group."""
+        principal = Principal.objects.create(
+            username="user_on_binding", tenant=self.tenant, user_id="user_on_binding", type=Principal.Types.USER
+        )
+
+        self.binding_service.update_role_bindings_for_subject(
+            resource_type="workspace",
+            resource_id=str(self.workspace.id),
+            subject_type="user",
+            subject_id=str(principal.uuid),
+            role_ids=[str(self.role1.uuid)],
+        )
+        self.tracker.clear()
+
+        binding_with_principal = RoleBinding.objects.select_related("role").get(
+            role=self.role1, resource_id=str(self.workspace.id), tenant=self.tenant
+        )
+        sole_binding = RoleBinding.objects.select_related("role").get(
+            role=self.role2, resource_id=str(self.workspace.id), tenant=self.tenant
+        )
+
+        dual_write_handler = self.RelationApiDualWriteGroupHandler(
+            self.group,
+            ReplicationEventType.DELETE_GROUP,
+            replicator=self.tracker,
+        )
+
+        roles = Role.objects.filter(policies__group=self.group)
+        dual_write_handler.prepare_to_delete_group(roles)
+
+        removals = set(dual_write_handler.relations_to_remove)
+
+        # Subject tuple for the group is always removed
+        self.assertIn(binding_with_principal.subject_tuple(self.group), removals)
+        self.assertIn(sole_binding.subject_tuple(self.group), removals)
+
+        # Binding tuples for the binding with a principal are NOT removed
+        for t in binding_with_principal.binding_tuples():
+            self.assertNotIn(t, removals)
+
+        # Binding tuples for the sole binding (no other subjects) ARE removed
+        for t in sole_binding.binding_tuples():
+            self.assertIn(t, removals)
+
+    def test_v2_path_includes_member_relations(self):
+        """Non-platform_default group removal also removes member (group→principal) relations."""
+        principal = Principal.objects.create(
+            username="group_member", tenant=self.tenant, user_id="group_member", type=Principal.Types.USER
+        )
+        self.group.principals.add(principal)
+
+        dual_write_handler = self.RelationApiDualWriteGroupHandler(
+            self.group,
+            ReplicationEventType.DELETE_GROUP,
+            replicator=self.tracker,
+        )
+
+        roles = Role.objects.filter(policies__group=self.group)
+        dual_write_handler.prepare_to_delete_group(roles)
+
+        removals = set(dual_write_handler.relations_to_remove)
+
+        member_tuple = self.group.relationship_to_principal(principal)
+        self.assertIsNotNone(member_tuple)
+        self.assertIn(member_tuple, removals)
+
+    def test_v2_path_no_bindings_only_removes_member_relations(self):
+        """Group with no role bindings only produces member relation removals."""
+        lonely_group = Group.objects.create(name="lonely_group", tenant=self.tenant)
+        principal = Principal.objects.create(
+            username="lonely_member", tenant=self.tenant, user_id="lonely_member", type=Principal.Types.USER
+        )
+        lonely_group.principals.add(principal)
+
+        dual_write_handler = self.RelationApiDualWriteGroupHandler(
+            lonely_group,
+            ReplicationEventType.DELETE_GROUP,
+            replicator=self.tracker,
+        )
+
+        roles = Role.objects.filter(policies__group=lonely_group)
+        dual_write_handler.prepare_to_delete_group(roles)
+
+        removals = set(dual_write_handler.relations_to_remove)
+        member_tuple = lonely_group.relationship_to_principal(principal)
+        self.assertIsNotNone(member_tuple)
+        self.assertEqual(removals, {member_tuple})
+
+    def test_v2_path_multiple_workspaces(self):
+        """Bindings across different workspaces are all collected for removal."""
+        other_workspace = Workspace.objects.create(
+            name="Other Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.default_workspace,
+        )
+
+        self.binding_service.update_role_bindings_for_subject(
+            resource_type="workspace",
+            resource_id=str(other_workspace.id),
+            subject_type="group",
+            subject_id=str(self.group.uuid),
+            role_ids=[str(self.role1.uuid)],
+        )
+        self.tracker.clear()
+
+        all_bindings = list(
+            RoleBinding.objects.filter(group_entries__group=self.group, tenant=self.tenant).select_related("role")
+        )
+        self.assertEqual(len(all_bindings), 3)
+
+        dual_write_handler = self.RelationApiDualWriteGroupHandler(
+            self.group,
+            ReplicationEventType.DELETE_GROUP,
+            replicator=self.tracker,
+        )
+
+        roles = Role.objects.filter(policies__group=self.group)
+        dual_write_handler.prepare_to_delete_group(roles)
+
+        removals = set(dual_write_handler.relations_to_remove)
+
+        expected = set()
+        for binding in all_bindings:
+            expected.add(binding.subject_tuple(self.group))
+            expected.update(binding.binding_tuples())
+
+        for t in expected:
+            self.assertIn(t, removals)
+
+    def test_v2_path_platform_default_adds_default_binding(self):
+        """Platform-default group triggers relations_to_add instead of member removals."""
+        from management.relation_replicator.types import ObjectReference, ObjectType, RelationTuple, SubjectReference
+
+        sentinel_tuple = RelationTuple(
+            resource=ObjectReference(type=ObjectType(namespace="rbac", name="sentinel"), id="default"),
+            relation="binding",
+            subject=SubjectReference(
+                subject=ObjectReference(type=ObjectType(namespace="rbac", name="role_binding"), id="default"),
+            ),
+        )
+
+        self.group.platform_default = True
+        self.group.save()
+
+        dual_write_handler = self.RelationApiDualWriteGroupHandler(
+            self.group,
+            ReplicationEventType.DELETE_GROUP,
+            replicator=self.tracker,
+        )
+
+        with patch.object(dual_write_handler, "_default_binding", return_value=[sentinel_tuple]):
+            roles = Role.objects.filter(policies__group=self.group)
+            dual_write_handler.prepare_to_delete_group(roles)
+
+        self.assertIn(sentinel_tuple, dual_write_handler.relations_to_add)
+
+        member_tuples = [
+            t
+            for t in dual_write_handler.relations_to_remove
+            if t.resource.type.name == "group" and t.relation == "member"
+        ]
+        self.assertEqual(len(member_tuples), 0)
