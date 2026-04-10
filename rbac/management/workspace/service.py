@@ -260,7 +260,7 @@ class WorkspaceService:
                     # which could lead to the case where there is an extra workspace over the allowed limit
                     # locking will have a scalability impact so better not to catch this condition
                     raise serializers.ValidationError(
-                        "The total number of workspaces allowed for this organisation has been exceeded."
+                        "The total number of workspaces allowed for this organization has been exceeded."
                     )
 
                 workspace = Workspace.objects.create(**validated_data, tenant=parent.tenant)
