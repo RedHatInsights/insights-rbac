@@ -1693,7 +1693,7 @@ parameters:
   description: Remove null value from the list of workspace id
   value: 'False'
 - name: WORKSPACE_ORG_CREATION_LIMIT
-  description: The limit of workspaces for all organisations
+  description: The limit of workspaces for all organizations
   value: '3000'
 - name: WORKSPACE_HIERARCHY_DEPTH_LIMIT
   description: The limit of workspace hierarchy depth
