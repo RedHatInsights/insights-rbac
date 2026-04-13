@@ -58,7 +58,6 @@ _access_view = AccessView.as_view()
 _permission_list_view = PermissionViewSet.as_view({"get": "list"})
 _permission_options_view = PermissionViewSet.as_view({"get": "options"})
 _auditlog_list_view = AuditLogViewSet.as_view({"get": "list"})
-_role_list_view = RoleViewSet.as_view({"get": "list"})
 _role_access_view = RoleViewSet.as_view({"get": "access"})
 _role_v2_list_view = RoleV2ViewSet.as_view({"get": "list"})
 _role_v2_detail_view = RoleV2ViewSet.as_view({"get": "retrieve"})
@@ -353,13 +352,13 @@ def list_audit_logs(
     *,
     limit: int = 10,
     offset: int = 0,
-    ordering: str = "-created",
+    order_by: str = "-created",
 ) -> str:
     """List audit logs by delegating to AuditLogViewSet."""
     query_params: dict[str, str] = {
         "limit": str(limit),
         "offset": str(offset),
-        "ordering": ordering,
+        "order_by": order_by,
     }
     path = reverse("v1_management:auditlog-list")
     return _call_view(request, _auditlog_list_view, path, query_params)
@@ -522,15 +521,15 @@ def list_roles(
     *,
     limit: int = 10,
     offset: int = 0,
-    ordering: str = "",
+    order_by: str = "",
 ) -> str:
     """List V2 roles by delegating to RoleV2ViewSet."""
     query_params: dict[str, str] = {
         "limit": str(limit),
         "offset": str(offset),
     }
-    if ordering:
-        query_params["ordering"] = ordering
+    if order_by:
+        query_params["order_by"] = order_by
     path = reverse("v2_management:roles-list")
     return _call_view(request, _role_v2_list_view, path, query_params)
 
@@ -654,7 +653,7 @@ def list_cross_account_requests(
     status: str = "",
     org_id: str = "",
     approved_only: str = "",
-    ordering: str = "",
+    order_by: str = "",
 ) -> str:
     """List cross-account requests by delegating to CrossAccountRequestViewSet."""
     query_params: dict[str, str] = {
@@ -667,8 +666,8 @@ def list_cross_account_requests(
         query_params["org_id"] = org_id
     if approved_only:
         query_params["approved_only"] = approved_only
-    if ordering:
-        query_params["ordering"] = ordering
+    if order_by:
+        query_params["order_by"] = order_by
 
     path = reverse("v1_api:cross-list")
     return _call_view(request, _cross_account_list_view, path, query_params)
@@ -708,15 +707,15 @@ def list_workspaces(
     *,
     limit: int = 10,
     offset: int = 0,
-    ordering: str = "",
+    order_by: str = "",
 ) -> str:
     """List workspaces by delegating to WorkspaceViewSet."""
     query_params: dict[str, str] = {
         "limit": str(limit),
         "offset": str(offset),
     }
-    if ordering:
-        query_params["ordering"] = ordering
+    if order_by:
+        query_params["order_by"] = order_by
 
     path = reverse("v2_management:workspace-list")
     return _call_view(request, _workspace_list_view, path, query_params)
