@@ -56,14 +56,6 @@ Please use `make <target>` where <target> is one of:
   docker-logs               connect to console logs for all services
   docker-grype				Run security checks on the project image(s)
 
---- Commands using an Ephemeral Cluster ---
-  ephemeral-build           build and deploy a docker image based on local repo
-  ephemeral-deploy          deploy RBAC app to ephemeral cluster
-  ephemeral-pods            list all RBAC specific pods
-  ephemeral-pf-rbac         port forward RBAC server to localhost (local default port: 9080)
-  ephemeral-reserve         reserve a namespace from the ephemeral cluster (Example to override HOURS, HOURS="12h")
-  ephemeral-release         release the currently reserved namespace
-
 --- Commands using an OpenShift Cluster ---
   oc-clean                 stop openshift cluster & remove local config data
   oc-create-all            run all application services in openshift cluster
@@ -319,26 +311,6 @@ docker-shell:
 docker-down:
 	@docker ps --format '{{.Names}}' |grep -q  rbac >/dev/null 2>&1 && docker-compose down || echo ""
 	@docker network ls --format '{{.Name}}' |grep -q  rbac-network > /dev/null 2>&1 && \docker network rm rbac-network > /dev/null 2>&1 || echo ""
-
-ephemeral-build:
-	./scripts/ephemeral/ephemeral.sh build
-
-ephemeral-deploy:
-	./scripts/ephemeral/ephemeral.sh deploy
-
-ephemeral-pods:
-	./scripts/ephemeral/ephemeral.sh pods
-
-RBAC_LOCAL_PORT = "9080"
-ephemeral-pf-rbac:
-	./scripts/ephemeral/ephemeral.sh pf-rbac ${RBAC_LOCAL_PORT}
-
-HOURS = "24h"
-ephemeral-reserve:
-	./scripts/ephemeral/ephemeral.sh reserve ${HOURS}
-
-ephemeral-release:
-	./scripts/ephemeral/ephemeral.sh release
 
 generate_v2_spec:
 	cd docs/source/specs/typespec/ && ./compile_tsp_spec

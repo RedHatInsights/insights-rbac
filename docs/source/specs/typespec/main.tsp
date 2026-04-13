@@ -1192,6 +1192,8 @@ namespace RoleBindings {
         subject?: Subject;
         @doc("The resource on which the subject is granted the role")
         resource?: Resource;
+        @doc("Resources from which this role binding is sourced (direct or inherited)")
+        sources?: Resource[];
     }
 
     @doc("List role bindings")
@@ -1220,7 +1222,12 @@ namespace RoleBindings {
                     },
                     resource: #{
                         id: "550e8400-e29b-41d4-a716-446655440001"
-                    }
+                    },
+                    sources: #[
+                        #{
+                            id: "550e8400-e29b-41d4-a716-446655440001"
+                        }
+                    ]
                 }
             ]
         }
@@ -1255,6 +1262,8 @@ namespace RoleBindings {
         @example("3fa85f64-5717-4562-b3fc-2c963f66afa6")
         @query subject_id?: string;
 
+        @query exclude_sources?: ExcludeSources = ExcludeSources.none;
+
         @doc("Filter by the type of subject effectively granted access. When 'user', returns role bindings granted directly to the user and through their group memberships. When 'group', returns role bindings granted to the group. When 'principal', filters by external user ID via granted_subject.principal.user_id. Cannot be combined with subject_type/subject_id.")
         @example(GrantedSubjectFilterType.user)
         @query granted_subject_type?: GrantedSubjectFilterType;
@@ -1268,7 +1277,7 @@ namespace RoleBindings {
         @query("granted_subject.principal.user_id") granted_subject_principal_user_id?: string;
 
         @doc("Control which fields are included in the response to optimize payload size.")
-        @query fields?: FieldMask = "resource(id),role(id),subject(id,type)";
+        @query fields?: FieldMask = "resource(id),role(id),subject(id,type),sources(id)";
 
         @doc("Default sort is by the time the role was first created. Prefix with '-' for descending order.")
         @query order_by?: OrderBy = "role.id";

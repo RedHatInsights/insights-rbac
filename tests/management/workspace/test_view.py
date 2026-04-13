@@ -531,7 +531,7 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
     @override_settings(WORKSPACE_ORG_CREATION_LIMIT=4)
     def test_create_workspaces_exceed_limit(self):
         """
-        Test that when creating workspaces if the limit exceeds the organisations workspace limit
+        Test that when creating workspaces if the limit exceeds the organization's workspace limit
         the correct response is returned.
         """
         workspace_names = ["Workspace A", "Workspace B", "Workspace C", "Workspace D"]
@@ -554,13 +554,13 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         resp_body = json.loads(response.content.decode())
         self.assertEqual(
-            resp_body.get("detail"), "The total number of workspaces allowed for this organisation has been exceeded."
+            resp_body.get("detail"), "The total number of workspaces allowed for this organization has been exceeded."
         )
 
     @override_settings(WORKSPACE_ORG_CREATION_LIMIT=9)
     def test_create_workspaces_not_exceed_limit(self):
         """
-        Test that when creating workspaces if the limit does not exceed the organisations workspace limit
+        Test that when creating workspaces if the limit does not exceed the organization's workspace limit
         the correct response is returned.
         """
         workspace_names = ["Workspace A", "Workspace B", "Workspace C", "Workspace D"]
