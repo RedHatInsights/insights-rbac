@@ -829,12 +829,16 @@ class InternalViewsetTests(BaseInternalViewsetTests):
         dual_write_handler = SeedingRelationApiDualWriteHandler(role_system, replicator=replicator)
         dual_write_handler.replicate_new_system_role()
 
+        ws_2 = Workspace.objects.create(
+            tenant=self.tenant, parent=Workspace.objects.default(tenant=self.tenant), name="ws_2"
+        )
+
         role_custom = fixture.new_custom_role(
             name="custom_role",
             tenant=self.tenant,
             resource_access=fixture.workspace_access(
                 permissions,
-                ws_2=["app1:hosts:read", "inventory:hosts:write"],
+                **{str(ws_2.id): ["app1:hosts:read", "inventory:hosts:write"]},
             ),
         )
         dual_write = RelationApiDualWriteHandler(
