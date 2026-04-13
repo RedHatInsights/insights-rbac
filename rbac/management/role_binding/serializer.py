@@ -58,6 +58,7 @@ class RoleBindingBySubjectFieldSelection(FieldSelection):
         "subject": {"id", "type", "group.name", "group.description", "group.user_count", "user.username"},
         "roles": {"id", "name"},
         "resource": {"id", "name", "type"},
+        "sources": {"id", "name", "type"},
     }
 
 
@@ -290,12 +291,14 @@ class RoleBindingOutputSerializer(serializers.Serializer):
     - role(name, description) - accesses role.name, role.description
     - resource(name, type) - accesses resource name and type from context
     - last_modified - include root-level field
+    - sources(name, type) - accesses sources with optional name and type
     """
 
     last_modified = serializers.SerializerMethodField()
     subject = serializers.SerializerMethodField()
     roles = serializers.SerializerMethodField()
     resource = serializers.SerializerMethodField()
+    sources = serializers.SerializerMethodField()
 
     def _get_field_selection(self):
         """Get field selection from context."""
@@ -317,6 +320,7 @@ class RoleBindingOutputSerializer(serializers.Serializer):
             "subject": ret.get("subject"),
             "roles": ret.get("roles"),
             "resource": ret.get("resource"),
+            "sources": ret.get("sources"),
         }
 
         # Include last_modified only if explicitly requested
@@ -536,6 +540,52 @@ class RoleBindingOutputSerializer(serializers.Serializer):
                         resource_data[field_name] = value
 
         return resource_data
+
+    def get_sources(self, obj):
+        """Extract sources information indicating where role bindings are attached.
+
+        For by-subject endpoints, a subject may have bindings from multiple resources
+        (direct and inherited). This returns the unique list of resources where bindings
+        are attached.
+
+        Default (no fields param): Returns only source id.
+        With fields param: id is always included, plus explicitly requested fields (name, type).
+        """
+        if isinstance(obj, dict):
+            return obj.get("sources", [])
+
+        field_selection = self._get_field_selection()
+
+        # Get all binding entries from the subject's filtered_bindings
+        binding_entries = self._get_binding_entries(obj)
+
+        # Extract unique sources from bindings
+        seen_sources = set()
+        sources = []
+
+        for binding_entry in binding_entries:
+            if not hasattr(binding_entry, "binding") or not binding_entry.binding:
+                continue
+
+            binding = binding_entry.binding
+            source_key = (binding.resource_type, binding.resource_id)
+
+            if source_key in seen_sources:
+                continue
+            seen_sources.add(source_key)
+
+            source_data: dict = {"id": binding.resource_id}
+
+            if field_selection is not None:
+                source_fields = field_selection.get_nested("sources")
+                if "type" in source_fields:
+                    source_data["type"] = binding.resource_type
+                if "name" in source_fields:
+                    source_data["name"] = getattr(binding, "resource_name", None)
+
+            sources.append(source_data)
+
+        return sources
 
 
 # Backward compatibility alias
