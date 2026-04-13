@@ -4144,6 +4144,7 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
                     "Invalid field(s): Unknown field: 'bogus_field'."
                     " Valid resource fields: ['id', 'name', 'type']."
                     " Valid roles fields: ['id', 'name']."
+                    " Valid sources fields: ['id', 'name', 'type']."
                     " Valid subject fields: ['group.description', 'group.name',"
                     " 'group.user_count', 'id', 'type', 'user.username']."
                     " Valid root fields: ['last_modified'].",
