@@ -320,8 +320,11 @@ class RoleBindingOutputSerializer(serializers.Serializer):
             "subject": ret.get("subject"),
             "roles": ret.get("roles"),
             "resource": ret.get("resource"),
-            "sources": ret.get("sources"),
         }
+
+        # Include sources only if no field selection, or if explicitly requested
+        if field_selection is None or "sources" in field_selection.nested_fields:
+            filtered["sources"] = ret.get("sources")
 
         # Include last_modified only if explicitly requested
         if field_selection and "last_modified" in field_selection.root_fields:
