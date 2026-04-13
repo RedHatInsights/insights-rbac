@@ -70,6 +70,14 @@ paths:
           schema:
             type: string
           explode: false
+        - name: exclude_sources
+          in: query
+          required: false
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ExcludeSources'
+            default: none
+          explode: false
         - name: granted_subject_type
           in: query
           required: false
@@ -98,7 +106,7 @@ paths:
           schema:
             allOf:
               - $ref: '#/components/schemas/FieldMask'
-            default: resource(id),role(id),subject(id,type)
+            default: resource(id),role(id),subject(id,type),sources(id)
           explode: false
         - name: order_by
           in: query
@@ -143,6 +151,8 @@ paths:
                       type: group
                     resource:
                       id: 550e8400-e29b-41d4-a716-446655440001
+                    sources:
+                      - id: 550e8400-e29b-41d4-a716-446655440001
         '401':
           description: Access is unauthorized.
           content:
@@ -2364,6 +2374,11 @@ components:
           allOf:
             - $ref: '#/components/schemas/RoleBindings.Resource'
           description: The resource on which the subject is granted the role
+        sources:
+          type: array
+          items:
+            $ref: '#/components/schemas/RoleBindings.Resource'
+          description: Resources from which this role binding is sourced (direct or inherited)
       example:
         role:
           id: 550e8400-e29b-41d4-a716-446655440002
