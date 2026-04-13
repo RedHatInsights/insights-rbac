@@ -637,13 +637,17 @@ class MCPViewTests(MCPToolTestMixin, IdentityRequest):
         tool_names = [t["name"] for t in response.json()["result"]["tools"]]
         expected_tools = [
             "get_status",
+            "list_access",
             "list_permissions",
+            "list_permission_options",
             "list_audit_logs",
             "list_roles",
             "get_role",
+            "list_role_access",
             "list_groups",
             "get_group",
             "list_group_principals",
+            "list_group_roles",
             "list_cross_account_requests",
             "get_cross_account_request",
             "list_workspaces",
@@ -812,6 +816,143 @@ class MCPViewTests(MCPToolTestMixin, IdentityRequest):
     def test_list_cross_account_requests_without_auth_returns_error(self):
         """Permission: list_cross_account_requests without auth returns auth error."""
         response = self._call_tool("list_cross_account_requests", use_auth=False)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    # --- list_access ---
+
+    def test_list_access_success(self):
+        """Positive: list_access returns access data for the authenticated principal."""
+        role = Role.objects.create(name="access_role", tenant=self.tenant)
+        perm = Permission.objects.create(
+            application="rbac",
+            resource_type="roles",
+            verb="read",
+            permission="rbac:roles:read",
+            tenant=self.tenant,
+        )
+        Access.objects.create(permission=perm, role=role, tenant=self.tenant)
+        group = Group.objects.create(name="access_group", tenant=self.tenant)
+        group.principals.add(self.principal)
+        policy = Policy.objects.create(name="access_policy", group=group, tenant=self.tenant)
+        policy.roles.add(role)
+
+        response = self._call_tool("list_access", {"application": "rbac"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertIn("data", tool_output)
+
+    def test_list_access_without_auth_returns_error(self):
+        """Permission: list_access without auth returns auth error."""
+        response = self._call_tool("list_access", {"application": "rbac"}, use_auth=False)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    # --- list_permission_options ---
+
+    def test_list_permission_options_success(self):
+        """Positive: list_permission_options returns distinct field values."""
+        Permission.objects.create(
+            application="rbac",
+            resource_type="roles",
+            verb="read",
+            permission="rbac:roles:read",
+            tenant=self.tenant,
+        )
+        Permission.objects.create(
+            application="cost-management",
+            resource_type="reports",
+            verb="read",
+            permission="cost-management:reports:read",
+            tenant=self.tenant,
+        )
+        response = self._call_tool("list_permission_options", {"field": "application"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertIn("data", tool_output)
+        self.assertIn("meta", tool_output)
+
+    def test_list_permission_options_without_auth_returns_error(self):
+        """Permission: list_permission_options without auth returns auth error."""
+        response = self._call_tool("list_permission_options", {"field": "application"}, use_auth=False)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    # --- list_group_roles ---
+
+    def test_list_group_roles_success(self):
+        """Positive: list_group_roles returns roles for a group."""
+        group = Group.objects.create(name="roles_group", tenant=self.tenant)
+        role = Role.objects.create(name="test_role", tenant=self.tenant)
+        policy = Policy.objects.create(name="test_policy", group=group, tenant=self.tenant)
+        policy.roles.add(role)
+
+        response = self._call_tool("list_group_roles", {"group_uuid": str(group.uuid)})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertIn("data", tool_output)
+
+    def test_list_group_roles_without_auth_returns_error(self):
+        """Permission: list_group_roles without auth returns auth error."""
+        response = self._call_tool(
+            "list_group_roles",
+            {"group_uuid": "00000000-0000-0000-0000-000000000000"},
+            use_auth=False,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    # --- list_role_access ---
+
+    def test_list_role_access_success(self):
+        """Positive: list_role_access returns access for a role."""
+        role = Role.objects.create(name="access_detail_role", tenant=self.tenant)
+        perm = Permission.objects.create(
+            application="rbac",
+            resource_type="principals",
+            verb="read",
+            permission="rbac:principals:read",
+            tenant=self.tenant,
+        )
+        Access.objects.create(permission=perm, role=role, tenant=self.tenant)
+
+        response = self._call_tool("list_role_access", {"role_uuid": str(role.uuid)})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertIn("data", tool_output)
+        self.assertTrue(len(tool_output["data"]) >= 1)
+
+    def test_list_role_access_without_auth_returns_error(self):
+        """Permission: list_role_access without auth returns auth error."""
+        response = self._call_tool(
+            "list_role_access",
+            {"role_uuid": "00000000-0000-0000-0000-000000000000"},
+            use_auth=False,
+        )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.json()
