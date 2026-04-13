@@ -3752,24 +3752,19 @@ def invalid_destructive_time():
     return datetime.now(timezone.utc).replace(tzinfo=pytz.UTC) - timedelta(hours=1)
 
 
+@override_settings(ATOMIC_RETRY_DISABLED=True)
 class WorkspaceViewsetTests(BaseInternalViewsetTests):
     """Test the /api/utils/workspace/ endpoint from internal viewset"""
 
     def setUp(self):
         """Set up the Workspace view tests."""
         super().setUp()
-        self.root_workspace = Workspace.objects.create(
-            name="Root Workspace",
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-        )
-        self.default_workspace = Workspace.objects.create(
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            name="Default Workspace",
-            description="Default Description",
-            parent_id=self.root_workspace.id,
-        )
+
+        bootstrap_result = bootstrap_tenant_for_v2_test(self.tenant)
+
+        self.default_workspace = bootstrap_result.default_workspace
+        self.root_workspace = bootstrap_result.root_workspace
+
         self.standard_workspace = Workspace.objects.create(
             name="Standard Workspace",
             description="Standard Workspace - description",
@@ -3777,6 +3772,7 @@ class WorkspaceViewsetTests(BaseInternalViewsetTests):
             parent=self.default_workspace,
             type=Workspace.Types.STANDARD,
         )
+
         self.ungrouped_workspace = Workspace.objects.create(
             name="Ungrouped Hosts Workspace",
             description="Ungrouped Hosts Workspace - description",

@@ -22,8 +22,11 @@ from unittest.mock import Mock, call, patch
 
 from django.test import TestCase
 
-from management.workspace.service import WorkspaceService
-from tests.v2_util import bootstrap_tenant_for_v2_test
+from management.role.v2_model import RoleV2, CustomRoleV2, PlatformRoleV2
+from management.role_binding.model import RoleBinding
+from management.role_binding.service import RoleBindingService
+from tests.util import assert_v2_tuples_consistent
+from tests.v2_util import bootstrap_tenant_for_v2_test, seed_v2_role_from_v1
 
 
 @dataclass
@@ -158,7 +161,14 @@ from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.test.utils import override_settings
 
-from migration_tool.in_memory_tuples import InMemoryTuples, InMemoryRelationReplicator
+from migration_tool.in_memory_tuples import (
+    InMemoryTuples,
+    InMemoryRelationReplicator,
+    all_of,
+    relation,
+    subject_type,
+    resource,
+)
 
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)
@@ -187,6 +197,12 @@ class WorkspaceServiceTestBase(TestCase):
 
         cls.tuples = InMemoryTuples()
         cls.in_memory_replicator = InMemoryRelationReplicator(cls.tuples)
+
+    def tearDown(self):
+        with self.subTest(msg="tuple consistency"):
+            assert_v2_tuples_consistent(test=self, tuples=self.tuples)
+
+        super().tearDown()
 
 
 class WorkspaceServiceCreateTests(WorkspaceServiceTestBase):
@@ -334,6 +350,12 @@ class WorkspaceServiceUpdateTests(WorkspaceServiceTestBase):
         )
 
 
+@override_settings(
+    ATOMIC_RETRY_DISABLED=True,
+    REPLICATION_TO_RELATION_ENABLED=True,
+    ROOT_SCOPE_PERMISSIONS="",
+    TENANT_SCOPE_PERMISSIONS="",
+)
 class WorkspaceServiceDestroyTests(WorkspaceServiceTestBase):
     """Tests for the destroy method"""
 
@@ -356,9 +378,6 @@ class WorkspaceServiceDestroyTests(WorkspaceServiceTestBase):
         self.assertFalse(Workspace.objects.filter(id=self.standard_child_workspace.id).exists())
 
     @override_settings(
-        REPLICATION_TO_RELATION_ENABLED=True,
-        ROOT_SCOPE_PERMISSIONS="",
-        TENANT_SCOPE_PERMISSIONS="",
         REMOVE_NULL_VALUE=False,
     )
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
@@ -469,6 +488,69 @@ class WorkspaceServiceDestroyTests(WorkspaceServiceTestBase):
             str(workspace_to_keep.id),
             "Remaining binding should be for the kept workspace",
         )
+
+    def _do_test_destroy_with_bindings_v2(self, role: RoleV2):
+        replicator = InMemoryRelationReplicator(self.tuples)
+        binding_service = RoleBindingService(tenant=self.tenant, replicator=replicator)
+        workspace_service = WorkspaceService(replicator=replicator)
+
+        group = Group.objects.create(tenant=self.tenant, name="a group")
+
+        parent_uuid = str(self.standard_workspace.id)
+        child_uuid = str(self.standard_child_workspace.id)
+
+        def assert_workspace_binding_count(workspace_id: str, count: int):
+            self.assertEqual(
+                count, RoleBinding.objects.filter(resource_type="workspace", resource_id=workspace_id).count()
+            )
+
+            self.assertEqual(
+                count,
+                self.tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "workspace", workspace_id),
+                        relation("binding"),
+                        subject_type("rbac", "role_binding"),
+                    )
+                ),
+            )
+
+        def assert_bindings(parent_count: int, child_count: int):
+            # Check both parent and child workspaces to ensure that we don't accidentally delete anything from the
+            # parent.
+            assert_workspace_binding_count(parent_uuid, parent_count)
+            assert_workspace_binding_count(child_uuid, child_count)
+
+        binding_service.update_role_bindings_for_subject(
+            resource_type="workspace",
+            resource_id=str(self.standard_workspace.id),
+            subject_type="group",
+            subject_id=str(group.uuid),
+            role_ids=[str(role.uuid)],
+        )
+
+        binding_service.update_role_bindings_for_subject(
+            resource_type="workspace",
+            resource_id=str(self.standard_child_workspace.id),
+            subject_type="group",
+            subject_id=str(group.uuid),
+            role_ids=[str(role.uuid)],
+        )
+
+        assert_bindings(parent_count=1, child_count=1)
+
+        workspace_service.destroy(self.standard_child_workspace)
+        assert_bindings(1, 0)
+
+    def test_destroy_with_seeded_bindings_v2(self):
+        public_tenant = Tenant.objects.get(tenant_name="public")
+        v1_role = Role.objects.create(tenant=public_tenant, name="system role", system=True)
+
+        self._do_test_destroy_with_bindings_v2(seed_v2_role_from_v1(v1_role))
+
+    def test_destroy_with_custom_bindings_v2(self):
+        role = CustomRoleV2.objects.create(tenant=self.tenant, name="a role")
+        self._do_test_destroy_with_bindings_v2(role)
 
 
 class WorkspaceHierarchyTests(WorkspaceServiceTestBase):
