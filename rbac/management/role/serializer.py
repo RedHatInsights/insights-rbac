@@ -412,16 +412,6 @@ class RolePatchSerializer(RoleSerializer):
         instance = update_role(instance, validated_data, clear_access=False)
         return instance
 
-    def validate(self, data):
-        """Validate the input data of patching role."""
-        if self.instance.system:
-            key = "role.update"
-            message = "System roles may not be updated."
-            error = {key: [_(message)]}
-            raise serializers.ValidationError(error)
-        _validate_name_not_system_role(data.get("name"), data.get("display_name"), self.instance)
-        return super().validate(data)
-
 
 class BindingMappingSerializer(serializers.ModelSerializer):
     """Serializer for the binding mapping."""
