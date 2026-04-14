@@ -1,86 +1,155 @@
-# insights-rbac Performance Guidelines
+# Performance Guidelines
 
-## 1. Redis Access Cache
+Performance conventions and patterns specific to insights-rbac.
 
-**Cache architecture**: This repo uses a custom Redis caching layer (`management/cache.py`) with `BlockingConnectionPool`. There are five cache types: `AccessCache` (per-principal per-app access policy), `TenantCache`, `PrincipalCache`, `JWKSCache`, and `JWTCache`.
+## Caching Architecture
 
-- **Always invalidate cache when modifying Role, Access, ResourceDefinition, Group, or Group membership.** Django signals handle this automatically for models with `ACCESS_CACHE_CONNECT_SIGNALS=True`. If you bypass signals (e.g., `bulk_update`, raw SQL), you must manually call `AccessCache(tenant.org_id).delete_policy(principal.uuid)` or `delete_all_policies_for_tenant()`.
-- **Skip cache purging for the public tenant.** Use `skip_purging_cache_for_public_tenant(tenant)` before any cache invalidation. The public tenant holds system/seeded objects shared across orgs; it has no per-user cache entries.
-- **Use `JWTCacheOptimized` instead of `JWTCache` in high-throughput paths** (e.g., Kafka consumers). It skips the `redis_health_check()` call on every read, which does a `PING` round-trip.
-- **Batch cache deletions.** Use `scan_iter` with `count=BATCH_DELETE_SIZE` (1000) and pipeline deletes, as done in `delete_all_policies_for_tenant()`. Never use `KEYS *` in production.
-- **Cache key format convention**: `rbac::<type>::<scope>=<value>`. Examples: `rbac::policy::tenant=X::user=Y`, `rbac::principal::org_id::username`.
-- **Cache lifetimes**: access policy = `ACCESS_CACHE_LIFETIME` (600s default), principals = `PRINCIPAL_CACHE_LIFETIME` (3600s default), JWKS = `IT_TOKEN_JKWS_CACHE_LIFETIME` (28800s default).
+### Redis Cache Hierarchy
 
-## 2. Database Query Optimization
+Five cache types share a single `BlockingConnectionPool` (module-level in `management/cache.py`).
+The pool's `max_connections` must match `GUNICORN_THREAD_LIMIT` (default 10).
 
-- **Always use `prefetch_related` for traversals through ManyToMany or reverse FK relations.** The codebase follows this pattern consistently:
-  - Roles: `prefetch_related("access", "ext_relation", "access__permission")`
-  - Groups: annotate with `principalCount` and `policyCount` using `Count(..., distinct=True)`
-  - RoleBindings: `select_related("role").prefetch_related("role__children", "group_entries__group")`
-- **Use field-driven eager loading in V2 querysets.** See `RoleV2QuerySet.with_fields()` -- only `select_related("tenant")` when `org_id` is requested, only `prefetch_related("permissions")` when `permissions` is requested. Follow this pattern for new V2 querysets.
-- **Use `.values()` and `.iterator()` for large data processing.** See `workspace/service.py` which queries `ResourceDefinition.objects.filter(...).values(...)` and groups with `.iterator()` to avoid loading full model instances into memory.
-- **Use `bulk_create` / `bulk_update` for batch operations.** The repo uses this in tenant bootstrapping, role binding creation, and principal updates. Always prefer these over loops of `.save()`.
-- **Filter by tenant explicitly.** All models inherit `TenantAwareModel` with a FK to `Tenant`. Use `filter_queryset_by_tenant(queryset, request.tenant)` or `.filter(tenant=tenant)`. The public tenant pattern is: `.filter(tenant__in=[request.tenant, public_tenant])`.
+| Cache | Key pattern | Lifetime | Serialization |
+|---|---|---|---|
+| `TenantCache` | `rbac::tenant::tenant={org_id}` | `ACCESS_CACHE_LIFETIME` (600s) | pickle |
+| `AccessCache` | `rbac::policy::tenant={org_id}::user={uuid}` | `ACCESS_CACHE_LIFETIME` (600s) | JSON (hset) |
+| `PrincipalCache` | `rbac::principal::{org_id}::{username}` | `PRINCIPAL_CACHE_LIFETIME` (3600s) | pickle |
+| `JWKSCache` | `rbac::jwks::response` | `IT_TOKEN_JKWS_CACHE_LIFETIME` (28800s) | JSON |
+| `JWTCache` | `rbac::jwt::relations` | `IT_TOKEN_JKWS_CACHE_LIFETIME` (28800s) | string |
 
-## 3. Transaction Isolation and Concurrency
+### Cache Rules
 
-- **V2 write operations use SERIALIZABLE isolation with automatic retry.** This is the core concurrency pattern:
-  - **Views**: Use `AtomicOperationsMixin` (in `v2_mixins.py`). Override `perform_atomic_create/update/destroy` hooks, never override `create/update/destroy` directly. The mixin wraps operations in `pgtransaction.atomic(isolation_level=SERIALIZABLE, retry=3)`.
-  - **Services**: Use `@atomic` decorator or `atomic_block()` context manager from `management/atomic_transactions.py`. These use `pgtransaction.SERIALIZABLE`.
-  - **Workspace views**: Use `@pgtransaction.atomic(isolation_level=pgtransaction.SERIALIZABLE, retry=3)` directly.
-- **Handle `OperationalError` with `SerializationFailure` and `DeadlockDetected`.** Return 409 for serialization failures, 500 for deadlocks. See `_handle_concurrency_error` in `v2_mixins.py`.
-- **Use `select_for_update()` when modifying rows that may be concurrently accessed.** The codebase uses `select_for_update(of=["self"])` to lock specific tables. Always pair with `transaction.atomic()`.
-- **Disable serializable isolation in tests.** Set `ATOMIC_RETRY_DISABLED=True` in test settings. The `is_atomic_disabled()` check falls back to plain `transaction.atomic()`.
+- **Every `get_cached()` call does a health check ping.** For high-throughput paths (Kafka consumers), use `JWTCacheOptimized` which skips the ping.
+- **Signal-driven invalidation** is the primary cache-busting mechanism. Changes to `Role`, `Access`, `ResourceDefinition`, `Policy`, `Group` membership all trigger cache deletes via Django signals. These signals are gated by `ACCESS_CACHE_ENABLED` and `ACCESS_CACHE_CONNECT_SIGNALS`.
+- **Platform-default group changes flush the entire tenant's policy cache** (`delete_all_policies_for_tenant`). Non-default changes only flush affected principal UUIDs. Be aware that `scan_iter` with `BATCH_DELETE_SIZE=1000` is used for tenant-wide deletes.
+- **PrincipalCache** is used in `management/utils.py:get_principal()`. Always call `cache_principal()` after creating or fetching a principal from the DB to keep the cache warm.
+- **Never bypass the cache layer.** The `AccessCache.get_policy` / `save_policy` pattern in `access/view.py` is the reference implementation: check cache first, query DB on miss, write result back to cache.
+- **Celery beat runs `run_redis_cache_health` every 30 seconds.** If Redis is unreachable, caching is disabled globally on that worker.
 
-## 4. Outbox Pattern and Dual Write
+### In-Process Caches
 
-- **All relation replication goes through the Outbox table** (`management/debezium/model.py`). The `OutboxReplicator` writes to the Outbox, then immediately deletes the row. Debezium captures the change from the WAL (write-ahead log). This is the Debezium outbox pattern.
-- **Outbox writes must happen inside the same transaction as the data change.** This ensures atomicity. The outbox row is saved via `force_insert=True` then deleted immediately.
-- **Use `transaction.on_commit()` for Prometheus counter increments** related to replication events. This avoids counting events for rolled-back transactions.
-- **Never produce duplicate tuples in a replication event.** The `OutboxReplicator._check_for_duplicate_relationships()` raises `ValueError` if duplicates are found. Fix the tuple generation logic rather than deduplicating.
-- **Partition key**: All events currently use `PartitionKey.byEnvironment()` which serializes all events globally.
+Two singleton caches live in process memory (not Redis):
 
-## 5. Celery Task Patterns
+- `PermissionScopeCache` (`permission/scope_service.py`) -- maps Permission IDs to their Scope enum. Call `invalidate()` after permission seeding.
+- `V2RoleExcludedApplicationPermissionIdsCache` (`role/v2_role_scope.py`) -- caches PKs of permissions in excluded applications. Call `invalidate()` after any permission table mutation.
 
-- **Celery beat schedule** (in `rbac/celery.py`):
-  - Redis health check: every 30 seconds (`run_redis_cache_health`).
-  - Cross-account cleanup: daily at midnight.
-  - Principal cleanup: every 60s via UMB, or weekly (7th/14th/21st/28th) via BOP.
-- **All Celery tasks are `@shared_task`** and defined in `management/tasks.py`. They delegate to management commands or service functions.
-- **Heavy migration/cleanup tasks must be Celery tasks**, not inline request processing. Examples: `migrate_data_in_worker`, `cleanup_tenant_orphan_bindings_in_worker`.
-- **Use `call_command()` inside Celery tasks** to reuse management command logic.
+Both are rebuilt lazily on next access after invalidation.
 
-## 6. Prometheus Metrics
+## Query Optimization
 
-- **Naming convention**: `rbac_<component>_<metric>_<unit>` or `<domain>_<metric>_<unit>`.
-- **Always use labels for dimensionality**: status (success/failure), message_type, result.
-- **Define metrics at module level**, not inside functions. Import from `prometheus_client`.
-- **Use `Histogram` for latencies**, `Counter` for event counts, `Gauge` for state (e.g., consumer running).
-- **Custom histogram buckets**: Generate based on configuration values when appropriate (see `_generate_ryw_histogram_buckets`).
-- **Celery worker exposes metrics** via `prometheus_client.start_http_server` on `metricsPort` at worker startup.
+### Eager Loading Conventions
 
-## 7. Multi-Tenant Query Safety
+**v2 QuerySets** use field-driven eager loading. `RoleV2QuerySet.with_fields(fields)` conditionally applies `select_related`, `prefetch_related`, and annotations based on which response fields are requested. Follow this pattern for new v2 querysets.
 
-- **Every data model extends `TenantAwareModel`** which has a FK to `api.models.Tenant`. Queries must always scope to the request tenant.
-- **Public tenant pattern**: System/seeded roles and default groups live in the public tenant (`tenant_name="public"`). When listing roles, always include public tenant: `.filter(tenant__in=[request.tenant, public_tenant])`.
-- **`Tenant._get_public_tenant()`** caches the public tenant instance in a class variable. Use it for repeated access.
-- **Never leak data across tenants.** All querysets must filter by tenant. The `FilterQuerySet.public_tenant_only()` method returns only system objects from the public tenant.
+```python
+# Good: field-driven, only loads what the serializer needs
+qs = qs.with_fields(requested_fields)
 
-## 8. Middleware Performance
+# Bad: unconditional prefetch of everything
+qs = qs.prefetch_related("permissions", "bindings", "tenant")
+```
 
-- **`should_load_user_permissions` optimization** (`middleware.py`): Skip permission loading for org admins (they have full access). For the `/access/` endpoint, only load permissions when both `username` and `application` query params are present.
-- **Avoid redundant BOP/proxy calls.** The `get_principal` function checks the `PrincipalCache` before querying the database, and caches on miss. The `BYPASS_BOP_VERIFICATION` setting skips external user verification entirely.
+**RoleBindingQuerySet.for_tenant()** is the canonical example of a complex eager-load chain: `select_related("role")`, `prefetch_related("group_entries__group", ...)`, plus `annotate()` for fields that `CursorPagination` needs via `getattr()`.
 
-## 9. Read-Your-Writes Consistency
+### Preventing N+1 Queries
 
-- The workspace service implements read-your-writes using PostgreSQL `LISTEN`/`NOTIFY` (`workspace/service.py`). After a write commits, a `transaction.on_commit` callback waits for a notification on `READ_YOUR_WRITES_CHANNEL`.
-- **Timeout is configurable** via `READ_YOUR_WRITES_TIMEOUT_SECONDS` (default 10s).
-- **Metrics track both success and timeout** via `ryw_wait_total` and `ryw_wait_duration_seconds`.
+- Serializers must not trigger lazy loads. The comment in `role_binding/serializer.py:484` is the contract: `role.children.all()` relies on the service layer's `prefetch_related("role__children")`.
+- When adding a new serializer field that traverses a relation, add the corresponding `prefetch_related` in the queryset or service layer, not in the serializer.
+- Use `Prefetch` objects with custom querysets for filtered or nested prefetches (see `role_binding/service.py:459-469`).
 
-## 10. Anti-Patterns to Avoid
+### Annotations for Pagination
 
-- **Never call `redis_health_check()` on every cache read in hot paths.** It does a `PING` round-trip. Use `JWTCacheOptimized` pattern instead.
-- **Never use `KEYS *` or unbounded `scan_iter`** without `count` parameter.
-- **Never override `create/update/destroy` on V2 ViewSets** that use `AtomicOperationsMixin`. Override the `perform_atomic_*` hooks instead.
-- **Never write to Outbox outside a transaction.** The outbox pattern requires the data change and outbox write to be in the same transaction for atomicity.
-- **Never skip tenant filtering.** This is the most critical security and performance constraint in the codebase.
+DRF's `CursorPagination` uses `getattr(instance, field)` for cursor positions. Cross-relation lookups (e.g., `role__name`) only work in `.order_by()`, not `getattr()`. Solution: annotate with `F()` expressions:
+
+```python
+qs = qs.annotate(
+    role_name=F("role__name"),
+    role_uuid=F("role__uuid"),
+)
+```
+
+### Workspace Tree Queries
+
+Ancestor/descendant queries use `WITH RECURSIVE` CTEs via `RawSQL`:
+- `Workspace.ancestors()` -- single workspace, returns ancestor chain
+- `Workspace.descendants()` -- single workspace, returns subtree
+- `WorkspaceManager.descendant_ids_with_parents()` -- batch of workspace IDs, single DB round-trip
+
+Always use `.only("name", "id", "parent_id")` when serializing ancestors (see `workspace/serializer.py:97`).
+
+### values_list for ID Collections
+
+Use `values_list("id", flat=True)` or `values_list("uuid", flat=True)` when you only need IDs for filtering. This avoids hydrating full model instances.
+
+## Transaction Management
+
+### SERIALIZABLE Isolation (v2 APIs)
+
+All v2 write operations use PostgreSQL `SERIALIZABLE` isolation via `pgtransaction`. Three helpers in `management/atomic_transactions.py`:
+
+- `@atomic` -- decorator, SERIALIZABLE, no retry
+- `@atomic_with_retry(retries=N)` -- decorator, SERIALIZABLE, auto-retry on serialization failure
+- `atomic_block()` -- context manager, SERIALIZABLE
+
+The `AtomicOperationsMixin` in `v2_mixins.py` wraps `create`/`update`/`destroy` with SERIALIZABLE + 3 retries + concurrency error handling (409 for `SerializationFailure`, 500 for `DeadlockDetected`). Override `perform_atomic_create` etc., never override `create` directly.
+
+### select_for_update Patterns
+
+- **Always pair `select_for_update()` with `transaction.atomic()`.** The codebase uses `select_for_update(of=["self"])` to lock only the target table in joins.
+- **Dual-write handlers require the role to be locked** before constructing the handler (`role/relation_api_dual_write_handler.py:289`).
+- Chain `select_for_update().select_related("tenant")` to avoid extra queries inside the locked section.
+
+### Test Isolation
+
+Set `ATOMIC_RETRY_DISABLED=True` in test settings to skip `pgtransaction` wrappers (which conflict with Django's test transaction rollback). The `is_atomic_disabled()` check falls back to plain `transaction.atomic()`.
+
+## Celery Tasks
+
+### Beat Schedule
+
+| Task | Schedule | Purpose |
+|---|---|---|
+| `cross_account_cleanup` | Daily at midnight | Expire cross-account requests |
+| `run_redis_cache_health` | Every 30 seconds | Toggle caching on Redis failure |
+| `principal_cleanup_via_umb` | Every 60 seconds (if UMB enabled) | Process principal events from UMB |
+| `principal_cleanup` | Every 7 days (if UMB disabled) | Clean stale principals via BOP |
+
+### Task Guidelines
+
+- All tasks are `@shared_task` (not bound to the app instance) for testability.
+- Heavy data operations (migration, orphan cleanup) accept kwargs to control scope (e.g., `tenant_limit`, `binding_uuids`, `dry_run`).
+- Never do cache writes inside Celery tasks that also modify the DB -- signals handle cache invalidation automatically.
+
+## Pagination
+
+### v1: LimitOffsetPagination
+
+`StandardResultsSetPagination` -- default limit 10, max 1000. Provides `first`/`next`/`previous`/`last` links.
+
+### v2: Dual Strategy
+
+- **`V2ResultsSetPagination`** (LimitOffset) for workspaces and simple lists. Supports `limit=-1` to disable pagination (fetches count first).
+- **`V2CursorPagination`** for role-bindings and roles. Better for large datasets -- no COUNT query. Default page size 10, max 1000. Dynamic ordering via `order_by` query param with dot notation (`role.name`, `group.modified`).
+
+When using `limit=-1`, `V2ResultsSetPagination` calls `queryset.count()` to set `default_limit`. This is an extra query -- acceptable for small datasets but avoid for large ones.
+
+## Gunicorn Configuration
+
+```
+workers = POD_CPU_LIMIT * GUNICORN_WORKER_MULTIPLIER (default 2)
+threads = GUNICORN_THREAD_LIMIT (default 10)
+```
+
+The Redis `BlockingConnectionPool.max_connections` (default 10) should match `threads`. If you increase thread count, increase `REDIS_MAX_CONNECTIONS` accordingly.
+
+Redis socket timeouts are aggressive: `REDIS_SOCKET_CONNECT_TIMEOUT=0.1s`, `REDIS_SOCKET_TIMEOUT=0.1s`. This ensures a Redis outage doesn't block request threads, but means transient network blips will trigger cache misses.
+
+## Database Indexes
+
+- Workspace and RoleV2 `name` fields have GIN trigram indexes (`gin_trgm_ops`) for case-insensitive substring search.
+- `Principal.type`, `Principal.service_account_id`, `Principal.user_id`, `Workspace.type`, `RoleV2.type` all have `db_index=True`.
+- When adding new filters to v2 list endpoints, check whether a database index supports the query. Add indexes in a migration if the filter will be used in production list operations.
+
+## Performance Testing
+
+The `tests/performance/` directory contains OCM integration sync benchmarks. Tests create 1000 tenants x 10 groups x 10 roles x 10 principals and measure endpoint throughput both synchronously and with `ThreadPoolExecutor(max_workers=10)`. These are not part of the regular test suite -- run via `run_ocm_performance_in_worker` Celery task.
