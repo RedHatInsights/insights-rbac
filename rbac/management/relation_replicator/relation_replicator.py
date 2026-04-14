@@ -83,6 +83,7 @@ class ReplicationEventType(str, Enum):
     REMOVE_UNASSIGNED_BINDING_MAPPINGS = "remove_unassigned_binding_mappings"
     BATCH_CREATE_ROLE_BINDING = "batch_create_role_binding"
     UPDATE_ROLE_BINDINGS_FOR_SUBJECT = "update_role_bindings_for_subject"
+    REMOVE_DELETED_WORKSPACE_BINDINGS = "remove_deleted_workspace_bindings"
 
 
 class ReplicationEvent:
