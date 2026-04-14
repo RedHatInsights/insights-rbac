@@ -34,6 +34,7 @@ def _handle_role_binding_batch(tenant: Tenant, raw_bindings: list[RoleBinding], 
         .filter(resource_type="workspace")
         .filter(~Exists(Workspace.objects.filter(id=Cast(OuterRef("resource_id"), UUIDField()))))
         .exclude(uuid__in=bootstrap_lock.tenant_mapping.role_binding_ids())
+        .prefetch_related("group_entries", "principal_entries")
         .select_for_update()
     )
 
