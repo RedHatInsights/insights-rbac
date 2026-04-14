@@ -119,6 +119,9 @@ def lookup_binding_subjects(
                 subject_id = subject.get("id") or subject.get("subject", {}).get("id")
                 if subject_id:
                     try:
+                        # NOTE: This is a temporary fix for an issue where LookupSubjects response from
+                        # Relations API includes IDs used for hierarchy traversal (e.g., tenant_id).
+                        # We filter them out by validating each ID is a valid UUID.
                         uuid.UUID(subject_id)
                         subject_ids.add(subject_id)
                     except ValueError:
