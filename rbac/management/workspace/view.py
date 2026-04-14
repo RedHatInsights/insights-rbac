@@ -23,6 +23,7 @@ import pgtransaction
 from django.core.exceptions import ValidationError
 from django.db import OperationalError, transaction
 from django_filters import rest_framework as filters
+from management.audit_log.model import AuditLog
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions.workspace_access import WorkspaceAccessPermission
 from management.utils import clean_query_param, validate_and_get_key
@@ -95,6 +96,17 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
             return super().get_queryset().select_for_update()
         return super().get_queryset()
 
+    def _log_audit(self, request, action, workspace, description):
+        """Create an audit log entry for a workspace operation."""
+        audit_log = AuditLog()
+        audit_log.log_v2(
+            request=request,
+            resource_type=AuditLog.WORKSPACE,
+            action=action,
+            resource_uuid=workspace.id,
+            description=description,
+        )
+
     def get_object(self):
         """Get the object, validating the UUID first."""
         pk = self.kwargs.get("pk")
@@ -123,6 +135,12 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
                     {"parent_id": f"Parent workspace '{parent_id}' doesn't exist in tenant"}
                 )
         return super().create(request=request, args=args, kwargs=kwargs)
+
+    def perform_create(self, serializer):
+        """Create workspace and log audit entry."""
+        super().perform_create(serializer)
+        workspace = serializer.instance
+        self._log_audit(self.request, AuditLog.CREATE, workspace, f"Created workspace: {workspace.name}")
 
     def create(self, request, *args, **kwargs):
         """Create a Workspace."""
@@ -212,8 +230,19 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
         return super().destroy(request, *args, **kwargs)
 
     def perform_destroy(self, instance):
-        """Delegate to service for destroy logic."""
+        """Delegate to service for destroy logic and log audit entry."""
         self._service.destroy(instance)
+        self._log_audit(self.request, AuditLog.DELETE, instance, f"Deleted workspace: {instance.name}")
+
+    def perform_update(self, serializer):
+        """Update workspace and log audit entry."""
+        instance = serializer.instance
+        audit_log = AuditLog()
+        description = audit_log.find_edited_field(
+            AuditLog.WORKSPACE, f"workspace {instance.name}", self.request, instance
+        )
+        super().perform_update(serializer)
+        self._log_audit(self.request, AuditLog.EDIT, instance, description)
 
     @transaction.atomic()
     def update(self, request, *args, **kwargs):
@@ -238,7 +267,14 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
         target_workspace_id = self._parent_id_query_param_validation(request)
         workspace = self.get_object()
         serializer = self.get_serializer(workspace)
-        return serializer.move(workspace, target_workspace_id)
+        result = serializer.move(workspace, target_workspace_id)
+        self._log_audit(
+            request,
+            AuditLog.EDIT,
+            workspace,
+            f"Moved workspace: {workspace.name} to parent {workspace.parent.name}",
+        )
+        return result
 
     @action(detail=True, methods=["post"], url_path="move")
     def move(self, request, *args, **kwargs):
