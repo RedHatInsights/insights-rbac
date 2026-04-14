@@ -181,13 +181,32 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
         Access filtering is handled by WorkspaceAccessFilterBackend.
         Ordering is handled by OrderingFilter (supports ?order_by=name or ?order_by=-name).
         This method only handles additional query parameter filtering.
+
+        The ``type`` query parameter supports comma-separated values so that
+        callers can request multiple workspace types in a single request, e.g.
+        ``?type=standard,ungrouped-hosts``.
         """
         all_types = "all"
+        valid_types = Workspace.Types.values + [all_types]
         # Use filter_queryset to apply all filter backends (including access filtering and ordering)
         queryset = self.filter_queryset(self.get_queryset())
 
-        type_values = Workspace.Types.values + [all_types]
-        type_field = validate_and_get_key(request.query_params, "type", type_values, all_types)
+        type_param = request.query_params.get("type", all_types)
+        # Support comma-separated type values (e.g. "standard,ungrouped-hosts")
+        type_fields = [t.strip().lower() for t in type_param.split(",") if t.strip()]
+        for t in type_fields:
+            if t not in valid_types:
+                raise serializers.ValidationError(
+                    {
+                        "detail": "type query parameter value '{}' is invalid. {} are valid inputs.".format(
+                            t, [str(v) for v in valid_types]
+                        )
+                    }
+                )
+        # Collapse: if "all" is among the values, treat as unfiltered
+        if all_types in type_fields:
+            type_fields = [all_types]
+
         name = clean_query_param(request.query_params.get("name"), "name")
         parent_id = clean_query_param(request.query_params.get("parent_id"), "parent_id")
         id_filter = clean_query_param(request.query_params.get("ids"), "ids")
@@ -208,10 +227,13 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
 
             # When filtering by ids, default to standard type unless type is explicitly specified
             if "type" not in request.query_params:
-                type_field = Workspace.Types.STANDARD
+                type_fields = [Workspace.Types.STANDARD]
 
-        if type_field != all_types:
-            queryset = queryset.filter(type=type_field)
+        if type_fields != [all_types]:
+            if len(type_fields) == 1:
+                queryset = queryset.filter(type=type_fields[0])
+            else:
+                queryset = queryset.filter(type__in=type_fields)
         if name:
             queryset = queryset.filter(name__icontains=name)
         if parent_id:

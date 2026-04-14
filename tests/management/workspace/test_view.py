@@ -2747,6 +2747,69 @@ class WorkspaceTestsList(WorkspaceViewTests):
         self.assertEqual(payload.get("data")[0]["id"], str(self.default_workspace.id))
         self.assertType(payload, "default")
 
+    def test_workspace_list_multiple_types(self):
+        """List workspaces with comma-separated type values."""
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.get(f"{url}?type=standard,ungrouped-hosts", None, format="json", **self.headers)
+        payload = response.data
+
+        self.assertSuccessfulList(response, payload)
+        expected_count = Workspace.objects.filter(type__in=["standard", "ungrouped-hosts"]).count()
+        self.assertEqual(payload.get("meta").get("count"), expected_count)
+        returned_types = {ws["type"] for ws in payload.get("data")}
+        self.assertTrue(returned_types.issubset({"standard", "ungrouped-hosts"}))
+        self.assertIn(str(self.standard_workspace.id), [ws["id"] for ws in payload.get("data")])
+        self.assertIn(str(self.ungrouped_workspace.id), [ws["id"] for ws in payload.get("data")])
+
+    def test_workspace_list_multiple_types_with_all(self):
+        """List workspaces with type=standard,all returns all types (all takes precedence)."""
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.get(f"{url}?type=standard,all", None, format="json", **self.headers)
+        payload = response.data
+
+        self.assertSuccessfulList(response, payload)
+        self.assertEqual(payload.get("meta").get("count"), Workspace.objects.count())
+
+    def test_workspace_list_multiple_types_invalid_value(self):
+        """List workspaces with an invalid type in comma-separated values returns 400."""
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.get(f"{url}?type=standard,invalid", None, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("invalid", str(response.data))
+
+    def test_workspace_list_multiple_types_root_default(self):
+        """List workspaces with type=root,default returns only root and default workspaces."""
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.get(f"{url}?type=root,default", None, format="json", **self.headers)
+        payload = response.data
+
+        self.assertSuccessfulList(response, payload)
+        self.assertEqual(payload.get("meta").get("count"), 2)
+        returned_ids = [ws["id"] for ws in payload.get("data")]
+        self.assertIn(str(self.root_workspace.id), returned_ids)
+        self.assertIn(str(self.default_workspace.id), returned_ids)
+
+    def test_workspace_list_filter_by_ids_with_multiple_types(self):
+        """Test filtering workspaces by ids with multiple comma-separated types."""
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        ids = f"{self.standard_workspace.id},{self.ungrouped_workspace.id},{self.root_workspace.id}"
+        response = client.get(f"{url}?ids={ids}&type=standard,ungrouped-hosts", None, format="json", **self.headers)
+        payload = response.data
+
+        self.assertSuccessfulList(response, payload)
+        # Only standard and ungrouped-hosts workspaces should be returned
+        self.assertEqual(payload.get("meta").get("count"), 2)
+        returned_ids = [ws["id"] for ws in payload.get("data")]
+        self.assertIn(str(self.standard_workspace.id), returned_ids)
+        self.assertIn(str(self.ungrouped_workspace.id), returned_ids)
+        self.assertNotIn(str(self.root_workspace.id), returned_ids)
+
     def test_workspace_list_queryset_by_tenant(self):
         """List workspaces only for the request tenant."""
         tenant = Tenant.objects.create(tenant_name="Tenant 2")
