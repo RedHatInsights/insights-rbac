@@ -161,5 +161,5 @@ def expire_orphaned_cross_account_requests_in_worker():
 
 @shared_task
 def remove_deleted_workspace_bindings_in_worker():
-    """Celery task to expire orphaned cross-account requests."""
+    """Celery task to remove role bindings that reference deleted workspaces."""
     return remove_deleted_workspace_bindings()
