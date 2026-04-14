@@ -92,6 +92,7 @@ from management.tasks import (
     fix_missing_binding_base_tuples_in_worker,
     migrate_binding_scope_in_worker,
     migrate_data_in_worker,
+    remove_deleted_workspace_bindings_in_worker,
     remove_unassigned_system_binding_mappings_in_worker,
     run_migrations_in_worker,
     run_ocm_performance_in_worker,
@@ -2559,3 +2560,21 @@ def expire_orphaned_cross_account_requests(request):
     except Exception as e:
         logger.exception("Error removing orphaned CARs", exc_info=True)
         return JsonResponse({"detail": f"Error removing orphaned CARs: {str(e)}"}, status=500)
+
+
+@require_http_methods(["POST"])
+def remove_deleted_workspace_bindings(request):
+    """
+    Remove RoleBindings that reference workspaces that no longer exist.
+
+        POST /_private/api/utils/remove_deleted_workspace_bindings/
+
+    Returns:
+        JSON response indicating the task has been queued
+    """
+    try:
+        remove_deleted_workspace_bindings_in_worker.delay()
+        return JsonResponse({"message": "Cleanup enqueued in background worker."}, status=202)
+    except Exception as e:
+        logger.exception("Error removing bindings for deleted workspaces", exc_info=True)
+        return JsonResponse({"detail": f"Error removing bindings for deleted workspaces: {str(e)}"}, status=500)
