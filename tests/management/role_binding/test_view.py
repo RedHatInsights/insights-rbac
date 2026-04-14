@@ -34,6 +34,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from api.models import Tenant
+from management.audit_log.model import AuditLog
 from management.group.definer import seed_group
 from management.group.platform import GlobalPolicyIdService
 from management.models import Group, Permission, Principal, Workspace
@@ -49,7 +50,7 @@ from management.tenant_mapping.model import DefaultAccessType, TenantMapping
 from management.tenant_service.v2 import V2TenantBootstrapService
 from migration_tool.in_memory_tuples import InMemoryRelationReplicator
 from rbac import urls
-from tests.identity_request import IdentityRequest
+from tests.identity_request import IdentityRequest, TransactionalIdentityRequest
 
 
 def _coerce_api_datetime(value):
@@ -4317,3 +4318,158 @@ class RoleBindingViewSetAtomicWiringTests(IdentityRequest):
                 **self.headers,
             )
         mock_atomic.assert_called_once()
+
+
+@override_settings(V2_APIS_ENABLED=True, V2_EDIT_API_ENABLED=True)
+class RoleBindingAuditLogTests(TransactionalIdentityRequest):
+    """Tests for role binding audit logging."""
+
+    def setUp(self):
+        reload(urls)
+        clear_url_caches()
+        super().setUp()
+        self.tenant.save()
+        self.client = APIClient()
+
+        self.root_workspace = Workspace.objects.create(
+            name=Workspace.SpecialNames.ROOT,
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+        )
+        self.default_workspace = Workspace.objects.create(
+            name=Workspace.SpecialNames.DEFAULT,
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            parent=self.root_workspace,
+        )
+        self.workspace = Workspace.objects.create(
+            name="Test Workspace",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self.default_workspace,
+        )
+
+        self.permission1 = Permission.objects.create(permission="app:resource:read", tenant=self.tenant)
+        self.permission2 = Permission.objects.create(permission="app:resource:write", tenant=self.tenant)
+
+        self.role1 = RoleV2.objects.create(name="role1", description="Test role 1", tenant=self.tenant)
+        self.role1.permissions.add(self.permission1)
+        self.role2 = RoleV2.objects.create(name="role2", description="Test role 2", tenant=self.tenant)
+        self.role2.permissions.add(self.permission2)
+
+        self.group = Group.objects.create(
+            name="test_group",
+            description="Test group",
+            tenant=self.tenant,
+        )
+        self.principal = Principal.objects.create(
+            username="testuser",
+            tenant=self.tenant,
+            user_id="testuser",
+            type=Principal.Types.USER,
+        )
+
+        TenantMapping.objects.get_or_create(tenant=self.tenant)
+
+    def tearDown(self):
+        AuditLog.objects.filter(tenant=self.tenant).delete()
+        TenantMapping.objects.filter(tenant=self.tenant).delete()
+        RoleBindingPrincipal.objects.all().delete()
+        RoleBindingGroup.objects.all().delete()
+        RoleBinding.objects.all().delete()
+        Principal.objects.filter(tenant=self.tenant).delete()
+        Group.objects.filter(tenant=self.tenant).delete()
+        RoleV2.objects.filter(tenant=self.tenant).delete()
+        Permission.objects.filter(tenant=self.tenant).delete()
+        Workspace.objects.update(parent=None)
+        Workspace.objects.filter(tenant=self.tenant).delete()
+        super().tearDown()
+
+    def _assert_audit_log(self, action, description):
+        audit_logs = self.client.get("/api/rbac/v1/auditlogs/", **self.headers).data["data"]
+
+        matching = [
+            log
+            for log in audit_logs
+            if log["action"] == action
+            and log["description"] == description
+            and log["resource_type"] == AuditLog.ROLE_BINDING
+            and log["principal_username"] == self.user_data["username"]
+        ]
+        self.assertTrue(len(matching) > 0, f"No audit log found with action={action}, description={description}")
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_batch_create_audit_log(self, mock_permission):
+        """Batch create produces an audit log entry with correct counts."""
+        url = reverse("v2_management:role-bindings-batch-create")
+        payload = {
+            "requests": [
+                {
+                    "resource": {"id": str(self.workspace.id), "type": "workspace"},
+                    "subject": {"id": str(self.group.uuid), "type": "group"},
+                    "role": {"id": str(self.role1.uuid)},
+                },
+                {
+                    "resource": {"id": str(self.workspace.id), "type": "workspace"},
+                    "subject": {"id": str(self.group.uuid), "type": "group"},
+                    "role": {"id": str(self.role2.uuid)},
+                },
+            ]
+        }
+
+        response = self.client.post(url, payload, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        self._assert_audit_log(
+            action="create",
+            description="Created 2 role binding(s) for 1 subject(s) on 1 resource(s)",
+        )
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_update_by_subject_audit_log(self, mock_permission):
+        """Update by subject produces an audit log entry with subject and role count."""
+        url = reverse("v2_management:role-bindings-by-subject")
+        response = self.client.put(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace"
+            f"&subject_id={self.group.uuid}&subject_type=group",
+            data={"roles": [{"id": str(self.role1.uuid)}, {"id": str(self.role2.uuid)}]},
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        self._assert_audit_log(
+            action="edit",
+            description=(
+                f"Updated role bindings for group 'test_group'" f" on workspace 'Test Workspace': 2 role(s) assigned"
+            ),
+        )
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_update_by_subject_user_audit_log(self, mock_permission):
+        """Update by subject for a user uses username in the audit log description."""
+        url = reverse("v2_management:role-bindings-by-subject")
+        response = self.client.put(
+            f"{url}?resource_id={self.workspace.id}&resource_type=workspace"
+            f"&subject_id={self.principal.uuid}&subject_type=user",
+            data={"roles": [{"id": str(self.role1.uuid)}]},
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        self._assert_audit_log(
+            action="edit",
+            description=(
+                f"Updated role bindings for user 'testuser'" f" on workspace 'Test Workspace': 1 role(s) assigned"
+            ),
+        )
