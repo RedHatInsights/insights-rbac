@@ -833,7 +833,9 @@ class RoleBindingFieldMaskingMixin:
     * Default (no ``field_selection``): subject returns ``id`` + ``type``;
       roles returns ``id`` only; resource returns ``id`` only.
     * With ``field_selection``: only explicitly requested fields appear
-      and unrequested top-level sections are stripped entirely.
+      and unrequested top-level sections are stripped entirely. Subject
+      objects always include ``type`` (OpenAPI discriminator for
+      UserSubject | GroupSubject) even when not listed in ``fields``.
     """
 
     def __init__(self, *args, **kwargs):
@@ -870,8 +872,8 @@ class RoleBindingFieldMaskingMixin:
         subject = {}
         subject_fields = field_selection.get_nested("subject")
 
-        if "type" in subject_fields:
-            subject["type"] = subject_type
+        # UserSubject / GroupSubject require ``type`` for valid JSON and generated clients.
+        subject["type"] = subject_type
         if "id" in subject_fields:
             subject["id"] = subject_obj.uuid
 
@@ -968,7 +970,7 @@ class UpdateRoleBindingRequestSerializer(RoleBindingInputSerializerMixin, serial
     sanitization (``to_internal_value``) and ``validate_fields``.
     """
 
-    DEFAULT_FIELDS = "resource(id),subject(id),roles(id)"
+    DEFAULT_FIELDS = "resource(id),subject(id,type),roles(id)"
 
     # Query parameters
     resource_id = serializers.CharField(required=True, help_text="Resource ID to update bindings for")
