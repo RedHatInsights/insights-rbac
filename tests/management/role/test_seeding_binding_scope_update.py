@@ -71,28 +71,26 @@ class SystemRoleBindingScopeUpdateTests(IdentityRequest):
         mock_replicate.side_effect = self.replicator.replicate
 
         # Seed roles with DEFAULT scope for most permissions
+        # (permissions not in ROOT or TENANT automatically fall to DEFAULT)
         with self.settings(
             ROOT_SCOPE_PERMISSIONS="",
             TENANT_SCOPE_PERMISSIONS="",
-            DEFAULT_SCOPE_PERMISSIONS="inventory:*:*,approval:*:*,notifications:*:*",
         ):
             seed_group()
             seed_roles()
 
-        # Find roles that should be at DEFAULT scope
-        roles_with_inventory = list(
-            Role.objects.filter(
-                system=True,
-                tenant=self.public_tenant,
-                access__permission__application="inventory",
-                platform_default=True,  # Only platform_default roles to avoid admin_default override complexity
-            ).distinct()
-        )
+        # Find a role that should be at DEFAULT scope
+        # Exclude admin_default roles to avoid ADMIN_DEFAULT_SEEDED_ROLES_FORCE_ROOT_SCOPE override
+        test_role = Role.objects.filter(
+            system=True,
+            tenant=self.public_tenant,
+            access__permission__application="inventory",
+            platform_default=True,
+            admin_default=False,  # Avoid roles subject to ROOT scope override
+        ).first()
 
-        self.assertGreater(len(roles_with_inventory), 0, "Should find platform_default roles with inventory perms")
-
-        # Pick one role to test with
-        test_role = roles_with_inventory[0]
+        if not test_role:
+            self.skipTest("No suitable platform_default (non-admin_default) roles with inventory permissions found")
 
         # Create a group and assign the role
         group = Group.objects.create(name="Test Group", tenant=self.tenant, system=False)
@@ -105,166 +103,229 @@ class SystemRoleBindingScopeUpdateTests(IdentityRequest):
         with self.settings(
             ROOT_SCOPE_PERMISSIONS="",
             TENANT_SCOPE_PERMISSIONS="inventory:*:*",
-            DEFAULT_SCOPE_PERMISSIONS="",
         ):
             seed_roles(force_update_relationships=True)
 
-        # The test goal: verify that when scopes change, migration is triggered
-        # We check if migration was called for ANY role with inventory permissions
-        # (the exact role and scopes may vary based on definition files)
+        # Verify that migration was called for the scope change (DEFAULT → TENANT)
+        mock_migrate_bindings.assert_called_once()
 
-        if mock_migrate_bindings.call_count > 0:
-            # Migration was triggered - verify it was called with valid parameters
-            for call in mock_migrate_bindings.call_args_list:
-                role_arg = call[0][0]
-                old_scope_arg = call[0][1]
-                new_scope_arg = call[0][2]
+        # Verify it was called with correct arguments
+        call_args = mock_migrate_bindings.call_args[0]
+        role_arg, old_scope_arg, new_scope_arg = call_args
 
-                # Verify arguments are the right types
-                self.assertIsInstance(role_arg, Role, "First arg should be a Role")
-                self.assertIsInstance(old_scope_arg, Scope, "Second arg should be a Scope")
-                self.assertIsInstance(new_scope_arg, Scope, "Third arg should be a Scope")
+        self.assertEqual(role_arg, test_role, "Migration should be called for the test role")
+        self.assertEqual(old_scope_arg, Scope.DEFAULT, "Old scope should be DEFAULT")
+        self.assertEqual(new_scope_arg, Scope.TENANT, "New scope should be TENANT")
 
-                # Verify scopes actually differ (we only call migration when they change)
-                self.assertNotEqual(
-                    old_scope_arg, new_scope_arg, f"Migration called but scopes are the same: {old_scope_arg.name}"
-                )
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_bindings_migrate_from_default_to_tenant_scope_v1_tenant(self, mock_replicate):
+        """Test that bindings actually migrate from default workspace to tenant when scope changes."""
+        # Redirect replicator
+        mock_replicate.side_effect = self.replicator.replicate
 
-            # Success - migration was called with valid parameters when scopes changed
-            self.assertTrue(True)
-        else:
-            # No migration calls - this could be valid if no scopes actually changed
-            # Let's check if our test role's scope actually changed
-            v2_role = SeededRoleV2.objects.get(uuid=test_role.uuid)
-            from management.role.definer import _seed_platform_roles
+        # Seed roles with DEFAULT scope for inventory permissions
+        with self.settings(
+            ROOT_SCOPE_PERMISSIONS="",
+            TENANT_SCOPE_PERMISSIONS="",
+        ):
+            seed_group()
+            seed_roles()
 
-            platform_roles = _seed_platform_roles()
-            current_scope = _determine_old_scope(v2_role, platform_roles)
+        # Find a suitable test role
+        test_role = Role.objects.filter(
+            system=True,
+            tenant=self.public_tenant,
+            access__permission__application="inventory",
+            platform_default=True,
+            admin_default=False,
+        ).first()
 
-            # If the role is now at TENANT scope, we expect migration was called
-            if current_scope == Scope.TENANT:
-                self.fail(
-                    f"Role {test_role.name} is now at TENANT scope but migration was not called. "
-                    "This indicates a bug in scope change detection."
-                )
-            else:
-                # Scope didn't change (could be due to admin_default override or mixed permissions)
-                # This is acceptable - skip the test
-                self.skipTest(
-                    f"Role {test_role.name} scope did not change to TENANT (stayed at {current_scope.name}). "
-                    "This can happen with admin_default roles or roles with mixed permission scopes."
-                )
+        if not test_role:
+            self.skipTest("No suitable platform_default (non-admin_default) roles with inventory permissions found")
+
+        # Create a group and assign the role
+        group = Group.objects.create(name="Test Group", tenant=self.tenant, system=False)
+        add_roles(group, [test_role.uuid], self.tenant)
+
+        # Verify initial binding at DEFAULT workspace
+        v2_role = SeededRoleV2.objects.get(uuid=test_role.uuid)
+        initial_bindings = self.tuples.read_tuples(
+            resource_type="rbac/principal",
+            resource_id=f"group:{group.uuid}",
+            relation="binding",
+        )
+
+        # Should have binding to the role at default workspace
+        default_workspace_bindings = [
+            t
+            for t in initial_bindings
+            if t.subject.object.object_id == str(self.default_workspace.id)
+            and str(v2_role.uuid) in t.subject.object.object_type
+        ]
+        self.assertGreater(len(default_workspace_bindings), 0, "Should have binding at default workspace initially")
+
+        # Change scope to TENANT
+        with self.settings(
+            ROOT_SCOPE_PERMISSIONS="",
+            TENANT_SCOPE_PERMISSIONS="inventory:*:*",
+        ):
+            seed_roles(force_update_relationships=True)
+
+        # Verify bindings migrated to TENANT
+        final_bindings = self.tuples.read_tuples(
+            resource_type="rbac/principal",
+            resource_id=f"group:{group.uuid}",
+            relation="binding",
+        )
+
+        # Should no longer have binding at default workspace
+        default_workspace_bindings_after = [
+            t
+            for t in final_bindings
+            if t.subject.object.object_id == str(self.default_workspace.id)
+            and str(v2_role.uuid) in t.subject.object.object_type
+        ]
+        self.assertEqual(
+            len(default_workspace_bindings_after), 0, "Should not have binding at default workspace after migration"
+        )
+
+        # Should have binding at tenant instead
+        tenant_resource_id = Tenant.org_id_to_tenant_resource_id(self.tenant.org_id)
+        tenant_bindings = [
+            t
+            for t in final_bindings
+            if t.subject.object.object_id == tenant_resource_id and str(v2_role.uuid) in t.subject.object.object_type
+        ]
+        self.assertGreater(len(tenant_bindings), 0, "Should have binding at tenant after migration")
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_bindings_migrate_for_v2_tenant(self, mock_replicate):
+        """Test that bindings migrate correctly for V2 tenants when role scope changes."""
+        # Redirect replicator
+        mock_replicate.side_effect = self.replicator.replicate
+
+        # Create a V2 tenant
+        v2_tenant = Tenant.objects.create(
+            tenant_name="acct9999999",
+            account_id="9999999",
+            org_id="9999999",
+            ready=True,
+        )
+        v2_tenant.save()
+
+        # Bootstrap V2 tenant with workspaces
+        from tests.v2_util import bootstrap_tenant_for_v2_test
+
+        bootstrap_result = bootstrap_tenant_for_v2_test(v2_tenant, tuples=self.tuples)
+        v2_root_workspace = bootstrap_result.root_workspace
+        v2_default_workspace = bootstrap_result.default_workspace
+
+        # Seed roles with DEFAULT scope
+        with self.settings(
+            ROOT_SCOPE_PERMISSIONS="",
+            TENANT_SCOPE_PERMISSIONS="",
+        ):
+            seed_group()
+            seed_roles()
+
+        # Find a suitable test role
+        test_role = Role.objects.filter(
+            system=True,
+            tenant=self.public_tenant,
+            access__permission__application="inventory",
+            platform_default=True,
+            admin_default=False,
+        ).first()
+
+        if not test_role:
+            self.skipTest("No suitable platform_default roles with inventory permissions found")
+
+        # Create a group and assign the role in V2 tenant
+        v2_group = Group.objects.create(name="V2 Test Group", tenant=v2_tenant, system=False)
+        add_roles(v2_group, [test_role.uuid], v2_tenant)
+
+        # Verify initial binding at DEFAULT workspace
+        v2_role = SeededRoleV2.objects.get(uuid=test_role.uuid)
+        initial_bindings = self.tuples.read_tuples(
+            resource_type="rbac/principal",
+            resource_id=f"group:{v2_group.uuid}",
+            relation="binding",
+        )
+
+        default_workspace_bindings = [
+            t
+            for t in initial_bindings
+            if t.subject.object.object_id == str(v2_default_workspace.id)
+            and str(v2_role.uuid) in t.subject.object.object_type
+        ]
+        self.assertGreater(
+            len(default_workspace_bindings), 0, "V2 tenant should have binding at default workspace initially"
+        )
+
+        # Change scope to TENANT
+        with self.settings(
+            ROOT_SCOPE_PERMISSIONS="",
+            TENANT_SCOPE_PERMISSIONS="inventory:*:*",
+        ):
+            seed_roles(force_update_relationships=True)
+
+        # Verify bindings migrated to TENANT for V2 tenant
+        final_bindings = self.tuples.read_tuples(
+            resource_type="rbac/principal",
+            resource_id=f"group:{v2_group.uuid}",
+            relation="binding",
+        )
+
+        # Should no longer have binding at default workspace
+        default_workspace_bindings_after = [
+            t
+            for t in final_bindings
+            if t.subject.object.object_id == str(v2_default_workspace.id)
+            and str(v2_role.uuid) in t.subject.object.object_type
+        ]
+        self.assertEqual(
+            len(default_workspace_bindings_after),
+            0,
+            "V2 tenant should not have binding at default workspace after migration",
+        )
+
+        # Should have binding at tenant
+        tenant_resource_id = Tenant.org_id_to_tenant_resource_id(v2_tenant.org_id)
+        tenant_bindings = [
+            t
+            for t in final_bindings
+            if t.subject.object.object_id == tenant_resource_id and str(v2_role.uuid) in t.subject.object.object_type
+        ]
+        self.assertGreater(len(tenant_bindings), 0, "V2 tenant should have binding at tenant after migration")
 
     def test_determine_old_scope_returns_none_for_new_role(self):
         """Test that _determine_old_scope returns None when there's no existing V2 role."""
-        platform_roles = {}
-        result = _determine_old_scope(None, platform_roles)
+        result = _determine_old_scope(None)
         self.assertIsNone(result, "Should return None for new role")
 
-    def test_determine_old_scope_returns_none_for_empty_platform_roles(self):
-        """Test that _determine_old_scope handles empty platform_roles gracefully."""
+    def test_determine_old_scope_returns_none_without_resource_service(self):
+        """Test that _determine_old_scope returns None when no resource_service is provided."""
         # Create a mock V2 role
         mock_role = MagicMock()
-        result = _determine_old_scope(mock_role, {})
-        self.assertIsNone(result, "Should return None for empty platform_roles")
+        result = _determine_old_scope(mock_role)
+        self.assertIsNone(result, "Should return None without resource_service")
 
-    def test_determine_old_scope_with_mocked_parents(self):
-        """Test _determine_old_scope logic with mocked parent relationships."""
-        from unittest.mock import MagicMock
-        from uuid import uuid4
-
-        # Create mock platform roles
-        default_user_uuid = uuid4()
-        default_admin_uuid = uuid4()
-        tenant_user_uuid = uuid4()
-        tenant_admin_uuid = uuid4()
-
-        platform_roles = {
-            (DefaultAccessType.USER, Scope.DEFAULT): MagicMock(uuid=default_user_uuid),
-            (DefaultAccessType.ADMIN, Scope.DEFAULT): MagicMock(uuid=default_admin_uuid),
-            (DefaultAccessType.USER, Scope.TENANT): MagicMock(uuid=tenant_user_uuid),
-            (DefaultAccessType.ADMIN, Scope.TENANT): MagicMock(uuid=tenant_admin_uuid),
-            (DefaultAccessType.USER, Scope.ROOT): MagicMock(uuid=uuid4()),
-            (DefaultAccessType.ADMIN, Scope.ROOT): MagicMock(uuid=uuid4()),
-        }
-
-        # Test 1: Role with DEFAULT USER parent
-        mock_role = MagicMock()
-        mock_role.parents.values_list.return_value = [default_user_uuid]
-        result = _determine_old_scope(mock_role, platform_roles)
-        self.assertEqual(result, Scope.DEFAULT, "Should detect DEFAULT scope from USER parent UUID")
-
-        # Test 2: Role with TENANT ADMIN parent
-        mock_role = MagicMock()
-        mock_role.parents.values_list.return_value = [tenant_admin_uuid]
-        result = _determine_old_scope(mock_role, platform_roles)
-        self.assertEqual(result, Scope.TENANT, "Should detect TENANT scope from ADMIN parent UUID")
-
-        # Test 3: Role with no matching parents
-        mock_role = MagicMock()
-        mock_role.parents.values_list.return_value = [uuid4()]  # Random UUID
-        result = _determine_old_scope(mock_role, platform_roles)
-        self.assertIsNone(result, "Should return None when no parent matches")
-
-    def test_determine_old_scope_from_permissions_for_role_without_parents(self):
-        """Test that _determine_old_scope falls back to permissions for roles without parents."""
-        from unittest.mock import MagicMock
-        from management.permission.scope_service import ImplicitResourceService
-
-        # Create a mock role with no parents but with permissions
-        mock_role = MagicMock()
-        mock_role.parents.values_list.return_value = []  # No parents
-        mock_role.permissions.values_list.return_value = ["inventory:hosts:read", "inventory:hosts:write"]
-
-        # Create a mock resource service
-        mock_resource_service = MagicMock(spec=ImplicitResourceService)
-        mock_resource_service.highest_scope_for_permissions.return_value = Scope.DEFAULT
-
-        # Test that scope is determined from permissions
-        result = _determine_old_scope(mock_role, {}, mock_resource_service)
-        self.assertEqual(result, Scope.DEFAULT, "Should detect DEFAULT scope from permissions")
-
-        # Verify the resource service was called with the permission strings
-        mock_resource_service.highest_scope_for_permissions.assert_called_once_with(
-            ["inventory:hosts:read", "inventory:hosts:write"]
-        )
-
-    def test_determine_old_scope_permissions_fallback_when_no_perms(self):
-        """Test that _determine_old_scope returns None when role has no parents and no permissions."""
-        from unittest.mock import MagicMock
-        from management.permission.scope_service import ImplicitResourceService
-
-        # Create a mock role with no parents and no permissions
-        mock_role = MagicMock()
-        mock_role.parents.values_list.return_value = []
-        mock_role.permissions.values_list.return_value = []  # No permissions
-
-        mock_resource_service = MagicMock(spec=ImplicitResourceService)
-
-        result = _determine_old_scope(mock_role, {}, mock_resource_service)
-        self.assertIsNone(result, "Should return None when role has no parents and no permissions")
-
-        # Resource service should not be called since there are no permissions
-        mock_resource_service.highest_scope_for_permissions.assert_not_called()
-
-    def test_determine_old_scope_detects_scope_from_user_parent(self):
-        """Test that _determine_old_scope correctly identifies scope from USER parent."""
+    def test_determine_old_scope_detects_scope_from_permissions(self):
+        """Test that _determine_old_scope correctly identifies scope from permissions."""
         # Use actual seeded roles to test scope detection
         seed_group()
         seed_roles()
 
-        # Find a role that has USER platform parent at DEFAULT scope
-        # Look for a platform_default role
-        from management.role.definer import _seed_platform_roles
+        from management.permission.scope_service import ImplicitResourceService
 
-        platform_roles = _seed_platform_roles()
+        resource_service = ImplicitResourceService.from_settings()
 
-        # Find a seeded role that should have DEFAULT USER parent
+        # Find a seeded role that should have platform_default
         v2_roles = SeededRoleV2.objects.filter(v1_source__platform_default=True, v1_source__tenant=self.public_tenant)
 
         if v2_roles.exists():
             v2_role = v2_roles.first()
-            detected_scope = _determine_old_scope(v2_role, platform_roles)
+            detected_scope = _determine_old_scope(v2_role, resource_service)
 
             # Verify it detected a valid scope (DEFAULT, TENANT, or ROOT)
             self.assertIn(
@@ -275,29 +336,28 @@ class SystemRoleBindingScopeUpdateTests(IdentityRequest):
         else:
             self.skipTest("No platform_default seeded roles found to test with")
 
-    def test_determine_old_scope_detects_scope_from_admin_parent(self):
-        """Test that _determine_old_scope correctly identifies scope from ADMIN parent."""
+    def test_determine_old_scope_applies_admin_override(self):
+        """Test that _determine_old_scope correctly applies admin scope override for special roles."""
         # Use actual seeded roles to test scope detection
         seed_group()
         seed_roles()
 
-        # Find a role that has ADMIN platform parent
-        from management.role.definer import _seed_platform_roles
+        from management.permission.scope_service import ImplicitResourceService
 
-        platform_roles = _seed_platform_roles()
+        resource_service = ImplicitResourceService.from_settings()
 
         # Find a seeded role that has admin_default
         v2_roles = SeededRoleV2.objects.filter(v1_source__admin_default=True, v1_source__tenant=self.public_tenant)
 
         if v2_roles.exists():
             v2_role = v2_roles.first()
-            detected_scope = _determine_old_scope(v2_role, platform_roles)
+            detected_scope = _determine_old_scope(v2_role, resource_service)
 
             # Verify it detected a valid scope
             self.assertIn(
                 detected_scope,
                 [Scope.DEFAULT, Scope.TENANT, Scope.ROOT],
-                f"Should detect a valid scope from ADMIN parent, got {detected_scope}",
+                f"Should detect a valid scope with admin override applied, got {detected_scope}",
             )
         else:
             self.skipTest("No admin_default seeded roles found to test with")
