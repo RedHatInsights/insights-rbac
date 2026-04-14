@@ -1989,22 +1989,22 @@ class UpdateRoleBindingResponseSerializerTests(IdentityRequest):
         self.assertEqual(data, {"resource": {"name": "My Workspace", "type": "workspace"}})
 
     def test_field_selection_subject_id(self):
-        """Requesting subject(id) returns only id."""
+        """Requesting subject(id) returns id and always-included type discriminator."""
         result = self._make_group_result()
         field_selection = RoleBindingBySubjectFieldSelection(nested_fields={"subject": {"id"}})
         serializer = UpdateRoleBindingResponseSerializer(result, context={"field_selection": field_selection})
         data = serializer.data
 
-        self.assertEqual(data, {"subject": {"id": self.group.uuid}})
+        self.assertEqual(data, {"subject": {"id": self.group.uuid, "type": "group"}})
 
     def test_field_selection_subject_without_id(self):
-        """When only subject(group.name) is requested, only group details appear."""
+        """When only subject(group.name) is requested, type plus group details appear."""
         result = self._make_group_result()
         field_selection = RoleBindingBySubjectFieldSelection(nested_fields={"subject": {"group.name"}})
         serializer = UpdateRoleBindingResponseSerializer(result, context={"field_selection": field_selection})
         data = serializer.data
 
-        self.assertEqual(data, {"subject": {"group": {"name": "test_group"}}})
+        self.assertEqual(data, {"subject": {"type": "group", "group": {"name": "test_group"}}})
 
     def test_field_selection_group_details(self):
         """Requesting subject(group.name,group.description,group.user_count) returns only those."""
@@ -2018,7 +2018,12 @@ class UpdateRoleBindingResponseSerializerTests(IdentityRequest):
 
         self.assertEqual(
             data,
-            {"subject": {"group": {"name": "test_group", "description": "A test group", "user_count": 3}}},
+            {
+                "subject": {
+                    "type": "group",
+                    "group": {"name": "test_group", "description": "A test group", "user_count": 3},
+                }
+            },
         )
 
     def test_field_selection_user_details(self):
@@ -2030,7 +2035,7 @@ class UpdateRoleBindingResponseSerializerTests(IdentityRequest):
 
         self.assertEqual(
             data,
-            {"subject": {"id": self.principal.uuid, "user": {"username": "testuser"}}},
+            {"subject": {"id": self.principal.uuid, "type": "user", "user": {"username": "testuser"}}},
         )
 
     def test_field_selection_resource_id_only(self):
