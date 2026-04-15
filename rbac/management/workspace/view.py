@@ -27,7 +27,7 @@ from management.atomic_transactions import atomic_with_retry
 from management.audit_log.model import AuditLog
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions.workspace_access import WorkspaceAccessPermission
-from management.utils import clean_query_param, validate_and_get_key
+from management.utils import clean_query_param, validate_and_get_key, validate_and_get_key_multi
 from management.workspace.filters import WorkspaceAccessFilterBackend, WorkspaceObjectAccessMixin
 from management.workspace.service import WorkspaceService
 from psycopg2.errors import DeadlockDetected, SerializationFailure
@@ -191,16 +191,10 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
         # Use filter_queryset to apply all filter backends (including access filtering and ordering)
         queryset = self.filter_queryset(self.get_queryset())
 
-        type_param = request.query_params.get("type", all_types)
         # Support comma-separated type values (e.g. "standard,ungrouped-hosts")
-        type_fields = [t.strip().lower() for t in type_param.split(",") if t.strip()]
-        for t in type_fields:
-            if t not in valid_types:
-                key = "detail"
-                message = "type query parameter value '{}' is invalid. Allowed values are {}.".format(
-                    t, [str(v) for v in valid_types]
-                )
-                raise serializers.ValidationError({key: message})
+        type_fields = validate_and_get_key_multi(
+            request.query_params, "type", valid_types, default_value=all_types, required=False
+        )
         # Collapse: if "all" is among the values, treat as unfiltered
         if all_types in type_fields:
             type_fields = [all_types]

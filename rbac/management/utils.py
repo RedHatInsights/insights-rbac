@@ -479,6 +479,35 @@ def validate_and_get_key(params, query_key, valid_values, default_value=None, re
     return value.lower()
 
 
+def validate_and_get_key_multi(params, query_key, valid_values, default_value=None, required=True):
+    """Validate and return multiple comma-separated values for a query key.
+
+    Splits the query parameter on commas, strips whitespace and lowercases
+    each value, then validates every value against *valid_values*.
+
+    Returns a **list** of validated (lowercased) strings.
+    """
+    value = params.get(query_key, default_value)
+    if not value:
+        if required:
+            key = "detail"
+            message = "Query parameter '{}' is required.".format(query_key)
+            raise serializers.ValidationError({key: _(message)})
+        if default_value:
+            return [default_value.lower()]
+        return []
+
+    fields = [v.strip().lower() for v in value.split(",") if v.strip()]
+    for val in fields:
+        if val not in valid_values:
+            key = "detail"
+            message = "{} query parameter value '{}' is invalid. Allowed values are {}.".format(
+                query_key, val, [str(v) for v in valid_values]
+            )
+            raise serializers.ValidationError({key: _(message)})
+    return fields
+
+
 def validate_key(params, query_key, valid_values, default_value=None, required=True):
     """Validate a key and do not return the value."""
     value = params.get(query_key, default_value)
