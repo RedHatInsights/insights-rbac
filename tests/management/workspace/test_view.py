@@ -2816,9 +2816,7 @@ class WorkspaceTestsList(WorkspaceViewTests):
         payload = response.data
 
         self.assertSuccessfulList(response, payload)
-        expected_count = Workspace.objects.filter(
-            type__in=[Workspace.Types.ROOT, Workspace.Types.DEFAULT]
-        ).count()
+        expected_count = Workspace.objects.filter(type__in=[Workspace.Types.ROOT, Workspace.Types.DEFAULT]).count()
         self.assertEqual(payload.get("meta").get("count"), expected_count)
         returned_ids = [ws["id"] for ws in payload.get("data")]
         self.assertIn(str(self.root_workspace.id), returned_ids)
