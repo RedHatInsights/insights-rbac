@@ -499,6 +499,22 @@ class WorkspaceServiceDestroyTests(WorkspaceServiceTestBase):
 
         workspace = Workspace.objects.create(name="a workspace", tenant=self.tenant)
 
+        fixture = RbacFixture()
+        custom_role = fixture.new_custom_role(
+            "custom role", fixture.workspace_access(default=[], **{str(workspace.id): ["rbac:*:*"]}), self.tenant
+        )
+        group, _ = fixture.new_group("a group", self.tenant, ["p1"])
+
+        RelationApiDualWriteHandler(
+            role=custom_role, event_type=ReplicationEventType.CREATE_CUSTOM_ROLE
+        ).replicate_new_or_updated_role(custom_role)
+
+        group_handler = RelationApiDualWriteGroupHandler(group=group, event_type=ReplicationEventType.ASSIGN_ROLE)
+        group_handler.generate_relations_reset_roles([custom_role])
+        group_handler.replicate()
+
+        ensure_v2_write_activated(self.tenant)
+
         def assert_binding_exists(value: bool):
             self.assertEqual(
                 int(value),
@@ -525,24 +541,6 @@ class WorkspaceServiceDestroyTests(WorkspaceServiceTestBase):
                     role__v1_source=custom_role,
                 ).exists(),
             )
-
-        assert_binding_exists(False)
-
-        fixture = RbacFixture()
-        custom_role = fixture.new_custom_role(
-            "custom role", fixture.workspace_access(default=[], **{str(workspace.id): ["rbac:*:*"]}), self.tenant
-        )
-        group, _ = fixture.new_group("a group", self.tenant, ["p1"])
-
-        RelationApiDualWriteHandler(
-            role=custom_role, event_type=ReplicationEventType.CREATE_CUSTOM_ROLE
-        ).replicate_new_or_updated_role(custom_role)
-
-        group_handler = RelationApiDualWriteGroupHandler(group=group, event_type=ReplicationEventType.ASSIGN_ROLE)
-        group_handler.generate_relations_reset_roles([custom_role])
-        group_handler.replicate()
-
-        ensure_v2_write_activated(self.tenant)
 
         assert_binding_exists(True)
 
