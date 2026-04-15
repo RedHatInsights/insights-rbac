@@ -288,15 +288,10 @@ class WorkspaceService:
         """Update workspace."""
         if instance.type in (Workspace.Types.ROOT, Workspace.Types.UNGROUPED_HOSTS):
             raise serializers.ValidationError(f"The {instance.type} workspace cannot be updated.")
-        parent_id = None
         for attr, value in validated_data.items():
-            if attr == "parent_id":
-                parent_id = value
             if self._parent_id_attr_update(attr, value, instance):
                 raise serializers.ValidationError("Can't update the 'parent_id' on a workspace directly")
             setattr(instance, attr, value)
-        if parent_id is not None:
-            self._enforce_hierarchy_depth(parent_id, instance.tenant)
 
         # Skip Workspace Events for DEFAULT workspaces
         skip_ws_events = instance.type == Workspace.Types.DEFAULT
