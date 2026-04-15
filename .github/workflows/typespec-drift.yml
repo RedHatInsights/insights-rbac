@@ -36,9 +36,9 @@ jobs:
         run: npm ci
 
       - name: Regenerate OpenAPI specs
-        env:
-          PATH: ${{ github.workspace }}/docs/source/specs/typespec/node_modules/.bin:${{ env.PATH }}
-        run: ./compile_tsp_spec
+        run: |
+          export PATH="$PWD/node_modules/.bin:$PATH"
+          ./compile_tsp_spec
 
       - name: Check for drift
         working-directory: .
