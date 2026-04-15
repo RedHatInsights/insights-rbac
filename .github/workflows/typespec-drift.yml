@@ -20,6 +20,9 @@ on:
 jobs:
   check-spec-drift:
     runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: docs/source/specs/typespec
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -29,12 +32,16 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Install TypeSpec dependencies
+        run: npm ci
+
       - name: Regenerate OpenAPI specs
         env:
           PATH: ${{ github.workspace }}/docs/source/specs/typespec/node_modules/.bin:${{ env.PATH }}
-        run: make generate_v2_spec
+        run: ./compile_tsp_spec
 
       - name: Check for drift
+        working-directory: .
         run: |
           if ! git diff --exit-code docs/source/specs/v2/; then
             echo ""
