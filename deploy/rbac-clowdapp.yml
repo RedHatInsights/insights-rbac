@@ -284,6 +284,12 @@ objects:
             value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB}
           - name: UMB_JOB_ENABLED
             value: ${UMB_JOB_ENABLED}
+          - name: PARITY_CHECK_ENABLED
+            value: ${PARITY_CHECK_ENABLED}
+          - name: PARITY_CHECK_ORG_IDS
+            value: ${PARITY_CHECK_ORG_IDS}
+          - name: PARITY_CHECK_SCHEDULE
+            value: ${PARITY_CHECK_SCHEDULE}
           - name: READ_ONLY_API_MODE
             value: ${READ_ONLY_API_MODE}
 
@@ -1625,6 +1631,15 @@ parameters:
 - name: UMB_PORT
   description: Port of the UMB service
   value: '61612'
+- name: PARITY_CHECK_ENABLED
+  description: Enable Kessel-RBAC parity checks background job
+  value: 'False'
+- name: PARITY_CHECK_ORG_IDS
+  description: Comma-separated list of org_ids for parity checks
+  value: ''
+- name: PARITY_CHECK_SCHEDULE
+  description: Cron expression for parity check schedule (minute hour day_of_month month_of_year day_of_week)
+  value: '0 0 * * *'
 - name: SA_NAME
   description: Name of the rbac service account
   value: 'nonprod-hcc-rbac'
