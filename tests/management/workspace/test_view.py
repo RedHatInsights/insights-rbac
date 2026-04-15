@@ -2822,6 +2822,24 @@ class WorkspaceTestsList(WorkspaceViewTests):
         self.assertIn(str(self.root_workspace.id), returned_ids)
         self.assertIn(str(self.default_workspace.id), returned_ids)
 
+    def test_workspace_list_empty_type_returns_all(self):
+        """List workspaces with ?type= (empty string) returns all workspaces (not zero)."""
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.get(f"{url}?type=", None, format="json", **self.headers)
+        payload = response.data
+
+        self.assertSuccessfulList(response, payload)
+        self.assertEqual(payload.get("meta").get("count"), Workspace.objects.count())
+
+    def test_workspace_list_type_nul_byte_returns_400(self):
+        """List workspaces with NUL byte in type param returns 400."""
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.get(f"{url}?type=standard\x00evil", None, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_workspace_list_filter_by_ids_with_multiple_types(self):
         """Test filtering workspaces by ids with multiple comma-separated types."""
         url = reverse("v2_management:workspace-list")

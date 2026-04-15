@@ -191,9 +191,16 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
         # Use filter_queryset to apply all filter backends (including access filtering and ordering)
         queryset = self.filter_queryset(self.get_queryset())
 
+        # Sanitize the raw type parameter for NUL bytes (consistent with name/parent_id/ids)
+        type_raw = clean_query_param(request.query_params.get("type"), "type")
+
         # Support comma-separated type values (e.g. "standard,ungrouped-hosts")
         type_fields = validate_and_get_key_multi(
-            request.query_params, "type", valid_types, default_value=all_types, required=False
+            {"type": type_raw} if type_raw is not None else {},
+            "type",
+            valid_types,
+            default_value=all_types,
+            required=False,
         )
         # Collapse: if "all" is among the values, treat as unfiltered
         if all_types in type_fields:
