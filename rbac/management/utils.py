@@ -479,7 +479,7 @@ def validate_and_get_key(params, query_key, valid_values, default_value=None, re
     return value.lower()
 
 
-def validate_and_get_key_multi(params, query_key, valid_values, default_value=None, required=True):
+def validate_and_get_key_multi(params, query_key, valid_values, default_value=None):
     """Validate and return multiple comma-separated values for a query key.
 
     Splits the query parameter on commas, strips whitespace and lowercases
@@ -489,10 +489,6 @@ def validate_and_get_key_multi(params, query_key, valid_values, default_value=No
     """
     value = params.get(query_key, default_value)
     if not value:
-        if required:
-            key = "detail"
-            message = "Query parameter '{}' is required.".format(query_key)
-            raise serializers.ValidationError({key: _(message)})
         if default_value:
             return [default_value.lower()]
         return []

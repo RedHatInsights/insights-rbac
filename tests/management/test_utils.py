@@ -516,21 +516,21 @@ class UtilsTests(IdentityRequest):
         """Test we can validate comma-separated query param values."""
         params = {"type": "standard,ungrouped-hosts"}
         valid_values = ["standard", "ungrouped-hosts", "root", "default", "all"]
-        result = validate_and_get_key_multi(params, "type", valid_values, default_value="all", required=False)
+        result = validate_and_get_key_multi(params, "type", valid_values, default_value="all")
         self.assertEqual(result, ["standard", "ungrouped-hosts"])
 
     def test_validate_and_get_key_multi_single_value(self):
         """Test multi-value validator works with a single value."""
         params = {"type": "standard"}
         valid_values = ["standard", "ungrouped-hosts", "all"]
-        result = validate_and_get_key_multi(params, "type", valid_values, default_value="all", required=False)
+        result = validate_and_get_key_multi(params, "type", valid_values, default_value="all")
         self.assertEqual(result, ["standard"])
 
     def test_validate_and_get_key_multi_whitespace_and_case(self):
         """Test multi-value validator strips whitespace and lowercases."""
         params = {"type": " Standard , UNGROUPED-HOSTS "}
         valid_values = ["standard", "ungrouped-hosts", "all"]
-        result = validate_and_get_key_multi(params, "type", valid_values, default_value="all", required=False)
+        result = validate_and_get_key_multi(params, "type", valid_values, default_value="all")
         self.assertEqual(result, ["standard", "ungrouped-hosts"])
 
     def test_validate_and_get_key_multi_invalid(self):
@@ -538,7 +538,7 @@ class UtilsTests(IdentityRequest):
         params = {"type": "standard,invalid"}
         valid_values = ["standard", "ungrouped-hosts", "all"]
         with self.assertRaises(serializers.ValidationError) as assertion:
-            validate_and_get_key_multi(params, "type", valid_values, default_value="all", required=False)
+            validate_and_get_key_multi(params, "type", valid_values, default_value="all")
         message = str(assertion.exception.detail.get("detail"))
         self.assertIn("invalid", message)
         self.assertIn("Allowed values", message)
@@ -547,16 +547,8 @@ class UtilsTests(IdentityRequest):
         """Test multi-value validator returns default when param is absent."""
         params = {}
         valid_values = ["standard", "ungrouped-hosts", "all"]
-        result = validate_and_get_key_multi(params, "type", valid_values, default_value="all", required=False)
+        result = validate_and_get_key_multi(params, "type", valid_values, default_value="all")
         self.assertEqual(result, ["all"])
-
-    def test_validate_and_get_key_multi_required_missing(self):
-        """Test multi-value validator raises when required param is missing."""
-        params = {}
-        valid_values = ["standard", "ungrouped-hosts"]
-        with self.assertRaises(serializers.ValidationError) as assertion:
-            validate_and_get_key_multi(params, "type", valid_values, required=True)
-        self.assertIn("required", str(assertion.exception.detail.get("detail")))
 
     def test_is_valid_uuid(self):
         """Test boolean UUID method check"""

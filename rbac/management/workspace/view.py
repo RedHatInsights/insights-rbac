@@ -200,7 +200,6 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
             "type",
             valid_types,
             default_value=all_types,
-            required=False,
         )
         # Collapse: if "all" is among the values, treat as unfiltered
         if all_types in type_fields:
