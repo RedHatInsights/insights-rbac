@@ -20,13 +20,83 @@ insights-rbac is a Django REST Framework microservice providing Role-Based Acces
 
 | File | Purpose |
 |------|---------|
-| `CLAUDE.md` | Claude Code-specific commands and behavioral preferences |
+| `CLAUDE.md` | Claude Code-specific behavioral preferences (imports this file via `@AGENTS.md`) |
 | `CONTRIBUTING.md` | Contribution workflow, code style, PR format |
 | `docs/source/specs/v2/openapi.yaml` | V2 API specification (generated) |
 | `docs/source/specs/typespec/main.tsp` | TypeSpec source -- the contract for v2 API changes |
 | `Makefile` | Build, test, migration, and Docker commands |
 | `tox.ini` | Test environments, linting config, env vars for tests |
 | `.pre-commit-config.yaml` | Pre-commit hooks: flake8, black, trailing whitespace, django-upgrade, openapi-spec-validator |
+
+## Common Commands
+
+### Testing
+
+Django's test runner requires **dotted module paths**, not file paths. If `tox` is not on PATH, use `pipenv run tox`.
+
+```bash
+# Run all tests (with coverage)
+pipenv run tox -e py312
+
+# Run all tests without coverage (faster)
+pipenv run tox -e py312-fast
+
+# Run a specific test module
+pipenv run tox -e py312-fast -- tests.management.workspace.test_view
+
+# Run a specific test class
+pipenv run tox -e py312-fast -- tests.management.workspace.test_view.WorkspaceTestsList
+
+# Run a single test method
+pipenv run tox -e py312-fast -- tests.management.workspace.test_view.WorkspaceTestsList.test_workspace_list_unfiltered
+```
+
+### Linting and Formatting
+
+```bash
+pipenv run tox -e lint                             # flake8 + black --check
+pipenv run black -t py312 -l 119 rbac tests        # auto-format
+```
+
+### Local Development
+
+```bash
+# Docker (starts app on port 9080 + postgres + redis + celery)
+make docker-up
+make docker-logs
+make docker-down
+
+# Local Python (app on port 8000, needs Docker for DB)
+make start-db           # Postgres container on port 15432
+make run-migrations
+make serve
+```
+
+### Database
+
+```bash
+make make-migrations     # Generate new migration files
+make run-migrations      # Apply migrations
+make reinitdb            # Drop + recreate + migrate
+psql postgres -U postgres -h localhost -p 15432  # Direct DB access
+```
+
+### OpenAPI Spec
+
+```bash
+make generate_v2_spec    # Regenerate v2 spec from TypeSpec (requires TypeSpec installed in docs/source/specs/typespec/)
+```
+
+### Pre-commit Hooks
+
+The `.pre-commit-config.yaml` enforces:
+- flake8 (line length 120)
+- black (line length 119, target py312, check mode)
+- trailing-whitespace, end-of-file-fixer, debug-statements
+- django-upgrade (target 5.2)
+- openapi-spec-validator
+
+Run manually: `pipenv run pre-commit run --all-files`
 
 ## Key Conventions
 
@@ -41,17 +111,15 @@ insights-rbac is a Django REST Framework microservice providing Role-Based Acces
 
 ### Testing
 
-- **Test runner**: Django requires dotted module paths, not file paths. `pipenv run tox -e py312-fast` for fast iteration (no coverage). `pipenv run tox -e py312` for full coverage.
 - **Base classes**: Use `IdentityRequest` from `tests/identity_request.py` (provides tenant, identity headers, request context). Use `TransactionalIdentityRequest` for tests involving `pgtransaction.atomic(retry=...)` or `select_for_update`.
 - **V2 test setup**: Apply `@override_settings(V2_APIS_ENABLED=True)`, reload URLs with `reload(urls)` + `clear_url_caches()` in setUp, bootstrap tenant with `bootstrap_tenant_for_v2_test()`, mock Kessel permission checks.
 - **Parallel execution**: Tests run with `--parallel` and `--failfast`. Clean up created objects in `tearDown` since tests share the database.
 - **Mocking**: Always mock Kafka (`MOCK_KAFKA=True` is set in tox.ini), Kessel Inventory, and outbox replicator. Never mock Django ORM queries, serializer validation, or URL routing.
 
-### Code Style and Formatting
+### Code Style
 
-- **Black**: line length 119, target py312. Run `pipenv run black -t py312 -l 119 rbac tests`.
+- **Black**: line length 119, target py312.
 - **Flake8**: max line length 120, ignores D106/W503/C901, excludes migrations.
-- **Pre-commit hooks**: flake8, black (check mode), trailing-whitespace, end-of-file-fixer, debug-statements, django-upgrade (target 5.2), openapi-spec-validator.
 - **Import order**: PyCharm style (`flake8-import-order`), application imports are `rbac` and `api`.
 
 ### Commit Messages
@@ -72,21 +140,6 @@ Conventional commits format: `type(scope): short description in lowercase`. Type
 
 ### Database Migrations
 
-- Generate: `make make-migrations`
-- Apply: `make run-migrations`
-- Reset: `make reinitdb` (drops and recreates)
 - Migrations are excluded from linting and coverage.
 - Always test migrations against real PostgreSQL -- SQLite is not used.
 - New models should use UUID v7 as primary key (`uuid_utils.compat.uuid7`).
-
-### Local Development
-
-```bash
-# Docker full stack (port 9080 + postgres + redis + celery)
-make docker-up
-
-# Local python (port 8000, needs Docker DB on port 15432)
-make start-db
-make run-migrations
-make serve
-```
