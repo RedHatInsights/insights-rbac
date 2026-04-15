@@ -154,7 +154,22 @@ def _update_custom_roles_for_removed_workspace(workspace_id: uuid.UUID, replicat
             tenant_version = lock_tenant_version(role.tenant)
 
             if tenant_version != TenantVersion.VERSION_1:
-                logger.info(f"Not processing role (pk={role.pk!r}) that is not in a V1 tenant.")
+                logger.info(
+                    f"Not updating role (pk={role.pk!r}) that is not in a V1 tenant; "
+                    f"only removing orphan BindingMappings."
+                )
+
+                # BindingMappings are no longer authoritative in a non-V1 tenant, so we don't need to handle any
+                # relations updates. We delete them here only to ensure that we have a clean slate later (since we
+                # want to make strong assertions about what BindingMappings exist in
+                # _remove_workspace_direct_role_bindings).
+                BindingMapping.objects.filter(
+                    resource_type_namespace="rbac",
+                    resource_type_name="workspace",
+                    resource_id=workspace_id_str,
+                    role=role,
+                ).delete()
+
                 continue
 
             dual_write = RelationApiDualWriteHandler(
@@ -254,9 +269,9 @@ def _update_custom_roles_for_removed_workspace(workspace_id: uuid.UUID, replicat
 
 # This must be SERIALIZABLE because we are potentially interacting with RoleBindings in V2 tenants.
 @atomic
-def _remove_workspace_system_role_bindings(workspace: Workspace, replicator: RelationReplicator) -> int:
+def _remove_workspace_direct_role_bindings(workspace: Workspace, replicator: RelationReplicator) -> int:
     """
-    Delete role bindings bound to system roles for a workspace about to be deleted.
+    Delete role bindings bound a workspace about to be deleted.
 
     It is assumed that all role bindings bound to custom roles have already been removed.
     """
@@ -264,6 +279,30 @@ def _remove_workspace_system_role_bindings(workspace: Workspace, replicator: Rel
 
     if tenant_version not in (TenantVersion.VERSION_1, TenantVersion.VERSION_2):
         raise RuntimeError(f"Unexpected tenant version: {tenant_version!r}")
+
+    binding_mappings = list(
+        BindingMapping.objects.filter(
+            resource_type_namespace="rbac",
+            resource_type_name="workspace",
+            resource_id=str(workspace.id),
+        )
+    )
+
+    # There shouldn't have been any BindingMappings bound to a system role and a standard workspace created while the
+    # tenant was V1. (System roles won't have any relevant resource definitions naming the workspace, and their scope
+    # will always put them in the default workspace, root workspace, or the tenant in V1.)
+    #
+    # If the tenant has been converted to V2, no additional BindingMappings will have been created since that time.
+    #
+    # Since we have already removed all BindingMappings that came from custom roles in
+    # _update_custom_roles_for_removed_workspace (including any from V1 custom roles left over in a V2 tenant!),
+    # there shouldn't be any remaining here.
+    if len(binding_mappings) > 0:
+        raise AssertionError(
+            f"A standard workspace should not have any remaining BindingMappings "
+            f"(after removing any from custom roles), but found "
+            f"BindingMappings with pks={[bm.pk for bm in binding_mappings]}"
+        )
 
     role_bindings = list(
         RoleBinding.objects.filter(
@@ -274,23 +313,19 @@ def _remove_workspace_system_role_bindings(workspace: Workspace, replicator: Rel
         .select_for_update(of=["self"])
     )
 
-    binding_mappings = list(
-        BindingMapping.objects.filter(
-            resource_type_namespace="rbac",
-            resource_type_name="workspace",
-            resource_id=str(workspace.id),
-        ).select_for_update()
-    )
+    # In a V1 tenant, there shouldn't be any RoleBindings remaining for a standard workspace for the same reasons
+    # as BindingMappings above. (BindingMappings and RoleBindings should always be in sync in a V1 tenant.)
+    #
+    # In a V2 tenant, we can have RoleBindings that were either directly created in the workspace or that were
+    # created for a V1 custom role and not torn down in _update_custom_roles_for_removed_workspace (since that just
+    # removes to-be-orphaned BindingMappings in V2 tenants, which aren't authoritative anyway). In either case,
+    # we need to actually handle those RoleBindings (including by updating relations).
 
     if tenant_version == TenantVersion.VERSION_1:
-        # We should have already removed all bindings from resource definitions in custom roles; there should be no
-        # role bindings for system roles in a standard workspace in a V1 tenant (since they should all be bound to
-        # the default workspace, root workspace, or tenant as appropriate).
-
-        if (len(role_bindings) > 0) or (len(binding_mappings) > 0):
+        if len(role_bindings) > 0:
             raise AssertionError(
-                f"A standard workspace in a V1 tenant should exist, but found "
-                f"BindingMappings with pks={[bm.pk for bm in binding_mappings]} and"
+                f"A standard workspace should not have any remaining RoleBindings "
+                f"(after removing any from custom roles), but found "
                 f"RoleBindings with pks={[rb.pk for rb in role_bindings]}"
             )
 
@@ -308,11 +343,6 @@ def _remove_workspace_system_role_bindings(workspace: Workspace, replicator: Rel
 
     if len(role_bindings) > 0:
         RoleBinding.objects.filter(pk__in=(rb.pk for rb in role_bindings)).delete()
-
-    # The BindingMappings are irrelevant in a V2 tenant, but delete them anyway to avoid having to deal with any
-    # orphans later.
-    if len(binding_mappings) > 0:
-        BindingMapping.objects.filter(pk__in=(bm.pk for bm in role_bindings)).delete()
 
     return len(role_bindings)
 
@@ -419,7 +449,7 @@ class WorkspaceService:
         roles_updated_count = _update_custom_roles_for_removed_workspace(instance.id, replicator=self._replicator)
         logger.info(f"Updated {roles_updated_count} custom roles for workspace {instance.id} removal")
 
-        system_bindings_removed_count = _remove_workspace_system_role_bindings(instance, replicator=self._replicator)
+        system_bindings_removed_count = _remove_workspace_direct_role_bindings(instance, replicator=self._replicator)
         logger.info(f"Removed {system_bindings_removed_count} system roles for workspace {instance.id} removal")
 
         dual_write_handler = self._dual_write_handler(instance, ReplicationEventType.DELETE_WORKSPACE)

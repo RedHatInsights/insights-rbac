@@ -22,9 +22,12 @@ from unittest.mock import Mock, call, patch
 
 from django.test import TestCase
 
+from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
 from management.role.v2_model import RoleV2, CustomRoleV2, PlatformRoleV2
 from management.role_binding.model import RoleBinding
 from management.role_binding.service import RoleBindingService
+from management.tenant_mapping.v2_activation import ensure_v2_write_activated
+from tests.management.role.test_dual_write import RbacFixture
 from tests.util import assert_v2_tuples_consistent
 from tests.v2_util import bootstrap_tenant_for_v2_test, seed_v2_role_from_v1
 
@@ -488,6 +491,66 @@ class WorkspaceServiceDestroyTests(WorkspaceServiceTestBase):
             str(workspace_to_keep.id),
             "Remaining binding should be for the kept workspace",
         )
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_destroy_custom_role_v2(self, replicate):
+        """Test that bindings from a V1 custom role are properly deleted in a tenant migrated to V2."""
+        replicate.side_effect = self.in_memory_replicator.replicate
+
+        workspace = Workspace.objects.create(name="a workspace", tenant=self.tenant)
+
+        def assert_binding_exists(value: bool):
+            self.assertEqual(
+                int(value),
+                self.tuples.count_tuples(
+                    all_of(resource("rbac", "workspace", str(workspace.id)), relation("binding"))
+                ),
+            )
+
+            self.assertEqual(
+                value,
+                BindingMapping.objects.filter(
+                    resource_type_namespace="rbac",
+                    resource_type_name="workspace",
+                    resource_id=str(workspace.id),
+                    role=custom_role,
+                ).exists(),
+            )
+
+            self.assertEqual(
+                value,
+                RoleBinding.objects.filter(
+                    resource_type="workspace",
+                    resource_id=str(workspace.id),
+                    role__v1_source=custom_role,
+                ).exists(),
+            )
+
+        assert_binding_exists(False)
+
+        fixture = RbacFixture()
+        custom_role = fixture.new_custom_role(
+            "custom role", fixture.workspace_access(default=[], **{str(workspace.id): ["rbac:*:*"]}), self.tenant
+        )
+        group, _ = fixture.new_group("a group", self.tenant, ["p1"])
+
+        RelationApiDualWriteHandler(
+            role=custom_role, event_type=ReplicationEventType.CREATE_CUSTOM_ROLE
+        ).replicate_new_or_updated_role(custom_role)
+
+        group_handler = RelationApiDualWriteGroupHandler(group=group, event_type=ReplicationEventType.ASSIGN_ROLE)
+        group_handler.generate_relations_reset_roles([custom_role])
+        group_handler.replicate()
+
+        ensure_v2_write_activated(self.tenant)
+
+        assert_binding_exists(True)
+
+        # This should remove the binding (including both the BindingMapping and RoleBinding models), despite the tenant
+        # having been migrated to V2.
+        self.service.destroy(workspace)
+
+        assert_binding_exists(False)
 
     def _do_test_destroy_with_bindings_v2(self, role: RoleV2):
         replicator = InMemoryRelationReplicator(self.tuples)
