@@ -310,6 +310,7 @@ def _remove_workspace_direct_role_bindings(workspace: Workspace, replicator: Rel
             resource_id=str(workspace.id),
         )
         .select_related("role")
+        .prefetch_related("group_entries", "principal_entries")
         .select_for_update(of=["self"])
     )
 
