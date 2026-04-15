@@ -325,3 +325,54 @@ class RoleRelationInventoryChecker(InventoryApiBaseChecker):
         else:
             logger.info(f"Role: {role_uuid} has the correct V2 relations.")
         return role_check
+
+
+class RoleBindingInventoryChecker(InventoryApiBaseChecker):
+    """Subclass to check role binding relations are correct on inventory api."""
+
+    def check_role_binding(self, binding_tuples: list, binding_uuid: str) -> bool:
+        """Core logic to check role binding relations on inventory api.
+
+        Each role binding produces 3 types of tuples:
+        1. resource#binding - the resource has this binding
+        2. role_binding#role - the binding is associated with a role
+        3. role_binding#subject - the binding has subjects (groups/principals)
+
+        Args:
+            binding_tuples: List of RelationTuple objects from RoleBinding.all_tuples()
+            binding_uuid: UUID of the role binding being checked
+
+        Returns:
+            True if all relations exist in the inventory, False otherwise
+        """
+        check_requests = []
+        for tuple_obj in binding_tuples:
+            # Build the check request for each tuple
+            subject_relation = tuple_obj.subject.relation if hasattr(tuple_obj.subject, "relation") else None
+
+            check_request = CheckRequest(
+                object=resource_reference_pb2.ResourceReference(
+                    resource_id=tuple_obj.resource.id,
+                    resource_type=tuple_obj.resource.type.name,
+                    reporter=reporter_reference_pb2.ReporterReference(type=tuple_obj.resource.type.namespace),
+                ),
+                relation=tuple_obj.relation,
+                subject=subject_reference_pb2.SubjectReference(
+                    resource=resource_reference_pb2.ResourceReference(
+                        resource_id=tuple_obj.subject.subject.id,
+                        resource_type=tuple_obj.subject.subject.type.name,
+                        reporter=reporter_reference_pb2.ReporterReference(
+                            type=tuple_obj.subject.subject.type.namespace
+                        ),
+                    ),
+                    relation=subject_relation if subject_relation else "",
+                ),
+            )
+            check_requests.append(check_request)
+
+        binding_check = self.check_inventory_core(check_requests)
+        if not binding_check:
+            logger.warning(f"RoleBinding: {binding_uuid} does not have the expected relations in inventory.")
+        else:
+            logger.info(f"RoleBinding: {binding_uuid} has the correct relations in inventory.")
+        return binding_check
