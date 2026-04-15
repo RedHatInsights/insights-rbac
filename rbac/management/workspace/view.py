@@ -187,7 +187,7 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
         ``?type=standard,ungrouped-hosts``.
         """
         all_types = "all"
-        valid_types = Workspace.Types.values + [all_types]
+        valid_types = [v.lower() for v in Workspace.Types.values] + [all_types]
         # Use filter_queryset to apply all filter backends (including access filtering and ordering)
         queryset = self.filter_queryset(self.get_queryset())
 
@@ -196,13 +196,11 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
         type_fields = [t.strip().lower() for t in type_param.split(",") if t.strip()]
         for t in type_fields:
             if t not in valid_types:
-                raise serializers.ValidationError(
-                    {
-                        "detail": "type query parameter value '{}' is invalid. {} are valid inputs.".format(
-                            t, [str(v) for v in valid_types]
-                        )
-                    }
+                key = "detail"
+                message = "type query parameter value '{}' is invalid. Allowed values are {}.".format(
+                    t, [str(v) for v in valid_types]
                 )
+                raise serializers.ValidationError({key: message})
         # Collapse: if "all" is among the values, treat as unfiltered
         if all_types in type_fields:
             type_fields = [all_types]

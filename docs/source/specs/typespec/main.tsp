@@ -517,8 +517,8 @@ namespace Workspaces {
         @doc("Offset for offset-based pagination.")
         @query offset?: Offset = DefaultOffset;
 
-        @doc("Defaults to all when param is not supplied.")
-        @query type?: WorkspaceTypesQueryParam = WorkspaceTypesQueryParam.all;
+        @doc("Filter by workspace type. Supports comma-separated values (e.g. type=standard,ungrouped-hosts). Defaults to all when not supplied. Case-insensitive.")
+        @query type?: string = "all";
         @doc("Case sensitive exact match of workspace by name.")
         @query name?: string;
         @doc("Filter workspaces by parent workspace UUID. Returns only direct children of the specified workspace. Useful for lazy-loading a nested tree structure.")
