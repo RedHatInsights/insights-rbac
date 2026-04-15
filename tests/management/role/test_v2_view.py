@@ -1227,8 +1227,13 @@ class RoleV2ViewSetTests(IdentityRequest):
         }
 
         response = self.client.post(self.url, data, format="json")
+
+        # ProblemDetails response: verify HTTP status, structure, and detail message
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("conflicts with an existing system role", str(response.data))
+        self.assertIn("status", response.data)
+        self.assertIn("detail", response.data)
+        self.assertEqual(response.data["status"], 400)
+        self.assertIn("conflicts with an existing system role", response.data["detail"])
 
     def test_update_role_to_seeded_role_name_returns_400(self):
         """Test that updating a custom role to a seeded role name is rejected."""
@@ -1246,8 +1251,13 @@ class RoleV2ViewSetTests(IdentityRequest):
         }
 
         response = self.client.put(update_url, data, format="json")
+
+        # ProblemDetails response: verify HTTP status, structure, and detail message
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
-        self.assertIn("conflicts with an existing system role", str(response.data))
+        self.assertIn("status", response.data)
+        self.assertIn("detail", response.data)
+        self.assertEqual(response.data["status"], 400)
+        self.assertIn("conflicts with an existing system role", response.data["detail"])
 
     def test_create_role_missing_permissions_returns_problem_details(self):
         """Test that missing permissions returns ProblemDetails format."""
