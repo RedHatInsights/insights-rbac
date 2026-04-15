@@ -1,7 +1,7 @@
 {
   "openapi": "3.0.0",
   "info": {
-    "title": "Role Based Access Control for Kessel Project",
+    "title": "Role Based Access Control for Kessel Project (RBAC)",
     "version": "v2"
   },
   "tags": [

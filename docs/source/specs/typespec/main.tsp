@@ -30,8 +30,6 @@ enum ExcludeSources {
 model Timestamps {
     @doc("2019-01-21T17:32:28Z")
     created: offsetDateTime;
-    @doc("2019-01-21T17:32:28Z")
-    modified: offsetDateTime;
 }
 
 @format("uuid")

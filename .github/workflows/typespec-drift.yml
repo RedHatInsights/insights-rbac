@@ -1,0 +1,44 @@
+name: typespec-openapi-drift
+
+on:
+  pull_request:
+    paths:
+      - 'docs/source/specs/typespec/main.tsp'
+      - 'docs/source/specs/typespec/tspconfig.yaml'
+      - 'docs/source/specs/typespec/package.json'
+      - 'docs/source/specs/v2/openapi.json'
+      - 'docs/source/specs/v2/openapi.yaml'
+  push:
+    branches: [master]
+    paths:
+      - 'docs/source/specs/typespec/main.tsp'
+      - 'docs/source/specs/typespec/tspconfig.yaml'
+      - 'docs/source/specs/typespec/package.json'
+      - 'docs/source/specs/v2/openapi.json'
+      - 'docs/source/specs/v2/openapi.yaml'
+
+jobs:
+  check-spec-drift:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Regenerate OpenAPI specs
+        env:
+          PATH: ${{ github.workspace }}/docs/source/specs/typespec/node_modules/.bin:${{ env.PATH }}
+        run: make generate_v2_spec
+
+      - name: Check for drift
+        run: |
+          if ! git diff --exit-code docs/source/specs/v2/; then
+            echo ""
+            echo "::error::OpenAPI specs are out of date with main.tsp. Run 'make generate_v2_spec' and commit the result."
+            exit 1
+          fi
+          echo "OpenAPI specs are in sync with TypeSpec."
