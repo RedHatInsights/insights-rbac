@@ -1,157 +1,200 @@
-# Integration Guidelines for insights-rbac
+# Integration Guidelines
 
-## 1. Kafka Producer Patterns
+## External Services Overview
 
-### Topics
-- `NOTIFICATIONS_TOPIC` -- Cloud notifications (role/group/cross-account changes)
-- `EXTERNAL_SYNC_TOPIC` -- External service sync (e.g., Chrome sync events)
-- `RBAC_KAFKA_CONSUMER_TOPIC` -- Debezium CDC outbox events (consumed internally)
+RBAC integrates with seven external services: Kessel Relations (gRPC), Kessel Inventory (gRPC), Kafka (producer + consumer), BOP (HTTP), IT Service (HTTP), UMB (STOMP), and Redis (Celery broker + cache). All connections are configured via environment variables with local-dev bypass modes.
 
-### Producer usage
-- Always use `core.kafka.RBACProducer`. Never instantiate `KafkaProducer` directly.
-- Messages are JSON-encoded via `json.dumps().encode("utf-8")`.
-- In dev/test, `FakeKafkaProducer` is used when `DEVELOPMENT`, `MOCK_KAFKA`, or `not KAFKA_ENABLED`.
-- Producer retries connection up to 5 times on init failure. After init, `send()` is fire-and-forget.
-- Headers must be a list of tuples: `[("rh-message-id", uuid_bytes)]`.
+## 1. Kessel Relations API (gRPC) -- Relation Replication
 
-### Notification messages
-- Use `management.notifications.notification_handlers.notify()` for per-tenant notifications.
-- Use `notify_all()` for system-wide broadcasts (iterates all tenants).
-- Guard all notification calls with `settings.NOTIFICATIONS_ENABLED` (custom roles/groups) or `settings.NOTIFICATIONS_RH_ENABLED` (system roles).
-- Build payloads via `payload_builder()` -- always include `username`, `name`, `uuid`.
-- Message structure follows `message_template.json` with `event_type`, `timestamp`, `events[0].payload`.
+### Replicator Selection
 
-### Sync messages
-- Use `internal.integration.sync_handlers.send_sync_message()`.
-- Same `RBACProducer` singleton, different topic (`EXTERNAL_SYNC_TOPIC`).
+Controlled by `get_replicator(write_relationships)` in `rbac/internal/utils.py`:
 
-## 2. Kafka Consumer Patterns
+- `"true"` / `"outbox"` -- `OutboxReplicator` (production: writes to outbox table for Debezium CDC)
+- `"logging"` -- `LoggingReplicator` (logs tuples without writing)
+- `"false"` -- `NoopReplicator` (no-op)
 
-### Consumer architecture (`core.kafka_consumer.RBACKafkaConsumer`)
-- Single-partition-per-consumer design. Multi-partition assignment triggers a warning.
-- Manual offset commit (`enable_auto_commit=False`) with batch commit every N messages (`CommitConfig.commit_modulo=10`).
-- `auto_offset_reset="earliest"` for at-least-once delivery guarantee.
-- Consumer group ID from `settings.RBAC_KAFKA_CONSUMER_GROUP_ID`.
+Always use the replicator abstraction. Never call the Relations API directly from service code -- go through `RelationReplicator.replicate(event)`.
 
-### Message processing pipeline
-1. Parse raw bytes to JSON
-2. Parse Debezium envelope (`schema` + `payload` fields required)
-3. Extract `relations_to_add` / `relations_to_remove` from payload
-4. Convert JSON dicts to protobuf `common_pb2.Relationship` via `json_format.ParseDict()`
-5. Write/delete tuples to Kessel Relations API with fencing check
-6. Save consistency token to `Tenant.relations_consistency_token`
+### Building Replication Events
 
-### Error classification
-- `ValidationError` and `ParseError` are NON-RETRYABLE -- consumer stops immediately.
-- `grpc.StatusCode.FAILED_PRECONDITION` (stale fencing token) is FATAL -- consumer stops.
-- All other errors (network, gRPC, DB) are RETRYABLE with exponential backoff.
-- Max retries exceeded: consumer stops, does NOT commit offset, relies on K8s restart.
+```python
+event = ReplicationEvent(
+    event_type=ReplicationEventType.CREATE_CUSTOM_ROLE,
+    partition_key=PartitionKey.byEnvironment(),
+    add=[relation_tuple],       # RelationTuple or common_pb2.Relationship
+    remove=[],
+    info={"org_id": org_id, "role_id": str(role.uuid)},
+)
+replicator.replicate(event)
+```
 
-### Retry configuration
-- `RetryConfig`: `operation_max_retries=10`, `backoff_factor=5`, `base_delay=0.3s`, `max_backoff=30s`.
-- Jitter factor of 0.1 prevents thundering herd.
-- Use `RetryHelper` class for retry logic -- never write custom retry loops.
+Rules:
+- Always include `org_id` in `info` dict -- it is required for `resource_context()`.
+- For `CREATE_WORKSPACE` events, also include `workspace_id` in `info`.
+- `PartitionKey.byEnvironment()` is the only partition key currently used. All events are globally ordered per environment.
+- Never produce duplicate tuples in `add` -- `OutboxReplicator` raises `ValueError` on duplicates.
+- Empty events (no adds or removes) are silently skipped with a warning log.
 
-### Health checks
-- Liveness: `/tmp/kubernetes-liveness` file presence
-- Readiness: `/tmp/kubernetes-readiness` file presence
-- Background health check thread polls Kafka connectivity every 30s.
+### RelationTuple Domain Type
 
-## 3. Debezium CDC / Outbox Pattern
+Use `RelationTuple` from `management/relation_replicator/types.py` instead of raw protobuf messages. It validates fields on construction (non-empty strings, valid patterns, no `*` for resource IDs). Convert to protobuf with `.as_message()` or to dict with `.to_dict()`.
 
-### Outbox table (`management.debezium.model.Outbox`)
-- Fields: `id` (UUID), `aggregatetype`, `aggregateid`, `event_type` (DB column: `type`), `payload` (JSON).
-- Follows Debezium outbox event router spec.
-- Records are saved then IMMEDIATELY deleted (`force_insert=True` + `delete()`). Debezium reads from WAL, not the table.
+### gRPC Channel Creation
 
-### Replicator selection
-- `OutboxReplicator` -- production path: writes to outbox table, Debezium picks up from WAL.
-- `RelationsApiReplicator` -- direct gRPC to Kessel (used by consumer and some internal tools).
-- `LoggingReplicator` -- logs tuples (dev/debug).
-- `NoopReplicator` -- does nothing (feature flag off).
-- Select via `get_replicator(write_relationships)` in `internal.utils`: `"true"/"outbox"` -> Outbox, `"logging"` -> Logging, else -> Noop.
+Three channel factories in `management/utils.py`:
+- `create_client_channel_relation(addr)` -- Relations API (JWT auth via metadata)
+- `create_client_channel_inventory(addr)` -- Inventory API (OAuth2 credentials)
+- `create_client_channel(addr)` -- Legacy, same as relation
 
-### ReplicationEvent conventions
-- Always specify `event_type` from `ReplicationEventType` enum (e.g., `CREATE_CUSTOM_ROLE`, `ASSIGN_ROLE`).
-- Always use `PartitionKey.byEnvironment()` -- all events globally ordered per environment.
-- Include `info` dict with at minimum `org_id`. For workspace events, include `workspace_id`.
-- `resource_context()` auto-generates `created_at` timestamp for latency tracking.
-- Empty events (no tuples to add or remove) are logged as warnings and skipped.
-- Duplicate relationships in `add` list raise `ValueError` immediately -- fix at the source.
+All use insecure channels when `DEVELOPMENT=True` or `CLOWDER_ENABLED=true`, TLS otherwise. Always use as context managers.
 
-### Aggregate types
-- `"relations-replication-event"` -- relation tuple changes (roles, groups, bindings).
-- `"workspace"` -- workspace lifecycle events (create/update/delete).
+### Auth for Relations API
 
-## 4. gRPC Client Patterns (Kessel Relations & Inventory)
+JWT tokens are obtained from Redis via `JWTManager` (not per-request OAuth2). The consumer uses `JWTCacheOptimized`; request-path code uses `JWTCache`. Both are in `management/cache.py`. Token is passed as gRPC metadata: `[("authorization", f"Bearer {token}")]`.
 
-### Channel creation
-- `create_client_channel_relation(settings.RELATION_API_SERVER)` -- insecure in dev/Clowder, TLS in production.
-- `create_client_channel_inventory(settings.INVENTORY_API_SERVER)` -- same pattern for Inventory API.
-- Always use as context manager (`with create_client_channel_relation(...) as channel:`).
+Key env vars: `RELATION_API_SERVER` (default `localhost:9000`), `RELATION_API_CLIENT_ID`, `RELATION_API_CLIENT_SECRET`.
 
-### Authentication
-- JWT tokens fetched via `JWTManager.get_jwt_from_redis()` and passed as gRPC metadata: `[("authorization", f"Bearer {token}")]`.
-- Two JWT cache implementations: `JWTCache` (standard) and `JWTCacheOptimized` (for Kafka consumer).
+## 2. Debezium CDC / Outbox Pattern
 
-### Error handling
-- Wrap all gRPC calls in `execute_grpc_call()` from `relations_api_replicator.py`.
-- `GRPCError` wrapper extracts `code`, `reason`, `message`, `metadata` from gRPC errors.
-- `FAILED_PRECONDITION` = invalid fencing token (partition reassigned) -- always fatal.
+The outbox pattern is the production replication path:
 
-### Fencing / distributed locking
-- Consumer acquires lock via `RelationsApiReplicator.acquire_lock(lock_id)` on partition assignment.
-- Lock ID format: `"{consumer_group_id}/{partition_number}"`.
-- All write/delete calls include `FencingCheck(lock_id, lock_token)` protobuf.
-- Lock acquisition uses its own retry with exponential backoff (separate from message retry).
+1. Service code calls `OutboxReplicator.replicate(event)`.
+2. `OutboxWAL.log()` inserts into `management_outbox` then immediately deletes -- Debezium reads from PostgreSQL WAL, not the table.
+3. Debezium publishes the change event to a Kafka topic.
+4. `RBACKafkaConsumer` reads the topic and calls `RelationsApiReplicator` to write/delete tuples via gRPC.
 
-## 5. External HTTP Services
+The Outbox model (`management/debezium/model.py`) follows the Debezium outbox event router schema: `aggregatetype`, `aggregateid`, `event_type` (column `type`), `payload` (JSON).
 
-### BOP (Principal Proxy) -- `management.principal.proxy.PrincipalProxy`
-- Singleton pattern. Connection info from env vars (`PRINCIPAL_PROXY_SERVICE_*`).
-- Auth headers: `x-rh-insights-env`, `x-rh-clientid`, `x-rh-apitoken`.
-- `BYPASS_BOP_VERIFICATION=True` returns DB principals with mock data (dev/ephemeral).
-- Prometheus metrics: `rbac_proxy_request_processing_seconds` (histogram), `bop_request_status_total` (counter by method+status).
+### Testing the Outbox
 
-### IT Service -- `management.principal.it_service.ITService`
-- Singleton (`__new__` pattern). Connection from `settings.IT_SERVICE_*`.
-- Paginates with `first`/`max` params until empty response.
-- `IT_BYPASS_IT_CALLS=True` returns mock service accounts (dev/ephemeral).
-- Raises `UnexpectedStatusCodeFromITError` on non-success, re-raises `ConnectionError`/`Timeout`.
-- Metrics: `it_request_all_service_accounts_processing_seconds`, `it_request_status_total`, `it_request_error`.
+Use `InMemoryLog` instead of `OutboxWAL` in tests:
 
-### UMB (Unified Message Bus) -- `management.principal.cleaner`
-- STOMP protocol via `stompest` library over SSL.
-- Celery-scheduled task (`principal_cleanup_via_umb`) polls queue with 15-second read timeout.
-- Individual message acknowledgment (`ACK_CLIENT_INDIVIDUAL`).
+```python
+log = InMemoryLog()
+replicator = OutboxReplicator(log=log)
+# ... trigger operation ...
+assert len(log) == 1
+assert log.first().payload["relations_to_add"][0]["resource"]["id"] == expected_id
+```
 
-## 6. Celery Task Patterns
+## 3. Kafka
 
-- All tasks use `@shared_task` decorator (not `@app.task`).
-- Tasks are thin wrappers calling management commands or utility functions.
-- Beat schedule in `rbac/celery.py`: cross-account cleanup (daily), Redis health (30s), principal cleanup (configurable).
-- Trigger async tasks from views via `.delay()` -- never `.apply_async()` in this codebase.
-- Task autodiscovery via `app.autodiscover_tasks()`.
+### Producer (`core/kafka.py`)
 
-## 7. Prometheus Metrics Conventions
+`RBACProducer` is a singleton-ish class. In development/test (`DEVELOPMENT=True`, `MOCK_KAFKA=True`, or `KAFKA_ENABLED=False`), it returns `FakeKafkaProducer` (no-op). Production uses `kafka-python`'s `KafkaProducer` with up to 5 retries on initialization.
 
-- Use `Counter` for event counts with labels for status/type.
-- Use `Histogram` for timing with `.time()` decorator or context manager.
-- Use `Gauge` for state (consumer running, start time).
-- Naming: `rbac_kafka_consumer_*`, `rbac_proxy_*`, `it_request_*`, `relations_replication_event_total`.
-- Cap label cardinality (e.g., `min(attempt + 1, 10)` for retry attempts).
+Only used for notifications. To send: `producer.send_kafka_message(topic, message_dict, headers)`.
 
-## 8. Read-Your-Writes Support
+### Consumer (`core/kafka_consumer.py`)
 
-- After processing `create_workspace` events, send PostgreSQL `NOTIFY` on `READ_YOUR_WRITES_CHANNEL`.
-- NOTIFY payload is the `resource_id` (workspace UUID).
-- NOTIFY is best-effort -- failure is logged but does not fail message processing.
-- Controlled by `READ_YOUR_WRITES_WORKSPACE_ENABLED` and `READ_YOUR_WRITES_TIMEOUT_SECONDS`.
+`RBACKafkaConsumer` is a standalone process (not part of the Django web server). Key behaviors:
 
-## 9. Testing Integration Code
+- Manual offset commits (at-least-once delivery), committed every N messages (`CommitConfig.commit_modulo`, default 10).
+- Fencing via Kessel lock tokens -- acquired on partition assignment, validated on every write.
+- Exponential backoff retry (`RetryConfig`) with jitter. `ValidationError` and `ParseError` are non-retryable.
+- Health checks via file-based probes: `/tmp/kubernetes-liveness`, `/tmp/kubernetes-readiness`.
+- On max retries exceeded, consumer stops without committing -- Kubernetes restarts the pod.
 
-- `OutboxReplicator` accepts an `OutboxLog` protocol for dependency injection.
-- Use `InMemoryLog` in tests instead of `OutboxWAL` to avoid DB writes.
-- Use `FakeKafkaProducer` (auto-selected in dev) or mock `RBACProducer.get_producer()`.
-- `RelationTuple` is the domain type for tuples -- use `as_message()` to convert to protobuf, `to_dict()` for JSON.
-- Use `RelationTuple.validate_message()` to assert protobuf round-trip correctness.
+Env vars: `RBAC_KAFKA_CONSUMER_TOPIC`, `RBAC_KAFKA_CONSUMER_GROUP_ID` (default `rbac-consumer-group`), `RBAC_KAFKA_CUSTOM_CONSUMER_BROKER`.
+
+### Kafka Auth
+
+Configured by Clowder (`KAFKA_AUTH` dict with SASL/SSL settings). Falls back to plain `bootstrap_servers` locally. The consumer filters out producer-only configs (`retries`, `acks`, etc.) from shared `KAFKA_AUTH`.
+
+## 4. Kessel Inventory API (gRPC) -- Access Checks
+
+Two access check patterns in `management/permissions/workspace_inventory_access.py`:
+
+- **CheckForUpdate**: Point check -- "does principal X have relation Y on resource Z?" Used in permission classes (403 decisions). Uses strongly consistent reads.
+- **StreamedListObjects**: List check -- "which workspaces does principal X have relation Y on?" Used in filter backends for list operations. Paginated with continuation tokens (page size 1000, max 10,000 pages).
+
+Both methods fall back gracefully on connectivity errors (return `False` / empty set), not exceptions.
+
+Key env vars: `INVENTORY_API_SERVER`, `INVENTORY_API_CLIENT_ID`, `INVENTORY_API_CLIENT_SECRET`.
+
+## 5. BOP (Back Office Proxy) -- Principal Management
+
+`PrincipalProxy` in `management/principal/proxy.py` calls BOP to verify and list user principals.
+
+- Endpoints: `/v3/accounts/{org_id}/users`, `/v3/accounts/{org_id}/usersBy`, `/v1/users`
+- Auth: `x-rh-insights-env`, `x-rh-clientid`, `x-rh-apitoken` headers
+- TLS: Clowder CA or local cert at `management/principal/certs/client.pem`
+- Bypass: `BYPASS_BOP_VERIFICATION=True` returns principals from local DB without calling BOP
+
+Env vars: `PRINCIPAL_PROXY_SERVICE_PROTOCOL`, `_HOST`, `_PORT`, `_PATH`, `PRINCIPAL_PROXY_CLIENT_ID`, `PRINCIPAL_PROXY_API_TOKEN`.
+
+Metrics: `rbac_proxy_request_processing_seconds` (histogram), `bop_request_status_total` (counter by method+status).
+
+## 6. IT Service -- Service Accounts
+
+`ITService` in `management/principal/it_service.py` is a singleton that fetches service accounts from IT SSO.
+
+- Endpoint: `{protocol}://{host}:{port}{base_path}/service_accounts/v1`
+- Auth: Bearer token from the requesting user (`user.bearer_token`)
+- Pagination: IT returns pages of 100; client loops until response length < limit
+- Bypass: `IT_BYPASS_IT_CALLS=True` returns mock service accounts from local DB
+
+Env vars: `IT_SERVICE_HOST`, `IT_SERVICE_PORT`, `IT_SERVICE_BASE_PATH`, `IT_SERVICE_PROTOCOL_SCHEME`, `IT_SERVICE_TIMEOUT_SECONDS`.
+
+## 7. UMB (Unified Message Bus) -- Principal Lifecycle Events
+
+STOMP-based consumer in `management/principal/cleaner.py`. Processes principal create/update/disable events.
+
+- Controlled by `PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB` and `UMB_JOB_ENABLED` feature flags
+- Runs as a Celery beat task every 60 seconds when enabled
+- Uses `StompSpec.ACK_CLIENT_INDIVIDUAL` for per-message acknowledgment
+- Falls back to BOP-based cleanup (`clean_tenants_principals`) when UMB is disabled (runs every 7 days)
+
+## 8. Notifications Service
+
+Notifications are sent via Kafka to the `NOTIFICATIONS_TOPIC`. The producer (`core/kafka.py`) sends JSON messages matching the template in `management/notifications/message_template.json` (bundle: `console`, application: `rbac`).
+
+Event types: `custom-role-created`, `custom-role-deleted`, `custom-role-updated`, `group-created`, `group-deleted`, `group-updated`, `rh-new-role-available`, `rh-platform-default-role-updated`, `rh-new-tam-request-created`, etc.
+
+Guards:
+- `NOTIFICATIONS_ENABLED` controls custom resource notifications
+- `NOTIFICATIONS_RH_ENABLED` controls Red Hat system role/group notifications
+- `skip_rh_notifications` context var suppresses during seeding
+- `KAFKA_ENABLED=False` disables all notifications
+
+## 9. Celery Tasks and Beat Schedule
+
+Broker: Redis (`CELERY_BROKER_URL`). Config namespace: `CELERY_`.
+
+Scheduled tasks in `rbac/rbac/celery.py`:
+- `cross_account_cleanup` -- daily at midnight
+- `run_redis_cache_health` -- every 30 seconds
+- `principal_cleanup_via_umb` -- every 60 seconds (when UMB enabled)
+- `principal_cleanup` -- every 7 days (when UMB disabled)
+
+Worker starts a Prometheus metrics server on Clowder's `metricsPort` (default 9000). Failure to start metrics server exits the process.
+
+## 10. Read-Your-Writes (Workspace Creation)
+
+After the Kafka consumer successfully replicates a `create_workspace` event, it sends a PostgreSQL `NOTIFY` on the `READ_YOUR_WRITES_CHANNEL`. The Django request handler `LISTEN`s on this channel to block until the workspace is confirmed replicated. Best-effort -- NOTIFY failure does not fail the replication.
+
+Env vars: `READ_YOUR_WRITES_WORKSPACE_ENABLED`, `READ_YOUR_WRITES_CHANNEL`, `READ_YOUR_WRITES_TIMEOUT_SECONDS` (default 10).
+
+## 11. Feature Flags Summary
+
+| Flag | Default | Effect |
+|------|---------|--------|
+| `V2_APIS_ENABLED` | `False` | Registers v2 URL routes |
+| `KAFKA_ENABLED` | `False` | Enables Kafka producer/consumer |
+| `NOTIFICATIONS_ENABLED` | `False` | Enables custom resource notifications |
+| `NOTIFICATIONS_RH_ENABLED` | `False` | Enables RH system notifications |
+| `BYPASS_BOP_VERIFICATION` | `False` | Skips BOP calls, uses local DB |
+| `IT_BYPASS_IT_CALLS` | `False` | Mocks IT service responses |
+| `MOCK_KAFKA` | `False` | Uses FakeKafkaProducer |
+| `PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB` | `False` | UMB-based principal cleanup |
+| `READ_YOUR_WRITES_WORKSPACE_ENABLED` | `False` | Enables workspace create blocking |
+
+## 12. Prometheus Metrics Conventions
+
+All external service calls are instrumented. Follow these patterns:
+- Histograms for request duration (suffix `_seconds` or `_processing_seconds`)
+- Counters for request status (labels: `method`, `status`)
+- Counters for errors (label: `error` or `error_type`)
+- Kafka consumer: `rbac_kafka_consumer_*` prefix for all consumer metrics
+- Replication latency: `rbac_replication_event_latency_seconds` (histogram with event_type label)

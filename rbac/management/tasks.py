@@ -22,6 +22,7 @@ from typing import Optional
 
 from celery import shared_task
 from django.core.management import call_command
+from internal.migrations.remove_deleted_workspace_bindings import remove_deleted_workspace_bindings
 from internal.migrations.remove_orphan_relations import cleanup_tenant_orphan_bindings
 from internal.utils import (
     clean_invalid_workspace_resource_definitions,
@@ -156,3 +157,9 @@ def remove_unassigned_system_binding_mappings_in_worker():
 def expire_orphaned_cross_account_requests_in_worker():
     """Celery task to expire orphaned cross-account requests."""
     return expire_orphaned_cross_account_requests()
+
+
+@shared_task
+def remove_deleted_workspace_bindings_in_worker():
+    """Celery task to remove role bindings that reference deleted workspaces."""
+    return remove_deleted_workspace_bindings()

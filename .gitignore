@@ -141,6 +141,9 @@ rbac/management/principal/umb_certs/
 # ai
 .claude
 
+# direnv
+.envrc
+
 # Sphinx documentation build output
 _build/
 
