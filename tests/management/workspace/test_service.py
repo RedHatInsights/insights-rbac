@@ -161,6 +161,7 @@ from django.test.utils import override_settings
 from migration_tool.in_memory_tuples import InMemoryTuples, InMemoryRelationReplicator
 
 
+@override_settings(ATOMIC_RETRY_DISABLED=True)
 class WorkspaceServiceTestBase(TestCase):
     """Base test class"""
 
