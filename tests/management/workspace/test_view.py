@@ -90,6 +90,7 @@ class BasicWorkspaceViewTests:
             group.principals.add(principal)
 
 
+@override_settings(ATOMIC_RETRY_DISABLED=True)
 class WorkspaceViewTests(IdentityRequest, BasicWorkspaceViewTests):
     """Test the Workspace view."""
 
