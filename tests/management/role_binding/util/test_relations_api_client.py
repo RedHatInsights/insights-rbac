@@ -26,6 +26,11 @@ from management.role_binding.util.relations_api_client import (
     parse_resource_type,
 )
 
+# Valid UUIDs for testing
+VALID_UUID_1 = "019d1b5e-f95c-7e23-b10b-ae7f44e245bf"
+VALID_UUID_2 = "123e4567-e89b-12d3-a456-426614174000"
+VALID_UUID_3 = "550e8400-e29b-41d4-a716-446655440000"
+
 
 class ParseResourceTypeTests(TestCase):
     """Tests for the parse_resource_type function."""
@@ -90,8 +95,8 @@ class LookupBindingSubjectsTests(TestCase):
         # Simulate json_format.MessageToDict output
         with patch("management.role_binding.util.relations_api_client.json_format") as mock_json_format:
             mock_json_format.MessageToDict.side_effect = [
-                {"subject": {"id": "binding-1"}},
-                {"subject": {"id": "binding-2"}},
+                {"subject": {"id": VALID_UUID_1}},
+                {"subject": {"id": VALID_UUID_2}},
             ]
 
             mock_stub.LookupSubjects.return_value = [mock_response_1, mock_response_2]
@@ -104,7 +109,7 @@ class LookupBindingSubjectsTests(TestCase):
                 result = lookup_binding_subjects("workspace", "ws-123")
 
         self.assertIsNotNone(result)
-        self.assertEqual(set(result), {"binding-1", "binding-2"})
+        self.assertEqual(set(result), {VALID_UUID_1, VALID_UUID_2})
 
     @override_settings(RELATION_API_SERVER="localhost:9000")
     @patch("management.role_binding.util.relations_api_client._jwt_manager")
@@ -164,7 +169,7 @@ class LookupBindingSubjectsTests(TestCase):
 
         with patch("management.role_binding.util.relations_api_client.json_format") as mock_json_format:
             # Response with nested subject format
-            mock_json_format.MessageToDict.return_value = {"subject": {"subject": {"id": "nested-binding-1"}}}
+            mock_json_format.MessageToDict.return_value = {"subject": {"subject": {"id": VALID_UUID_1}}}
 
             mock_stub.LookupSubjects.return_value = [mock_response]
             mock_create_channel.return_value.__enter__.return_value = mock_stub
@@ -176,7 +181,7 @@ class LookupBindingSubjectsTests(TestCase):
                 result = lookup_binding_subjects("workspace", "ws-123")
 
         self.assertIsNotNone(result)
-        self.assertEqual(result, ["nested-binding-1"])
+        self.assertEqual(result, [VALID_UUID_1])
 
     @override_settings(RELATION_API_SERVER="localhost:9000")
     @patch("management.role_binding.util.relations_api_client._jwt_manager")
@@ -192,9 +197,9 @@ class LookupBindingSubjectsTests(TestCase):
 
         with patch("management.role_binding.util.relations_api_client.json_format") as mock_json_format:
             mock_json_format.MessageToDict.side_effect = [
-                {"subject": {"id": "binding-1"}},
-                {"subject": {"id": "binding-2"}},
-                {"subject": {"id": "binding-1"}},  # Duplicate
+                {"subject": {"id": VALID_UUID_1}},
+                {"subject": {"id": VALID_UUID_2}},
+                {"subject": {"id": VALID_UUID_1}},  # Duplicate
             ]
 
             mock_stub.LookupSubjects.return_value = [mock_response_1, mock_response_2, mock_response_3]
@@ -208,7 +213,7 @@ class LookupBindingSubjectsTests(TestCase):
 
         self.assertIsNotNone(result)
         self.assertEqual(len(result), 2)
-        self.assertEqual(set(result), {"binding-1", "binding-2"})
+        self.assertEqual(set(result), {VALID_UUID_1, VALID_UUID_2})
 
     @override_settings(RELATION_API_SERVER="localhost:9000")
     @patch("management.role_binding.util.relations_api_client._jwt_manager")
@@ -224,7 +229,7 @@ class LookupBindingSubjectsTests(TestCase):
 
         with patch("management.role_binding.util.relations_api_client.json_format") as mock_json_format:
             mock_json_format.MessageToDict.side_effect = [
-                {"subject": {"id": "binding-1"}},
+                {"subject": {"id": VALID_UUID_1}},
                 {"subject": {}},  # Missing id
                 {"other_field": "value"},  # Missing subject entirely
             ]
@@ -239,7 +244,7 @@ class LookupBindingSubjectsTests(TestCase):
                 result = lookup_binding_subjects("workspace", "ws-123")
 
         self.assertIsNotNone(result)
-        self.assertEqual(result, ["binding-1"])
+        self.assertEqual(result, [VALID_UUID_1])
 
     @override_settings(RELATION_API_SERVER="localhost:9000")
     @patch("management.role_binding.util.relations_api_client._jwt_manager")
@@ -371,3 +376,92 @@ class LookupBindingSubjectsTests(TestCase):
 
                     # Verify namespace is parsed from resource_type
                     mock_common_pb2.ObjectType.assert_any_call(namespace="custom", name="resource")
+
+    @override_settings(RELATION_API_SERVER="localhost:9000")
+    @patch("management.role_binding.util.relations_api_client._jwt_manager")
+    @patch("management.role_binding.util.relations_api_client.create_client_channel_relation")
+    def test_skips_non_uuid_subject_ids(self, mock_create_channel, mock_jwt_manager):
+        """Test that non-UUID subject IDs are skipped."""
+        mock_jwt_manager.get_jwt_from_redis.return_value = "test-token"
+
+        mock_stub = MagicMock()
+        mock_response_1 = MagicMock()
+        mock_response_2 = MagicMock()
+        mock_response_3 = MagicMock()
+
+        with patch("management.role_binding.util.relations_api_client.json_format") as mock_json_format:
+            mock_json_format.MessageToDict.side_effect = [
+                {"subject": {"id": VALID_UUID_1}},
+                {"subject": {"id": "not-a-valid-uuid"}},  # Non-UUID, should be skipped
+                {"subject": {"id": VALID_UUID_2}},
+            ]
+
+            mock_stub.LookupSubjects.return_value = [mock_response_1, mock_response_2, mock_response_3]
+            mock_create_channel.return_value.__enter__.return_value = mock_stub
+
+            with patch(
+                "management.role_binding.util.relations_api_client.lookup_pb2_grpc.KesselLookupServiceStub",
+                return_value=mock_stub,
+            ):
+                result = lookup_binding_subjects("workspace", "ws-123")
+
+        self.assertIsNotNone(result)
+        self.assertEqual(len(result), 2)
+        self.assertEqual(set(result), {VALID_UUID_1, VALID_UUID_2})
+        self.assertNotIn("not-a-valid-uuid", result)
+
+    @override_settings(RELATION_API_SERVER="localhost:9000")
+    @patch("management.role_binding.util.relations_api_client._jwt_manager")
+    @patch("management.role_binding.util.relations_api_client.create_client_channel_relation")
+    def test_returns_empty_list_when_all_ids_are_non_uuid(self, mock_create_channel, mock_jwt_manager):
+        """Test that empty list is returned when all subject IDs are non-UUIDs."""
+        mock_jwt_manager.get_jwt_from_redis.return_value = "test-token"
+
+        mock_stub = MagicMock()
+        mock_response_1 = MagicMock()
+        mock_response_2 = MagicMock()
+
+        with patch("management.role_binding.util.relations_api_client.json_format") as mock_json_format:
+            mock_json_format.MessageToDict.side_effect = [
+                {"subject": {"id": "namespace/not-a-uuid"}},
+                {"subject": {"id": "invalid-id"}},
+            ]
+
+            mock_stub.LookupSubjects.return_value = [mock_response_1, mock_response_2]
+            mock_create_channel.return_value.__enter__.return_value = mock_stub
+
+            with patch(
+                "management.role_binding.util.relations_api_client.lookup_pb2_grpc.KesselLookupServiceStub",
+                return_value=mock_stub,
+            ):
+                result = lookup_binding_subjects("workspace", "ws-123")
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result, [])
+
+    @override_settings(RELATION_API_SERVER="localhost:9000")
+    @patch("management.role_binding.util.relations_api_client.logger")
+    @patch("management.role_binding.util.relations_api_client._jwt_manager")
+    @patch("management.role_binding.util.relations_api_client.create_client_channel_relation")
+    def test_logs_warning_for_non_uuid_subject_ids(self, mock_create_channel, mock_jwt_manager, mock_logger):
+        """Test that a warning is logged when non-UUID subject IDs are encountered."""
+        mock_jwt_manager.get_jwt_from_redis.return_value = "test-token"
+
+        mock_stub = MagicMock()
+        mock_response = MagicMock()
+
+        with patch("management.role_binding.util.relations_api_client.json_format") as mock_json_format:
+            mock_json_format.MessageToDict.return_value = {"subject": {"id": "namespace/not-a-uuid"}}
+
+            mock_stub.LookupSubjects.return_value = [mock_response]
+            mock_create_channel.return_value.__enter__.return_value = mock_stub
+
+            with patch(
+                "management.role_binding.util.relations_api_client.lookup_pb2_grpc.KesselLookupServiceStub",
+                return_value=mock_stub,
+            ):
+                lookup_binding_subjects("workspace", "ws-123")
+
+        mock_logger.warning.assert_called_with(
+            "Skipping non-UUID subject_id from Relations API: %s", "namespace/not-a-uuid"
+        )

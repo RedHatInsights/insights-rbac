@@ -1,111 +1,185 @@
-# Security Guidelines for insights-rbac
+# Security Guidelines
 
-## Authentication Architecture
+Security conventions and patterns for insights-rbac. Rules here are specific to this codebase; generic web security advice is out of scope.
 
-### 1. x-rh-identity Header Authentication (Public API)
-- The `IdentityHeaderMiddleware` in `rbac/rbac/middleware.py` decodes a base64-encoded JSON `x-rh-identity` header to populate `request.user` (an `api.models.User` instance, NOT Django's auth user).
-- Never trust user-supplied fields from the identity header without validation. The middleware already validates `org_id` presence and service account `client_id` non-emptiness. Follow the same pattern for any new fields.
-- Cross-account requests require `user.internal == True` AND email ending with `@redhat.com`. Never weaken this check.
-- When adding new public endpoints, add them to `is_no_auth()` in middleware.py ONLY if they truly require no authentication (health checks, OpenAPI specs).
+## Authentication Layers
 
-### 2. PSK Authentication (Service-to-Service)
-- S2S requests use headers `x-rh-rbac-psk`, `x-rh-rbac-account`, `x-rh-rbac-org-id`, `x-rh-rbac-client-id` (defined in `api/common/__init__.py`).
-- PSK validation in `management/utils.py:validate_psk()` checks against `SERVICE_PSKS` env var (JSON). It supports primary and alt-secret for key rotation. Never log PSK values.
-- PSK-authenticated users get `user.system = True` and `user.admin = True`. Any new S2S endpoint must check `user.system` to distinguish from regular admin users.
+### 1. x-rh-identity Header (primary)
 
-### 3. JWT/Bearer Token Authentication (S2S via SSO)
-- `ITSSOTokenValidator` in `management/authorization/token_validator.py` validates JWT tokens against Red Hat SSO JWKS.
-- Token validation checks: issuer match, scope claims, expiration. The `IT_BYPASS_TOKEN_VALIDATION` setting returns mocked data -- never enable in production.
-- After token validation, `build_system_user_from_token()` checks the user_id against `SYSTEM_USERS` env var (JSON allowlist). Only allowlisted service accounts can authenticate this way.
-- The `allow_any_org` flag in SYSTEM_USERS allows a system user to act on behalf of any org. Verify `org_id` consistency between token and headers when this is false.
+All public API requests are authenticated via a base64-encoded `x-rh-identity` header injected by the API gateway (3scale). The `IdentityHeaderMiddleware` in `rbac/rbac/middleware.py` decodes and validates it.
 
-### 4. Internal API Authentication
-- Paths under `/_private/` use `InternalIdentityHeaderMiddleware` in `internal/middleware.py`.
-- `/_private/_s2s/` paths authenticate via PSK or bearer token.
-- Other `/_private/` paths require identity type `Associate` or `X509` (validated in `internal/utils.py:build_internal_user()`). Never add other identity types without security review.
-- A2S paths (`/_private/_a2s/`) are an exception: they use public `IdentityHeaderMiddleware` auth and pass through without a user if unauthenticated.
+Rules:
+- Never trust raw user input for identity. Always read from the decoded header via `extract_header()` (`rbac/api/serializers.py`).
+- `org_id` is mandatory. Middleware returns 400 if absent.
+- Service accounts must provide a non-blank `client_id`. Middleware returns 400 otherwise.
+- Cross-account requests require both `user.internal == True` and an `@redhat.com` email. Middleware returns 401 if either check fails.
+
+### 2. Pre-Shared Key (S2S via PSK)
+
+Internal service-to-service callers authenticate via `X-RH-RBAC-PSK`, `X-RH-RBAC-ORG-ID`, and `X-RH-RBAC-CLIENT-ID` headers. Validated in `build_user_from_psk()` (`rbac/management/utils.py`).
+
+Rules:
+- PSK validation checks both primary and alt-secret from `SERVICE_PSKS` JSON config.
+- PSK-authenticated users are set as `system=True, admin=True`. If you add a new PSK client that should not be admin, you must change this default.
+- All three headers (PSK, org_id, client_id) must be present, or the auth attempt is skipped entirely.
+
+### 3. ITSSO JWT Token (S2S via Bearer)
+
+Service accounts authenticate via `Authorization: Bearer <token>`. Validated in `ITSSOTokenValidator` (`rbac/management/authorization/token_validator.py`).
+
+Rules:
+- Token validation checks issuer, expiry, and optional scope claims against ITSSO JWKS.
+- The `user_id` from the token must exist in `SYSTEM_USERS` setting, or auth fails.
+- `allow_any_org` in the system user config controls whether the caller can set arbitrary org_id via headers. Token org_id and header org_id must match when `allow_any_org` is False.
+- `IT_BYPASS_TOKEN_VALIDATION` returns a mocked user. Never enable in production.
+
+### 4. Internal API Auth
+
+Requests to `/_private/` use `InternalIdentityHeaderMiddleware` (`rbac/internal/middleware.py`).
+
+Rules:
+- `/_private/_s2s/` paths use PSK or JWT token auth (same as above), returning 403 on failure.
+- Other `/_private/` paths require `x-rh-identity` with identity type `Associate` or `X509`. All other types are rejected.
+- A2S paths (`/_private/_a2s/`) are an exception: they route through public `IdentityHeaderMiddleware` auth, not internal auth.
 
 ## Authorization Patterns
 
-### 5. Permission Classes
-- V1 API views use resource-specific permission classes (`GroupAccessPermission`, `RoleAccessPermission`, etc.) that check `request.user.access` dict populated by middleware.
-- The access dict structure is `{resource_type: {read: [...], write: [...]}}`. A `*` in the list means unrestricted access.
-- `user.admin` (org admin) bypasses all V1 permission checks. This is intentional. Do not add additional admin checks.
-- The `ALLOW_ANY` env var disables all permission checks. It must never be set in production.
+### Two-layer v2 access control
 
-### 6. V2 Permission Model (Workspaces)
-- V2 uses Kessel Inventory API for fine-grained authorization via `WorkspaceInventoryAccessChecker`.
-- V2 permission classes: `WorkspaceAccessPermission`, `RoleBindingSystemUserAccessPermission`, `RoleBindingKesselAccessPermission`.
-- Feature flags control V1/V2 branching. The `WorkspaceAccessPermission` is the ONLY place where V1/V2 branching should occur for workspace access.
-- System user access uses `check_system_user_access()` from `management/permissions/system_user_utils.py`. Use this single entry point; do not duplicate the decision tree.
+Every v2 endpoint must have both layers:
 
-### 7. V1/V2 Write Gating
-- `V1WriteBlockedWhenWorkspacesEnabled` blocks V1 writes when workspaces are enabled for an org.
-- `V2WriteRequiresWorkspacesEnabled` blocks V2 writes when workspaces are NOT enabled.
-- Both check feature flags AND database activation state. Always use `is_v2_edit_enabled_for_request()` for consistency.
-- `assert_v1_write_allowed()` provides the authoritative row-level-locked check inside transactions. Permission classes are a fast first line of defense.
+1. **Permission class** (`*AccessPermission`): coarse-grained 403 checks. Defined in `permission_classes` on the viewset.
+2. **Filter backend** (`*AccessFilterBackend`): queryset-level filtering for list operations. Defined in `filter_backends` on the viewset.
 
-## Tenant Isolation
+Rules:
+- Permission classes check if the user can call the endpoint at all.
+- Filter backends narrow the queryset to only authorized objects. For detail views, this produces 404 (not 403) for inaccessible objects, preventing existence leakage.
+- Always list the access filter backend first in `filter_backends` so access filtering happens before other filters.
 
-### 8. Tenant Scoping
-- Every data query MUST be scoped to `request.tenant`. The `BaseV2ViewSet.get_queryset()` automatically filters by tenant.
-- V1 views use `filter_queryset_by_tenant()` or explicit `.filter(tenant=tenant)`.
-- Never allow a request to access data from a different tenant's org_id. The `request.tenant` is set by middleware based on the authenticated user's org_id.
-- System users with `allow_any_org=True` can specify org_id via headers. Their tenant is resolved from the header org_id.
+### v1 permission pattern
+
+v1 endpoints use `request.user.access` (preloaded in middleware) to check read/write permissions:
+```python
+if request.user.admin:
+    return True
+if request.method in permissions.SAFE_METHODS:
+    return bool(request.user.access.get("role", {}).get("read", []))
+return bool(request.user.access.get("role", {}).get("write", []))
+```
+
+### Kessel integration (v2)
+
+v2 uses Kessel Inventory API for fine-grained checks:
+- `CheckForUpdate`: single-resource permission check (detail/create/move operations).
+- `StreamedListObjects`: returns all resources a principal can access (list operations).
+
+Rules:
+- When Kessel is unreachable, `_call_inventory()` returns a safe default (False for checks, empty set for lookups). Never default to granting access.
+- Resource type allowlists are enforced. `RoleBindingKesselAccessPermission.ALLOWED_RESOURCE_TYPES` only allows `{"workspace", "tenant"}`. Unknown types are denied.
+- Tenant-level authorization uses `request.user.admin` (org-admin check), not Kessel. This is intentional for the current milestone.
+
+### System user access
+
+System users (S2S) follow a unified decision tree in `check_system_user_access()` (`rbac/management/permissions/system_user_utils.py`):
+- Non-system user: continue with normal checks.
+- System user without admin: denied.
+- System admin: allowed (except move, which requires target validation).
+
+Rules:
+- Always use `check_system_user_access()` for system user checks. Do not inline `user.system and user.admin` checks, which creates behavior drift.
+- System users bypass Kessel checks entirely. Access is determined solely by the `admin` attribute.
+
+### Feature flag gating
+
+Rules:
+- v2 routes only register when `V2_APIS_ENABLED=True` (`rbac/rbac/urls.py`).
+- v2 writes require the org to have workspaces enabled (`V2WriteRequiresWorkspacesEnabled`). v1 writes are blocked for orgs with workspaces enabled (`V1WriteBlockedWhenWorkspacesEnabled`).
+- `ALLOW_ANY` env var bypasses all permission checks. It must never be set in production.
+
+## Multi-Tenant Isolation
+
+### TenantAwareModel
+
+All business models inherit `TenantAwareModel`, which adds a `ForeignKey(Tenant)`.
+
+Rules:
+- `BaseV2ViewSet.get_queryset()` automatically filters by `request.tenant`. If you override `get_queryset()`, either call `super()` or explicitly filter by tenant (e.g., `RoleV2.objects.for_tenant(self.request.tenant)`).
+- When querying models outside of a viewset (services, management commands), always filter by tenant explicitly. Never return cross-tenant data.
+- Target workspace existence checks in permission classes must include `tenant=request.tenant` (see `WorkspaceAccessPermission._check_move_target_exists_v1`).
+
+### Tenant resolution
+
+- Tenant is resolved from `request.user.org_id` via cache (`TenantCache`) or DB lookup.
+- System users without a tenant get 404 (no lazy bootstrap for system users).
+- `request.tenant` is set by middleware and available to all views.
 
 ## Input Validation
 
-### 9. Query Parameter Sanitization
-- Use `clean_query_param()` from `management/utils.py` for string query params. It rejects NUL characters (`\x00`) and treats whitespace-only as None.
-- Use `validate_uuid()` or `is_valid_uuid()` for UUID parameters.
-- Use `validate_and_get_key()` for enum-style query parameters with defined valid values.
-- The `UUIDStringField` serializer field enforces hyphenated UUID format only (no hex-only UUIDs).
+### Query parameter sanitization
 
-### 10. Request Body Validation
-- Internal API endpoints validate request bodies against JSON schemas in `internal/schemas.py` using `jsonschema.validate()`.
-- Role binding permission checks sanitize resource_id/resource_type with `.replace("\x00", "")` and validate against `ALLOWED_RESOURCE_TYPES` allowlist.
-- Always fail closed on malformed input in permission checks (return `False`).
+Use `clean_query_param()` (`rbac/management/utils.py`) for all user-supplied query parameters:
+```python
+value = clean_query_param(request.query_params.get("name"), "name")
+```
+This strips whitespace-only values and rejects NUL characters (`\x00`).
 
-### 11. Username Handling
-- Usernames are case-insensitive; `User.username` setter lowercases automatically.
-- Principal lookups use `username__iexact`. Follow this pattern for consistency.
-- Group names "Custom Default Access" and "Default Access" are reserved. Use `validate_group_name()`.
+Rules:
+- NUL bytes in query params can cause PostgreSQL errors or bypass string matching. Always sanitize.
+- Role binding access checks strip `\x00` from `resource_id` and `resource_type` inline (see `_parse_query_resource`). Prefer using `clean_query_param` for consistency.
+
+### UUID validation
+
+- Use `validate_uuid()` or `is_valid_uuid()` from `rbac/management/utils.py` before passing user-supplied UUIDs to queries.
+- Use `UUIDStringField` (in `rbac/management/utils.py`) in serializers for strict UUID format validation (hyphenated hex only).
+
+### Serializer field constraints
+
+- Always set `max_length` on `CharField` fields. Workspace name and description are capped at 255.
+- Use `read_only=True` on fields that should never be set by the client (id, created, modified, type).
+
+### Reserved names
+
+`validate_group_name()` rejects "Custom Default Access" and "Default Access" as group names.
 
 ## Secrets and Configuration
 
-### 12. Secret Management
-- All secrets come from environment variables: `DJANGO_SECRET_KEY`, `SERVICE_PSKS`, `SYSTEM_USERS`, `REDIS_PASSWORD`, `CW_AWS_SECRET_ACCESS_KEY`, `RELATIONS_API_CLIENT_SECRET`, `INVENTORY_API_CLIENT_SECRET`.
-- Never log secrets. The `User.__repr__` masks `bearer_token` with `***`. Follow this pattern.
-- Never hardcode secrets. The default `SECRET_KEY` in settings.py is for development only.
-- gRPC channels use TLS (`grpc.ssl_channel_credentials()`) in production. Insecure channels are only for development/Clowder environments.
+Rules:
+- `DJANGO_SECRET_KEY` has a hardcoded fallback for development. In production, it must be set via environment variable.
+- `SERVICE_PSKS` and `SYSTEM_USERS` are JSON environment variables. Never log their contents.
+- Never commit `.env`, `.envrc`, or credential files. The `.gitignore` should exclude them.
+- gRPC channels use `grpc.insecure_channel()` in development/Clowder but `grpc.ssl_channel_credentials()` in production. The switch is in `create_client_channel()`, `create_client_channel_relation()`, and `create_client_channel_inventory()` functions.
 
-## CSRF and CORS
+## Development-Only Features
 
-### 13. CSRF is Disabled
-- `DisableCSRF` middleware sets `_dont_enforce_csrf_checks = True` on all requests. This is by design for API-only service behind 3scale gateway. Do not add browser-based session auth.
+These features are guarded by environment variables and must never be enabled in production:
 
-### 14. CORS Configuration
-- `CORS_ORIGIN_ALLOW_ALL = True` is set. The service relies on the gateway (3scale) for origin enforcement.
-- Custom headers `x-rh-identity` and `HTTP_X_RH_IDENTITY` are in `CORS_ALLOW_HEADERS`.
+| Setting | Effect | Guard |
+|---|---|---|
+| `DEVELOPMENT=True` | Injects mock identity header via `DevelopmentIdentityHeaderMiddleware` | Only added to middleware stack when True |
+| `IT_BYPASS_TOKEN_VALIDATION=True` | Skips JWT validation, returns mocked user | Returns hardcoded mock values |
+| `ALLOW_ANY=True` | All permission classes return True | Checked in each permission class |
+| `IT_BYPASS_IT_CALLS=True` | Skips calls to IT service for principal validation | Skips BOP verification |
+| `DEBUG=True` | Django debug mode | Should always be False in production |
 
-## Destructive Operations
+## Middleware Order
 
-### 15. Time-Gated Destructive APIs
-- Internal destructive APIs are gated by `INTERNAL_DESTRUCTIVE_API_OK_UNTIL` (datetime). The `destructive_ok("api")` check in `core/utils.py` compares against current time.
-- Destructive seeding uses `DESTRUCTIVE_SEEDING_OK_UNTIL`. Both default to epoch (1970) which means disabled.
-- Never remove these time gates. They are the safety net for dangerous operations.
+The middleware stack in `settings.py` includes several security-critical components. The key security middleware are (in their relative order):
+1. `DisableCSRF` -- CSRF is disabled because the API gateway handles authentication via identity headers, not cookies.
+2. `IdentityHeaderMiddleware` -- parses identity for public API paths.
+3. `InternalIdentityHeaderMiddleware` -- parses identity for `/_private/` paths.
+4. `ReadOnlyApiMiddleware` -- blocks writes when read-only mode is enabled (except internal endpoints).
 
-## Development vs Production
+`DevelopmentIdentityHeaderMiddleware` is inserted before `IdentityHeaderMiddleware` only when `DEVELOPMENT=True`.
 
-### 16. Development-Only Features
-- `DevelopmentIdentityHeaderMiddleware` injects a fake identity header. It is only loaded when `DEVELOPMENT=True`.
-- `IT_BYPASS_TOKEN_VALIDATION` returns mocked user data. Never enable in production.
-- `BYPASS_BOP_VERIFICATION` skips principal verification. Never enable in production.
-- Never add `DEVELOPMENT` or `ALLOW_ANY` checks that weaken security without documenting them as dev-only.
+## Existence Leakage Prevention
 
-## Read-Only Mode
+Rules:
+- v2 detail endpoints must return 404 (not 403) for objects the user cannot access. This prevents attackers from discovering valid resource IDs.
+- `WorkspaceObjectAccessMixin` ensures `get_object()` returns 404 when the object is filtered out by the access filter backend.
+- The `WorkspaceAccessFilterBackend` filters the queryset before DRF's `get_object()` runs, so inaccessible objects appear as "not found."
 
-### 17. API Read-Only Controls
-- `ReadOnlyApiMiddleware` blocks write methods when `READ_ONLY_API_MODE` is set (excludes internal API).
-- V2-specific read-only mode is controlled by feature flag `is_v2_api_read_only_mode_enabled()`.
-- Internal API (`api_namespace == "internal"`) is always exempt from read-only mode.
+## Cross-Account Requests
+
+- Only internal Red Hat users (`is_internal=True`, `@redhat.com` email) can create cross-account requests.
+- Cross-account principals are scoped to system roles only (`system=True`).
+- The username for cross-account sessions is formatted as `{org_id}-{user_id}` to prevent collision with regular usernames.

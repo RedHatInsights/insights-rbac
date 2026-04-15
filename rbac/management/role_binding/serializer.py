@@ -58,6 +58,7 @@ class RoleBindingBySubjectFieldSelection(FieldSelection):
         "subject": {"id", "type", "group.name", "group.description", "group.user_count", "user.username"},
         "roles": {"id", "name"},
         "resource": {"id", "name", "type"},
+        "sources": {"id", "name", "type"},
     }
 
 
