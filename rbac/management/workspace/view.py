@@ -228,10 +228,7 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
                 type_fields = [Workspace.Types.STANDARD]
 
         if type_fields != [all_types]:
-            if len(type_fields) == 1:
-                queryset = queryset.filter(type=type_fields[0])
-            else:
-                queryset = queryset.filter(type__in=type_fields)
+            queryset = queryset.filter(type__in=type_fields)
         if name:
             queryset = queryset.filter(name__icontains=name)
         if parent_id:
