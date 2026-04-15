@@ -300,32 +300,33 @@ class SystemRoleBindingScopeUpdateTests(IdentityRequest):
 
     def test_determine_old_scope_returns_none_for_new_role(self):
         """Test that _determine_old_scope returns None when there's no existing V2 role."""
-        result = _determine_old_scope(None)
+        result = _determine_old_scope(None, {})
         self.assertIsNone(result, "Should return None for new role")
 
-    def test_determine_old_scope_returns_none_without_resource_service(self):
-        """Test that _determine_old_scope returns None when no resource_service is provided."""
-        # Create a mock V2 role
+    def test_determine_old_scope_returns_none_for_role_without_parents(self):
+        """Test that _determine_old_scope returns None when role has no parent relationships."""
+        # Create a mock V2 role with no parents
         mock_role = MagicMock()
-        result = _determine_old_scope(mock_role)
-        self.assertIsNone(result, "Should return None without resource_service")
+        mock_role.parents.values_list.return_value = []
+        result = _determine_old_scope(mock_role, {})
+        self.assertIsNone(result, "Should return None for role without parents")
 
-    def test_determine_old_scope_detects_scope_from_permissions(self):
-        """Test that _determine_old_scope correctly identifies scope from permissions."""
+    def test_determine_old_scope_detects_scope_from_parents(self):
+        """Test that _determine_old_scope correctly identifies scope from parent relationships."""
         # Use actual seeded roles to test scope detection
         seed_group()
         seed_roles()
 
-        from management.permission.scope_service import ImplicitResourceService
+        from management.role.definer import _seed_platform_roles
 
-        resource_service = ImplicitResourceService.from_settings()
+        platform_roles = _seed_platform_roles()
 
         # Find a seeded role that should have platform_default
         v2_roles = SeededRoleV2.objects.filter(v1_source__platform_default=True, v1_source__tenant=self.public_tenant)
 
         if v2_roles.exists():
             v2_role = v2_roles.first()
-            detected_scope = _determine_old_scope(v2_role, resource_service)
+            detected_scope = _determine_old_scope(v2_role, platform_roles)
 
             # Verify it detected a valid scope (DEFAULT, TENANT, or ROOT)
             self.assertIn(
@@ -336,28 +337,28 @@ class SystemRoleBindingScopeUpdateTests(IdentityRequest):
         else:
             self.skipTest("No platform_default seeded roles found to test with")
 
-    def test_determine_old_scope_applies_admin_override(self):
-        """Test that _determine_old_scope correctly applies admin scope override for special roles."""
+    def test_determine_old_scope_detects_admin_scope_from_parents(self):
+        """Test that _determine_old_scope correctly identifies scope from admin parent relationships."""
         # Use actual seeded roles to test scope detection
         seed_group()
         seed_roles()
 
-        from management.permission.scope_service import ImplicitResourceService
+        from management.role.definer import _seed_platform_roles
 
-        resource_service = ImplicitResourceService.from_settings()
+        platform_roles = _seed_platform_roles()
 
         # Find a seeded role that has admin_default
         v2_roles = SeededRoleV2.objects.filter(v1_source__admin_default=True, v1_source__tenant=self.public_tenant)
 
         if v2_roles.exists():
             v2_role = v2_roles.first()
-            detected_scope = _determine_old_scope(v2_role, resource_service)
+            detected_scope = _determine_old_scope(v2_role, platform_roles)
 
             # Verify it detected a valid scope
             self.assertIn(
                 detected_scope,
                 [Scope.DEFAULT, Scope.TENANT, Scope.ROOT],
-                f"Should detect a valid scope with admin override applied, got {detected_scope}",
+                f"Should detect a valid scope from admin parent, got {detected_scope}",
             )
         else:
             self.skipTest("No admin_default seeded roles found to test with")

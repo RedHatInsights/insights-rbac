@@ -36,6 +36,7 @@ from management.permission.scope_service import ImplicitResourceService, Scope
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.model import Access, ExtRoleRelation, ExtTenant, ResourceDefinition, Role
 from management.role.platform import (
+    ADMIN_DEFAULT_SEEDED_ROLES_FORCE_ROOT_SCOPE,
     admin_platform_parent_scope_for_seeded_system_role,
     platform_v2_role_uuid_for,
 )
@@ -51,17 +52,21 @@ from api.models import Tenant
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-def _determine_old_scope(existing_v2_role, resource_service=None):
+def _determine_old_scope(existing_v2_role, platform_roles):
     """
-    Determine the scope of an existing V2 role by calculating it from the role's permissions.
+    Determine the scope of an existing V2 role by examining its parent platform role relationships.
 
-    This function accounts for the admin platform parent scope override logic for certain roles
-    (e.g., "Inventory Groups Administrator") that are forced to ROOT scope despite having
-    DEFAULT-scoped permissions.
+    This function looks at which platform roles are parents of the V2 role to determine what scope
+    it was previously assigned. This is more reliable than recalculating from permissions, since
+    the permission-to-scope mapping may have changed between seedings.
+
+    For roles with both platform_default and admin_default, we prefer the USER parent scope
+    (permission-derived) over the ADMIN parent scope (which may include override adjustments),
+    since bindings are created based on permission-derived scope.
 
     Args:
         existing_v2_role: The existing SeededRoleV2 instance (or None)
-        resource_service: ImplicitResourceService for calculating scope from permissions (optional)
+        platform_roles: Dictionary mapping (DefaultAccessType, Scope) to platform role instances
 
     Returns:
         The Scope of the role, or None if scope cannot be determined
@@ -69,34 +74,38 @@ def _determine_old_scope(existing_v2_role, resource_service=None):
     if existing_v2_role is None:
         return None
 
-    # Calculate scope from existing permissions
-    if resource_service and existing_v2_role.v1_source:
-        permission_strings = list(existing_v2_role.permissions.values_list("permission", flat=True))
-        if permission_strings:
-            try:
-                permission_derived_scope = resource_service.highest_scope_for_permissions(permission_strings)
+    # Get the UUIDs of parent platform roles
+    parent_uuids = set(existing_v2_role.parents.values_list("uuid", flat=True))
+    if not parent_uuids:
+        return None
 
-                # Apply the admin platform parent scope override logic to determine the actual scope
-                # that was used when this role was previously seeded.
-                # This ensures we detect scope changes correctly for roles subject to admin overrides.
+    # Prefer USER parent scope (permission-derived) over ADMIN parent scope
+    # This ensures we compare permission-derived scopes, which is what bindings are based on
+    for (access_type, scope), platform_role in platform_roles.items():
+        if access_type == DefaultAccessType.USER and platform_role.uuid in parent_uuids:
+            return scope
+
+    # If no USER parent found, check ADMIN parent
+    # For ADMIN-only parents, we need to account for the admin scope override
+    for (access_type, scope), platform_role in platform_roles.items():
+        if access_type == DefaultAccessType.ADMIN and platform_role.uuid in parent_uuids:
+            # If the role is subject to admin scope override to ROOT, we can't determine
+            # the permission-derived scope from the ADMIN parent alone
+            # (e.g., "Inventory Groups Administrator" has ADMIN parent at ROOT due to override,
+            # but bindings are created at DEFAULT based on permissions)
+            if scope == Scope.ROOT and existing_v2_role.v1_source:
                 v1_role = existing_v2_role.v1_source
-                if v1_role.admin_default:
-                    # Use the same logic as _seed_v2_role_from_v1 to determine effective scope
-                    admin_scope = admin_platform_parent_scope_for_seeded_system_role(
-                        v1_role.name, v1_role.admin_default, permission_derived_scope, apply_override=True
+                if v1_role.admin_default and v1_role.name in ADMIN_DEFAULT_SEEDED_ROLES_FORCE_ROOT_SCOPE:
+                    # This role's ADMIN parent is at ROOT due to override
+                    # The actual permission-derived scope could be DEFAULT, TENANT, or ROOT
+                    # We can't reliably detect scope changes, so return None
+                    logger.info(
+                        f"Cannot determine old permission-derived scope for {v1_role.name} "
+                        f"(ADMIN parent at ROOT due to override)"
                     )
-                    # If the admin scope differs from permission-derived scope due to override,
-                    # the effective scope for migration purposes is the admin scope
-                    if admin_scope != permission_derived_scope:
-                        logger.info(
-                            f"Role {v1_role.name} has admin scope override: "
-                            f"permission-derived={permission_derived_scope.name}, admin={admin_scope.name}"
-                        )
-                        return admin_scope
-
-                return permission_derived_scope
-            except Exception as e:
-                logger.warning(f"Failed to calculate scope from permissions for role {existing_v2_role.uuid}: {e}")
+                    return None
+            # No override issue - admin parent scope = permission-derived scope
+            return scope
 
     return None
 
@@ -467,8 +476,9 @@ def _seed_v2_role_from_v1(v1_role, display_name, description, public_tenant, pla
     """Create or update V2 role from V1 role during seeding."""
     try:
         # Check if V2 role already exists to detect scope changes
+        # IMPORTANT: Check old scope BEFORE clearing parents
         existing_v2_role = SeededRoleV2.objects.filter(uuid=v1_role.uuid).first()
-        old_scope = _determine_old_scope(existing_v2_role, resource_service)
+        old_scope = _determine_old_scope(existing_v2_role, platform_roles)
 
         v2_role, v2_created = SeededRoleV2.objects.update_or_create(
             uuid=v1_role.uuid,

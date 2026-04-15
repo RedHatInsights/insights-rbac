@@ -1228,8 +1228,13 @@ class V2RoleSeedingTests(IdentityRequest):
             "Non-default role should have no parents",
         )
 
-    def test_non_default_role_scope_change_detected(self):
-        """Test that scope changes are detected for roles without parents (non-default roles)."""
+    def test_non_default_role_scope_change_does_not_trigger_migration(self):
+        """Test that non-default roles (without platform/admin parents) don't trigger migration.
+
+        Non-default roles don't have automatic bindings via default groups, so there's nothing
+        to migrate when their scope changes. Migration only applies to platform_default or
+        admin_default roles.
+        """
         seed_group()
 
         # First seeding with role in DEFAULT scope
@@ -1238,32 +1243,31 @@ class V2RoleSeedingTests(IdentityRequest):
 
         # Find a non-default role (neither platform_default nor admin_default)
         non_default_role = (
-            Role.objects.public_tenant_only().filter(platform_default=False, admin_default=False).first()
+            Role.objects.public_tenant_only().filter(platform_default=False, admin_default=False, system=True).first()
         )
-        self.assertIsNotNone(non_default_role, "Should have at least one non-default role")
+        self.assertIsNotNone(non_default_role, "Should have at least one seeded non-default role")
 
-        # Mock the migration function to verify it gets called
+        # Mock the migration function
         with patch("management.role.definer._migrate_bindings_for_scope_change") as mock_migrate:
-            # Change the scope by modifying settings to make the role's permissions ROOT scope
-            # This simulates a scope change for the non-default role
-            # Find what permissions this role has
+            # Change the scope for this role's permissions
             role_permissions = list(non_default_role.access.values_list("permission__permission", flat=True))
             if role_permissions:
-                # Use a wildcard pattern that matches the role's permissions
                 permission_pattern = f"{role_permissions[0].split(':')[0]}:*:*"
 
                 # Re-seed with the permission now in ROOT scope
                 with self.settings(ROOT_SCOPE_PERMISSIONS=permission_pattern, TENANT_SCOPE_PERMISSIONS=""):
                     seed_roles()
 
-                # Verify that migration was triggered for the scope change
-                # The migration should be called with the v1 role, old scope (DEFAULT), and new scope (ROOT)
-                if mock_migrate.called:
-                    # If called, verify the parameters
-                    call_args = mock_migrate.call_args
-                    self.assertEqual(call_args[0][0], non_default_role, "Should migrate the correct role")
-                    self.assertEqual(call_args[0][1], Scope.DEFAULT, "Old scope should be DEFAULT")
-                    self.assertEqual(call_args[0][2], Scope.ROOT, "New scope should be ROOT")
+                # Verify that migration was NOT called for the non-default role
+                # (though it may be called for other default roles with same permission pattern)
+                for call in mock_migrate.call_args_list:
+                    role_arg = call[0][0]
+                    self.assertNotEqual(
+                        role_arg,
+                        non_default_role,
+                        f"Migration should not be called for non-default role {non_default_role.name} "
+                        "because it has no automatic bindings to migrate",
+                    )
 
     def test_v2_role_permissions_updated_when_v1_changes(self):
         """Test that V2 role permissions are updated when V1 role permissions change."""
