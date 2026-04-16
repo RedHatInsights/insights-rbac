@@ -401,18 +401,31 @@ class MigrateTestTupleStore(TestCase):
         self.o1 = self.fixture.new_tenant("o1")
         self.o2 = self.fixture.new_tenant("o2")
 
+        o1_w1 = Workspace.objects.create(
+            tenant=self.o1.tenant, parent=Workspace.objects.default(tenant=self.o1.tenant), name="o1_w1"
+        )
+
+        o1_w2 = Workspace.objects.create(
+            tenant=self.o1.tenant, parent=Workspace.objects.default(tenant=self.o1.tenant), name="o1_w2"
+        )
+
+        self.o1_w1_id = str(o1_w1.id)
+        self.o1_w2_id = str(o1_w2.id)
+
         # Tenanted objects for o1
         self.o1_r1 = self.fixture.new_custom_role(
             "o1_r1", self.fixture.workspace_access(default=["app5:res5:verb5"]), self.o1.tenant
         )
         self.o1_r2 = self.fixture.new_custom_role(
-            "o1_r2", self.fixture.workspace_access(o1_w1=["app1:res1:verb1"]), self.o1.tenant
+            "o1_r2", self.fixture.workspace_access(**{self.o1_w1_id: ["app1:res1:verb1"]}), self.o1.tenant
         )
         self.o1_r3 = self.fixture.new_custom_role(
             "o1_r3",
             self.fixture.workspace_access(
-                o1_w1=["app2:res2:verb2"],
-                o1_w2=["app2:res2:verb2", "app3:res3:verb3"],
+                **{
+                    self.o1_w1_id: ["app2:res2:verb2"],
+                    self.o1_w2_id: ["app2:res2:verb2", "app3:res3:verb3"],
+                }
             ),
             self.o1.tenant,
         )
@@ -533,7 +546,7 @@ class MigrateTestTupleStore(TestCase):
         # 4
         self.assertTrue(
             self.relations.find_tuples(
-                all_of(resource("rbac", "workspace", "o1_w1"), relation("binding"))
+                all_of(resource("rbac", "workspace", self.o1_w1_id), relation("binding"))
             ).traverse_subject(
                 [
                     all_of(
@@ -549,7 +562,7 @@ class MigrateTestTupleStore(TestCase):
         # 3
         self.assertTrue(
             self.relations.find_tuples(
-                all_of(resource("rbac", "workspace", "o1_w1"), relation("binding"))
+                all_of(resource("rbac", "workspace", self.o1_w1_id), relation("binding"))
             ).traverse_subject(
                 [
                     all_of(
@@ -564,7 +577,7 @@ class MigrateTestTupleStore(TestCase):
         # 4
         self.assertTrue(
             self.relations.find_tuples(
-                all_of(resource("rbac", "workspace", "o1_w2"), relation("binding"))
+                all_of(resource("rbac", "workspace", self.o1_w2_id), relation("binding"))
             ).traverse_subject(
                 [
                     all_of(

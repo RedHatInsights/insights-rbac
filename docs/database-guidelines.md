@@ -1,158 +1,168 @@
-# Database Guidelines for insights-rbac
+# Database Guidelines
 
-## 1. Multi-Tenancy Architecture
+Rules and conventions for database work in insights-rbac. Derived from the actual codebase -- not generic advice.
 
-This repo uses a **single-schema, FK-based multi-tenancy** model (NOT django-tenants schema isolation). All tenant-scoped models inherit from `TenantAwareModel`, which adds a `tenant = ForeignKey(Tenant, on_delete=CASCADE)`.
+## Multi-tenancy
 
-**Rules:**
-- Every new domain model MUST inherit from `api.models.TenantAwareModel` unless it is explicitly tenant-independent (like `ExtTenant`, `Outbox`).
-- Every query on tenant-scoped data MUST filter by `tenant`. Use `filter_queryset_by_tenant(queryset, tenant)` from `management.utils` or filter explicitly.
-- The `public` tenant (name `"public"`) holds system/seeded data shared across all orgs. Retrieve it via `Tenant._get_public_tenant()` or `Tenant.objects.get(tenant_name="public")`.
-- Queries that need both tenant-specific and system data must filter by `tenant__in=[request.tenant, public_tenant]` or use `Q(tenant=tenant) | Q(tenant__tenant_name="public")`.
+Every business model inherits `TenantAwareModel` (defined in `rbac/api/models.py`), which adds a non-nullable `ForeignKey(Tenant, on_delete=CASCADE)`. The only exceptions are join-through models like `RoleBindingGroup`, `RoleBindingPrincipal`, and `ExtTenant`/`ExtRoleRelation` which belong to a tenant implicitly through their parent.
 
-## 2. Model Field Conventions
+- `BaseV2ViewSet.get_queryset()` automatically filters by `request.tenant`. All v2 querysets must include tenant filtering.
+- v1 models use `FilterQuerySet` with `.public_tenant_only()` to distinguish system-wide (public tenant) records from tenant-specific ones.
+- The `Tenant` model stores `org_id` (unique, indexed), `account_id`, and a `ready` boolean. A singleton "public" tenant (`tenant_name="public"`) holds system/platform roles and permissions.
+- Custom querysets that cross tenant boundaries (e.g., `RoleV2QuerySet.for_tenant`) explicitly include the public tenant: `Q(tenant=tenant) | Q(tenant__tenant_name="public")`.
 
-### UUID Fields
-- **V1 models** (Role, Group, Principal, Policy): use `uuid = UUIDField(default=uuid4, editable=False, unique=True)` as a separate field (NOT the primary key). The auto-increment `id` remains the PK.
-- **V2 models** (RoleV2, RoleBinding, Workspace): use `uuid7` from `uuid_utils.compat`. Workspace uses `id = UUIDField(primary_key=True, default=uuid.uuid7)`.
-- **New models** SHOULD use `uuid7` for time-sortable UUIDs, following the V2 convention.
+When writing new queries, never rely on implicit tenant scoping. Always filter explicitly.
 
-### Timestamp Fields
-- `created = DateTimeField(default=timezone.now)` -- never use `auto_now_add`.
-- `modified = AutoDateTimeField(default=timezone.now)` -- this is a custom field in `management.rbac_fields` that sets `timezone.now()` on every `pre_save`. Do NOT use `auto_now`.
+## Primary Keys and UUIDs
+
+Two patterns coexist:
+
+1. **v1 models** (Role, Group, Policy, Principal): auto-incrementing `id` PK + separate `uuid = UUIDField(default=uuid4, unique=True)` for external exposure. Never expose the integer PK in APIs.
+2. **v2 models** (Workspace, RoleV2, RoleBinding): `id = UUIDField(primary_key=True, default=uuid7)` using time-ordered UUID v7 from `uuid_utils.compat`. New models should follow this pattern.
+
+When adding a new model, use UUID v7 as the primary key:
+```python
+import uuid_utils.compat as uuid
+id = models.UUIDField(primary_key=True, default=uuid.uuid7, editable=False, unique=True)
+```
+
+## Model Conventions
+
+### Required patterns
+- All tenant-scoped models: inherit `TenantAwareModel`.
+- Timestamps: `created = models.DateTimeField(default=timezone.now)` and `modified = AutoDateTimeField(default=timezone.now)`. The `AutoDateTimeField` (in `management/rbac_fields.py`) auto-sets to `timezone.now()` on every save via `pre_save`.
+- Models with custom validation: call `self.full_clean()` in `save()` before `super().save()` to enforce model-level validation (v2 pattern used in Workspace, RoleV2). This ensures constraints and `clean()` logic run even outside serializers.
+- Custom managers/querysets: attach as `objects = MyQuerySet.as_manager()` or `objects = MyManager()`.
 
 ### Naming
-- Boolean flags: `system`, `platform_default`, `admin_default` (no `is_` prefix).
-- Type discriminators: use `TextChoices` enum with `db_index=True` (see `Principal.Types`, `Workspace.Types`, `RoleV2.Types`).
+- Table names are auto-generated: `management_workspace`, `management_rolev2`, `api_tenant`.
+- Related names should be explicit: `related_name="bindings"`, `related_name="group_entries"`.
+- `TextChoices` for type fields: define as inner class `Types` on the model.
 
-## 3. Model Constraints and Indexes
+### Field types
+- Short identifiers: `CharField(max_length=N)` with explicit `max_length`.
+- Long text: `TextField` (no max_length at DB level).
+- JSON data: `JSONField(default=dict)`.
+- Boolean flags: `BooleanField(default=False)` -- always provide a default.
 
-### UniqueConstraints (preferred over `unique_together`)
-All uniqueness rules use `models.UniqueConstraint` with descriptive `name`:
-```python
-# Pattern: "unique <thing> per <scope>"
-UniqueConstraint(fields=["name", "tenant"], name="unique role name per tenant")
-UniqueConstraint(fields=["username", "tenant"], name="unique principal username per tenant")
-```
-- Conditional constraints use `condition=Q(...)`. Example: Workspace enforces uniqueness of root/default types per tenant.
-- Case-insensitive uniqueness uses `Upper()` function in constraints.
+## Proxy Models
 
-### CheckConstraints
-Used for data integrity beyond nullability:
+v2 uses proxy models for role subtypes: `CustomRoleV2`, `SeededRoleV2`, `PlatformRoleV2` all proxy `RoleV2`. Each has a `TypedRoleV2Manager` that auto-filters by type and a `TypeValidatedRoleV2Mixin` that enforces the type on init and save. Use proxy models when you need type-specific behavior on a single table, not separate tables.
+
+## Constraints and Indexes
+
+### UniqueConstraint patterns
+- Tenant-scoped uniqueness: `UniqueConstraint(fields=["name", "tenant"], name="unique role name per tenant")`. Every name-like field that must be unique should be scoped to tenant.
+- Conditional uniqueness: `UniqueConstraint(fields=[...], condition=Q(...))` for partial unique indexes. Example: only one root/default workspace per tenant.
+- Case-insensitive uniqueness: `UniqueConstraint(Upper("name"), "parent", name="...")`.
+- Constraint names: lowercase, descriptive, spaces allowed (Django handles quoting).
+
+### Index patterns
+- GIN trigram indexes for case-insensitive text search (`icontains`, `iregex`):
+  ```python
+  GinIndex(fields=["name"], name="modelname_name_trgm_idx", opclasses=["gin_trgm_ops"])
+  ```
+  Requires `TrigramExtension()` in the migration.
+- Composite indexes on `AuditLog` for common query patterns: `(tenant, created)`, `(tenant, resource_type)`.
+- `db_index=True` on fields used in frequent filters: `type`, `org_id`, `service_account_id`, `user_id`.
+
+### CheckConstraint
+Used for data integrity beyond what field types provide:
 ```python
 CheckConstraint(condition=~Q(source=""), name="role binding principal has source")
 ```
 
-### Indexes
-- Add composite indexes for common query patterns, especially those involving `tenant` as a prefix:
+## Foreign Key Deletion Rules
+
+- `CASCADE`: default for tenant FK and parent-child ownership (RoleBinding -> RoleV2, Access -> Role).
+- `PROTECT`: for relationships where deletion should be blocked (RoleBindingGroup -> Group, Workspace parent -> self). Workspace's self-referencing parent uses `PROTECT` to prevent deleting a workspace that has children.
+- `SET_NULL`: only for optional audit references (AuditLog -> Tenant).
+- Never use `SET_DEFAULT` or `DO_NOTHING`.
+
+## Workspace Hierarchy and Recursive SQL
+
+Workspaces form a tree via `parent = ForeignKey("self", on_delete=PROTECT)`. Four types: `root` (exactly one per tenant, no parent), `default` (one per tenant, parent=root), `standard` (user-created), `ungrouped-hosts` (system).
+
+Recursive queries use `WITH RECURSIVE` CTEs via `RawSQL` or `connection.cursor()`:
+
 ```python
-models.Index(fields=["tenant", "created"])
+# Ancestors -- returns QuerySet (composable)
+Workspace.objects.filter(id__in=RawSQL(sql, [self.id, self.id]))
+
+# Max depth -- returns scalar (raw cursor)
+with connection.cursor() as cursor:
+    cursor.execute(sql, [self.id])
+    max_depth = cursor.fetchone()[0]
 ```
-- Use `db_index=True` on fields used for filtering: `type`, `service_account_id`, `user_id`, `org_id`.
 
-## 4. Model Save Overrides and Validation
+Use `RawSQL` + `filter(id__in=...)` when you need a composable QuerySet. Use raw cursors for scalar aggregates. Always parameterize with `%s` -- never interpolate.
 
-Several models override `save()` for domain logic:
-- `Principal.save()`: lowercases `username`.
-- `Role.save()`: populates `display_name` from `name` if empty.
-- `Permission.save()`: splits `permission` string into `application`, `resource_type`, `verb`.
-- `Workspace.save()`: calls `self.full_clean()` before saving (enforces `clean()` validation).
-- `RoleV2.save()`: calls `self.full_clean()` before saving.
+The `WorkspaceManager` provides convenience methods: `.root(tenant=t)`, `.default(tenant=t)`, `.built_in(tenant=t)`, `.standard(tenant=t)`, `.descendant_ids_with_parents(ids, tenant_id)`.
 
-**Rule:** When a model has business validation, call `full_clean()` in `save()`. New V2 models follow this pattern.
+## Debezium Outbox Pattern
 
-## 5. Proxy Models for Type Discrimination
+The `Outbox` model (`management/debezium/model.py`) implements the transactional outbox pattern for CDC via Debezium. It captures relation changes that must be replicated to Kessel/SpiceDB.
 
-`RoleV2` uses proxy models (`CustomRoleV2`, `SeededRoleV2`, `PlatformRoleV2`) with:
-- `TypedRoleV2Manager` that auto-filters by `type`.
-- `TypeValidatedRoleV2Mixin` that validates/enforces the type on `__init__` and `save`.
+Flow: service layer -> `OutboxReplicator.replicate(event)` -> `Outbox.save(force_insert=True)` -> `Outbox.delete()`.
 
-**Rule:** When querying specific role types, use the proxy model's manager (e.g., `CustomRoleV2.objects`) rather than filtering `RoleV2.objects.filter(type=...)` manually.
+The record is saved and immediately deleted within the same transaction. Debezium reads the PostgreSQL WAL to capture the insert, so the record does not need to persist. This avoids table bloat.
 
-## 6. QuerySet and Manager Patterns
+Key rules:
+- Outbox writes must happen inside the same `transaction.atomic()` as the business data mutation. This guarantees atomicity between the data change and the replication event.
+- The `aggregatetype` field controls Debezium topic routing: `"relations-replication-event"` or `"workspace"`.
+- The `aggregateid` field is the partition key (currently environment-level). All events within a partition are ordered.
+- Empty replication events (no adds, no removes) are logged as warnings and skipped.
 
-### Custom QuerySets
-- `FilterQuerySet` (api/models.py): provides `public_tenant_only()` for system data.
-- `RoleBindingQuerySet`: domain methods like `for_tenant()`, `for_subject()`, `orphaned()`, `with_resource_names()`.
-- `RoleV2QuerySet`: `assignable()`, `for_tenant()`, `with_fields()`, `named()`.
-- `WorkspaceQuerySet`/`WorkspaceManager`: `root()`, `default()`, `built_in()`, `standard()`, `descendant_ids_with_parents()`.
+## Transaction Management
 
-**Rule:** Add query logic to custom QuerySets, not to views or serializers. Attach via `.as_manager()` or a custom Manager that delegates to the QuerySet.
+### SERIALIZABLE isolation (v2 write paths)
+All v2 mutations use `pgtransaction.atomic(isolation_level=SERIALIZABLE)` via:
 
-### Eager Loading
-- Use `select_related` for FK traversals and `prefetch_related` for M2M/reverse FK.
-- `RoleBindingQuerySet.for_tenant()` demonstrates annotating cross-relation fields for cursor pagination compatibility.
-- `RoleV2QuerySet.with_fields()` conditionally applies eager loading based on requested response fields.
+1. **`@atomic` decorator** (in `management/atomic_transactions.py`): for service-layer functions.
+2. **`@atomic_with_retry(retries=N)`**: same, with automatic retry on serialization failure.
+3. **`AtomicOperationsMixin`** (in `management/v2_mixins.py`): for ViewSets. Wraps `create`/`update`/`destroy` in SERIALIZABLE transactions with retry. Override `perform_atomic_create` etc., never override `create` directly.
 
-## 7. Transaction and Locking Patterns
+The mixin catches `SerializationFailure` (returns 409) and `DeadlockDetected` (returns 500).
 
-### SERIALIZABLE Transactions (V2 services)
-V2 service methods use `pgtransaction.atomic(isolation_level=SERIALIZABLE)` via the `@atomic` decorator or `atomic_block()` context manager from `management.atomic_transactions`.
+For tests, set `ATOMIC_RETRY_DISABLED=True` to downgrade to plain `transaction.atomic()` (avoids serialization conflicts in test isolation).
 
-**Rules:**
-- V2 service methods that modify data MUST use the `@atomic` decorator from `management.atomic_transactions`.
-- The `ATOMIC_RETRY_DISABLED` setting disables serializable retries in tests; never set it in production.
-- V1 views use plain `transaction.atomic()`.
+### select_for_update
+Used in bulk operations like tenant bootstrapping:
+```python
+tenants = Tenant.objects.select_for_update().filter(pk__in=pks)
+```
 
-### Locking
-- `select_for_update()` is used before mutating roles, bindings, and tenant mappings.
-- `select_for_update(of=["self"])` is used when only the target row should be locked.
-- `FOR SHARE` (raw SQL) is used in `v2_activation.py` for read-path concurrency -- Django ORM has no FOR SHARE support.
-- `pg_try_advisory_xact_lock` is used for singleton job exclusion (principal cleanup).
+### General rule
+Never perform outbox writes or external calls outside a transaction boundary. The dual-write pattern requires atomicity between the DB mutation and the outbox insert.
 
-## 8. Raw SQL Usage
+## Custom QuerySets
 
-Raw SQL is acceptable ONLY for PostgreSQL-specific features not available in the ORM:
-- **Recursive CTEs** for workspace hierarchy (ancestors, descendants, depth).
-- **Advisory locks** (`pg_try_advisory_xact_lock`).
-- **`FOR SHARE`** row-level locking.
-- **`LISTEN`/`NOTIFY`** for read-your-writes consistency.
+Place in a separate `queryset.py` file (e.g., `role_binding/queryset.py`, `role/queryset.py`). Attach via `objects = MyQuerySet.as_manager()`.
 
-**Rules:**
-- Always use parameterized queries (`%s` placeholders). Never interpolate values into SQL strings.
-- Prefer `Workspace.objects.filter(id__in=RawSQL(sql, params))` over raw cursor when the result feeds back into ORM queries.
-- Use `connection.cursor()` only when you need scalar results (e.g., `MAX(depth)`).
+QuerySet methods should be chainable and return `self`-type querysets. Use method names that read naturally: `.for_tenant()`, `.for_role()`, `.assignable()`, `.orphaned()`.
 
-## 9. Outbox Pattern (CDC via Debezium)
+For domain-specific managers (like `WorkspaceManager`), use a separate manager class that delegates queryset methods.
 
-The `Outbox` model (`management.debezium.model`) implements the Debezium Outbox Event Router pattern:
+## Signals
 
-**How it works:**
-1. `OutboxReplicator.replicate()` creates an `Outbox` row with `aggregatetype`, `aggregateid`, `event_type`, and JSON `payload`.
-2. The row is immediately saved then deleted (`force_insert=True` then `delete()`). Debezium captures the INSERT from the WAL.
-3. This MUST happen inside the same transaction as the domain mutation to guarantee atomicity.
+Signals drive cache invalidation (Redis `AccessCache`) and Kafka sync events. They are conditionally connected based on settings:
+```python
+if settings.ACCESS_CACHE_ENABLED and settings.ACCESS_CACHE_CONNECT_SIGNALS:
+    signals.post_save.connect(handler, sender=Model)
+```
 
-**Rules:**
-- Never read from the Outbox table; rows are ephemeral (insert + delete in the same call).
-- The `event_type` field uses `db_column="type"` mapping.
-- `ReplicationEvent` carries `add` and `remove` lists of `RelationTuple`. Empty events are logged as warnings and skipped.
-- Use `transaction.on_commit()` for metrics counters, not for the outbox write itself.
+Signal handlers must check `skip_purging_cache_for_public_tenant(instance.tenant)` to avoid unnecessary cache operations on the public tenant.
 
-## 10. Signal Handlers for Cache Invalidation
+## Migration Conventions
 
-Models connect `post_save`, `pre_delete`, and `m2m_changed` signals to invalidate `AccessCache` (Redis) and send Kafka sync messages. These are conditionally connected based on `settings.ACCESS_CACHE_CONNECT_SIGNALS` and `settings.KAFKA_ENABLED`.
+- Generated by `makemigrations`, stored in `rbac/management/migrations/` (84+ files) and `rbac/api/migrations/`.
+- Migration names: auto-generated is fine; no custom naming convention enforced.
+- For PostgreSQL extensions (like `pg_trgm`), use Django's built-in operations: `TrigramExtension()`.
+- Data migrations that touch relations use `connection.cursor()` for raw SQL.
+- Always test migrations against a real PostgreSQL instance -- SQLite is not used.
 
-**Rule:** If adding a new model that affects access policy resolution, add signal handlers following the existing pattern in the model file, not in views.
+## Database Configuration
 
-## 11. Migration Safety
+PostgreSQL 16, configured in `rbac/rbac/database.py`. Single `default` database. SSL mode configurable via `PGSSLMODE` env var (defaults to `prefer`). Clowder-aware: reads connection details from `LoadedConfig` when `CLOWDER_ENABLED=True`.
 
-With 82 migrations and a production PostgreSQL database:
-- Avoid `RunSQL` for schema changes; prefer Django migration operations.
-- Data migrations (`RunPython`) must be idempotent and handle missing data gracefully.
-- Add indexes via `AddIndex` operations (not inline on fields), as shown in migration `0078`.
-- Never add non-nullable columns without a default in a single migration; use a two-step approach (add nullable, backfill, alter to non-nullable).
-- Constraint names must be stable and descriptive (Django auto-generates names otherwise).
-
-## 12. Cross-Account Requests
-
-`CrossAccountRequest` uses `request_id` as `primary_key=True` (UUIDv4), unlike other models. It is NOT tenant-aware (no FK to Tenant). It references roles via an M2M through table `RequestsRoles`.
-
-## 13. V1 vs V2 Model Coexistence
-
-The codebase maintains parallel V1 and V2 models:
-- V1: `Role`, `Group`, `Policy`, `Access`, `ResourceDefinition`, `BindingMapping`
-- V2: `RoleV2` (with proxy subtypes), `RoleBinding`, `RoleBindingGroup`, `RoleBindingPrincipal`, `Workspace`, `TenantMapping`
-
-`RoleV2.v1_source` FK links V2 seeded roles to their V1 system role origins. `BindingMapping` bridges V1 roles to V2 role bindings during migration.
-
-**Rule:** New feature work should target V2 models. V1 models are maintained for backward compatibility but should not gain new features.
+Local development uses port 15432 (`make start-db`).
