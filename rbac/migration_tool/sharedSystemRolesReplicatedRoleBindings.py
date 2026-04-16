@@ -118,7 +118,6 @@ def v1_role_to_v2_bindings(
     from internal.utils import (
         get_or_create_ungrouped_workspace,
         get_workspace_ids_from_resource_definition,
-        is_resource_a_workspace,
     )
 
     perm_groupings: _PermissionGroupings = {}
@@ -141,20 +140,30 @@ def v1_role_to_v2_bindings(
                     # Skip empty values
                     continue
 
-            # validate permission was not added to workspace out of users org for v1 (RHCLOUD-35481)
-            if is_resource_a_workspace(permission.application, permission.resource_type, attri_filter):
-                workspace_ids = get_workspace_ids_from_resource_definition(attri_filter)
-                if len(workspace_ids) >= 1:
-                    is_same_tenant = Workspace.objects.filter(id__in=workspace_ids, tenant=v1_role.tenant).exists()
-                    if not is_same_tenant:
-                        logger.info(f"""skipping migrating permission '{permission}' from v1 role '{v1_role.name}'
-                            -- it was added to workspace outside of users org""")
-                        continue
-
             resource_type = attribute_key_to_v2_related_resource_type(attri_filter["key"])
+
             if resource_type is None:
                 # Resource type not mapped to v2
                 continue
+
+            # validate permission was not added to workspace out of users org for v1 (RHCLOUD-35481)
+            if resource_type == ("rbac", "workspace"):
+                requested_workspace_ids = set(get_workspace_ids_from_resource_definition(attri_filter))
+
+                if len(requested_workspace_ids) > 0:
+                    actual_workspace_ids = set(
+                        w.id for w in Workspace.objects.filter(tenant=v1_role.tenant, id__in=requested_workspace_ids)
+                    )
+
+                    if requested_workspace_ids != actual_workspace_ids:
+                        logger.info(
+                            f"Skipping migrating permission '{permission}' from v1 role '{v1_role.name}'; "
+                            f"it was added to workspaces outside of users org: "
+                            f"{requested_workspace_ids - actual_workspace_ids}"
+                        )
+
+                        continue
+
             for resource_id in values_from_attribute_filter(attri_filter):
                 if resource_id is None:
                     if resource_type != ("rbac", "workspace"):
@@ -288,6 +297,25 @@ def permission_groupings_to_v2_role_bindings(
 
     if not all(r.type == RoleV2.Types.CUSTOM for r in existing_v2_roles):
         raise ValueError(f"All provided V2 roles ({existing_v2_roles}) must be CUSTOM roles.")
+
+    requested_workspace_ids = set(
+        r.resource_id for r in perm_groupings.keys() if r.resource_type == ("rbac", "workspace")
+    )
+
+    if len(requested_workspace_ids) > 0:
+        # Ensure the workspaces we want exist and lock them to prevent them from being concurrently deleted.
+        locked_workspace_ids = set(
+            str(id)
+            for id in Workspace.objects.select_for_update()
+            .filter(tenant=v1_role.tenant, id__in=requested_workspace_ids)
+            .values_list("id", flat=True)
+        )
+
+        if requested_workspace_ids != locked_workspace_ids:
+            raise ValueError(
+                f"Could not migrate role referencing nonexistent workspaces: "
+                f"{requested_workspace_ids - locked_workspace_ids}"
+            )
 
     existing_mappings_by_resource = {mapping.get_role_binding().resource: mapping for mapping in existing_mappings}
 

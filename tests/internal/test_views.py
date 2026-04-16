@@ -829,12 +829,16 @@ class InternalViewsetTests(BaseInternalViewsetTests):
         dual_write_handler = SeedingRelationApiDualWriteHandler(role_system, replicator=replicator)
         dual_write_handler.replicate_new_system_role()
 
+        ws_2 = Workspace.objects.create(
+            tenant=self.tenant, parent=Workspace.objects.default(tenant=self.tenant), name="ws_2"
+        )
+
         role_custom = fixture.new_custom_role(
             name="custom_role",
             tenant=self.tenant,
             resource_access=fixture.workspace_access(
                 permissions,
-                ws_2=["app1:hosts:read", "inventory:hosts:write"],
+                **{str(ws_2.id): ["app1:hosts:read", "inventory:hosts:write"]},
             ),
         )
         dual_write = RelationApiDualWriteHandler(
@@ -3748,24 +3752,19 @@ def invalid_destructive_time():
     return datetime.now(timezone.utc).replace(tzinfo=pytz.UTC) - timedelta(hours=1)
 
 
+@override_settings(ATOMIC_RETRY_DISABLED=True)
 class WorkspaceViewsetTests(BaseInternalViewsetTests):
     """Test the /api/utils/workspace/ endpoint from internal viewset"""
 
     def setUp(self):
         """Set up the Workspace view tests."""
         super().setUp()
-        self.root_workspace = Workspace.objects.create(
-            name="Root Workspace",
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-        )
-        self.default_workspace = Workspace.objects.create(
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            name="Default Workspace",
-            description="Default Description",
-            parent_id=self.root_workspace.id,
-        )
+
+        bootstrap_result = bootstrap_tenant_for_v2_test(self.tenant)
+
+        self.default_workspace = bootstrap_result.default_workspace
+        self.root_workspace = bootstrap_result.root_workspace
+
         self.standard_workspace = Workspace.objects.create(
             name="Standard Workspace",
             description="Standard Workspace - description",
@@ -3773,6 +3772,7 @@ class WorkspaceViewsetTests(BaseInternalViewsetTests):
             parent=self.default_workspace,
             type=Workspace.Types.STANDARD,
         )
+
         self.ungrouped_workspace = Workspace.objects.create(
             name="Ungrouped Hosts Workspace",
             description="Ungrouped Hosts Workspace - description",
