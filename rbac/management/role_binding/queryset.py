@@ -18,8 +18,8 @@
 
 import uuid as uuid_mod
 
-from django.db.models import Count, F, OuterRef, Q, QuerySet, Subquery
-from django.db.models.fields import UUIDField
+from django.db.models import Case, Count, F, OuterRef, Q, QuerySet, Subquery, Value, When
+from django.db.models.fields import CharField, UUIDField
 from django.db.models.functions import Cast
 from management.subject import SubjectType
 
@@ -142,15 +142,25 @@ class RoleBindingQuerySet(QuerySet):
         Resolves workspace names via a correlated subquery so the name is
         available as ``obj.resource_name`` without per-row queries.
         Non-workspace resource types will get ``None``.
+
+        Only applies the UUID cast for workspace resources to avoid errors
+        with non-UUID resource IDs (e.g., tenant resources like "redhat/12345").
         """
         from management.workspace.model import Workspace
 
         return self.annotate(
-            resource_name=Subquery(
-                Workspace.objects.filter(
-                    id=Cast(OuterRef("resource_id"), UUIDField()),
-                    tenant=OuterRef("tenant"),
-                ).values("name")[:1]
+            resource_name=Case(
+                When(
+                    resource_type="workspace",
+                    then=Subquery(
+                        Workspace.objects.filter(
+                            id=Cast(OuterRef("resource_id"), UUIDField()),
+                            tenant=OuterRef("tenant"),
+                        ).values("name")[:1]
+                    ),
+                ),
+                default=Value(None),
+                output_field=CharField(),
             )
         )
 

@@ -1215,6 +1215,50 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertEqual(response.data["status"], 400)
         self.assertIn("already exists", response.data["detail"])
 
+    def test_create_role_with_seeded_role_name_returns_400(self):
+        """Test that creating a custom role with the same name as a seeded role is rejected."""
+        public_tenant, _ = Tenant.objects.get_or_create(tenant_name="public")
+        SeededRoleV2.objects.create(name="Vulnerability viewer", description="Seeded", tenant=public_tenant)
+
+        data = {
+            "name": "vulnerability viewer",
+            "description": "Custom role with seeded name",
+            "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
+        }
+
+        response = self.client.post(self.url, data, format="json")
+
+        # ProblemDetails response: verify HTTP status, structure, and detail message
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("status", response.data)
+        self.assertIn("detail", response.data)
+        self.assertEqual(response.data["status"], 400)
+        self.assertIn("conflicts with an existing system role", response.data["detail"])
+
+    def test_update_role_to_seeded_role_name_returns_400(self):
+        """Test that updating a custom role to a seeded role name is rejected."""
+        public_tenant, _ = Tenant.objects.get_or_create(tenant_name="public")
+        SeededRoleV2.objects.create(name="Patch viewer", description="Seeded", tenant=public_tenant)
+
+        role = CustomRoleV2.objects.create(name="My Custom Role", description="Custom", tenant=self.tenant)
+        role.permissions.add(self.permission2)
+
+        update_url = reverse("v2_management:roles-detail", kwargs={"uuid": str(role.uuid)})
+        data = {
+            "name": "PATCH VIEWER",
+            "description": "Trying to rename to seeded name",
+            "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
+        }
+
+        response = self.client.put(update_url, data, format="json")
+
+        # ProblemDetails response: verify HTTP status, structure, and detail message
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("status", response.data)
+        self.assertIn("detail", response.data)
+        self.assertEqual(response.data["status"], 400)
+        self.assertIn("conflicts with an existing system role", response.data["detail"])
+
     def test_create_role_missing_permissions_returns_problem_details(self):
         """Test that missing permissions returns ProblemDetails format."""
         data = {

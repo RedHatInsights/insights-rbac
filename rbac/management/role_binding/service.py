@@ -441,7 +441,10 @@ class RoleBindingService:
             exclude_direct=exclude_direct,
         )
         binding_queryset = (
-            RoleBinding.objects.filter(binding_filter_q).select_related("role").prefetch_related("role__children")
+            RoleBinding.objects.filter(binding_filter_q)
+            .select_related("role")
+            .prefetch_related("role__children")
+            .with_resource_names()
         )
 
         # Prefetch the join table entries with the filtered bindings
@@ -613,7 +616,12 @@ class RoleBindingService:
 
         # Prefetch RoleBindingPrincipal entries with their bindings
         principal_entry_queryset = RoleBindingPrincipal.objects.filter(principal_entry_filter).prefetch_related(
-            Prefetch("binding", queryset=RoleBinding.objects.select_related("role").prefetch_related("role__children"))
+            Prefetch(
+                "binding",
+                queryset=RoleBinding.objects.select_related("role")
+                .prefetch_related("role__children")
+                .with_resource_names(),
+            )
         )
 
         # Prefetch role_binding_entries on Principal
