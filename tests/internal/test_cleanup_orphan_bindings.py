@@ -893,8 +893,13 @@ class RebuildTenantWorkspaceRelationsTest(DualWriteTestCase):
     def setUp(self):
         """Set up test data."""
         super().setUp()
-        # DualWriteTestCase creates self.tuples, self.fixture, and self.tenant
-        # But we do NOT set up workspace hierarchy - we want to test rebuilding it
+
+        # Switch to a new tenant because we care about the exact number of workspaces in the tenant (and
+        # DualWriteTestCase creates some extra ones for its own purposes).
+        self.switch_to_new_tenant(name="another tenant", org_id="7654321")
+
+        # Clear tuples, since we want to test rebuilding it
+        self.tuples.clear()
 
     def _create_kessel_read_tuples_mock(self):
         """Create a mock function that reads tuples from our InMemoryTuples store."""
