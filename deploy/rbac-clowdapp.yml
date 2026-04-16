@@ -1225,7 +1225,7 @@ objects:
           env: *workspace_job_env_vars
       - name: fix-orphan-relations
         podSpec:
-          image: quay.io/cloudservices/rbac:latest
+          image: ${IMAGE}:${IMAGE_TAG}
           imagePullPolicy: Always
           command:
             - /opt/rbac/rbac/manage.py
