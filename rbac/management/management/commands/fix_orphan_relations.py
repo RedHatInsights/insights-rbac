@@ -94,13 +94,19 @@ class Command(BaseCommand):
         # deletion of the roles/groups would have resulted in AuditLogs being created (at least since June 2024,
         # which is before the source of any known issues), so we can use that to determine which tenants to process.
         interesting_tenants = base.filter(
-            Q(id__in=(Group.objects.all().values_list("tenant_id", flat=True)))
-            | Q(id__in=(Role.objects.all().values_list("tenant_id", flat=True)))
-            | Q(id__in=(RoleV2.objects.all().values_list("tenant_id", flat=True)))
-            | Q(id__in=(RoleBinding.objects.all().values_list("tenant_id", flat=True)))
-            | Q(id__in=(Workspace.objects.filter(type=Workspace.Types.STANDARD).values_list("tenant_id", flat=True)))
-            | Q(org_id__in=(CrossAccountRequest.objects.values_list("target_org", flat=True)))
-            | Q(id__in=(AuditLog.objects.values_list("tenant_id", flat=True)))
+            Q(id__in=(Group.objects.all().values_list("tenant_id", flat=True).distinct()))
+            | Q(id__in=(Role.objects.all().values_list("tenant_id", flat=True).distinct()))
+            | Q(id__in=(RoleV2.objects.all().values_list("tenant_id", flat=True).distinct()))
+            | Q(id__in=(RoleBinding.objects.all().values_list("tenant_id", flat=True).distinct()))
+            | Q(
+                id__in=(
+                    Workspace.objects.filter(type=Workspace.Types.STANDARD)
+                    .values_list("tenant_id", flat=True)
+                    .distinct()
+                )
+            )
+            | Q(org_id__in=(CrossAccountRequest.objects.values_list("target_org", flat=True).distinct()))
+            | Q(id__in=(AuditLog.objects.values_list("tenant_id", flat=True).distinct()))
         ).distinct()
 
         logger.info(

@@ -29,6 +29,7 @@ from django.db import connection, transaction
 from django.db.models import Q
 from feature_flags import FEATURE_FLAGS
 from internal.utils import get_workspace_ids_from_resource_definition, is_resource_a_workspace
+from management.atomic_transactions import atomic
 from management.models import ResourceDefinition, Role, Workspace
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
@@ -244,60 +245,53 @@ def update_roles_for_removed_workspace(workspace_id: uuid.UUID) -> int:
 class WorkspaceService:
     """Workspace service."""
 
+    @atomic
     def create(self, validated_data: dict, request_tenant: Tenant) -> Workspace:
         """Create workspace."""
-        with transaction.atomic():
-            try:
-                parent_id = validated_data.get("parent_id")
-                if parent_id is None:
-                    default = Workspace.objects.default(tenant=request_tenant)
-                    parent_id = default.id
-                parent = Workspace.objects.get(id=parent_id)
-                self._enforce_hierarchy_depth(parent_id, request_tenant)
-                if self._check_total_workspace_count_exceeded(request_tenant):
-                    # If two transactions to create workspaces happen at the same time
-                    # both will get the okay to add the workspace
-                    # which could lead to the case where there is an extra workspace over the allowed limit
-                    # locking will have a scalability impact so better not to catch this condition
-                    raise serializers.ValidationError(
-                        "The total number of workspaces allowed for this organisation has been exceeded."
-                    )
-
-                workspace = Workspace.objects.create(**validated_data, tenant=parent.tenant)
-                dual_write_handler = RelationApiDualWriteWorkspaceHandler(
-                    workspace, ReplicationEventType.CREATE_WORKSPACE
+        try:
+            parent_id = validated_data.get("parent_id")
+            if parent_id is None:
+                default = Workspace.objects.default(tenant=request_tenant)
+                parent_id = default.id
+            parent = Workspace.objects.get(id=parent_id)
+            self._enforce_hierarchy_depth(parent_id, request_tenant)
+            if self._check_total_workspace_count_exceeded(request_tenant):
+                # If two transactions to create workspaces happen at the same time
+                # both will get the okay to add the workspace
+                # which could lead to the case where there is an extra workspace over the allowed limit
+                # locking will have a scalability impact so better not to catch this condition
+                raise serializers.ValidationError(
+                    "The total number of workspaces allowed for this organization has been exceeded."
                 )
-                dual_write_handler.replicate_new_workspace()
 
-                # After the outbox message is created & committed, LISTEN for a NOTIFY
+            workspace = Workspace.objects.create(**validated_data, tenant=parent.tenant)
+            dual_write_handler = RelationApiDualWriteWorkspaceHandler(workspace, ReplicationEventType.CREATE_WORKSPACE)
+            dual_write_handler.replicate_new_workspace()
 
-                if FEATURE_FLAGS.is_read_your_writes_workspace_enabled() and settings.REPLICATION_TO_RELATION_ENABLED:
-                    transaction.on_commit(lambda: self._wait_for_notify_post_commit(workspace.id))
+            # After the outbox message is created & committed, LISTEN for a NOTIFY
 
-                return workspace
-            except ValidationError as e:
-                message = e.message_dict
-                if hasattr(e, "error_dict") and "__all__" in e.error_dict:
-                    for error in e.error_dict["__all__"]:
-                        for msg in error.messages:
-                            if "unique_workspace_name_per_parent" in msg:
-                                message = "Can't create workspace with same name within same parent workspace"
-                                break
-                raise serializers.ValidationError(message)
+            if FEATURE_FLAGS.is_read_your_writes_workspace_enabled() and settings.REPLICATION_TO_RELATION_ENABLED:
+                transaction.on_commit(lambda: self._wait_for_notify_post_commit(workspace.id))
+
+            return workspace
+        except ValidationError as e:
+            message = e.message_dict
+            if hasattr(e, "error_dict") and "__all__" in e.error_dict:
+                for error in e.error_dict["__all__"]:
+                    for msg in error.messages:
+                        if "unique_workspace_name_per_parent" in msg:
+                            message = "Can't create workspace with same name within same parent workspace"
+                            break
+            raise serializers.ValidationError(message)
 
     def update(self, instance: Workspace, validated_data: dict) -> Workspace:
         """Update workspace."""
         if instance.type in (Workspace.Types.ROOT, Workspace.Types.UNGROUPED_HOSTS):
             raise serializers.ValidationError(f"The {instance.type} workspace cannot be updated.")
-        parent_id = None
         for attr, value in validated_data.items():
-            if attr == "parent_id":
-                parent_id = value
             if self._parent_id_attr_update(attr, value, instance):
                 raise serializers.ValidationError("Can't update the 'parent_id' on a workspace directly")
             setattr(instance, attr, value)
-        if parent_id is not None:
-            self._enforce_hierarchy_depth(parent_id, instance.tenant)
 
         # Skip Workspace Events for DEFAULT workspaces
         skip_ws_events = instance.type == Workspace.Types.DEFAULT

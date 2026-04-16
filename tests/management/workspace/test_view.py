@@ -31,11 +31,10 @@ from importlib import reload
 from psycopg2.errors import DeadlockDetected, SerializationFailure
 from unittest.mock import patch
 from django.urls import reverse
+from management.audit_log.model import AuditLog
+from management.models import Access, Group, Permission, Policy, Principal, ResourceDefinition, Role, Workspace
 from rest_framework import status
 from rest_framework.test import APIClient
-
-from api.models import Tenant
-from management.models import Access, Group, Permission, Policy, Principal, ResourceDefinition, Role, Workspace
 from management.permissions.workspace_access import TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.workspace.serializer import WorkspaceEventSerializer
@@ -49,6 +48,7 @@ from migration_tool.in_memory_tuples import (
     subject,
 )
 from migration_tool.utils import create_relationship
+from api.models import Tenant
 from rbac import urls
 from tests.identity_request import IdentityRequest, TransactionalIdentityRequest
 
@@ -90,6 +90,7 @@ class BasicWorkspaceViewTests:
             group.principals.add(principal)
 
 
+@override_settings(ATOMIC_RETRY_DISABLED=True)
 class WorkspaceViewTests(IdentityRequest, BasicWorkspaceViewTests):
     """Test the Workspace view."""
 
@@ -531,7 +532,7 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
     @override_settings(WORKSPACE_ORG_CREATION_LIMIT=4)
     def test_create_workspaces_exceed_limit(self):
         """
-        Test that when creating workspaces if the limit exceeds the organisations workspace limit
+        Test that when creating workspaces if the limit exceeds the organization's workspace limit
         the correct response is returned.
         """
         workspace_names = ["Workspace A", "Workspace B", "Workspace C", "Workspace D"]
@@ -554,13 +555,13 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         resp_body = json.loads(response.content.decode())
         self.assertEqual(
-            resp_body.get("detail"), "The total number of workspaces allowed for this organisation has been exceeded."
+            resp_body.get("detail"), "The total number of workspaces allowed for this organization has been exceeded."
         )
 
     @override_settings(WORKSPACE_ORG_CREATION_LIMIT=9)
     def test_create_workspaces_not_exceed_limit(self):
         """
-        Test that when creating workspaces if the limit does not exceed the organisations workspace limit
+        Test that when creating workspaces if the limit does not exceed the organization's workspace limit
         the correct response is returned.
         """
         workspace_names = ["Workspace A", "Workspace B", "Workspace C", "Workspace D"]
@@ -831,7 +832,7 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
         url = reverse("v2_management:workspace-detail", kwargs={"pk": workspace.id})
         client = APIClient()
 
-        workspace_request_data = {"name": "Newer Workspace"}
+        workspace_request_data = {"name": "Newer Workspace", "parent_id": workspace.parent_id}
 
         response = client.put(url, workspace_request_data, format="json", **self.headers)
 
@@ -1125,30 +1126,86 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
         client = APIClient()
         url = reverse("v2_management:workspace-detail", kwargs={"pk": self.default_workspace.id})
 
+        root_parent_id = str(self.default_workspace.parent_id)
+
         # Test data cases:
         #    - name and description update,
         #    - only name update
         #    - only description update (name without change but must be present because the field is required)
-        test_data_cases = [
+        # For PUT, parent_id (= root workspace id) is required per the spec.
+        # For PATCH, parent_id is optional.
+        put_test_data_cases = [
+            {"name": "New name", "description": "New description", "parent_id": root_parent_id},
+            {"name": "New name", "description": self.default_workspace.description, "parent_id": root_parent_id},
+            {"name": self.default_workspace.name, "description": "New description", "parent_id": root_parent_id},
+        ]
+        patch_test_data_cases = [
             {"name": "New name", "description": "New description"},
             {"name": "New name", "description": self.default_workspace.description},
             {"name": self.default_workspace.name, "description": "New description"},
         ]
 
-        for test_data in test_data_cases:
-            for method in ("put", "patch"):  # try to update via PUT and PATCH endpoint
-                response = getattr(client, method)(url, test_data, format="json", **self.headers)
-                self.assertEqual(response.status_code, status.HTTP_200_OK)
-                resp_body = response.json()
-                self.assertEqual(resp_body.get("id"), str(self.default_workspace.id))
-                self.assertEqual(resp_body.get("name"), test_data["name"])
-                self.assertEqual(resp_body.get("description"), test_data["description"])
-                self.assertEqual(resp_body.get("type"), Workspace.Types.DEFAULT)
-                self.assertEqual(resp_body.get("parent_id"), str(self.default_workspace.parent_id))
+        for test_data in put_test_data_cases:
+            response = client.put(url, test_data, format="json", **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            resp_body = response.json()
+            self.assertEqual(resp_body.get("id"), str(self.default_workspace.id))
+            self.assertEqual(resp_body.get("name"), test_data["name"])
+            self.assertEqual(resp_body.get("description"), test_data["description"])
+            self.assertEqual(resp_body.get("type"), Workspace.Types.DEFAULT)
+            self.assertEqual(resp_body.get("parent_id"), root_parent_id)
 
-                # After test set the default values back
-                self.default_workspace.name = "Default"
-                self.default_workspace.description = "Default description"
+            # After test set the default values back
+            self.default_workspace.name = "Default"
+            self.default_workspace.description = "Default description"
+
+        for test_data in patch_test_data_cases:
+            response = client.patch(url, test_data, format="json", **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            resp_body = response.json()
+            self.assertEqual(resp_body.get("id"), str(self.default_workspace.id))
+            self.assertEqual(resp_body.get("name"), test_data["name"])
+            self.assertEqual(resp_body.get("description"), test_data["description"])
+            self.assertEqual(resp_body.get("type"), Workspace.Types.DEFAULT)
+            self.assertEqual(resp_body.get("parent_id"), root_parent_id)
+
+            # After test set the default values back
+            self.default_workspace.name = "Default"
+            self.default_workspace.description = "Default description"
+
+    def test_update_standard_workspace_put_without_parent_id_fails(self):
+        """Test that PUT to a standard workspace without parent_id returns 400."""
+        client = APIClient()
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.standard_workspace.id})
+
+        response = client.put(url, {"name": "New Name"}, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        resp_body = response.json()
+        self.assertIn("parent_id", str(resp_body))
+
+    def test_update_default_workspace_put_with_root_parent_id_success(self):
+        """Test that PUT to the default workspace with the root workspace's id as parent_id succeeds.
+
+        The spec requires parent_id to match the current value. The default workspace's parent
+        is the root workspace, so passing root workspace's id should succeed.
+        Previously this failed with 'Sub-workspaces may only be created under the default workspace.'
+        """
+        client = APIClient()
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.default_workspace.id})
+
+        request_data = {
+            "name": self.default_workspace.name,
+            "description": self.default_workspace.description,
+            "parent_id": str(self.default_workspace.parent_id),
+        }
+
+        response = client.put(url, request_data, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        resp_body = response.json()
+        self.assertEqual(resp_body.get("type"), Workspace.Types.DEFAULT)
+        self.assertEqual(resp_body.get("parent_id"), str(self.default_workspace.parent_id))
 
     def test_update_workspace_existing_name_fail(self):
         """Test the workspace name update (PUT) fail for already existing "name" under same parent."""
@@ -1161,7 +1218,7 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
 
         client = APIClient()
         url = reverse("v2_management:workspace-detail", kwargs={"pk": wsA.id})
-        workspace_request_data = {"name": wsB.name}
+        workspace_request_data = {"name": wsB.name, "parent_id": wsA.parent_id}
 
         response = client.put(url, workspace_request_data, format="json", **self.headers)
 
@@ -1219,7 +1276,7 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
 
         client = APIClient()
         url = reverse("v2_management:workspace-detail", kwargs={"pk": wsAA.id})
-        workspace_request_data = {"name": wsB.name}
+        workspace_request_data = {"name": wsB.name, "parent_id": wsAA.parent_id}
         # expected structure after update:
         # self.default_workspace (default) -> Workspace A (standard) -> Workspace B (standard)
         #                                  -> Workspace B (standard)
@@ -3431,3 +3488,165 @@ class WorkspaceViewTestsWithPeerRestrictions(TransactionalWorkspaceViewTests):
 
         self.assertEqual(status_code, status.HTTP_400_BAD_REQUEST)
         self.assertEqual(response.get("content-type"), "application/problem+json")
+
+
+@override_settings(V2_APIS_ENABLED=True, WORKSPACE_HIERARCHY_DEPTH_LIMIT=100, WORKSPACE_RESTRICT_DEFAULT_PEERS=False)
+class WorkspaceAuditLogTests(TransactionalWorkspaceViewTests):
+    """Tests for workspace audit logging."""
+
+    def setUp(self):
+        super().setUp()
+        self.tuples = InMemoryTuples()
+        self.in_memory_replicator = InMemoryRelationReplicator(self.tuples)
+
+        from management.workspace.view import WorkspaceViewSet
+
+        def get_queryset_without_lock(self):
+            from management.base_viewsets import BaseV2ViewSet
+
+            return BaseV2ViewSet.get_queryset(self)
+
+        self.patcher = patch.object(WorkspaceViewSet, "get_queryset", get_queryset_without_lock)
+        self.patcher.start()
+
+    def tearDown(self):
+        self.patcher.stop()
+        super().tearDown()
+
+    def _assert_audit_log(self, action: str, description: str):
+        client = APIClient()
+        audit_logs = client.get("/api/rbac/v1/auditlogs/", **self.headers).data["data"]
+
+        self.assertIn(
+            {
+                "action": action,
+                "description": description,
+                "resource_type": AuditLog.WORKSPACE,
+                "principal_username": self.user_data["username"],
+            },
+            [
+                {k: log[k] for k in ["action", "description", "resource_type", "principal_username"]}
+                for log in audit_logs
+            ],
+        )
+
+    def test_create_workspace_audit_log(self):
+        """Test that creating a workspace creates an audit log entry."""
+        workspace = {"name": "Audit Log Workspace", "description": "Test", "parent_id": self.default_workspace.id}
+
+        url = reverse("v2_management:workspace-list")
+        client = APIClient()
+        response = client.post(url, workspace, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+
+        self._assert_audit_log(action=AuditLog.CREATE, description="Created workspace: Audit Log Workspace")
+
+    def test_update_workspace_audit_log(self):
+        """Test that updating a workspace creates an audit log entry."""
+        workspace = Workspace.objects.create(
+            name="Original Name",
+            description="Original Desc",
+            tenant=self.tenant,
+            parent=self.standard_workspace,
+        )
+
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": workspace.id})
+        client = APIClient()
+        data = {"name": "Updated Name", "description": "Updated Desc", "parent_id": workspace.parent_id}
+        response = client.put(url, data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        self._assert_audit_log(
+            action=AuditLog.EDIT,
+            description=f"workspace {workspace.name}:\nEdited name\nEdited description",
+        )
+
+    def test_update_workspace_name_only_audit_log(self):
+        """Test that updating only the name is reflected in the audit log."""
+        workspace = Workspace.objects.create(
+            name="Name Only",
+            description="Keep This",
+            tenant=self.tenant,
+            parent=self.standard_workspace,
+        )
+
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": workspace.id})
+        client = APIClient()
+        data = {"name": "New Name", "description": "Keep This", "parent_id": workspace.parent_id}
+        response = client.put(url, data, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        self._assert_audit_log(
+            action=AuditLog.EDIT,
+            description=f"workspace {workspace.name}:\nEdited name",
+        )
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate_workspace")
+    def test_delete_workspace_audit_log(self, replicate_workspace, replicate):
+        """Test that deleting a workspace creates an audit log entry."""
+        replicate.side_effect = self.in_memory_replicator.replicate
+        workspace = Workspace.objects.create(
+            name="Workspace To Delete",
+            description="Will be deleted",
+            tenant=self.tenant,
+            parent=self.root_workspace,
+        )
+        relationship = create_relationship(
+            ("rbac", "workspace"),
+            str(workspace.id),
+            ("rbac", "workspace"),
+            str(self.root_workspace.id),
+            "parent",
+        )
+        self.tuples.write([relationship], [])
+
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": workspace.id})
+        client = APIClient()
+        response = client.delete(url, None, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_204_NO_CONTENT)
+
+        self._assert_audit_log(action=AuditLog.DELETE, description="Deleted workspace: Workspace To Delete")
+
+    @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_move_workspace_audit_log(self, replicate):
+        """Test that moving a workspace creates an audit log entry."""
+        replicate.side_effect = self.in_memory_replicator.replicate
+
+        source_workspace = self.service.create(
+            {"name": "Source WS", "parent_id": self.default_workspace.id}, self.tenant
+        )
+        target_workspace = self.service.create(
+            {"name": "Target WS", "parent_id": self.default_workspace.id}, self.tenant
+        )
+
+        url = reverse("v2_management:workspace-move", kwargs={"pk": source_workspace.id})
+        client = APIClient()
+        response = client.post(url, {"parent_id": target_workspace.id}, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        self._assert_audit_log(
+            action=AuditLog.EDIT,
+            description="Moved workspace: Source WS to parent Target WS",
+        )
+
+    def test_partial_update_workspace_audit_log(self):
+        """Test that a PATCH with only description does not log 'Edited name'."""
+        workspace = Workspace.objects.create(
+            name="Partial Update WS",
+            description="Old Desc",
+            tenant=self.tenant,
+            parent=self.standard_workspace,
+        )
+
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": workspace.id})
+        client = APIClient()
+        response = client.patch(url, {"description": "New Desc"}, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        self._assert_audit_log(
+            action=AuditLog.EDIT,
+            description=f"workspace {workspace.name}:\nEdited description",
+        )
