@@ -20,8 +20,10 @@ insights-rbac is a Django REST Framework microservice providing Role-Based Acces
 
 | File | Purpose |
 |------|---------|
+| `README.md` | Project overview, quick start, environment variables |
 | `CLAUDE.md` | Claude Code-specific behavioral preferences (imports this file via `@AGENTS.md`) |
 | `CONTRIBUTING.md` | Contribution workflow, code style, PR format |
+| `docs/ARCHITECTURE.md` | High-level system design, component relationships, data flow |
 | `docs/source/specs/v2/openapi.yaml` | V2 API specification (generated) |
 | `docs/source/specs/typespec/main.tsp` | TypeSpec source -- the contract for v2 API changes |
 | `Makefile` | Build, test, migration, and Docker commands |
