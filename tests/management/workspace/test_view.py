@@ -24,7 +24,7 @@ from uuid import uuid4
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import OperationalError
+from django.db import OperationalError, transaction
 from django.test.utils import override_settings
 from django.urls import clear_url_caches
 from importlib import reload
@@ -51,6 +51,7 @@ from migration_tool.utils import create_relationship
 from api.models import Tenant
 from rbac import urls
 from tests.identity_request import IdentityRequest, TransactionalIdentityRequest
+from tests.v2_util import bootstrap_tenant_for_v2_test
 
 
 class BasicWorkspaceViewTests:
@@ -103,18 +104,11 @@ class WorkspaceViewTests(IdentityRequest, BasicWorkspaceViewTests):
         self.tenant.save()
 
         self.service = WorkspaceService()
-        self.root_workspace = Workspace.objects.create(
-            name="Root Workspace",
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-        )
-        self.default_workspace = Workspace.objects.create(
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            name="Default Workspace",
-            description="Default Description",
-            parent_id=self.root_workspace.id,
-        )
+
+        bootstrap_result = bootstrap_tenant_for_v2_test(self.tenant)
+        self.default_workspace = bootstrap_result.default_workspace
+        self.root_workspace = bootstrap_result.root_workspace
+
         self.ungrouped_workspace = Workspace.objects.create(
             name="Ungrouped Hosts Workspace",
             description="Ungrouped Hosts Workspace - description",
@@ -145,6 +139,7 @@ class WorkspaceViewTests(IdentityRequest, BasicWorkspaceViewTests):
         PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
 
 
+@override_settings(ATOMIC_RETRY_DISABLED=True)
 class TransactionalWorkspaceViewTests(TransactionalIdentityRequest, BasicWorkspaceViewTests):
     @override_settings(WORKSPACE_HIERARCHY_DEPTH_LIMIT=10)
     def setUp(self):
@@ -155,18 +150,12 @@ class TransactionalWorkspaceViewTests(TransactionalIdentityRequest, BasicWorkspa
         self.tenant.save()
 
         self.service = WorkspaceService()
-        self.root_workspace = Workspace.objects.create(
-            name="Root Workspace",
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-        )
-        self.default_workspace = Workspace.objects.create(
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            name="Default Workspace",
-            description="Default Description",
-            parent_id=self.root_workspace.id,
-        )
+
+        with transaction.atomic():
+            bootstrap_result = bootstrap_tenant_for_v2_test(self.tenant)
+            self.default_workspace = bootstrap_result.default_workspace
+            self.root_workspace = bootstrap_result.root_workspace
+
         self.ungrouped_workspace = Workspace.objects.create(
             name="Ungrouped Hosts Workspace",
             description="Ungrouped Hosts Workspace - description",
@@ -197,7 +186,12 @@ class TransactionalWorkspaceViewTests(TransactionalIdentityRequest, BasicWorkspa
         PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
 
 
-@override_settings(V2_APIS_ENABLED=True, WORKSPACE_HIERARCHY_DEPTH_LIMIT=100, WORKSPACE_RESTRICT_DEFAULT_PEERS=False)
+@override_settings(
+    ATOMIC_RETRY_DISABLED=True,
+    V2_APIS_ENABLED=True,
+    WORKSPACE_HIERARCHY_DEPTH_LIMIT=100,
+    WORKSPACE_RESTRICT_DEFAULT_PEERS=False,
+)
 class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
     """Tests for create/update/delete workspaces."""
 
@@ -1802,7 +1796,7 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
             client.post(url, data, format="json", **self.headers)
 
 
-@override_settings(V2_APIS_ENABLED=True, WORKSPACE_HIERARCHY_DEPTH_LIMIT=5)
+@override_settings(ATOMIC_RETRY_DISABLED=True, V2_APIS_ENABLED=True, WORKSPACE_HIERARCHY_DEPTH_LIMIT=5)
 class WorkspaceMove(TransactionalWorkspaceViewTests):
     """Tests for move workspace."""
 
@@ -2678,7 +2672,7 @@ class WorkspaceMove(TransactionalWorkspaceViewTests):
         self.assertEqual(response["Retry-After"], "1")
 
 
-@override_settings(V2_APIS_ENABLED=True)
+@override_settings(ATOMIC_RETRY_DISABLED=True, V2_APIS_ENABLED=True)
 class WorkspaceTestsList(WorkspaceViewTests):
     """Tests for listing workspaces."""
 
@@ -3258,7 +3252,7 @@ class WorkspaceTestsList(WorkspaceViewTests):
         self.assertNotIn(str(self.default_workspace.id), returned_ids)
 
 
-@override_settings(V2_APIS_ENABLED=True)
+@override_settings(ATOMIC_RETRY_DISABLED=True, V2_APIS_ENABLED=True)
 class WorkspaceTestsDetail(WorkspaceViewTests):
     """Tests for get workspace detail."""
 
@@ -3432,7 +3426,7 @@ class WorkspaceTestsDetail(WorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
 
-@override_settings(V2_APIS_ENABLED=False)
+@override_settings(ATOMIC_RETRY_DISABLED=True, V2_APIS_ENABLED=False)
 class WorkspaceViewTestsV2Disabled(WorkspaceViewTests):
     def test_get_workspace_list(self):
         """Test for accessing v2 APIs which should be disabled by default."""
@@ -3443,7 +3437,7 @@ class WorkspaceViewTestsV2Disabled(WorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
 
-@override_settings(WORKSPACE_HIERARCHY_DEPTH_LIMIT=2, V2_APIS_ENABLED=True)
+@override_settings(ATOMIC_RETRY_DISABLED=True, WORKSPACE_HIERARCHY_DEPTH_LIMIT=2, V2_APIS_ENABLED=True)
 class WorkspaceViewTestsWithHierarchyLimit(TransactionalWorkspaceViewTests):
     """Test workspace hierarchy limits."""
 
@@ -3471,7 +3465,7 @@ class WorkspaceViewTestsWithHierarchyLimit(TransactionalWorkspaceViewTests):
         self.assertEqual(response.get("content-type"), "application/problem+json")
 
 
-@override_settings(WORKSPACE_RESTRICT_DEFAULT_PEERS=True, V2_APIS_ENABLED=True)
+@override_settings(ATOMIC_RETRY_DISABLED=True, WORKSPACE_RESTRICT_DEFAULT_PEERS=True, V2_APIS_ENABLED=True)
 class WorkspaceViewTestsWithPeerRestrictions(TransactionalWorkspaceViewTests):
     """Test workspace peer restrictions."""
 

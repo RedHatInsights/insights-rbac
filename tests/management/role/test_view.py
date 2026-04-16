@@ -3291,7 +3291,7 @@ class RoleWorkspaceValidationTests(IdentityRequest):
         except Exception as e:
             self.fail(f"validate_role raised an unexpected exception: {e}")
 
-    def test_workspace_validation_non_inventory_app_skipped(self):
+    def test_workspace_validation_non_inventory_app_fails(self):
         """Test that non-inventory applications skip workspace validation."""
         # Create permission for different app
         Permission.objects.create(
@@ -3318,15 +3318,22 @@ class RoleWorkspaceValidationTests(IdentityRequest):
 
         self.request_mock.data = request_data
 
+        from rest_framework import serializers
         from management.role.view import RoleViewSet
 
         viewset = RoleViewSet()
 
-        # Should not raise exception since app is not inventory
-        try:
+        with self.assertRaises(serializers.ValidationError) as context:
             viewset.validate_role(self.request_mock)
-        except Exception as e:
-            self.fail(f"validate_role raised an unexpected exception: {e}")
+
+        error_dict = context.exception.detail
+        self.assertIn("role", error_dict)
+        error_msg = str(error_dict["role"][0])
+        self.assertIn(
+            "user from org 'tenant1_org_id' cannot add permission 'app:groups:read' to workspace outside their org",
+            error_msg,
+        )
+        self.assertIn(f"Invalid workspace IDs: {self.tenant2_workspace.id}", error_msg)
 
     def test_workspace_validation_multiple_resource_definitions(self):
         """Test validation with multiple resourceDefinitions, some valid, some invalid."""
@@ -3420,43 +3427,6 @@ class RoleWorkspaceValidationTests(IdentityRequest):
         self.assertIn("resourceDefinitions", error_dict)
         self.assertIn("attributeFilter", error_dict["resourceDefinitions"][0])
         self.assertIn("This field is required.", error_dict["resourceDefinitions"][0]["attributeFilter"][0])
-
-    @patch("management.role.view.is_resource_a_workspace")
-    def test_workspace_validation_is_resource_workspace_called(self, mock_is_resource_workspace):
-        """Test that is_resource_a_workspace is called with correct parameters."""
-        mock_is_resource_workspace.return_value = False  # Make it return False to skip validation
-
-        request_data = {
-            "name": "test_role",
-            "access": [
-                {
-                    "permission": "inventory:groups:read",
-                    "resourceDefinitions": [
-                        {
-                            "attributeFilter": {
-                                "key": "group.id",
-                                "operation": "equal",
-                                "value": str(self.tenant1_workspace.id),
-                            }
-                        }
-                    ],
-                }
-            ],
-        }
-
-        self.request_mock.data = request_data
-
-        from management.role.view import RoleViewSet
-
-        viewset = RoleViewSet()
-        viewset.validate_role(self.request_mock)
-
-        # Verify is_resource_a_workspace was called with correct parameters
-        mock_is_resource_workspace.assert_called_once_with(
-            "inventory",
-            "groups",
-            {"key": "group.id", "operation": "equal", "value": str(self.tenant1_workspace.id)},
-        )
 
     @patch("management.role.view.get_workspace_ids_from_resource_definition")
     def test_workspace_validation_get_workspace_id_called(self, mock_get_workspace_ids):
