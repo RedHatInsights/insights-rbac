@@ -18,6 +18,7 @@
 
 import logging
 
+from management.audit_log.model import AuditLog
 from management.base_viewsets import BaseV2ViewSet
 from management.group.model import Group
 from management.permissions.role_binding_access import (
@@ -102,6 +103,8 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
             - order_by: Sort by specified field(s), prefix with '-' for descending
     """
 
+    _SUBJECT_NAME_ATTR = {"group": "name", "user": "username"}
+
     serializer_class = RoleBindingListOutputSerializer
     permission_classes = (
         RoleBindingSystemUserAccessPermission,
@@ -109,6 +112,22 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         V2WriteRequiresWorkspacesEnabled,
     )
     pagination_class = V2CursorPagination
+
+    def _log_audit(self, request, action, description):
+        """Create an audit log entry for a role binding operation."""
+        audit_log = AuditLog()
+        audit_log.log_v2(
+            request=request,
+            resource_type=AuditLog.ROLE_BINDING,
+            action=action,
+            resource_uuid=None,
+            description=description,
+        )
+
+    @staticmethod
+    def _get_subject_name(subject, subject_type):
+        attr = RoleBindingViewSet._SUBJECT_NAME_ATTR.get(subject_type, "name")
+        return getattr(subject, attr, str(subject))
 
     def get_queryset(self):
         """Return an empty queryset to satisfy DRF's contract.
@@ -200,6 +219,15 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         serializer.is_valid(raise_exception=True)
         created_bindings = serializer.save()
 
+        subjects = {(b["subject_type"], str(b["subject"].uuid)) for b in created_bindings}
+        resources = {(b["resource_type"], b["resource_id"]) for b in created_bindings}
+        self._log_audit(
+            request,
+            AuditLog.CREATE,
+            f"Created {len(created_bindings)} role binding(s) for {len(subjects)} subject(s)"
+            f" on {len(resources)} resource(s)",
+        )
+
         fields = serializer.validated_data.get("fields")
         response_serializer = BatchCreateRoleBindingResponseItemSerializer(
             created_bindings, many=True, context={"field_selection": fields}
@@ -261,6 +289,15 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         serializer = UpdateRoleBindingRequestSerializer(data=data, context={"request": request})
         serializer.is_valid(raise_exception=True)
         result = serializer.save()
+
+        subject_name = self._get_subject_name(result.subject, result.subject_type)
+        resource_label = result.resource_name or result.resource_id
+        self._log_audit(
+            request,
+            AuditLog.EDIT,
+            f"Updated role bindings for {result.subject_type} '{subject_name}'"
+            f" on {result.resource_type} '{resource_label}': {len(result.roles)} role(s) assigned",
+        )
 
         response_context = {
             "request": request,

@@ -839,6 +839,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             updated_data = {
                 "name": "Updated Workspace Name",
                 "description": "Updated description",
+                "parent_id": str(self.default_workspace.id),
             }
 
             url = reverse(
