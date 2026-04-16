@@ -1,10 +1,12 @@
+@AGENTS.md
+
 # CLAUDE.md
 
-## Implementation And Review Guidelines
-- Security: docs/security-guidelines.md
-- Performance: docs/performance-guidelines.md
-- Error-handling: docs/error-handling-guidelines.md
-- API-contracts: docs/api-contracts-guidelines.md
-- Database: docs/database-guidelines.md
-- Testing: docs/testing-guidelines.md
-- Integration: docs/integration-guidelines.md
+Claude Code-specific behavioral preferences. Architecture, commands, and conventions are in AGENTS.md.
+
+## Behavioral Preferences
+
+- Do NOT include `Co-Authored-By` lines in commits
+- Before running tests or linters, verify the database is running with `pg_isready -h localhost -p 15432`
+- Always format code with black before creating commits
+- Use dotted module paths for test commands, never file paths

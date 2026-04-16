@@ -20,9 +20,6 @@ import logging
 from collections.abc import Callable, Iterable
 from typing import Protocol
 
-import pgtransaction
-from django.db.models import QuerySet
-
 from api.models import Tenant
 from django.db import transaction, OperationalError
 from internal.utils import (
@@ -30,13 +27,12 @@ from internal.utils import (
     iterate_tuples_from_kessel,
     lock_binding_mappings_with_roles_by_uuid,
 )
-from management.atomic_transactions import atomic_block
-from management.role.model import BindingMapping
+from management.atomic_transactions import atomic, atomic_block
 from management.models import Role, Workspace
 from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import ReplicationEvent, ReplicationEventType, PartitionKey
-from management.role.v2_model import RoleV2, SeededRoleV2
+from management.role.v2_model import RoleV2
 from management.role_binding.model import RoleBinding
 from management.tenant_mapping.model import DefaultAccessType
 from management.tenant_mapping.v2_activation import (
@@ -558,18 +554,14 @@ def _local_workspace_ids_for(tenant: Tenant) -> set[str]:
     return set(str(u) for u in Workspace.objects.filter(tenant=tenant).values_list("id", flat=True))
 
 
+# This synchronizes with workspace creation in WorkspaceService being SERIALIZABLE (ensuring that a workspace we're
+# interested in isn't created after we check).
+@atomic
 def _remove_orphaned_workspace_parent_relations(
     tenant: Tenant, workspace_data: _RemoteWorkspaceData, commit_removal: _CommitRemoval
 ) -> int:
     """Removes any parent relations for workspaces that no longer exist locally, then returns the number removed."""
     remote_ids = workspace_data.workspace_ids()
-
-    # We do not need to lock workspaces locally while doing this. Workspace IDs are always random UUIDs, so there being
-    # a *new* workspace with an ID we are interested in created between the time we check and the time we commit the
-    # removals is virtually impossible.
-    #
-    # There is also no issue if a workspace has been locally deleted but the deletion has not yet been replicated.
-    # It can't be recreated (for the reasons above), and redundantly deleting the relation will have no effect.
 
     existing_local_ids = _local_workspace_ids_for(tenant)
     orphaned_ids = remote_ids - existing_local_ids

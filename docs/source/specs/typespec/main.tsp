@@ -713,7 +713,7 @@ namespace Workspaces {
 @tag("Role Bindings")
 @doc("Operations about role bindings")
 namespace RoleBindings {
-    const DefaultRoleBindingBySubjectFieldMask: FieldMask = "resource(id),subject(id),roles(id)";
+    const DefaultRoleBindingBySubjectFieldMask: FieldMask = "resource(id),subject(id,type),roles(id)";
 
     @doc("Subject kind for create/batch, by-subject, and list filters on the binding's subject (group UUID or user/principal UUID). Does not include principal as a separate type string; for external user ID use GET /role-bindings/ with granted_subject_type=principal and granted_subject.principal.user_id.")
     enum BindingSubjectType {

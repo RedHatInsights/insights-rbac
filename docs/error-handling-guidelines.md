@@ -1,155 +1,187 @@
-# Error Handling Guidelines for insights-rbac
+# Error Handling Guidelines
 
-## 1. API Version-Aware Exception Handling
+## Global Exception Handler
 
-This repo uses a version-dispatching exception handler registered as `EXCEPTION_HANDLER` in DRF settings. The router is `exception_version_handler` in `rbac/api/common/exception_handler.py`.
+All exceptions pass through `exception_version_handler` (configured in `settings.py` as `EXCEPTION_HANDLER`). It dispatches based on URL path:
 
-- **V1 endpoints** (`/api/v1/`): errors are returned as `{"errors": [{"detail": "...", "source": "...", "status": "400"}]}`.
-- **V2 endpoints** (`/api/v2/`): errors use **RFC 7807 Problem Details** format via `v2response_error_from_errors()`: `{"status": 400, "title": "The request payload contains invalid syntax.", "detail": "...", "errors": [{"message": "...", "field": "..."}]}`. V2 responses must set `content_type="application/problem+json"`.
+- `/api/rbac/v1/...` routes to `custom_exception_handler`
+- `/api/rbac/v2/...` routes to `custom_exception_handler_v2`
 
-**Rule**: In V1/V2 views, avoid returning raw DRF error dicts. Let the exception handler format responses, or use `v2response_error_from_errors()` for manual V2 error responses.
+Both handlers first delegate to DRF's built-in `exception_handler`. If DRF returns `None` (unrecognized exception), each handler checks for project-specific exception types.
 
-## 2. Custom Exception Hierarchy
+## v1 Error Response Format
 
-Domain exceptions live in dedicated files per module. Use these instead of generic Python exceptions:
+v1 returns a flat `errors` array. Each entry has `detail`, `status`, and optionally `source`:
+
+```json
+{
+  "errors": [
+    {"detail": "Role name is required", "source": "name", "status": "400"}
+  ]
+}
+```
+
+## v2 Error Response Format (RFC 7807 Problem Details)
+
+v2 uses `application/problem+json` content type. Built by `v2response_error_from_errors()` in `management/utils.py`. Structure:
+
+```json
+{
+  "status": 400,
+  "title": "The request payload contains invalid syntax.",
+  "detail": "A role with name 'foo' already exists for this tenant.",
+  "errors": [
+    {"message": "...", "field": "name"}
+  ],
+  "instance": "/api/rbac/v2/roles/abc-123/"
+}
+```
+
+Rules:
+- `title` comes from the `PROBLEM_TITLES` dict (keyed by HTTP status code: 400, 401, 403, 404, 409, 500).
+- `instance` is included only for PUT/PATCH/DELETE requests.
+- `errors` array is included only when field-level errors exist.
+- `content_type` must be set to `application/problem+json` on the Response.
+
+## ProblemJSONRenderer
+
+Defined in `api/common/renderers.py`. A thin `JSONRenderer` subclass with `media_type = "application/problem+json"`. Added to `BaseV2ViewSet.renderer_classes` so v2 endpoints can accept `Accept: application/problem+json`.
+
+## Custom Exception Classes
 
 ### Shared (`management/exceptions.py`)
-- `RequiredFieldError(field_name)` -- missing required field (400)
-- `InvalidFieldError(field, message)` -- field validation failure (400)
-- `NotFoundError(resource_type, resource_id)` -- resource not found (404)
+- `RequiredFieldError(field_name)` -- missing required field. Stores `field_name`.
+- `InvalidFieldError(field, message)` -- invalid field value. Stores `field`.
+- `NotFoundError(resource_type, resource_id)` -- resource not found.
 
-### Role domain (`management/role/v2_exceptions.py`)
-- `RoleV2Error` -- base class for role errors
-- `RoleAlreadyExistsError(name)` -- duplicate role name (handled as IntegrityError/400)
-- `PermissionsNotFoundError(missing_permissions)` -- invalid permissions (400)
-- `RoleDatabaseError(message)` -- unexpected DB error (500)
-- `InvalidRolePermissionsError(message)` -- malformed permission data (400)
-- `RolesNotFoundError(uuids)` -- roles not found (converted to 404)
-- `CustomRoleRequiredError(message)` -- operation requires custom role (500)
-
-### Subject domain (`management/subject/exceptions.py`)
-- `SubjectError` -- base class
-- `UnsupportedSubjectTypeError(subject_type)` -- invalid subject type
-
-### Permission domain (`management/permission/exceptions.py`)
-- `PermissionError` -- base class
-- `InvalidPermissionDataError(message)` -- malformed permission data
+### Role v2 (`management/role/v2_exceptions.py`)
+Hierarchy rooted at `RoleV2Error`:
+- `RoleAlreadyExistsError(name)` -- duplicate role name.
+- `PermissionsNotFoundError(missing_permissions)` -- invalid permission strings.
+- `RoleDatabaseError(message)` -- unexpected DB error.
+- `InvalidRolePermissionsError(message)` -- malformed permission data.
+- `RolesNotFoundError(uuids)` -- roles not found (single or bulk).
+- `CustomRoleRequiredError(message)` -- operation requires a custom role.
 
 ### Authorization (`management/authorization/`)
-- `InvalidTokenError` -- bad JWT (401)
-- `MissingAuthorizationError` -- no Bearer token (401)
-- `UnableMeetPrerequisitesError` -- token validation infra failure (500)
+- `InvalidTokenError` -- invalid JWT token (401).
+- `MissingAuthorizationError` -- missing Bearer token (401).
+- `UnableMeetPrerequisitesError` -- can't validate token (500).
 
-### Infrastructure
-- `DualWriteException` (`management/relation_replicator/relation_replicator.py`) -- replication failure (500)
-- `V1WriteBlockedError` (`management/tenant_mapping/v2_activation.py`) -- V1 write on V2-activated tenant
-- `TenantNotBootstrappedError` (`management/tenant_service/v2.py`) -- tenant not bootstrapped
-- `SentryDiagnosticError` (`internal/errors.py`) -- deliberately raised to create a Sentry event
+### Other
+- `DualWriteException` (`relation_replicator/relation_replicator.py`) -- wraps replication failures.
+- `V1WriteBlockedError` (`tenant_mapping/v2_activation.py`) -- v1 write on v2-activated tenant.
+- `InsufficientPrivilegesError` (`group/insufficient_privileges.py`) -- service account privilege check.
+- `FieldSelectionValidationError` (`management/utils.py`) -- invalid `?fields=` parameter.
+- `GRPCError` (`relation_replicator/relations_api_replicator.py`) -- wrapper for gRPC errors (not an Exception subclass).
 
-**Rule**: Create domain-specific exceptions under the relevant module's `exceptions.py` or a dedicated file. Follow the pattern: base error class per domain, specific subclasses with structured init params. Always store context attributes (field names, IDs) on the exception instance.
+## Where to Raise What
 
-## 3. Exception Handler Registration
+### In services (`*_service.py`)
+Raise domain exceptions. Never raise DRF exceptions. The service layer must stay framework-agnostic.
 
-Domain exceptions that should produce HTTP error responses should be registered in `rbac/api/common/exception_handler.py`. V2-specific exceptions (like `RolesNotFoundError`, `NotFoundError`, `InvalidFieldError`, `RequiredFieldError`) are handled in `custom_exception_handler_v2`. Authorization exceptions (`InvalidTokenError`, `MissingAuthorizationError`, `UnableMeetPrerequisitesError`) and `IntegrityError` are handled in both V1 and V2 handlers. Unregistered custom exceptions will return no response (None), causing Django to return a 500 with no structured body.
-
-**Rule**: When adding a new domain exception, add handling in the appropriate exception handler(s) based on which API versions need to handle it.
-
-## 4. Validation Errors in Views
-
-Two patterns exist; use the correct one for the API version:
-
-- **V1 views**: Use `raise_validation_error(source, message)` from `management/utils.py`, which raises `rest_framework.exceptions.ValidationError` with `{source: [message]}` format.
-- **V2 views**: Use `serializer.is_valid(raise_exception=True)` and let the exception handler format it, OR raise domain exceptions that are caught in the exception handler.
-
-**Rule**: In V1 views, use `raise_validation_error()`. In V2 views, prefer `is_valid(raise_exception=True)` or domain exceptions. Avoid bare `raise Exception(...)` in V1/V2 public API views; use domain exceptions instead.
-
-## 5. Transaction and Concurrency Error Handling
-
-### AtomicOperationsMixin (`management/v2_mixins.py`)
-V2 write views use `AtomicOperationsMixin` which wraps operations in `SERIALIZABLE` isolation with automatic retry (default 3 attempts via `pgtransaction.atomic`).
-
-**Rules**:
-- Do not override `create()`, `update()`, or `destroy()` on V2 ViewSets that use `AtomicOperationsMixin`. Override `perform_atomic_create()`, `perform_atomic_update()`, or `perform_atomic_destroy()` instead. Violating this raises `TypeError` at class definition time.
-- `SerializationFailure` returns 409 Conflict with `"Too many concurrent updates. Please retry."`.
-- `DeadlockDetected` returns 500 with `"Internal server error. Please try again later."`.
-- Other `OperationalError` is re-raised (will become a 500).
-
-### DualWriteException handling
-Catch `DualWriteException` in V1 views and return via the view's `dual_write_exception_response()` method (on `RoleViewSet`), which logs the traceback and returns 500 with source and detail.
-
-### IntegrityError
-- In middleware: caught by `@catch_integrity_error` decorator, returns `{"code": 400, "message": "..."}`.
-- In exception handler: caught and returned as 400 with the view's basename as source.
-
-**Rule**: Wrap multi-step DB + replication operations in `transaction.atomic()`. Catch `IntegrityError` for race conditions (e.g., concurrent tenant creation).
-
-## 6. Logging Conventions
-
-### Logger initialization
 ```python
-logger = logging.getLogger(__name__)
+# CORRECT -- service raises domain exception
+raise NotFoundError("role", role_uuid)
+raise RoleAlreadyExistsError(name)
+
+# WRONG -- service raises DRF exception
+raise serializers.ValidationError(...)
 ```
-Always use `__name__` (module path). The settings configure loggers for `api`, `internal`, `rbac`, `management`, `migration_tool`, and `feature_flags` namespaces.
 
-### Log levels
-- `logger.error(...)` -- operational failures (auth failures, Kafka errors, failed metrics server)
-- `logger.warning(...)` -- recoverable issues (retries, empty partitions, health check degradation)
-- `logger.info(...)` -- request logging (structured dict with method, path, status, org_id, username, user_id, is_admin, is_system, is_internal, request_id)
-- `logger.debug(...)` -- diagnostic detail (identity header contents, gRPC error extraction)
-- `logger.exception(...)` -- used for concurrency errors (SerializationFailure, DeadlockDetected) to include stack traces
+Exception: `workspace/service.py` currently raises `serializers.ValidationError` directly. This is legacy; new code should follow the domain exception pattern.
 
-### Structured request logging
-The middleware `IdentityHeaderMiddleware.log_request()` logs a dict to `logger.info()` with standardized fields. Follow this pattern for new request-level logging.
+### In serializers
+Catch domain exceptions from services and convert to `serializers.ValidationError` with field attribution:
 
-**Rule**: Use `logger.error()` for failures requiring operator attention. Use `logger.exception()` only when the stack trace adds diagnostic value (concurrency errors, unexpected exceptions). Never log sensitive data (tokens, passwords). Include `org_id` in error context when available.
+```python
+try:
+    return self.service.create(...)
+except RequiredFieldError as e:
+    raise serializers.ValidationError({e.field_name: str(e)})
+except PermissionsNotFoundError as e:
+    raise serializers.ValidationError({"permissions": str(e)})
+except RoleAlreadyExistsError as e:
+    raise serializers.ValidationError({"name": str(e)})
+except RoleDatabaseError as e:
+    raise serializers.ValidationError({"detail": str(e)})
+```
 
-## 7. Sentry / Glitchtip Integration
+### In views
+Views handle infrastructure-level errors that serializers/services shouldn't know about:
 
-Sentry SDK connects to Glitchtip via `GLITCHTIP_DSN` env var (see `rbac/rbac/settings.py`). Django and Redis integrations are enabled.
+- `OperationalError` (serialization failures, deadlocks) -- return 503 or 500 with retry guidance.
+- `TimeoutError` -- return 500.
+- `ValidationError` (Django core, from model `.save()`) -- flatten with `flatten_validation_error()` and re-raise as `serializers.ValidationError`.
+- `RolesNotFoundError` for bulk operations -- build response directly with `v2response_error_from_errors()`.
 
-- Use `sentry_sdk.capture_exception(e)` for critical infrastructure failures (e.g., metrics server startup in `celery.py`).
-- Use `SentryDiagnosticError` (raised at `/internal/sentry/`) as a deliberate test event -- do not use this pattern for real errors.
-- Unhandled exceptions are automatically captured by the Django integration.
+## AtomicOperationsMixin (v2 Views)
 
-**Rule**: Only call `sentry_sdk.capture_exception()` explicitly for infrastructure-level failures that might otherwise be swallowed (background tasks, startup errors). Do not capture handled/expected business errors.
+The `AtomicOperationsMixin` in `management/v2_mixins.py` wraps create/update/destroy in SERIALIZABLE transactions with automatic retry (3 attempts). Error handling:
 
-## 8. ECS Logging
+- `SerializationFailure` after retries exhausted: 409 Conflict.
+- `DeadlockDetected` after retries exhausted: 500 Internal Server Error.
+- Unrecognized `OperationalError`: re-raised with `raise` (no return value).
 
-The `ECSCustomFormatter` (`rbac/rbac/ECSCustom/__init__.py`) extends `ecs_logging.StdlibFormatter` to extract HTTP request/response metadata from `WSGIRequest` objects attached to log records. It is activated by setting `DJANGO_LOG_HANDLERS=ecs`.
+Subclasses must NOT override `create`/`update`/`destroy`. Override `perform_atomic_create`/`perform_atomic_update`/`perform_atomic_destroy` instead.
 
-**Rule**: Do not attach non-standard fields to ECS log records. The formatter strips `message`, `status_code`, and `server_time` to comply with ECS field reference standards.
+## Django ValidationError vs DRF ValidationError
 
-## 9. Middleware Error Responses
+Two different classes with the same name. The codebase uses both:
 
-Middleware (`rbac/middleware.py`) returns raw `HttpResponse` with JSON payloads -- NOT DRF `Response` objects, since middleware runs outside the DRF request lifecycle.
+- `django.core.exceptions.ValidationError` -- raised by model `.save()` and `.full_clean()`. Has `message_dict` and `error_dict` attributes.
+- `rest_framework.serializers.ValidationError` -- raised in serializers and views. Handled by DRF's exception handler. Has `detail` attribute.
 
-Format: `{"code": <int>, "message": "<string>"}` with matching HTTP status code.
+Pattern: catch Django `ValidationError` in views, convert to DRF `serializers.ValidationError`:
 
-- Missing org_id: 400
-- Missing service account client_id: 400
-- Invalid/missing identity: 401 via `HttpResponseUnauthorizedRequest` (no body)
-- IntegrityError during request processing: 400 via `@catch_integrity_error`
-- Read-only mode: 405 via `ReadOnlyApiMiddleware` with `{"error": "..."}`
+```python
+except ValidationError as e:
+    for field, error_message in flatten_validation_error(e):
+        if "unique_workspace_name_per_parent" in error_message:
+            message = "A workspace with the same name already exists."
+            break
+    raise serializers.ValidationError(message)
+```
 
-**Rule**: In middleware, return `HttpResponse(json.dumps(payload), content_type="application/json", status=...)`. Never use DRF Response in middleware.
+`flatten_validation_error()` in `management/utils.py` normalizes Django's `ValidationError` variants into `(field, message)` tuples.
 
-## 10. PROBLEM_TITLES Map
+## IntegrityError Handling
 
-V2 error responses use standardized titles from `PROBLEM_TITLES` in `management/utils.py`:
+`IntegrityError` is NOT handled by DRF's default handler. Both v1 and v2 custom handlers catch it explicitly:
 
-| Status | Title |
-|--------|-------|
-| 400 | The request payload contains invalid syntax. |
-| 401 | Authentication credentials were not provided or are invalid. |
-| 403 | You do not have permission to perform this action. |
-| 404 | Not found. |
-| 409 | Conflict. |
-| 500 | Unexpected error occurred. |
+- v1: wraps in `{"errors": [{"detail": ..., "source": basename, "status": "400"}]}`.
+- v2: wraps in Problem JSON via `v2response_error_from_errors()`.
 
-**Rule**: When adding new status codes to V2 responses, add a corresponding entry to `PROBLEM_TITLES`.
+In services, prefer catching `IntegrityError` and raising a domain exception:
 
-## 11. gRPC Error Handling
+```python
+except IntegrityError as e:
+    if "unique" in str(e).lower():
+        raise RoleAlreadyExistsError(name)
+    raise RoleDatabaseError()
+```
 
-The `GRPCError` wrapper class (`management/relation_replicator/relations_api_replicator.py`) extracts structured error details from gRPC `RpcError` including status code, reason, and metadata from `ErrorInfo` protobuf. Failed extraction is logged at debug level and silently degraded.
+## Logging Conventions
 
-**Rule**: When working with Kessel Relations API errors, wrap `grpc.RpcError` in `GRPCError` for structured access. Failures in the replication layer should be wrapped in `DualWriteException`.
+- `logger.exception(...)` -- for unexpected errors (includes traceback). Use in catch blocks for DB errors, replication failures.
+- `logger.error(...)` -- for known error conditions without traceback (e.g., missing org_id on tenant, gRPC failures).
+- `logger.warning(...)` -- for degraded but recoverable situations (missing data, skipped operations, fallback paths).
+
+Pattern in views for concurrency errors:
+
+```python
+logger.exception("SerializationFailure in %s operation", operation_name)
+```
+
+Pattern in services for expected domain errors: no logging needed (the caller decides).
+
+## Rules for New Code
+
+1. **New v2 domain errors**: subclass the relevant base (`RoleV2Error`, etc.) or use the shared exceptions in `management/exceptions.py`.
+2. **Always include field attribution** in validation errors: `raise serializers.ValidationError({"field_name": "message"})`, not bare strings.
+3. **Never let domain exceptions leak to the HTTP layer unhandled.** If a new exception type isn't caught by the global handler, DRF returns a generic 500. Either add it to `custom_exception_handler_v2` or catch it in the serializer/view.
+4. **v2 error responses must use Problem JSON.** Use `v2response_error_from_errors()` when building error responses manually in views.
+5. **Concurrency errors** in v2 views: use `AtomicOperationsMixin`. In workspace views: use the `_handle_operational_error` pattern.
+6. **Do not catch exceptions you cannot handle.** Use bare `raise` (not `raise e`) to preserve tracebacks. Return `None` from error handlers to signal "not my problem."
+7. **Service layer exceptions must be plain Python** (not DRF). This keeps services testable without HTTP infrastructure.
+8. **Use `raise_validation_error(source, message)`** from `management/utils.py` for simple v1 validation errors in query parameter parsing.
