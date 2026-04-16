@@ -31,3 +31,11 @@ repos:
     -   id: openapi-spec-validator
         files: ^(docs/source/specs/|rbac/internal/specs/).*\.(yaml|yml|json)$
         exclude: (package(-lock)?\.json|tspconfig\.yaml|rbac/internal/specs/openapi\.json)$
+- repo: local
+  hooks:
+  - id: typespec-openapi-drift
+    name: Check TypeSpec/OpenAPI spec drift
+    entry: bash -c 'export PATH="$PWD/docs/source/specs/typespec/node_modules/.bin:$PATH"; command -v tsp >/dev/null 2>&1 || { echo "WARNING - tsp not installed, skipping drift check"; exit 0; } && make generate_v2_spec && git diff --exit-code docs/source/specs/v2/ || { echo "ERROR - OpenAPI specs are out of date with main.tsp. Run make generate_v2_spec and commit the result."; exit 1; }'
+    language: system
+    files: (main\.tsp|docs/source/specs/v2/openapi\.(json|yaml))$
+    pass_filenames: false
