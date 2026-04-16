@@ -55,7 +55,7 @@ def atomic_with_retry(retries: int):
             if is_atomic_disabled():
                 return transaction.atomic()(func)(*args, **kwargs)
             else:
-                return pgtransaction.atomic(retry=retries)(func)(*args, **kwargs)
+                return pgtransaction.atomic(isolation_level=ISOLATION_LEVEL, retry=retries)(func)(*args, **kwargs)
 
         return wrapper
 
