@@ -1226,7 +1226,6 @@ objects:
       - name: fix-orphan-relations
         podSpec:
           image: ${IMAGE}:${IMAGE_TAG}
-          imagePullPolicy: Always
           command:
             - /opt/rbac/rbac/manage.py
             - fix_orphan_relations
