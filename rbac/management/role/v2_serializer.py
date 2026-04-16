@@ -16,6 +16,7 @@
 #
 """Serializers for RoleV2 API."""
 
+from django.utils.translation import gettext as _
 from management.exceptions import RequiredFieldError
 from management.role.v2_exceptions import (
     InvalidRolePermissionsError,
@@ -214,9 +215,26 @@ class RoleV2RequestSerializer(serializers.ModelSerializer):
         fields = ("id", "name", "description", "permissions")
 
     def validate_name(self, value):
-        """Reject names containing '*' which conflicts with glob/wildcard search syntax."""
+        """Reject names containing '*' or matching system/seeded role names (case-insensitive)."""
         if isinstance(value, str) and "*" in value:
             raise serializers.ValidationError("Role name must not contain asterisks (*).")
+
+        # Skip check if name hasn't changed on update
+        if self.instance and self.instance.name == value:
+            return value
+
+        from api.models import Tenant
+
+        public_tenant = Tenant.objects.get(tenant_name="public")
+        if RoleV2.objects.filter(
+            tenant=public_tenant,
+            type__in=[RoleV2.Types.SEEDED, RoleV2.Types.PLATFORM],
+            name__iexact=value,
+        ).exists():
+            raise serializers.ValidationError(
+                _("Role name '%(name)s' conflicts with an existing system role.") % {"name": value}
+            )
+
         return value
 
     @property
