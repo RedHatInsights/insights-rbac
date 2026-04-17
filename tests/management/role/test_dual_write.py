@@ -378,7 +378,8 @@ class DualWriteTestCase(TestCase):
 
     def expect_v2_roles_with_permissions(self, count: int, permissions: list[str]) -> list[str]:
         """Assert there is a role matching the given permissions and return its ID."""
-        roles, unmatched = self.tuples.find_group_with_tuples(
+        permission_tuples = self.tuples.find_tuples(lambda t: t.relation != "owner")
+        roles, unmatched = permission_tuples.find_group_with_tuples(
             [
                 all_of(
                     resource_type("rbac", "role"),

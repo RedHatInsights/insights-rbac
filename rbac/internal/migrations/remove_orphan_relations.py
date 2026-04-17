@@ -32,6 +32,7 @@ from management.models import Role, Workspace
 from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import ReplicationEvent, ReplicationEventType, PartitionKey
+from management.role.relations import role_owner_relationship
 from management.role.v2_model import RoleV2
 from management.role_binding.model import RoleBinding
 from management.tenant_mapping.model import DefaultAccessType
@@ -197,27 +198,20 @@ def _collect_remote_relations_for_binding(
     return result
 
 
-def _collect_custom_role_permission_relations(
-    role_id: str, read_tuples_typed: _ReadTuplesTyped
-) -> list[RelationTuple]:
+def _collect_role_resource_relations(role_id: str, read_tuples_typed: _ReadTuplesTyped) -> list[RelationTuple]:
     """
-    Collect permission relations to remove for a custom V2 role.
+    Collect all relations whose resource is rbac/role:<role_id> (permissions, owner, etc.).
 
-    Args:
-        role_id: The role UUID to clean permissions for
-        read_tuples_typed: Function to read tuples from Kessel
-
-    Returns:
-        list: Relations to remove for this role's permissions
+    Permission-only reads miss tuples such as ``#owner@rbac/tenant:...`` that V1 dual-write creates
+    alongside permission edges; those must be included when reconciling or removing a deleted role.
     """
-
     return list(
         read_tuples_typed(
             resource_type="role",
             resource_id=role_id,
             relation="",
-            subject_type="principal",
-            subject_id="*",
+            subject_type="",
+            subject_id="",
         )
     )
 
@@ -404,9 +398,7 @@ def _remove_orphaned_custom_role_relations(
         batch_raw_role_ids -= system_role_ids
 
         actual_relations_by_role_id = {
-            role_id: set(
-                _collect_custom_role_permission_relations(role_id=role_id, read_tuples_typed=read_tuples_typed)
-            )
+            role_id: set(_collect_role_resource_relations(role_id=role_id, read_tuples_typed=read_tuples_typed))
             for role_id in batch_raw_role_ids
         }
 
@@ -435,14 +427,18 @@ def _remove_orphaned_custom_role_relations(
 
                 actual_relations: set[RelationTuple] = actual_relations_by_role_id[role_id]
 
-                expected_relations: set[RelationTuple] = (
-                    {
+                if local_role is None:
+                    expected_relations: set[RelationTuple] = set()
+                else:
+                    expected_relations = {
                         _as_relation_tuple(role_permission_tuple(role_id=role_id, permission=p.v2_string()))
                         for p in local_role.permissions.all()
                     }
-                    if local_role is not None
-                    else set()
-                )
+                    tenant_resource_id = local_role.tenant.tenant_resource_id()
+                    if tenant_resource_id:
+                        expected_relations.add(
+                            _as_relation_tuple(role_owner_relationship(local_role.uuid, tenant_resource_id))
+                        )
 
                 orphan_relations = actual_relations - expected_relations
 
