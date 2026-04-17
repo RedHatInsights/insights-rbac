@@ -970,6 +970,18 @@ class MCPViewV2ToolsTests(MCPToolTestMixin, IdentityRequest):
         self.url = "/_private/_a2s/mcp/"
         self.client = APIClient()
         self.principal = Principal.objects.create(username="test_user", tenant=self.tenant)
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.get_kessel_principal_id",
+                return_value="localhost/test-user-id",
+            )
+        )
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.WorkspaceInventoryAccessChecker.check_resource_access",
+                return_value=True,
+            )
+        )
 
     def tearDown(self):
         """Tear down MCP V2 tool tests."""
