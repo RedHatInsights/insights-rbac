@@ -39,6 +39,7 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEvent,
     ReplicationEventType,
 )
+from management.role.relations import role_owner_relationship
 from management.role.v2_exceptions import (
     CustomRoleRequiredError,
     InvalidRolePermissionsError,
@@ -136,6 +137,10 @@ class RoleV2Service:
             role.permissions.set(permissions)
 
             tuples_to_add, _ = CustomRoleV2.replication_tuples(role, new_permissions=permissions)
+
+            tenant_resource_id = tenant.tenant_resource_id()
+            if tenant_resource_id:
+                tuples_to_add.append(role_owner_relationship(role.uuid, tenant_resource_id))
 
             self._replicator.replicate(
                 ReplicationEvent(
@@ -340,6 +345,10 @@ class RoleV2Service:
                 raise AssertionError("Relations should not be added while deleting roles.")
 
             relations_to_remove.extend(to_remove)
+
+            tenant_resource_id = role.tenant.tenant_resource_id()
+            if tenant_resource_id:
+                relations_to_remove.append(role_owner_relationship(role.uuid, tenant_resource_id))
 
         self._replicator.replicate(
             ReplicationEvent(
