@@ -67,7 +67,8 @@ from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
 from tests.management.role.test_dual_write import RbacFixture
 from tests.management.role.test_view import find_in_list, relation_api_tuple
-from tests.v2_util import assert_v2_custom_roles_consistent, seed_v2_role_from_v1
+from tests.util import assert_v1_v2_tuples_fully_consistent
+from tests.v2_util import seed_v2_role_from_v1
 
 
 def generate_group_member_relation_entry(group_uuid, principal_user_id):
@@ -284,17 +285,13 @@ class GroupViewsetTests(IdentityRequest):
 
     def tearDown(self):
         """Tear down group viewset tests."""
-        Group.objects.all().delete()
-        Principal.objects.all().delete()
-        Role.objects.all().delete()
-        Policy.objects.all().delete()
-        Workspace.objects.filter(parent__isnull=False).delete()
-        Workspace.objects.filter(parent__isnull=True).delete()
         # Clear the principal cache for the test tenant to avoid test isolation issues
         from management.utils import PRINCIPAL_CACHE
 
         PRINCIPAL_CACHE.delete_all_principals_for_tenant("100001")
         PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
+
+        super().tearDown()
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
@@ -4548,18 +4545,12 @@ class GroupViewNonAdminTests(IdentityRequest):
 
     def tearDown(self):
         """Tear down group view tests."""
-        Group.objects.all().delete()
-        Principal.objects.all().delete()
-        Permission.objects.all().delete()
-        Access.objects.all().delete()
-        Role.objects.all().delete()
-        Policy.objects.all().delete()
-        Workspace.objects.filter(parent__isnull=False).delete()
-        Workspace.objects.filter(parent__isnull=True).delete()
         # Clear the principal cache for the test tenant to avoid test isolation issues
         from management.utils import PRINCIPAL_CACHE
 
         PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
+
+        super().tearDown()
 
     @staticmethod
     def _create_group_with_user_access_administrator_role(tenant: Tenant) -> Group:
@@ -7179,7 +7170,7 @@ class GroupViewNonAdminTests(IdentityRequest):
             )
 
 
-@override_settings(REPLICATION_TO_RELATION_ENABLED=True)
+@override_settings(REPLICATION_TO_RELATION_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
 class GroupReplicationTests(IdentityRequest):
     def setUp(self):
         super().setUp()
@@ -7543,4 +7534,4 @@ class GroupReplicationTests(IdentityRequest):
         self.assertCountEqual([role], group.roles())
 
         self.assertEqual(1, CustomRoleV2.objects.filter(v1_source=role).count())
-        assert_v2_custom_roles_consistent(test=self, tuples=tuples)
+        assert_v1_v2_tuples_fully_consistent(test=self, tuples=tuples)

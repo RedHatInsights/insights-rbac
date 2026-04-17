@@ -18,15 +18,16 @@
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.test import TestCase
 from rest_framework import serializers
 
+from api.models import Tenant
 from management.models import (
     CustomRoleV2,
     Group,
     Permission,
     PlatformRoleV2,
-    RoleBinding,
-    RoleBindingGroup,
+    Role,
     RoleV2,
     SeededRoleV2,
 )
@@ -34,6 +35,7 @@ from management.principal.model import Principal
 from management.relation_replicator.types import ObjectReference, ObjectType, RelationTuple, SubjectReference
 from management.role_binding.model import RoleBindingPrincipal
 from tests.identity_request import IdentityRequest
+from tests.v2_util import seed_v2_role_from_v1
 
 
 class RoleV2ModelTests(IdentityRequest):
@@ -419,6 +421,53 @@ class RoleV2ModelTests(IdentityRequest):
         self.assertEqual(custom_role.type, RoleV2.Types.CUSTOM)
         self.assertEqual(seeded_role.type, RoleV2.Types.SEEDED)
         self.assertEqual(platform_role.type, RoleV2.Types.PLATFORM)
+
+
+class SeededRoleV2Tests(TestCase):
+    def setUp(self):
+        self.public_tenant = Tenant.objects.get(tenant_name="public")
+
+    def test_v2_roles_for_empty(self):
+        self.assertEqual(set(), SeededRoleV2.for_v1_roles([]))
+
+    def test_v2_roles_for(self):
+        v1_role_a = Role.objects.create(tenant=self.public_tenant, name="a system role", system=True)
+        v2_role_a = seed_v2_role_from_v1(v1_role_a)
+
+        v1_role_b = Role.objects.create(tenant=self.public_tenant, name="another system role", system=True)
+        v2_role_b = seed_v2_role_from_v1(v1_role_b)
+
+        self.assertEqual(
+            {v2_role_a},
+            SeededRoleV2.for_v1_roles([v1_role_a]),
+        )
+
+        self.assertEqual(
+            {v2_role_a},
+            SeededRoleV2.for_v1_roles([v1_role_a, v1_role_a]),
+        )
+
+        self.assertEqual(
+            {v2_role_a, v2_role_b},
+            SeededRoleV2.for_v1_roles([v1_role_a, v1_role_b]),
+        )
+
+    def test_v2_roles_for_fails(self):
+        v1_role = Role.objects.create(tenant=self.public_tenant, name="a system role", system=True)
+
+        with self.assertRaises(ValueError) as context:
+            SeededRoleV2.for_v1_roles([v1_role])
+
+        self.assertIn(repr(v1_role.pk), str(context.exception))
+
+    def test_v2_roles_for_non_system(self):
+        tenant = Tenant.objects.create(tenant_name="a tenant", org_id="123456")
+        v1_role = Role.objects.create(tenant=tenant, name="a custom role", system=False)
+
+        with self.assertRaises(ValueError) as context:
+            SeededRoleV2.for_v1_roles([v1_role])
+
+        self.assertIn(repr(v1_role.pk), str(context.exception))
 
 
 class RoleV2QuerySetTests(IdentityRequest):

@@ -62,7 +62,10 @@ class V1ApiBlockedWhenWorkspacesEnabled(permissions.BasePermission):
 
     Unlike V1WriteBlockedWhenWorkspacesEnabled, this blocks read methods too. Use on
     V1 endpoints that return data from the V1 data model, which is no longer authoritative
-    once a tenant has been migrated to workspaces (e.g. the /access endpoint).
+    once a tenant has been migrated to workspaces.
+
+    Note: The read-only ``/access`` endpoint does not use this class; it filters results
+    to permissions in ``V2_MIGRATION_APP_EXCLUDE_LIST`` applications when workspaces are enabled.
     """
 
     message = "This V1 API is not available for orgs using workspaces."
