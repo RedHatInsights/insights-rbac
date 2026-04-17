@@ -52,21 +52,27 @@ from api.models import Tenant
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
-def _determine_old_scope(existing_v2_role, platform_roles):
+def _determine_old_scope(existing_v2_role, platform_roles, resource_service=None):
     """
     Determine the scope of an existing V2 role by examining its parent platform role relationships.
 
     This function looks at which platform roles are parents of the V2 role to determine what scope
-    it was previously assigned. This is more reliable than recalculating from permissions, since
-    the permission-to-scope mapping may have changed between seedings.
+    it was previously assigned. For roles with platform parents, this is more reliable than
+    recalculating from permissions, since the permission-to-scope mapping may have changed between
+    seedings.
 
     For roles with both platform_default and admin_default, we prefer the USER parent scope
     (permission-derived) over the ADMIN parent scope (which may include override adjustments),
     since bindings are created based on permission-derived scope.
 
+    For roles without platform parents (non-default system roles), we fall back to calculating
+    the scope from the existing V2 role's current permissions. This allows us to detect scope
+    changes even for roles that don't have automatic bindings through default groups.
+
     Args:
         existing_v2_role: The existing SeededRoleV2 instance (or None)
         platform_roles: Dictionary mapping (DefaultAccessType, Scope) to platform role instances
+        resource_service: ResourceDefinitionService to calculate scope from permissions (optional)
 
     Returns:
         The Scope of the role, or None if scope cannot be determined
@@ -74,38 +80,75 @@ def _determine_old_scope(existing_v2_role, platform_roles):
     if existing_v2_role is None:
         return None
 
-    # Get the UUIDs of parent platform roles
+    # First try to determine scope from platform parent relationships
     parent_uuids = set(existing_v2_role.parents.values_list("uuid", flat=True))
-    if not parent_uuids:
-        return None
+    if parent_uuids:
+        # Prefer USER parent scope (permission-derived) over ADMIN parent scope
+        # This ensures we compare permission-derived scopes, which is what bindings are based on
+        for (access_type, scope), platform_role in platform_roles.items():
+            if access_type == DefaultAccessType.USER and platform_role.uuid in parent_uuids:
+                return scope
 
-    # Prefer USER parent scope (permission-derived) over ADMIN parent scope
-    # This ensures we compare permission-derived scopes, which is what bindings are based on
-    for (access_type, scope), platform_role in platform_roles.items():
-        if access_type == DefaultAccessType.USER and platform_role.uuid in parent_uuids:
-            return scope
+        # If no USER parent found, check ADMIN parent
+        # For ADMIN-only parents, we need to account for the admin scope override
+        for (access_type, scope), platform_role in platform_roles.items():
+            if access_type == DefaultAccessType.ADMIN and platform_role.uuid in parent_uuids:
+                # If the role is subject to admin scope override to ROOT, we can't determine
+                # the permission-derived scope from the ADMIN parent alone
+                # (e.g., "Inventory Groups Administrator" has ADMIN parent at ROOT due to override,
+                # but bindings are created at DEFAULT based on permissions)
+                if scope == Scope.ROOT and existing_v2_role.v1_source:
+                    v1_role = existing_v2_role.v1_source
+                    if v1_role.admin_default and v1_role.name in ADMIN_DEFAULT_SEEDED_ROLES_FORCE_ROOT_SCOPE:
+                        # This role's ADMIN parent is at ROOT due to override
+                        # Fall through to calculate scope from permissions below
+                        logger.debug(
+                            "Cannot determine old scope from ADMIN parent for %s (at ROOT due to override), "
+                            "will try calculating from permissions",
+                            v1_role.name,
+                        )
+                        break
+                else:
+                    # No override issue - admin parent scope = permission-derived scope
+                    return scope
 
-    # If no USER parent found, check ADMIN parent
-    # For ADMIN-only parents, we need to account for the admin scope override
-    for (access_type, scope), platform_role in platform_roles.items():
-        if access_type == DefaultAccessType.ADMIN and platform_role.uuid in parent_uuids:
-            # If the role is subject to admin scope override to ROOT, we can't determine
-            # the permission-derived scope from the ADMIN parent alone
-            # (e.g., "Inventory Groups Administrator" has ADMIN parent at ROOT due to override,
-            # but bindings are created at DEFAULT based on permissions)
-            if scope == Scope.ROOT and existing_v2_role.v1_source:
-                v1_role = existing_v2_role.v1_source
-                if v1_role.admin_default and v1_role.name in ADMIN_DEFAULT_SEEDED_ROLES_FORCE_ROOT_SCOPE:
-                    # This role's ADMIN parent is at ROOT due to override
-                    # The actual permission-derived scope could be DEFAULT, TENANT, or ROOT
-                    # We can't reliably detect scope changes, so return None
-                    logger.info(
-                        f"Cannot determine old permission-derived scope for {v1_role.name} "
-                        f"(ADMIN parent at ROOT due to override)"
-                    )
-                    return None
-            # No override issue - admin parent scope = permission-derived scope
-            return scope
+    # Fallback: calculate scope from existing V2 role's current permissions
+    # This handles roles without platform parents or roles with admin override issues
+    # We calculate scope from the V2 role's existing permissions before they are updated
+    #
+    # LIMITATION: This fallback uses the CURRENT permission-to-scope mapping configuration
+    # (from ROOT_SCOPE_PERMISSIONS and TENANT_SCOPE_PERMISSIONS settings) to calculate
+    # the old scope. This means:
+    # - ✓ Works when a role's permissions change (add/remove permissions)
+    # - ✗ Cannot detect scope changes when the global mapping changes
+    #   (e.g., inventory:* moves from DEFAULT to TENANT in settings)
+    #
+    # For platform_default and admin_default roles, this limitation doesn't apply because
+    # we determine old scope from platform parent relationships (above).
+    # For non-default system roles, this limitation exists but they typically don't have
+    # automatic bindings to migrate anyway. If full detection is needed, we would need to
+    # persist the scope value in SeededRoleV2 or a separate cache table.
+    if resource_service and existing_v2_role:
+        try:
+            # Get the existing permissions from the V2 role (before they're cleared/updated)
+            existing_permissions = list(existing_v2_role.permissions.values_list("permission", flat=True))
+            if existing_permissions:
+                # Calculate scope from the existing permissions using the highest scope
+                calculated_scope = resource_service.highest_scope_for_permissions(existing_permissions)
+                logger.debug(
+                    "Calculated old scope for %s from %d existing V2 permissions: %s "
+                    "(note: uses current mapping, may not detect global mapping changes)",
+                    existing_v2_role.name,
+                    len(existing_permissions),
+                    calculated_scope.name if calculated_scope else None,
+                )
+                return calculated_scope
+        except Exception:
+            logger.debug(
+                "Failed to calculate old scope from existing V2 permissions for %s",
+                existing_v2_role.name,
+                exc_info=True,
+            )
 
     return None
 
@@ -114,11 +157,24 @@ def _log_scope_change_and_migrate(v1_role, display_name, old_scope, new_scope):
     """
     Log scope change and trigger binding migration if scope has changed.
 
+    This function is called during seeding for all system roles. It only triggers migration if:
+    1. old_scope is not None (meaning we could detect the previous scope)
+    2. old_scope != new_scope (meaning the scope actually changed)
+
+    The old scope is determined by:
+    - First, checking platform parent relationships (for platform_default/admin_default roles)
+    - Fallback: calculating from the existing V2 role's permissions (for all roles)
+
+    This ensures we can detect scope changes for:
+    - Platform default roles with automatic bindings via default groups
+    - Admin default roles with automatic bindings via default groups
+    - Non-default system roles that may have manual bindings
+
     Args:
         v1_role: The V1 system role
         display_name: Display name of the role for logging
-        old_scope: The previous scope (or None)
-        new_scope: The new scope
+        old_scope: The previous scope (or None if could not be determined)
+        new_scope: The new scope based on current permissions configuration
     """
     if old_scope is None or old_scope == new_scope:
         return
@@ -137,7 +193,18 @@ def _migrate_bindings_for_scope_change(v1_role, old_scope, new_scope):
     Migrate bindings for a system role when its scope changes during seeding.
 
     This ensures that all tenant bindings for this role are updated to use the
-    correct resource (workspace or tenant) based on the new scope.
+    correct resource (workspace or tenant) based on the new scope. This handles:
+    - Automatic bindings created for platform_default roles via default groups
+    - Automatic bindings created for admin_default roles via default groups
+    - Any manual role assignments to groups for non-default system roles
+
+    IMPORTANT: This migration will update ALL bindings for the affected system role,
+    including any bindings that may have been manually moved to subworkspaces. System
+    roles are expected to be bound at their canonical scope (DEFAULT, TENANT, or ROOT)
+    as determined by their permissions. If a system role binding was intentionally
+    placed at a non-canonical scope (e.g., a subworkspace), that customization will
+    be lost during migration. This is by design, as system roles should follow the
+    scope determined by their permissions configuration.
 
     Args:
         v1_role: The V1 system role whose scope has changed
@@ -153,13 +220,16 @@ def _migrate_bindings_for_scope_change(v1_role, old_scope, new_scope):
 
     groups = list(groups_with_role)
     if not groups:
-        logger.info(f"No groups found with role {v1_role.name}, skipping binding migration")
+        logger.info("No groups found with role %s, skipping binding migration", v1_role.name)
         return
 
     count = len(groups)
     logger.info(
-        f"Found {count} group(s) with system role {v1_role.name}. "
-        f"Migrating bindings from {old_scope.name} to {new_scope.name} scope."
+        "Found %d group(s) with system role %s. Migrating bindings from %s to %s scope.",
+        count,
+        v1_role.name,
+        old_scope.name,
+        new_scope.name,
     )
 
     replicator = OutboxReplicator()
@@ -173,17 +243,24 @@ def _migrate_bindings_for_scope_change(v1_role, old_scope, new_scope):
             if result > 0:
                 migrated_count += 1
                 logger.info(
-                    f"Migrated bindings for group {group.name} (uuid={group.uuid}) " f"with system role {v1_role.name}"
+                    "Migrated bindings for group %s (uuid=%s) with system role %s",
+                    group.name,
+                    group.uuid,
+                    v1_role.name,
                 )
-        except Exception as e:
+        except Exception:
             logger.error(
-                f"Failed to migrate bindings for group {group.uuid} with role {v1_role.name}: {e}",
+                "Failed to migrate bindings for group %s with role %s",
+                group.uuid,
+                v1_role.name,
                 exc_info=True,
             )
 
     logger.info(
-        f"Completed binding migration for system role {v1_role.name}: "
-        f"{migrated_count}/{count} groups migrated successfully"
+        "Completed binding migration for system role %s: %d/%d groups migrated successfully",
+        v1_role.name,
+        migrated_count,
+        count,
     )
 
 
@@ -476,9 +553,9 @@ def _seed_v2_role_from_v1(v1_role, display_name, description, public_tenant, pla
     """Create or update V2 role from V1 role during seeding."""
     try:
         # Check if V2 role already exists to detect scope changes
-        # IMPORTANT: Check old scope BEFORE clearing parents
+        # IMPORTANT: Check old scope BEFORE updating the role or clearing permissions
         existing_v2_role = SeededRoleV2.objects.filter(uuid=v1_role.uuid).first()
-        old_scope = _determine_old_scope(existing_v2_role, platform_roles)
+        old_scope = _determine_old_scope(existing_v2_role, platform_roles, resource_service)
 
         v2_role, v2_created = SeededRoleV2.objects.update_or_create(
             uuid=v1_role.uuid,
@@ -519,8 +596,8 @@ def _seed_v2_role_from_v1(v1_role, display_name, description, public_tenant, pla
         _log_scope_change_and_migrate(v1_role, display_name, old_scope, scope)
 
         return v2_role
-    except Exception as e:
-        logger.error(f"Failed to seed V2 role for {display_name}: {e}")
+    except Exception:
+        logger.error("Failed to seed V2 role for %s", display_name, exc_info=True)
         return None
 
 

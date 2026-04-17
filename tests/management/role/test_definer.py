@@ -1241,16 +1241,24 @@ class V2RoleSeedingTests(IdentityRequest):
         with self.settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS=""):
             seed_roles()
 
-        # Find a non-default role (neither platform_default nor admin_default)
+        # Find a non-default role (neither platform_default nor admin_default) that has permissions
+        # Use a filter that ensures we get a role with permissions to test
         non_default_role = (
-            Role.objects.public_tenant_only().filter(platform_default=False, admin_default=False, system=True).first()
+            Role.objects.public_tenant_only()
+            .filter(platform_default=False, admin_default=False, system=True, access__isnull=False)
+            .distinct()
+            .first()
         )
-        self.assertIsNotNone(non_default_role, "Should have at least one seeded non-default role")
+        self.assertIsNotNone(
+            non_default_role,
+            "Expected at least one seeded non-default system role with permissions in test data",
+        )
 
         # Mock the migration function
         with patch("management.role.definer._migrate_bindings_for_scope_change") as mock_migrate:
             # Change the scope for this role's permissions
             role_permissions = list(non_default_role.access.values_list("permission__permission", flat=True))
+            self.assertGreater(len(role_permissions), 0, f"Role {non_default_role.name} should have permissions")
             if role_permissions:
                 permission_pattern = f"{role_permissions[0].split(':')[0]}:*:*"
 
