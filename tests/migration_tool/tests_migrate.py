@@ -484,10 +484,10 @@ class MigrateTestTupleStore(TestCase):
             default_bindings.traverse_subject(
                 # and find which ones have
                 [
-                    # a role relation, to a role which has only the app5 perm (and no others)
+                    # a role relation, to o1_r1 (app5 perm); only=False because role also has #owner@tenant
                     all_of(
                         relation("role"),
-                        self.relations.subject_is_resource_of(relation("app5_res5_verb5"), only=True),
+                        self.relations.subject_is_resource_of(relation("app5_res5_verb5"), only=False),
                     ),
                     # and a subject relation to the custom default group's members
                     all_of(relation("subject"), subject("rbac", "group", self.o1_default_group.uuid, "member")),
@@ -551,7 +551,7 @@ class MigrateTestTupleStore(TestCase):
                 [
                     all_of(
                         relation("role"),
-                        self.relations.subject_is_resource_of(relation("app1_res1_verb1"), only=True),
+                        self.relations.subject_is_resource_of(relation("app1_res1_verb1"), only=False),
                     ),
                     all_of(relation("subject"), subject("rbac", "group", self.o1_g1.uuid, "member")),
                 ]
@@ -567,7 +567,7 @@ class MigrateTestTupleStore(TestCase):
                 [
                     all_of(
                         relation("role"),
-                        self.relations.subject_is_resource_of(relation("app2_res2_verb2"), only=True),
+                        self.relations.subject_is_resource_of(relation("app2_res2_verb2"), only=False),
                     ),
                 ]
             ),
@@ -583,7 +583,7 @@ class MigrateTestTupleStore(TestCase):
                     all_of(
                         relation("role"),
                         self.relations.subject_is_resource_of(
-                            [relation("app2_res2_verb2"), relation("app3_res3_verb3")], only=True
+                            [relation("app2_res2_verb2"), relation("app3_res3_verb3")], only=False
                         ),
                     ),
                 ]
@@ -614,7 +614,7 @@ class MigrateTestTupleStore(TestCase):
                 [
                     all_of(
                         relation("role"),
-                        self.relations.subject_is_resource_of(relation("app5_res5_verb5"), only=True),
+                        self.relations.subject_is_resource_of(relation("app5_res5_verb5"), only=False),
                     ),
                     all_of(relation("subject"), subject("rbac", "group", self.o2_g1.uuid, "member")),
                 ]
@@ -622,7 +622,8 @@ class MigrateTestTupleStore(TestCase):
             "missing o2_r1 binding",
         )
 
-        self.assertEqual(29, len(self.relations))
+        # Includes rbac/role#owner@rbac/tenant for each migrated custom role (29 baseline + 5 owner edges).
+        self.assertEqual(34, len(self.relations))
 
     @override_settings(REPLICATION_TO_RELATION_ENABLED=True, PRINCIPAL_USER_DOMAIN="redhat", READ_ONLY_API_MODE=True)
     def test_empty_resource_id_filtered_out(self):

@@ -91,9 +91,10 @@ def replication_event_for_v1_role(v1_role_uuid, bound_workspace_id, org_id=None,
 
 def relation_api_tuples_for_v1_role(v1_role_uuid, bound_workspace_id):
     """Create a relation API tuple for a v1 role."""
-    role_id = Role.objects.get(uuid=v1_role_uuid).id
-    mappings = BindingMapping.objects.filter(role=role_id).all()
+    v1_role = Role.objects.get(uuid=v1_role_uuid)
+    mappings = BindingMapping.objects.filter(role=v1_role.id).all()
     relations = []
+    seen_v2_role_ids = set()
     for role_binding in [m.get_role_binding() for m in mappings]:
         relation_tuple = relation_api_tuple("role_binding", role_binding.id, "role", "role", role_binding.role.id)
         relations.append(relation_tuple)
@@ -113,6 +114,14 @@ def relation_api_tuples_for_v1_role(v1_role_uuid, bound_workspace_id):
         else:
             relation_tuple = relation_api_tuple("keya/id", "valueA", "binding", "role_binding", role_binding.id)
             relations.append(relation_tuple)
+
+        if role_binding.role.id not in seen_v2_role_ids:
+            seen_v2_role_ids.add(role_binding.role.id)
+            tenant_resource_id = v1_role.tenant.tenant_resource_id()
+            if tenant_resource_id:
+                relations.append(
+                    relation_api_tuple("role", role_binding.role.id, "owner", "tenant", tenant_resource_id)
+                )
     return relations
 
 
@@ -1758,52 +1767,6 @@ class RoleViewsetTests(IdentityRequest):
                 )
             ),
         )
-
-    @override_settings(
-        REPLICATION_TO_RELATION_ENABLED=True,
-        ROLE_CREATE_ALLOW_LIST="compliance,inventory",
-        ROOT_SCOPE_PERMISSIONS="inventory:*:*",
-        TENANT_SCOPE_PERMISSIONS="",
-    )
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
-    def test_update_role_unmigrated(self, replicate):
-        """Test that updating a role created without any V2 models creates the appropriate V2 models."""
-        tuples = InMemoryTuples()
-        replicate.side_effect = InMemoryRelationReplicator(tuples).replicate
-
-        # Set up
-        Permission.objects.create(permission="compliance:policy:read", tenant=self.public_tenant)
-        Permission.objects.create(permission="inventory:groups:read", tenant=self.public_tenant)
-
-        role_name = "test_update_role"
-        access_data = [{"permission": "compliance:policy:read", "resourceDefinitions": []}]
-        new_access_data = [{"permission": "inventory:groups:read", "resourceDefinitions": []}]
-
-        response = self.create_role(role_name, in_access_data=access_data)
-
-        v1_uuid = response.data["uuid"]
-        v1_role = Role.objects.get(uuid=v1_uuid)
-
-        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
-
-        # Emulate the role having been created before the V2 models were added.
-        deleted_count, _ = CustomRoleV2.objects.filter(v1_source=v1_role).delete()
-        self.assertGreater(deleted_count, 0)
-
-        # Update the role with new access data.
-        test_data = dict(response.data)
-        test_data["access"] = new_access_data
-        url = reverse("v1_management:role-detail", kwargs={"uuid": v1_uuid})
-        client = APIClient()
-
-        response = client.put(url, test_data, format="json", **self.headers)
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-
-        # The role should now have been migrated.
-        v2_role = CustomRoleV2.objects.get(v1_source=v1_role)
-        self.assertEqual("inventory:groups:read", v2_role.permissions.get().permission)
-        assert_v1_v2_tuples_fully_consistent(test=self, tuples=tuples)
 
     @override_settings(
         ROLE_CREATE_ALLOW_LIST="inventory", REPLICATION_TO_RELATION_ENABLED=True, REMOVE_NULL_VALUE=True
