@@ -16,24 +16,36 @@
 #
 """Service for workspace management."""
 
+import itertools
 import logging
 import select
 import time
 import uuid
 from collections import deque
 from itertools import groupby
+from typing import Optional
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import connection, transaction
 from django.db.models import Q
 from feature_flags import FEATURE_FLAGS
-from internal.utils import get_workspace_ids_from_resource_definition, is_resource_a_workspace
+from internal.utils import get_workspace_ids_from_resource_definition
 from management.atomic_transactions import atomic
 from management.models import ResourceDefinition, Role, Workspace
-from management.relation_replicator.relation_replicator import ReplicationEventType
+from management.relation_replicator.outbox_replicator import OutboxReplicator
+from management.relation_replicator.relation_replicator import (
+    PartitionKey,
+    RelationReplicator,
+    ReplicationEvent,
+    ReplicationEventType,
+)
+from management.role.model import BindingMapping
 from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
+from management.role_binding.model import RoleBinding
+from management.tenant_mapping.v2_activation import TenantVersion, lock_tenant_version
 from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspaceHandler
+from migration_tool.sharedSystemRolesReplicatedRoleBindings import attribute_key_to_v2_related_resource_type
 from prometheus_client import Counter, Histogram
 from psycopg2 import sql
 from rest_framework import serializers
@@ -83,7 +95,7 @@ LISTEN_SQL = sql.SQL("LISTEN {};").format(sql.Identifier(READ_YOUR_WRITES_CHANNE
 UNLISTEN_SQL = sql.SQL("UNLISTEN {};").format(sql.Identifier(READ_YOUR_WRITES_CHANNEL))
 
 
-def update_roles_for_removed_workspace(workspace_id: uuid.UUID) -> int:
+def _update_custom_roles_for_removed_workspace(workspace_id: uuid.UUID, replicator: RelationReplicator) -> int:
     """
     Update roles that reference a removed workspace and replicate the changes.
 
@@ -118,13 +130,7 @@ def update_roles_for_removed_workspace(workspace_id: uuid.UUID) -> int:
             ),
             attributeFilter__key=workspace_filter_key,
         )
-        .values(
-            "id",
-            "access__role_id",
-            "access__permission__permission",
-            "access__permission__application",
-            "access__permission__resource_type",
-        )
+        .values("id", "access__role_id")
         .order_by("access__role_id")
     )
 
@@ -145,7 +151,31 @@ def update_roles_for_removed_workspace(workspace_id: uuid.UUID) -> int:
                 logger.warning(f"Role vanished before it could be updated: pk={role_id!r}")
                 continue
 
-            dual_write = RelationApiDualWriteHandler(role, ReplicationEventType.FIX_RESOURCE_DEFINITIONS)
+            tenant_version = lock_tenant_version(role.tenant)
+
+            if tenant_version != TenantVersion.VERSION_1:
+                logger.info(
+                    f"Not updating role (pk={role.pk!r}) that is not in a V1 tenant; "
+                    f"only removing orphan BindingMappings."
+                )
+
+                # BindingMappings are no longer authoritative in a non-V1 tenant, so we don't need to handle any
+                # relations updates. We delete them here only to ensure that we have a clean slate later (since we
+                # want to make strong assertions about what BindingMappings exist in
+                # _remove_workspace_direct_role_bindings).
+                BindingMapping.objects.filter(
+                    resource_type_namespace="rbac",
+                    resource_type_name="workspace",
+                    resource_id=workspace_id_str,
+                    role=role,
+                ).delete()
+
+                continue
+
+            dual_write = RelationApiDualWriteHandler(
+                role, ReplicationEventType.FIX_RESOURCE_DEFINITIONS, replicator=replicator
+            )
+
             dual_write.prepare_for_update()  # Capture current bindings
 
             # Lock the ResourceDefinitions to prevent concurrent modifications
@@ -156,13 +186,8 @@ def update_roles_for_removed_workspace(workspace_id: uuid.UUID) -> int:
             rds_to_update = []
 
             for rd in locked_rds:
-                # Use metadata from initial query to avoid traversing FKs (access.permission)
-                meta = rds_metadata[rd.id]
-                app_name = meta["access__permission__application"]
-                res_type = meta["access__permission__resource_type"]
-
-                # Double-check is_resource_a_workspace
-                if not is_resource_a_workspace(app_name, res_type, rd.attributeFilter):
+                # Double-check that this resource definition is for workspaces.
+                if attribute_key_to_v2_related_resource_type(rd.attributeFilter["key"]) != ("rbac", "workspace"):
                     continue
 
                 # Get workspace IDs from resource definition
@@ -242,8 +267,105 @@ def update_roles_for_removed_workspace(workspace_id: uuid.UUID) -> int:
     return roles_updated
 
 
+# This must be SERIALIZABLE because we are potentially interacting with RoleBindings in V2 tenants.
+@atomic
+def _remove_workspace_direct_role_bindings(workspace: Workspace, replicator: RelationReplicator) -> int:
+    """
+    Delete role bindings bound a workspace about to be deleted.
+
+    It is assumed that all role bindings bound to custom roles have already been removed.
+    """
+    tenant_version = lock_tenant_version(workspace.tenant)
+
+    if tenant_version not in (TenantVersion.VERSION_1, TenantVersion.VERSION_2):
+        raise RuntimeError(f"Unexpected tenant version: {tenant_version!r}")
+
+    binding_mappings = list(
+        BindingMapping.objects.filter(
+            resource_type_namespace="rbac",
+            resource_type_name="workspace",
+            resource_id=str(workspace.id),
+        )
+    )
+
+    # There shouldn't have been any BindingMappings bound to a system role and a standard workspace created while the
+    # tenant was V1. (System roles won't have any relevant resource definitions naming the workspace, and their scope
+    # will always put them in the default workspace, root workspace, or the tenant in V1.)
+    #
+    # If the tenant has been converted to V2, no additional BindingMappings will have been created since that time.
+    #
+    # Since we have already removed all BindingMappings that came from custom roles in
+    # _update_custom_roles_for_removed_workspace (including any from V1 custom roles left over in a V2 tenant!),
+    # there shouldn't be any remaining here.
+    if len(binding_mappings) > 0:
+        raise AssertionError(
+            f"A standard workspace should not have any remaining BindingMappings "
+            f"(after removing any from custom roles), but found "
+            f"BindingMappings with pks={[bm.pk for bm in binding_mappings]}"
+        )
+
+    role_bindings = list(
+        RoleBinding.objects.filter(
+            resource_type="workspace",
+            resource_id=str(workspace.id),
+        )
+        .select_related("role")
+        .prefetch_related("group_entries", "principal_entries")
+        .select_for_update(of=["self"])
+    )
+
+    # In a V1 tenant, there shouldn't be any RoleBindings remaining for a standard workspace for the same reasons
+    # as BindingMappings above. (BindingMappings and RoleBindings should always be in sync in a V1 tenant.)
+    #
+    # In a V2 tenant, we can have RoleBindings that were either directly created in the workspace or that were
+    # created for a V1 custom role and not torn down in _update_custom_roles_for_removed_workspace (since that just
+    # removes to-be-orphaned BindingMappings in V2 tenants, which aren't authoritative anyway). In either case,
+    # we need to actually handle those RoleBindings (including by updating relations).
+
+    if tenant_version == TenantVersion.VERSION_1:
+        if len(role_bindings) > 0:
+            raise AssertionError(
+                f"A standard workspace should not have any remaining RoleBindings "
+                f"(after removing any from custom roles), but found "
+                f"RoleBindings with pks={[rb.pk for rb in role_bindings]}"
+            )
+
+        return 0
+
+    for batch in itertools.batched(itertools.chain.from_iterable(rb.all_tuples() for rb in role_bindings), 1000):
+        replicator.replicate(
+            ReplicationEvent(
+                event_type=ReplicationEventType.DELETE_WORKSPACE,
+                partition_key=PartitionKey.byEnvironment(),
+                remove=list(batch),
+                info={"org_id": workspace.tenant.org_id, "workspace_id": str(workspace.id)},
+            )
+        )
+
+    if len(role_bindings) > 0:
+        RoleBinding.objects.filter(pk__in=(rb.pk for rb in role_bindings)).delete()
+
+    return len(role_bindings)
+
+
 class WorkspaceService:
     """Workspace service."""
+
+    _replicator: RelationReplicator
+
+    def __init__(self, replicator: Optional[RelationReplicator] = None):
+        """Create a WorkspaceService that uses the provided replicator (defaulting to OutboxReplicator)."""
+        if replicator is None:
+            replicator = OutboxReplicator()
+
+        self._replicator = replicator
+
+    def _dual_write_handler(
+        self, workspace: Workspace, event_type: ReplicationEventType
+    ) -> RelationApiDualWriteWorkspaceHandler:
+        return RelationApiDualWriteWorkspaceHandler(
+            workspace=workspace, event_type=event_type, replicator=self._replicator
+        )
 
     @atomic
     def create(self, validated_data: dict, request_tenant: Tenant) -> Workspace:
@@ -265,7 +387,7 @@ class WorkspaceService:
                 )
 
             workspace = Workspace.objects.create(**validated_data, tenant=parent.tenant)
-            dual_write_handler = RelationApiDualWriteWorkspaceHandler(workspace, ReplicationEventType.CREATE_WORKSPACE)
+            dual_write_handler = self._dual_write_handler(workspace, ReplicationEventType.CREATE_WORKSPACE)
             dual_write_handler.replicate_new_workspace()
 
             # After the outbox message is created & committed, LISTEN for a NOTIFY
@@ -288,22 +410,17 @@ class WorkspaceService:
         """Update workspace."""
         if instance.type in (Workspace.Types.ROOT, Workspace.Types.UNGROUPED_HOSTS):
             raise serializers.ValidationError(f"The {instance.type} workspace cannot be updated.")
-        parent_id = None
         for attr, value in validated_data.items():
-            if attr == "parent_id":
-                parent_id = value
             if self._parent_id_attr_update(attr, value, instance):
                 raise serializers.ValidationError("Can't update the 'parent_id' on a workspace directly")
             setattr(instance, attr, value)
-        if parent_id is not None:
-            self._enforce_hierarchy_depth(parent_id, instance.tenant)
 
         # Skip Workspace Events for DEFAULT workspaces
         skip_ws_events = instance.type == Workspace.Types.DEFAULT
 
         try:
             instance.save()
-            dual_write_handler = RelationApiDualWriteWorkspaceHandler(instance, ReplicationEventType.UPDATE_WORKSPACE)
+            dual_write_handler = self._dual_write_handler(instance, ReplicationEventType.UPDATE_WORKSPACE)
             dual_write_handler.replicate_updated_workspace(instance.parent, skip_ws_events)
         except ValidationError as e:
             message = e.message_dict
@@ -317,25 +434,28 @@ class WorkspaceService:
             raise serializers.ValidationError(message)
         return instance
 
+    @atomic
     def destroy(self, instance: Workspace) -> None:
         """Destroy workspace."""
+        # Lock the workspace to prevent concurrent modifications or referencing
+        # by new/updated roles during deletion
+        instance = Workspace.objects.select_for_update().get(pk=instance.pk)
+
         if instance.type != Workspace.Types.STANDARD:
             raise serializers.ValidationError(f"Unable to delete {instance.type} workspace")
         if Workspace.objects.filter(parent=instance, tenant=instance.tenant).exists():
             raise serializers.ValidationError("Unable to delete due to workspace dependencies")
 
-        with transaction.atomic():
-            # Lock the workspace to prevent concurrent modifications or referencing
-            # by new/updated roles during deletion
-            Workspace.objects.select_for_update().get(pk=instance.pk)
+        # Update roles that reference this workspace before deleting it
+        roles_updated_count = _update_custom_roles_for_removed_workspace(instance.id, replicator=self._replicator)
+        logger.info(f"Updated {roles_updated_count} custom roles for workspace {instance.id} removal")
 
-            # Update roles that reference this workspace before deleting it
-            role_update_results = update_roles_for_removed_workspace(instance.id)
-            logger.info(f"Updated {role_update_results} roles for workspace {instance.id} removal")
+        system_bindings_removed_count = _remove_workspace_direct_role_bindings(instance, replicator=self._replicator)
+        logger.info(f"Removed {system_bindings_removed_count} system roles for workspace {instance.id} removal")
 
-            dual_write_handler = RelationApiDualWriteWorkspaceHandler(instance, ReplicationEventType.DELETE_WORKSPACE)
-            dual_write_handler.replicate_deleted_workspace()
-            instance.delete()
+        dual_write_handler = self._dual_write_handler(instance, ReplicationEventType.DELETE_WORKSPACE)
+        dual_write_handler.replicate_deleted_workspace()
+        instance.delete()
 
     def move(self, instance: Workspace, target_workspace_id: uuid.UUID) -> Workspace:
         """Move a workspace under new parent."""
@@ -348,7 +468,7 @@ class WorkspaceService:
         previous_parent_workspace = instance.parent
         instance.parent = target_workspace
         instance.save(update_fields=["parent"])
-        dual_write_handler = RelationApiDualWriteWorkspaceHandler(instance, ReplicationEventType.MOVE_WORKSPACE)
+        dual_write_handler = self._dual_write_handler(instance, ReplicationEventType.MOVE_WORKSPACE)
         dual_write_handler.replicate_updated_workspace(previous_parent_workspace, skip_ws_events=True)
         return instance
 

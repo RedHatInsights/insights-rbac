@@ -24,7 +24,7 @@ from uuid import uuid4
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import OperationalError
+from django.db import OperationalError, transaction
 from django.test.utils import override_settings
 from django.urls import clear_url_caches
 from importlib import reload
@@ -51,6 +51,7 @@ from migration_tool.utils import create_relationship
 from api.models import Tenant
 from rbac import urls
 from tests.identity_request import IdentityRequest, TransactionalIdentityRequest
+from tests.v2_util import bootstrap_tenant_for_v2_test
 
 
 class BasicWorkspaceViewTests:
@@ -103,18 +104,11 @@ class WorkspaceViewTests(IdentityRequest, BasicWorkspaceViewTests):
         self.tenant.save()
 
         self.service = WorkspaceService()
-        self.root_workspace = Workspace.objects.create(
-            name="Root Workspace",
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-        )
-        self.default_workspace = Workspace.objects.create(
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            name="Default Workspace",
-            description="Default Description",
-            parent_id=self.root_workspace.id,
-        )
+
+        bootstrap_result = bootstrap_tenant_for_v2_test(self.tenant)
+        self.default_workspace = bootstrap_result.default_workspace
+        self.root_workspace = bootstrap_result.root_workspace
+
         self.ungrouped_workspace = Workspace.objects.create(
             name="Ungrouped Hosts Workspace",
             description="Ungrouped Hosts Workspace - description",
@@ -145,6 +139,7 @@ class WorkspaceViewTests(IdentityRequest, BasicWorkspaceViewTests):
         PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
 
 
+@override_settings(ATOMIC_RETRY_DISABLED=True)
 class TransactionalWorkspaceViewTests(TransactionalIdentityRequest, BasicWorkspaceViewTests):
     @override_settings(WORKSPACE_HIERARCHY_DEPTH_LIMIT=10)
     def setUp(self):
@@ -155,18 +150,12 @@ class TransactionalWorkspaceViewTests(TransactionalIdentityRequest, BasicWorkspa
         self.tenant.save()
 
         self.service = WorkspaceService()
-        self.root_workspace = Workspace.objects.create(
-            name="Root Workspace",
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-        )
-        self.default_workspace = Workspace.objects.create(
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            name="Default Workspace",
-            description="Default Description",
-            parent_id=self.root_workspace.id,
-        )
+
+        with transaction.atomic():
+            bootstrap_result = bootstrap_tenant_for_v2_test(self.tenant)
+            self.default_workspace = bootstrap_result.default_workspace
+            self.root_workspace = bootstrap_result.root_workspace
+
         self.ungrouped_workspace = Workspace.objects.create(
             name="Ungrouped Hosts Workspace",
             description="Ungrouped Hosts Workspace - description",
@@ -197,7 +186,12 @@ class TransactionalWorkspaceViewTests(TransactionalIdentityRequest, BasicWorkspa
         PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
 
 
-@override_settings(V2_APIS_ENABLED=True, WORKSPACE_HIERARCHY_DEPTH_LIMIT=100, WORKSPACE_RESTRICT_DEFAULT_PEERS=False)
+@override_settings(
+    ATOMIC_RETRY_DISABLED=True,
+    V2_APIS_ENABLED=True,
+    WORKSPACE_HIERARCHY_DEPTH_LIMIT=100,
+    WORKSPACE_RESTRICT_DEFAULT_PEERS=False,
+)
 class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
     """Tests for create/update/delete workspaces."""
 
@@ -832,7 +826,7 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
         url = reverse("v2_management:workspace-detail", kwargs={"pk": workspace.id})
         client = APIClient()
 
-        workspace_request_data = {"name": "Newer Workspace"}
+        workspace_request_data = {"name": "Newer Workspace", "parent_id": workspace.parent_id}
 
         response = client.put(url, workspace_request_data, format="json", **self.headers)
 
@@ -1126,30 +1120,86 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
         client = APIClient()
         url = reverse("v2_management:workspace-detail", kwargs={"pk": self.default_workspace.id})
 
+        root_parent_id = str(self.default_workspace.parent_id)
+
         # Test data cases:
         #    - name and description update,
         #    - only name update
         #    - only description update (name without change but must be present because the field is required)
-        test_data_cases = [
+        # For PUT, parent_id (= root workspace id) is required per the spec.
+        # For PATCH, parent_id is optional.
+        put_test_data_cases = [
+            {"name": "New name", "description": "New description", "parent_id": root_parent_id},
+            {"name": "New name", "description": self.default_workspace.description, "parent_id": root_parent_id},
+            {"name": self.default_workspace.name, "description": "New description", "parent_id": root_parent_id},
+        ]
+        patch_test_data_cases = [
             {"name": "New name", "description": "New description"},
             {"name": "New name", "description": self.default_workspace.description},
             {"name": self.default_workspace.name, "description": "New description"},
         ]
 
-        for test_data in test_data_cases:
-            for method in ("put", "patch"):  # try to update via PUT and PATCH endpoint
-                response = getattr(client, method)(url, test_data, format="json", **self.headers)
-                self.assertEqual(response.status_code, status.HTTP_200_OK)
-                resp_body = response.json()
-                self.assertEqual(resp_body.get("id"), str(self.default_workspace.id))
-                self.assertEqual(resp_body.get("name"), test_data["name"])
-                self.assertEqual(resp_body.get("description"), test_data["description"])
-                self.assertEqual(resp_body.get("type"), Workspace.Types.DEFAULT)
-                self.assertEqual(resp_body.get("parent_id"), str(self.default_workspace.parent_id))
+        for test_data in put_test_data_cases:
+            response = client.put(url, test_data, format="json", **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            resp_body = response.json()
+            self.assertEqual(resp_body.get("id"), str(self.default_workspace.id))
+            self.assertEqual(resp_body.get("name"), test_data["name"])
+            self.assertEqual(resp_body.get("description"), test_data["description"])
+            self.assertEqual(resp_body.get("type"), Workspace.Types.DEFAULT)
+            self.assertEqual(resp_body.get("parent_id"), root_parent_id)
 
-                # After test set the default values back
-                self.default_workspace.name = "Default"
-                self.default_workspace.description = "Default description"
+            # After test set the default values back
+            self.default_workspace.name = "Default"
+            self.default_workspace.description = "Default description"
+
+        for test_data in patch_test_data_cases:
+            response = client.patch(url, test_data, format="json", **self.headers)
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            resp_body = response.json()
+            self.assertEqual(resp_body.get("id"), str(self.default_workspace.id))
+            self.assertEqual(resp_body.get("name"), test_data["name"])
+            self.assertEqual(resp_body.get("description"), test_data["description"])
+            self.assertEqual(resp_body.get("type"), Workspace.Types.DEFAULT)
+            self.assertEqual(resp_body.get("parent_id"), root_parent_id)
+
+            # After test set the default values back
+            self.default_workspace.name = "Default"
+            self.default_workspace.description = "Default description"
+
+    def test_update_standard_workspace_put_without_parent_id_fails(self):
+        """Test that PUT to a standard workspace without parent_id returns 400."""
+        client = APIClient()
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.standard_workspace.id})
+
+        response = client.put(url, {"name": "New Name"}, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        resp_body = response.json()
+        self.assertIn("parent_id", str(resp_body))
+
+    def test_update_default_workspace_put_with_root_parent_id_success(self):
+        """Test that PUT to the default workspace with the root workspace's id as parent_id succeeds.
+
+        The spec requires parent_id to match the current value. The default workspace's parent
+        is the root workspace, so passing root workspace's id should succeed.
+        Previously this failed with 'Sub-workspaces may only be created under the default workspace.'
+        """
+        client = APIClient()
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": self.default_workspace.id})
+
+        request_data = {
+            "name": self.default_workspace.name,
+            "description": self.default_workspace.description,
+            "parent_id": str(self.default_workspace.parent_id),
+        }
+
+        response = client.put(url, request_data, format="json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        resp_body = response.json()
+        self.assertEqual(resp_body.get("type"), Workspace.Types.DEFAULT)
+        self.assertEqual(resp_body.get("parent_id"), str(self.default_workspace.parent_id))
 
     def test_update_workspace_existing_name_fail(self):
         """Test the workspace name update (PUT) fail for already existing "name" under same parent."""
@@ -1162,7 +1212,7 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
 
         client = APIClient()
         url = reverse("v2_management:workspace-detail", kwargs={"pk": wsA.id})
-        workspace_request_data = {"name": wsB.name}
+        workspace_request_data = {"name": wsB.name, "parent_id": wsA.parent_id}
 
         response = client.put(url, workspace_request_data, format="json", **self.headers)
 
@@ -1220,7 +1270,7 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
 
         client = APIClient()
         url = reverse("v2_management:workspace-detail", kwargs={"pk": wsAA.id})
-        workspace_request_data = {"name": wsB.name}
+        workspace_request_data = {"name": wsB.name, "parent_id": wsAA.parent_id}
         # expected structure after update:
         # self.default_workspace (default) -> Workspace A (standard) -> Workspace B (standard)
         #                                  -> Workspace B (standard)
@@ -1746,7 +1796,7 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
             client.post(url, data, format="json", **self.headers)
 
 
-@override_settings(V2_APIS_ENABLED=True, WORKSPACE_HIERARCHY_DEPTH_LIMIT=5)
+@override_settings(ATOMIC_RETRY_DISABLED=True, V2_APIS_ENABLED=True, WORKSPACE_HIERARCHY_DEPTH_LIMIT=5)
 class WorkspaceMove(TransactionalWorkspaceViewTests):
     """Tests for move workspace."""
 
@@ -2622,7 +2672,7 @@ class WorkspaceMove(TransactionalWorkspaceViewTests):
         self.assertEqual(response["Retry-After"], "1")
 
 
-@override_settings(V2_APIS_ENABLED=True)
+@override_settings(ATOMIC_RETRY_DISABLED=True, V2_APIS_ENABLED=True)
 class WorkspaceTestsList(WorkspaceViewTests):
     """Tests for listing workspaces."""
 
@@ -3202,7 +3252,7 @@ class WorkspaceTestsList(WorkspaceViewTests):
         self.assertNotIn(str(self.default_workspace.id), returned_ids)
 
 
-@override_settings(V2_APIS_ENABLED=True)
+@override_settings(ATOMIC_RETRY_DISABLED=True, V2_APIS_ENABLED=True)
 class WorkspaceTestsDetail(WorkspaceViewTests):
     """Tests for get workspace detail."""
 
@@ -3376,7 +3426,7 @@ class WorkspaceTestsDetail(WorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
 
 
-@override_settings(V2_APIS_ENABLED=False)
+@override_settings(ATOMIC_RETRY_DISABLED=True, V2_APIS_ENABLED=False)
 class WorkspaceViewTestsV2Disabled(WorkspaceViewTests):
     def test_get_workspace_list(self):
         """Test for accessing v2 APIs which should be disabled by default."""
@@ -3387,7 +3437,7 @@ class WorkspaceViewTestsV2Disabled(WorkspaceViewTests):
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
 
-@override_settings(WORKSPACE_HIERARCHY_DEPTH_LIMIT=2, V2_APIS_ENABLED=True)
+@override_settings(ATOMIC_RETRY_DISABLED=True, WORKSPACE_HIERARCHY_DEPTH_LIMIT=2, V2_APIS_ENABLED=True)
 class WorkspaceViewTestsWithHierarchyLimit(TransactionalWorkspaceViewTests):
     """Test workspace hierarchy limits."""
 
@@ -3415,7 +3465,7 @@ class WorkspaceViewTestsWithHierarchyLimit(TransactionalWorkspaceViewTests):
         self.assertEqual(response.get("content-type"), "application/problem+json")
 
 
-@override_settings(WORKSPACE_RESTRICT_DEFAULT_PEERS=True, V2_APIS_ENABLED=True)
+@override_settings(ATOMIC_RETRY_DISABLED=True, WORKSPACE_RESTRICT_DEFAULT_PEERS=True, V2_APIS_ENABLED=True)
 class WorkspaceViewTestsWithPeerRestrictions(TransactionalWorkspaceViewTests):
     """Test workspace peer restrictions."""
 

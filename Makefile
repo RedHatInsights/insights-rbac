@@ -313,6 +313,6 @@ docker-down:
 	@docker network ls --format '{{.Name}}' |grep -q  rbac-network > /dev/null 2>&1 && \docker network rm rbac-network > /dev/null 2>&1 || echo ""
 
 generate_v2_spec:
-	cd docs/source/specs/typespec/ && ./compile_tsp_spec
+	cd docs/source/specs/typespec/ && npm ci --silent && ./compile_tsp_spec
 
 .PHONY: docs

@@ -23,6 +23,7 @@ from types import SimpleNamespace
 from unittest.mock import MagicMock, Mock, patch
 from uuid import uuid4
 
+from django.db import transaction
 from django.test import TransactionTestCase
 from django.test.utils import override_settings
 from django.urls import clear_url_caches, reverse
@@ -53,6 +54,7 @@ from tests.identity_request import BaseIdentityRequest
 
 from api.models import Tenant
 from rbac import urls
+from tests.v2_util import bootstrap_tenant_for_v2_test
 
 
 class TransactionIdentityRequest(BaseIdentityRequest, TransactionTestCase):
@@ -65,6 +67,7 @@ class TransactionIdentityRequest(BaseIdentityRequest, TransactionTestCase):
     pass
 
 
+@override_settings(ATOMIC_RETRY_DISABLED=True)
 @override_settings(V2_APIS_ENABLED=True, WORKSPACE_HIERARCHY_DEPTH_LIMIT=10)
 @override_settings(WORKSPACE_ACCESS_CHECK_V2_ENABLED=True)
 class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
@@ -78,18 +81,12 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         self.tenant.save()
 
         self.service = WorkspaceService()
-        self.root_workspace = Workspace.objects.create(
-            name="Root Workspace",
-            tenant=self.tenant,
-            type=Workspace.Types.ROOT,
-        )
-        self.default_workspace = Workspace.objects.create(
-            tenant=self.tenant,
-            type=Workspace.Types.DEFAULT,
-            name="Default Workspace",
-            description="Default Description",
-            parent_id=self.root_workspace.id,
-        )
+
+        with transaction.atomic():
+            bootstrap_result = bootstrap_tenant_for_v2_test(self.tenant)
+            self.default_workspace = bootstrap_result.default_workspace
+            self.root_workspace = bootstrap_result.root_workspace
+
         self.ungrouped_workspace = Workspace.objects.create(
             name="Ungrouped Hosts Workspace",
             description="Ungrouped Hosts Workspace - description",
@@ -839,6 +836,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             updated_data = {
                 "name": "Updated Workspace Name",
                 "description": "Updated description",
+                "parent_id": str(self.default_workspace.id),
             }
 
             url = reverse(
