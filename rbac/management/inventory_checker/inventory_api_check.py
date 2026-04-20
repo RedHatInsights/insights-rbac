@@ -18,6 +18,7 @@
 """Inventory checker class which checks assignments on Inventory API."""
 
 import logging
+from collections.abc import Sequence
 from typing import List, Union
 
 from django.conf import settings
@@ -31,12 +32,40 @@ from kessel.inventory.v1beta2 import (
 )
 from kessel.inventory.v1beta2.check_request_pb2 import CheckRequest
 from management.cache import JWTCache
+from management.relation_replicator.types import RelationTuple
 from management.utils import create_client_channel_inventory
 
 jwt_cache = JWTCache()
 jwt_provider = JWTProvider()
 jwt_manager = JWTManager(jwt_provider, jwt_cache)
-logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
+logger = logging.getLogger(__name__)
+
+
+def relation_tuple_to_check_request(tuple_obj: RelationTuple) -> CheckRequest:
+    """Convert a RelationTuple to a CheckRequest for inventory verification.
+
+    Args:
+        tuple_obj: RelationTuple object containing resource, relation, and subject
+
+    Returns:
+        CheckRequest object ready for inventory API verification
+    """
+    return CheckRequest(
+        object=resource_reference_pb2.ResourceReference(
+            resource_id=tuple_obj.resource.id,
+            resource_type=tuple_obj.resource.type.name,
+            reporter=reporter_reference_pb2.ReporterReference(type=tuple_obj.resource.type.namespace),
+        ),
+        relation=tuple_obj.relation,
+        subject=subject_reference_pb2.SubjectReference(
+            resource=resource_reference_pb2.ResourceReference(
+                resource_id=tuple_obj.subject.subject.id,
+                resource_type=tuple_obj.subject.subject.type.name,
+                reporter=reporter_reference_pb2.ReporterReference(type=tuple_obj.subject.subject.type.namespace),
+            ),
+            relation=tuple_obj.subject.relation or "",
+        ),
+    )
 
 
 class InventoryApiBaseChecker:
@@ -69,22 +98,7 @@ class GroupPrincipalInventoryChecker(InventoryApiBaseChecker):
         """Core logic to check group principal relations are correct."""
         inventory_relation_assignments = {"group_uuid": "", "principal_relations": []}
         for r in relationships:
-            # Build the check request
-            check_request = CheckRequest(
-                object=resource_reference_pb2.ResourceReference(
-                    resource_id=r.resource.id,
-                    resource_type=r.resource.type.name,
-                    reporter=reporter_reference_pb2.ReporterReference(type=r.resource.type.namespace),
-                ),
-                relation=r.relation,
-                subject=subject_reference_pb2.SubjectReference(
-                    resource=resource_reference_pb2.ResourceReference(
-                        resource_id=r.subject.subject.id,
-                        resource_type=r.subject.subject.type.name,
-                        reporter=reporter_reference_pb2.ReporterReference(type=r.subject.subject.type.namespace),
-                    )
-                ),
-            )
+            check_request = relation_tuple_to_check_request(r)
             relation_exists = self.check_inventory_core(check_request)
             inventory_relation_assignments["group_uuid"] = r.resource.id
             inventory_relation_assignments["principal_relations"].append(
@@ -325,3 +339,34 @@ class RoleRelationInventoryChecker(InventoryApiBaseChecker):
         else:
             logger.info(f"Role: {role_uuid} has the correct V2 relations.")
         return role_check
+
+
+class RoleBindingInventoryChecker(InventoryApiBaseChecker):
+    """Subclass to check role binding relations are correct on inventory api."""
+
+    def check_role_binding(self, binding_tuples: Sequence[RelationTuple], binding_uuid: str) -> bool:
+        """Core logic to check role binding relations on inventory api.
+
+        Each role binding produces 3 types of tuples:
+        1. resource#binding - the resource has this binding
+        2. role_binding#role - the binding is associated with a role
+        3. role_binding#subject - the binding has subjects (groups/principals)
+
+        Args:
+            binding_tuples: List of RelationTuple objects from RoleBinding.all_tuples()
+            binding_uuid: UUID of the role binding being checked
+
+        Returns:
+            True if all relations exist in the inventory, False otherwise
+        """
+        if not binding_tuples:
+            return True
+
+        check_requests = [relation_tuple_to_check_request(tuple_obj) for tuple_obj in binding_tuples]
+
+        binding_check = self.check_inventory_core(check_requests)
+        if not binding_check:
+            logger.warning(f"RoleBinding: {binding_uuid} does not have the expected relations in inventory.")
+        else:
+            logger.info(f"RoleBinding: {binding_uuid} has the correct relations in inventory.")
+        return binding_check
