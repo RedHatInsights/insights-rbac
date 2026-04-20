@@ -493,10 +493,21 @@ class BindingScopeMigrationTupleVerificationTest(TestCase):
         migrate_all_role_bindings(replicator, self.tenant)
 
         v2_role = CustomRoleV2.objects.filter(v1_source=v1_role).get()
+        v2_role_uuid = str(v2_role.uuid)
 
         def assert_role_binding_count(count: int):
             self.assertEqual(RoleBinding.objects.filter(role=v2_role).count(), count)
-            self.assertEqual(self.tuples.count_tuples(resource("rbac", "role", str(v2_role.uuid))), count)
+            if count == 0:
+                self.assertEqual(self.tuples.count_tuples(resource("rbac", "role", v2_role_uuid)), 0)
+            else:
+                role_in_db = CustomRoleV2.objects.get(uuid=v2_role_uuid)
+                expected_on_role = role_in_db.permissions.count()
+                if self.tenant.tenant_resource_id():
+                    expected_on_role += 1  # rbac/role#owner@rbac/tenant (V2 dual-write)
+                self.assertEqual(
+                    self.tuples.count_tuples(resource("rbac", "role", v2_role_uuid)),
+                    expected_on_role,
+                )
 
         # Convert the tenant to V2.
         ensure_v2_write_activated(self.tenant)

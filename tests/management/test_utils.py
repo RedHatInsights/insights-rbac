@@ -30,6 +30,7 @@ from management.utils import (
     account_id_for_tenant,
     get_principal,
     validate_and_get_key,
+    validate_and_get_key_multi,
     is_valid_uuid,
     value_to_list,
     build_system_user_from_token,
@@ -510,6 +511,44 @@ class UtilsTests(IdentityRequest):
             f"type query parameter value 'foo' is invalid. {[str(v) for v in valid_values]} are valid inputs."
         )
         self.assertEqual(assertion.exception.detail.get("detail"), expected_err)
+
+    def test_validate_and_get_key_multi_success(self):
+        """Test we can validate comma-separated query param values."""
+        params = {"type": "standard,ungrouped-hosts"}
+        valid_values = ["standard", "ungrouped-hosts", "root", "default", "all"]
+        result = validate_and_get_key_multi(params, "type", valid_values, default_value="all")
+        self.assertEqual(result, ["standard", "ungrouped-hosts"])
+
+    def test_validate_and_get_key_multi_single_value(self):
+        """Test multi-value validator works with a single value."""
+        params = {"type": "standard"}
+        valid_values = ["standard", "ungrouped-hosts", "all"]
+        result = validate_and_get_key_multi(params, "type", valid_values, default_value="all")
+        self.assertEqual(result, ["standard"])
+
+    def test_validate_and_get_key_multi_whitespace_and_case(self):
+        """Test multi-value validator strips whitespace and lowercases."""
+        params = {"type": " Standard , UNGROUPED-HOSTS "}
+        valid_values = ["standard", "ungrouped-hosts", "all"]
+        result = validate_and_get_key_multi(params, "type", valid_values, default_value="all")
+        self.assertEqual(result, ["standard", "ungrouped-hosts"])
+
+    def test_validate_and_get_key_multi_invalid(self):
+        """Test multi-value validator raises on invalid value."""
+        params = {"type": "standard,invalid"}
+        valid_values = ["standard", "ungrouped-hosts", "all"]
+        with self.assertRaises(serializers.ValidationError) as assertion:
+            validate_and_get_key_multi(params, "type", valid_values, default_value="all")
+        message = str(assertion.exception.detail.get("detail"))
+        self.assertIn("invalid", message)
+        self.assertIn("Allowed values", message)
+
+    def test_validate_and_get_key_multi_default(self):
+        """Test multi-value validator returns default when param is absent."""
+        params = {}
+        valid_values = ["standard", "ungrouped-hosts", "all"]
+        result = validate_and_get_key_multi(params, "type", valid_values, default_value="all")
+        self.assertEqual(result, ["all"])
 
     def test_is_valid_uuid(self):
         """Test boolean UUID method check"""
