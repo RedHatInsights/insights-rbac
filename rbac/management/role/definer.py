@@ -176,7 +176,19 @@ def _log_scope_change_and_migrate(v1_role, display_name, old_scope, new_scope):
         old_scope: The previous scope (or None if could not be determined)
         new_scope: The new scope based on current permissions configuration
     """
-    if old_scope is None or old_scope == new_scope:
+    if old_scope is None:
+        logger.debug(
+            "No scope migration for %s: old_scope is None (role may be newly created or scope could not be determined)",
+            display_name,
+        )
+        return
+
+    if old_scope == new_scope:
+        logger.debug(
+            "No scope migration for %s: scope unchanged (both %s)",
+            display_name,
+            old_scope.name,
+        )
         return
 
     logger.info(
