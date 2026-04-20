@@ -21,6 +21,7 @@ from collections.abc import Iterable
 from importlib import reload
 from unittest.mock import ANY, patch
 
+from django.conf import settings
 from django.test import override_settings
 from django.urls import clear_url_caches, reverse
 from django.utils.dateparse import parse_datetime
@@ -43,6 +44,7 @@ from management.utils import PRINCIPAL_CACHE, as_uuid
 from rbac import urls
 from tests.identity_request import IdentityRequest
 from tests.v2_util import bootstrap_tenant_for_v2_test
+from unittest.mock import ANY, patch
 
 CACHE_PATCH_TARGET = "management.role.v2_service.permission_scope_cache"
 
@@ -1063,7 +1065,9 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertIn("workspaces", str(response.data).lower())
         mock_is_v2_edit_enabled.assert_called_once_with(self.customer_data["org_id"])
 
-    def test_create_role_success(self):
+    @override_settings(NOTIFICATIONS_ENABLED=True)
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    def test_create_role_success(self, send_kafka_message):
         """Test creating a role via API returns 201"""
         data = {
             "name": "API Test Role",
@@ -1084,6 +1088,28 @@ class RoleV2ViewSetTests(IdentityRequest):
         )
 
         self._assert_audit_log(action=AuditLog.CREATE, description=f"Created V2 role: {data['name']}")
+
+        send_kafka_message.assert_called_with(
+            settings.NOTIFICATIONS_TOPIC,
+            {
+                "bundle": "console",
+                "application": "rbac",
+                "event_type": "custom-v2-role-created",
+                "timestamp": ANY,
+                "events": [
+                    {
+                        "metadata": {},
+                        "payload": {
+                            "name": data["name"],
+                            "username": self.user_data["username"],
+                            "uuid": response.data["id"],
+                        },
+                    }
+                ],
+                "org_id": self.tenant.org_id,
+            },
+            ANY,
+        )
 
     def test_create_role_multiple_permissions(self):
         """Test creating a role with multiple permissions returns all permissions."""
@@ -1406,7 +1432,9 @@ class RoleV2ViewSetTests(IdentityRequest):
     # Tests for PUT /api/v2/roles/{uuid}/ (update)
     # ==========================================================================
 
-    def test_update_role_success(self):
+    @override_settings(NOTIFICATIONS_ENABLED=True)
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    def test_update_role_success(self, send_kafka_message):
         """Test updating a role via API returns 200."""
         role = CustomRoleV2.objects.create(
             name="Original Role",
@@ -1438,6 +1466,28 @@ class RoleV2ViewSetTests(IdentityRequest):
         self._assert_audit_log(
             action=AuditLog.EDIT,
             description=f"V2 role {role.name}:\nEdited name\nEdited description\nEdited permissions",
+        )
+
+        send_kafka_message.assert_called_with(
+            settings.NOTIFICATIONS_TOPIC,
+            {
+                "bundle": "console",
+                "application": "rbac",
+                "event_type": "custom-v2-role-updated",
+                "timestamp": ANY,
+                "events": [
+                    {
+                        "metadata": {},
+                        "payload": {
+                            "name": data["name"],
+                            "username": self.user_data["username"],
+                            "uuid": response.data["id"],
+                        },
+                    }
+                ],
+                "org_id": self.tenant.org_id,
+            },
+            ANY,
         )
 
     def test_update_role_changes_permissions(self):
@@ -1854,7 +1904,9 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertIn("errors", data)
         self.assertEqual(data["errors"], [{"message": data["detail"], "field": "ids"}])
 
-    def test_delete(self):
+    @override_settings(NOTIFICATIONS_ENABLED=True)
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    def test_delete(self, send_kafka_message):
         create_response = self._create_role()
         response = self._request_delete({"ids": [create_response["id"]]})
 
@@ -1862,6 +1914,28 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertFalse(RoleV2.objects.filter(uuid=create_response["id"]).exists())
 
         self._assert_audit_log(action=AuditLog.DELETE, description=f"Deleted V2 role: {create_response['name']}")
+
+        send_kafka_message.assert_called_with(
+            settings.NOTIFICATIONS_TOPIC,
+            {
+                "bundle": "console",
+                "application": "rbac",
+                "event_type": "custom-v2-role-deleted",
+                "timestamp": ANY,
+                "events": [
+                    {
+                        "metadata": {},
+                        "payload": {
+                            "name": create_response["name"],
+                            "username": self.user_data["username"],
+                            "uuid": create_response["id"],
+                        },
+                    }
+                ],
+                "org_id": self.tenant.org_id,
+            },
+            ANY,
+        )
 
     def test_delete_empty(self):
         """Test that deleting 0 roles is successful."""
