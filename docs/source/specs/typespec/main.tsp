@@ -1577,7 +1577,7 @@ namespace Permissions {
         @doc("Filter by application name. Exact match by default. You may also use a comma-separated list to match on multiple applications.")
         @query application?: string;
 
-        @doc("Filter permissions by the resource type (e.g. 'tenant', 'workspace'). When omitted, returns permissions from all types. You may also use a comma-separated list to match on multiple resource_types")
+        @doc("Filter permissions by the resource type (e.g. 'tenant', 'workspace'). When omitted, returns permissions from all types. You may also use a comma-separated list to match on multiple resource_types.")
         @query resource_type?: string;
 
         @doc("Filter by operation (e.g. 'read', 'create', 'delete', 'update'). You may also use a comma-separated list to match on multiple operation types.")

@@ -63,7 +63,7 @@
             "name": "resource_type",
             "in": "query",
             "required": false,
-            "description": "Filter permissions by the resource type (e.g. 'tenant', 'workspace'). When omitted, returns permissions from all types. You may also use a comma-separated list to match on multiple resource_types",
+            "description": "Filter permissions by the resource type (e.g. 'tenant', 'workspace'). When omitted, returns permissions from all types. You may also use a comma-separated list to match on multiple resource_types.",
             "schema": {
               "type": "string"
             },
