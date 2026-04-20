@@ -3794,43 +3794,22 @@
           "Relations"
         ],
         "summary": "Read tuples from the relations api.",
-        "description": "Reads relation tuples from the relations api based on filter criteria. Custom roles include an `owner` edge from `rbac/role` to `rbac/tenant` (tenant resource id is `{PRINCIPAL_USER_DOMAIN}/{org_id}`); RBAC replicates this so `role#read` / `role#write` can derive from the tenant per the rbac schema.",
+        "description": "Reads relation tuples from the relations api based on filter criteria.",
         "requestBody": {
           "content": {
             "application/json": {
-              "examples": {
-                "GroupMember": {
-                  "summary": "Group membership",
-                  "value": {
-                    "filter": {
-                      "resource_namespace": "rbac",
-                      "resource_type": "group",
-                      "resource_id": "bob_club",
-                      "relation": "member",
-                      "subject_filter": {
-                        "subject_namespace": "rbac",
-                        "subject_type": "principal",
-                        "subject_id": "bob",
-                        "relation": null
-                      }
-                    }
-                  }
-                },
-                "CustomRoleOwner": {
-                  "summary": "Custom role owner to tenant",
-                  "description": "Query the owner link for a V2 custom role UUID.",
-                  "value": {
-                    "filter": {
-                      "resource_namespace": "rbac",
-                      "resource_type": "role",
-                      "resource_id": "019d8dab-4282-7141-b898-94f02d1986a4",
-                      "relation": "owner",
-                      "subject_filter": {
-                        "subject_namespace": "rbac",
-                        "subject_type": "tenant",
-                        "subject_id": "localhost/1234567",
-                        "relation": null
-                      }
+              "example": {
+                "value": {
+                  "filter": {
+                    "resource_namespace": "rbac",
+                    "resource_type": "group",
+                    "resource_id": "bob_club",
+                    "relation": "member",
+                    "subject_filter": {
+                      "subject_namespace": "rbac",
+                      "subject_type": "principal",
+                      "subject_id": "bob",
+                      "relation": null
                     }
                   }
                 }
@@ -3857,7 +3836,6 @@
                 },
                 "examples": {
                   "Success": {
-                    "summary": "Group member tuple",
                     "value": {
                       "tuples": [
                         {
@@ -3877,34 +3855,6 @@
                                   "name": "principal"
                                 },
                                 "id": "bob"
-                              }
-                            }
-                          }
-                        }
-                      ]
-                    }
-                  },
-                  "RoleOwner": {
-                    "summary": "Custom role owner tuple",
-                    "value": {
-                      "tuples": [
-                        {
-                          "tuple": {
-                            "resource": {
-                              "type": {
-                                "namespace": "rbac",
-                                "name": "role"
-                              },
-                              "id": "019d8dab-4282-7141-b898-94f02d1986a4"
-                            },
-                            "relation": "owner",
-                            "subject": {
-                              "subject": {
-                                "type": {
-                                  "namespace": "rbac",
-                                  "name": "tenant"
-                                },
-                                "id": "localhost/1234567"
                               }
                             }
                           }

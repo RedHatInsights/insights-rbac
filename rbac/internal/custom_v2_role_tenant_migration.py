@@ -18,17 +18,18 @@
 """Backfill rbac/role#owner@rbac/tenant for custom V2 roles from each role's tenant row.
 
 Scans the ``RoleV2`` table only (custom roles are on the order of thousands), not the tenant table
-(millions of rows). Uses keyset pagination on ``rolev2.pk``.
+(millions of rows). Streams rows with ``QuerySet.iterator()`` and ``itertools.batched`` so Django
+handles fetch batching; each batch is still wrapped in ``atomic_block()`` (SERIALIZABLE) like before.
 """
 
 from __future__ import annotations
 
 import logging
+from itertools import batched
 from typing import Any
 
 from django.conf import settings
 from management.atomic_transactions import atomic_block
-from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import (
     PartitionKey,
@@ -48,7 +49,8 @@ class TenantResourceIdMissingError(ValueError):
     """Raised when a custom role's tenant has no ``tenant_resource_id()`` (no ``org_id``)."""
 
 
-def _require_tenant_resource_id(role: RoleV2, resource_id: str | None) -> str:
+def _require_tenant_resource_id(role: RoleV2) -> str:
+    resource_id = role.tenant.tenant_resource_id()
     if resource_id:
         return resource_id
     tenant = role.tenant
@@ -63,33 +65,28 @@ def _base_queryset():
     return RoleV2.objects.filter(type=RoleV2.Types.CUSTOM).select_related("tenant").order_by("pk")
 
 
-def _process_chunk(
-    *,
-    chunk: list[RoleV2],
-    replicator: RelationReplicator,
-) -> None:
-    for role in chunk:
-        tenant = role.tenant
-        resource_id = _require_tenant_resource_id(role, tenant.tenant_resource_id())
+def _replicate_role(role: RoleV2, replicator: RelationReplicator) -> None:
+    resource_id = _require_tenant_resource_id(role)
+    tenant = role.tenant
 
-        replicator.replicate(
-            ReplicationEvent(
-                event_type=ReplicationEventType.UPDATE_CUSTOM_ROLE,
-                info={
-                    "role_uuid": str(role.uuid),
-                    "org_id": str(tenant.org_id) if tenant.org_id else "",
-                },
-                partition_key=PartitionKey.byEnvironment(),
-                add=[role_owner_relationship(role.uuid, resource_id)],
-                remove=[],
-            )
+    replicator.replicate(
+        ReplicationEvent(
+            event_type=ReplicationEventType.UPDATE_CUSTOM_ROLE,
+            info={
+                "role_uuid": str(role.uuid),
+                "org_id": str(tenant.org_id) if tenant.org_id else "",
+            },
+            partition_key=PartitionKey.byEnvironment(),
+            add=[role_owner_relationship(role.uuid, resource_id)],
+            remove=[],
         )
-        logger.info(
-            "Replicated owner tuple for custom V2 role uuid=%s name=%r tenant org_id=%s",
-            role.uuid,
-            role.name,
-            tenant.org_id,
-        )
+    )
+    logger.info(
+        "Replicated owner tuple for custom V2 role uuid=%s name=%r tenant org_id=%s",
+        role.uuid,
+        role.name,
+        tenant.org_id,
+    )
 
 
 def replicate_custom_v2_role_owner_relationships(
@@ -103,30 +100,22 @@ def replicate_custom_v2_role_owner_relationships(
 
     Raises ``TenantResourceIdMissingError`` if any custom role's tenant has no ``tenant_resource_id()``.
 
-    Fetches and processes in fixed-size chunks (``DEFAULT_CHUNK_SIZE``, keyset pagination on ``rolev2.pk``).
-    Each chunk is read and processed inside a separate SERIALIZABLE transaction (see ``atomic_block``).
+    Streams rows with ``iterator()`` (see Django docs for fetch behavior with ``select_related``).
+    Each batch of up to ``DEFAULT_CHUNK_SIZE`` roles is processed inside a separate SERIALIZABLE
+    transaction (see ``atomic_block``).
     """
     if replicator is None:
         if settings.REPLICATION_TO_RELATION_ENABLED:
             replicator = OutboxReplicator()
-        else:
-            replicator = NoopReplicator()
+        raise ValueError("Replication to relations is disabled")
 
-    base = _base_queryset()
     replicated_count = 0
 
-    last_pk = 0
-    while True:
+    for chunk in batched(_base_queryset().iterator(), DEFAULT_CHUNK_SIZE):
         with atomic_block():
-            chunk = list(base.filter(pk__gt=last_pk)[:DEFAULT_CHUNK_SIZE])
-            if not chunk:
-                break
-            last_pk = chunk[-1].pk
-            _process_chunk(
-                chunk=chunk,
-                replicator=replicator,
-            )
-            replicated_count += len(chunk)
+            for role in chunk:
+                _replicate_role(role, replicator)
+                replicated_count += 1
 
     return {
         "replicated_count": replicated_count,
