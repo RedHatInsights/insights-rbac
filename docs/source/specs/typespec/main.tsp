@@ -1538,3 +1538,55 @@ namespace Roles {
         @body body: BatchDeleteRolesRequest
     ): BatchDeleteRolesResponse | Problems.CommonProblems | Problems.Problem400 | Problems.Problem404;
 }
+
+@route("/permissions/")
+@tag("Permissions")
+@doc("Operations about permissions")
+namespace Permissions {
+
+    @doc("List the permissions for a tenant")
+    @summary("By default, responses are sorted in ascending order by permission application.")
+    @opExample(#{
+        parameters: #{
+            limit: 10
+        },
+        returnType: #{
+            _: 200,
+            meta: #{
+                limit: 10
+            },
+            links: #{
+                next: "/api/rbac/v2/permissions/?limit=10&application=rbac&cursor=eyJpZCI6IjEyMyJ9",
+                previous: null
+            },
+            data: #[
+                #{
+                    application: "rbac",
+                    resource_type: "workspace",
+                    operation: "read",
+                }
+            ]
+        }
+    })
+    @get op list(
+        @query limit?: Limit = DefaultLimit;
+
+        @doc("Cursor for cursor-based pagination.")
+        @query cursor?: Cursor;
+
+        @doc("Filter by application name. Exact match by default. You may also use a comma-separated list to match on multiple applications.")
+        @query application?: string;
+
+        @doc("Filter permissions by the resource type (e.g. 'tenant', 'workspace'). When omitted, returns permissions from all types. You may also use a comma-separated list to match on multiple resource_types")
+        @query resource_type?: string;
+
+        @doc("Filter by operation (e.g. 'read', 'create', 'delete', 'update'). You may also use a comma-separated list to match on multiple operation types.")
+        @query operation?: string;
+
+        @doc("Control which fields are included in the response.")
+        @query fields?: FieldMask = "application,resource_type,operation";
+
+        @doc("Sort by specified field(s), prefix with '-' for descending order. Allowed fields: application, resource_type, operation.")
+        @query order_by?: OrderBy = "application";
+    ): ListResponse<Permission> | Problems.CommonProblems | Problems.Problem400;
+}
