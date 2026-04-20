@@ -1,18 +1,18 @@
 apiVersion: template.openshift.io/v1
 kind: Template
 metadata:
-  name: fix-duplicate-role-binding-uuids
+  name: fix-orphan-relations
 objects:
   - apiVersion: cloud.redhat.com/v1alpha1
     kind: ClowdJobInvocation
     metadata:
       labels:
         app: rbac
-      name: fix-duplicate-role-binding-uuids-${RUN_NUMBER}
+      name: fix-orphan-relations-${RUN_NUMBER}
     spec:
       appName: rbac
       jobs:
-        - fix-duplicate-role-binding-uuids
+        - fix-orphan-relations
 parameters:
   - name: RUN_NUMBER
     description: Used to track and re-run the job

@@ -15,11 +15,21 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Celery tasks."""
+
 from __future__ import absolute_import, unicode_literals
+
+from typing import Optional
 
 from celery import shared_task
 from django.core.management import call_command
-from internal.utils import clean_invalid_workspace_resource_definitions, replicate_missing_binding_tuples
+from internal.migrations.remove_deleted_workspace_bindings import remove_deleted_workspace_bindings
+from internal.migrations.remove_orphan_relations import cleanup_tenant_orphan_bindings
+from internal.utils import (
+    clean_invalid_workspace_resource_definitions,
+    expire_orphaned_cross_account_requests,
+    remove_unassigned_system_binding_mappings,
+    replicate_missing_binding_tuples,
+)
 from management.health.healthcheck import redis_health
 from management.principal.cleaner import (
     clean_tenants_principals,
@@ -78,23 +88,23 @@ def migrate_data_in_worker(kwargs):
 
 
 @shared_task
-def migrate_binding_scope_in_worker():
+def migrate_binding_scope_in_worker(sources: Optional[list[str]] = None):
     """Celery task to migrate role binding scopes."""
-    return migrate_all_role_bindings()
+    return migrate_all_role_bindings(sources=set(sources) if sources is not None else None)
 
 
 @shared_task
-def fix_missing_binding_base_tuples_in_worker(binding_ids=None):
+def fix_missing_binding_base_tuples_in_worker(binding_uuids=None):
     """
     Celery task to fix missing base tuples for bindings.
 
     Args:
-        binding_ids (list[int], optional): List of binding IDs to fix. If None, fixes all bindings.
+        binding_uuids (list[str], optional): List of binding UUIDs to fix. If None, fixes all bindings.
 
     Returns:
         dict: Results with bindings_checked, bindings_fixed, and tuples_added count.
     """
-    return replicate_missing_binding_tuples(binding_ids=binding_ids)
+    return replicate_missing_binding_tuples(binding_uuids=binding_uuids)
 
 
 @shared_task
@@ -109,3 +119,47 @@ def clean_invalid_workspace_resource_definitions_in_worker(dry_run=False):
         dict: Results with roles_checked, resource_definitions_fixed, bindings_deleted, and changes list.
     """
     return clean_invalid_workspace_resource_definitions(dry_run=dry_run)
+
+
+@shared_task
+def cleanup_tenant_orphan_bindings_in_worker(org_id, dry_run=False):
+    """
+    Celery task to clean up orphaned role binding relationships for a tenant.
+
+    Args:
+        org_id (str): Organization ID for the tenant to clean up
+        dry_run (bool): If True, only report what would be deleted without making changes
+
+    Returns:
+        dict: Results with cleanup counts and migration results
+    """
+    return cleanup_tenant_orphan_bindings(org_id=org_id, dry_run=dry_run)
+
+
+@shared_task
+def bulk_cleanup_orphan_bindings_in_worker(tenant_limit: int):
+    """
+    Celery task to clean up orphaned relationships.
+
+    Args:
+        tenant_limit (int): maximum number of tenants to process
+    """
+    return call_command("fix_orphan_relations", tenant_limit=tenant_limit)
+
+
+@shared_task
+def remove_unassigned_system_binding_mappings_in_worker():
+    """Celery to remove unassigned system BindingMappings."""
+    return remove_unassigned_system_binding_mappings()
+
+
+@shared_task
+def expire_orphaned_cross_account_requests_in_worker():
+    """Celery task to expire orphaned cross-account requests."""
+    return expire_orphaned_cross_account_requests()
+
+
+@shared_task
+def remove_deleted_workspace_bindings_in_worker():
+    """Celery task to remove role bindings that reference deleted workspaces."""
+    return remove_deleted_workspace_bindings()

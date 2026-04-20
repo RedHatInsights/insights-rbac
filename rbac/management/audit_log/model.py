@@ -16,11 +16,15 @@
 #
 
 """Model for audit logging."""
+
 from django.db import models
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from management.group.model import Group
+from management.permission.model import PermissionValue
 from management.role.model import Role
+from management.role.v2_model import RoleV2
+from management.workspace.model import Workspace
 
 from api.models import Tenant, TenantAwareModel
 
@@ -30,13 +34,19 @@ class AuditLog(TenantAwareModel):
 
     GROUP = "group"
     ROLE = "role"
+    ROLE_V2 = "role_v2"
     USER = "user"
     PERMISSION = "permission"
+    WORKSPACE = "workspace"
+    ROLE_BINDING = "role_binding"
     RESOURCE_CHOICES = (
         (GROUP, "Group"),
         (ROLE, "Role"),
+        (ROLE_V2, "V2 Role"),
         (USER, "User"),
         (PERMISSION, "Permission"),
+        (WORKSPACE, "Workspace"),
+        (ROLE_BINDING, "Role Binding"),
     )
 
     DELETE = "delete"
@@ -52,6 +62,13 @@ class AuditLog(TenantAwareModel):
         (REMOVE, "Remove"),
     )
 
+    _model_class_by_resource_type = {
+        GROUP: Group,
+        ROLE: Role,
+        ROLE_V2: RoleV2,
+        WORKSPACE: Workspace,
+    }
+
     created = models.DateTimeField(default=timezone.now)
     principal_username = models.TextField(max_length=255, null=False)
     description = models.TextField(max_length=255, null=False)
@@ -62,6 +79,31 @@ class AuditLog(TenantAwareModel):
     resource_uuid = models.UUIDField(null=True)
     secondary_resource_uuid = models.UUIDField(null=True)
 
+    class Meta:
+        """Metadata for audit log model."""
+
+        indexes = [
+            # Composite index for common query pattern: tenant + created (for ordering)
+            models.Index(fields=["tenant", "created"]),
+            # Index for filtering by tenant and resource_type
+            models.Index(fields=["tenant", "resource_type"]),
+            # Index for filtering by tenant and action
+            models.Index(fields=["tenant", "action"]),
+        ]
+
+    @staticmethod
+    def _format_resource_type(resource_type: str) -> str:
+        if resource_type == AuditLog.ROLE_V2:
+            return "V2 role"
+
+        if resource_type == AuditLog.WORKSPACE:
+            return "workspace"
+
+        if resource_type == AuditLog.ROLE_BINDING:
+            return "role binding"
+
+        return resource_type
+
     def get_tenant_id(self, request):
         """Retrieve tenant id from request."""
         tenant_object = get_object_or_404(Tenant, org_id=request._user.org_id)
@@ -69,26 +111,63 @@ class AuditLog(TenantAwareModel):
 
     def get_resource_item(self, r_type, request, *args, **kwargs):
         """Find related information (eg, name, id, etc...) for each resource item."""
-        verify_tenant = self.get_tenant_id(request)
-        if r_type == AuditLog.ROLE:
-            role_object = get_object_or_404(Role, name=request.data["name"], tenant=verify_tenant)
+        model_class = self._model_class_by_resource_type.get(r_type)
+
+        if model_class is not None:
+            verify_tenant = self.get_tenant_id(request)
+
+            role_object = get_object_or_404(model_class, name=request.data["name"], tenant=verify_tenant)
             role_object_id = role_object.id
-            role_object_name = "role: " + role_object.name
+            role_object_name = f"{self._format_resource_type(r_type)}: {role_object.name}"
             role_object_uuid = role_object.uuid
+
             return role_object_id, role_object_name, role_object_uuid
-
-        elif r_type == AuditLog.GROUP:
-            group_object = get_object_or_404(Group, name=request.data["name"], tenant=verify_tenant)
-            group_object_id = group_object.id
-            group_object_name = "group: " + group_object.name
-            group_object_uuid = group_object.uuid
-            return group_object_id, group_object_name, group_object_uuid
-
         else:
             return ValueError("Wrong Resource Type")
 
+    def _v2_role_edited_field(self, resource_name, request, object):
+        annotations = []
+
+        if request.data.get("name") != object.name:
+            annotations.append("Edited name")
+
+        if request.data.get("description", "") != object.description:
+            annotations.append("Edited description")
+
+        request_permissions = request.data.get("permissions")
+
+        if request_permissions is not None:
+            if {PermissionValue.from_v2_dict(p) for p in request_permissions} != {
+                PermissionValue.parse_v1(p.permission) for p in object.permissions.all()
+            }:
+                annotations.append("Edited permissions")
+
+        return resource_name + ":\n" + "\n".join(annotations)
+
+    def _workspace_edited_field(self, resource_name, request, object):
+        annotations = []
+
+        if "name" in request.data and request.data["name"] != object.name:
+            annotations.append("Edited name")
+
+        if "description" in request.data and request.data.get("description", "") != (object.description or ""):
+            annotations.append("Edited description")
+
+        if not annotations:
+            return resource_name
+
+        return resource_name + ":\n" + "\n".join(annotations)
+
     def find_edited_field(self, resource, resource_name, request, object):
         """Add additional information when group/role is edited."""
+        # We can't fix the usual format because of backwards-compatibility concerns, but we can use a fixed format
+        # for V2 role and workspace operations.
+        if resource == AuditLog.ROLE_V2:
+            return self._v2_role_edited_field(resource_name, request, object)
+
+        if resource == AuditLog.WORKSPACE:
+            return self._workspace_edited_field(resource_name, request, object)
+
         description = resource_name + ": " + "\n "
         if request.data.get("name") != object.name:
             description = description + "Edited name \n"
@@ -100,6 +179,16 @@ class AuditLog(TenantAwareModel):
             if request.data.get("access"):
                 description = description + "edited access (permissions/resources)"
         return description
+
+    def log_v2(self, request, resource_type, action, resource_uuid, description):
+        """Audit Log for v2 resources (workspace, role binding, etc.) that use UUID as primary key."""
+        self.principal_username = request.user.username
+        self.resource_type = resource_type
+        self.resource_uuid = resource_uuid
+        self.description = description[:255]
+        self.action = action
+        self.tenant_id = self.get_tenant_id(request)
+        super(AuditLog, self).save()
 
     def log_create(self, request, resource):
         """Audit Log when a role or a group is created."""
@@ -121,7 +210,7 @@ class AuditLog(TenantAwareModel):
         self.resource_type = resource
         self.resource_id = object.id
         self.resource_uuid = object.uuid
-        resource_name = self.resource_type + ": " + object.name
+        resource_name = self._format_resource_type(self.resource_type) + ": " + object.name
 
         self.description = "Deleted " + resource_name
 
@@ -136,7 +225,7 @@ class AuditLog(TenantAwareModel):
         self.resource_type = resource
         self.resource_id = object.id
         self.resource_uuid = object.uuid
-        resource_name = resource + " " + object.name
+        resource_name = self._format_resource_type(self.resource_type) + " " + object.name
 
         more_information = self.find_edited_field(resource, resource_name, request, object)
         self.description = more_information

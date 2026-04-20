@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.7-1764794109 AS base
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.7-1776104705 AS base
 
 USER root
 
@@ -60,7 +60,7 @@ RUN python3.12 -m venv /pipenv-venv
 ENV PATH="/pipenv-venv/bin:$PATH"
 # Install pipenv into the virtual env
 RUN \
-    pip install --upgrade pip && \
+    pip install --upgrade "pip>=26.0" && \
     pip install pipenv
 
 WORKDIR ${APP_ROOT}

@@ -260,8 +260,15 @@ class V2TenantBootstrapServiceTest(TestCase):
         self.tuples.clear()
 
         # Set up another org with custom default group but not bootstrapped
+        # Create the custom default group directly to avoid triggering auto-bootstrap
+        # that happens through clone_default_group_in_public_schema with V2_BOOTSTRAP_TENANT=True
         o3_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o3")
-        o3_custom_group = self.fixture.custom_default_group(o3_tenant)
+        o3_custom_group = Group.objects.create(
+            tenant=o3_tenant,
+            name="Custom default access",
+            platform_default=True,
+            system=False,
+        )
 
         self.fixture.new_unbootstrapped_tenant(org_id="o4")
 
@@ -544,7 +551,14 @@ class V2TenantBootstrapServiceTest(TestCase):
         o2_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o2")
         o3_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o3")
 
-        o1_group = self.fixture.custom_default_group(o1_tenant)
+        # Create custom default group directly to avoid triggering auto-bootstrap
+        # that happens through clone_default_group_in_public_schema with V2_BOOTSTRAP_TENANT=True
+        o1_group = Group.objects.create(
+            tenant=o1_tenant,
+            name="Custom default access",
+            platform_default=True,
+            system=False,
+        )
 
         self.service.bootstrap_tenants([o1_tenant, o2_tenant, o3_tenant])
 

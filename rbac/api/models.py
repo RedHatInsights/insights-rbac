@@ -15,6 +15,7 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """API models for import organization."""
+
 from typing import Any, Optional
 
 from django.conf import settings
@@ -40,6 +41,8 @@ class TenantModifiedQuerySet(models.QuerySet):
 class Tenant(models.Model):
     """The model used to create a tenant schema."""
 
+    PUBLIC_TENANT_NAME = "public"
+
     _public_tenant = None
 
     ready = models.BooleanField(default=False)
@@ -57,13 +60,17 @@ class Tenant(models.Model):
     def _get_public_tenant(cls):
         """Get or set public tenant."""
         if cls._public_tenant is None:
-            cls._public_tenant = Tenant.objects.get(tenant_name="public")
+            cls._public_tenant = Tenant.objects.get(tenant_name=cls.PUBLIC_TENANT_NAME)
         return cls._public_tenant
 
     @staticmethod
-    def org_id_to_tenant_resource_id(org_id: str) -> str:
+    def _resource_id_prefix() -> str:
+        return f"{settings.PRINCIPAL_USER_DOMAIN}/"
+
+    @classmethod
+    def org_id_to_tenant_resource_id(cls, org_id: str) -> str:
         """Get the V2 resource ID for a tenant with the provided org_id."""
-        return f"{settings.PRINCIPAL_USER_DOMAIN}/{org_id}"
+        return cls._resource_id_prefix() + org_id
 
     def tenant_resource_id(self) -> Optional[str]:
         """Get the V2 resource ID for this tenant; None is returned if org_id is not available."""
@@ -71,6 +78,19 @@ class Tenant(models.Model):
             return None
 
         return Tenant.org_id_to_tenant_resource_id(org_id=self.org_id)
+
+    @classmethod
+    def tenant_resource_id_to_org_id(cls, resource_id: str) -> str:
+        """Convert a tenant's resource ID to the tenant's org_id."""
+        if not isinstance(resource_id, str):
+            raise TypeError(f"Expected resource ID to be a string, but got: {resource_id!r}")
+
+        prefix = cls._resource_id_prefix()
+
+        if not resource_id.startswith(prefix):
+            raise ValueError(f"Expected resource ID to start with {prefix!r}, but got: {resource_id!r}")
+
+        return resource_id[len(prefix) :]  # noqa: E203
 
     class Meta:
         indexes = [
@@ -118,6 +138,7 @@ class User:
 
     account: Optional[str] = None
     admin: bool = False
+    internal: bool = False
     access = {}
     system: bool = False
     is_active: bool = True
@@ -136,6 +157,7 @@ class User:
             self.username == other.username
             and self.account == other.account
             and self.admin == other.admin
+            and self.internal == other.internal
             and self.access == other.access
             and self.system == other.system
             and self.is_active == other.is_active
@@ -154,8 +176,8 @@ class User:
         """Return a string representation of the User instance."""
         return (
             f"User(username={self.username!r}, account={self.account!r}, admin={self.admin!r}, "
-            f"system={self.system!r}, is_active={self.is_active!r}, org_id={self.org_id!r}, "
-            f"user_id={self.user_id!r}, bearer_token={'***' if self.bearer_token else ''}, "
+            f"internal={self.internal!r}, system={self.system!r}, is_active={self.is_active!r}, "
+            f"org_id={self.org_id!r}, user_id={self.user_id!r}, bearer_token={'***' if self.bearer_token else ''}, "
             f"client_id={self.client_id!r}, is_service_account={self.is_service_account!r})"
         )
 

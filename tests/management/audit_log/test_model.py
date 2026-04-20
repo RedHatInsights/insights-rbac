@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the Audit Logs Model."""
+
 from django.test import TestCase
 from unittest.mock import Mock
 

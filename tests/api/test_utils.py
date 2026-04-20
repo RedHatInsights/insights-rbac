@@ -3,6 +3,7 @@ from django.test import TestCase
 
 from api.models import Tenant
 from api.utils import migration_resource_deletion
+from management.group.definer import seed_group
 from management.models import BindingMapping, Role, Workspace
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.tenant_mapping.model import TenantMapping
@@ -10,12 +11,18 @@ from management.tenant_service.v2 import V2TenantBootstrapService
 
 
 class TestAPIUtils(TestCase):
+    def setUp(self):
+        """Set up test fixtures."""
+        # Create public tenant and seed default groups
+        self.public_tenant, _ = Tenant.objects.get_or_create(tenant_name="public")
+        seed_group()
+        self.bootstrap_service = V2TenantBootstrapService(NoopReplicator())
+
     def test_migration_resource_deletion(self):
         org_id_1 = "12345678"
         org_id_2 = "87654321"
-        bootstrap_service = V2TenantBootstrapService(NoopReplicator())
-        bootstrapped_tenant_1 = bootstrap_service.new_bootstrapped_tenant(org_id_1)
-        bootstrapped_tenant_2 = bootstrap_service.new_bootstrapped_tenant(org_id_2)
+        bootstrapped_tenant_1 = self.bootstrap_service.new_bootstrapped_tenant(org_id_1)
+        bootstrapped_tenant_2 = self.bootstrap_service.new_bootstrapped_tenant(org_id_2)
         tenant = bootstrapped_tenant_1.tenant
         another_tenant = bootstrapped_tenant_2.tenant
 

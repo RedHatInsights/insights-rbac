@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the cross account request model."""
+
 from api.models import CrossAccountRequest
 from django.db import IntegrityError, transaction
 from django.test import TestCase

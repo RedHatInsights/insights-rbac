@@ -225,8 +225,22 @@ objects:
             value: ${SA_NAME}
           - name: RELATION_API_SERVER
             value: ${RELATION_API_SERVER}
+          - name: RELATION_API_CLIENT_ID
+            valueFrom:
+              secretKeyRef:
+                key: rbac-client-id
+                name: service-accounts
+                optional: true
+          - name: RELATION_API_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                key: rbac-client-secret
+                name: service-accounts
+                optional: true
           - name: INVENTORY_API_SERVER
             value: ${INVENTORY_API_SERVER}
+          - name: REDHAT_SSO
+            value: ${REDHAT_SSO}
           - name: REPLICATION_TO_RELATION_ENABLED
             value: ${REPLICATION_TO_RELATION_ENABLED}
           - name: PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB
@@ -263,6 +277,8 @@ objects:
             value: ${ROOT_SCOPE_PERMISSIONS}
           - name: TENANT_SCOPE_PERMISSIONS
             value: ${TENANT_SCOPE_PERMISSIONS}
+          - name: DEFAULT_SCOPE_PERMISSIONS
+            value: ${DEFAULT_SCOPE_PERMISSIONS}
           ####### Following envs are for scheduler, doesn't hurt to put in worker
           - name: PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB
             value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB}
@@ -344,7 +360,7 @@ objects:
           timeoutSeconds: 3
         readinessProbe:
           httpGet:
-            path: /api/rbac/v1/status/
+            path: /api/rbac/v1/ready/
             port: 8000
             scheme: HTTP
           initialDelaySeconds: 60
@@ -540,6 +556,8 @@ objects:
             value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
           - name: WORKSPACE_ORG_CREATION_LIMIT
             value: ${WORKSPACE_ORG_CREATION_LIMIT}
+          - name: READ_YOUR_WRITES_TIMEOUT_SECONDS
+            value: ${READ_YOUR_WRITES_TIMEOUT_SECONDS}
           - name: FEATURE_FLAGS_CACHE_DIR
             value: ${FEATURE_FLAGS_CACHE_DIR}
           - name: SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
@@ -554,6 +572,10 @@ objects:
             value: ${ROOT_SCOPE_PERMISSIONS}
           - name: TENANT_SCOPE_PERMISSIONS
             value: ${TENANT_SCOPE_PERMISSIONS}
+          - name: DEFAULT_SCOPE_PERMISSIONS
+            value: ${DEFAULT_SCOPE_PERMISSIONS}
+          - name: WORKSPACE_ACCESS_TIMING_ENABLED
+            value: ${WORKSPACE_ACCESS_TIMING_ENABLED}
           - name: RBAC_KAFKA_CONSUMER_TOPIC
             value: ${RBAC_KAFKA_CONSUMER_TOPIC}
           ####### Following envs are additional to workers
@@ -638,6 +660,8 @@ objects:
             value: ${V2_APIS_ENABLED}
           - name: V2_READ_ONLY_API_MODE
             value: ${V2_READ_ONLY_API_MODE}
+          - name: V2_EDIT_API_ENABLED
+            value: ${V2_EDIT_API_ENABLED}
           - name: V1_ROLE_PERMISSION_BLOCK_LIST
             value: ${V1_ROLE_PERMISSION_BLOCK_LIST}
           - name: READ_ONLY_API_MODE
@@ -658,6 +682,8 @@ objects:
             value: ${ROOT_SCOPE_PERMISSIONS}
           - name: TENANT_SCOPE_PERMISSIONS
             value: ${TENANT_SCOPE_PERMISSIONS}
+          - name: DEFAULT_SCOPE_PERMISSIONS
+            value: ${DEFAULT_SCOPE_PERMISSIONS}
 
     - name: rbac-kafka-consumer
       minReplicas: ${{RBAC_KAFKA_CONSUMER_REPLICAS}}
@@ -743,6 +769,8 @@ objects:
             value: ${ROOT_SCOPE_PERMISSIONS}
           - name: TENANT_SCOPE_PERMISSIONS
             value: ${TENANT_SCOPE_PERMISSIONS}
+          - name: DEFAULT_SCOPE_PERMISSIONS
+            value: ${DEFAULT_SCOPE_PERMISSIONS}
           - name: REDHAT_SSO
             value: ${REDHAT_SSO}
         livenessProbe:
@@ -770,62 +798,6 @@ objects:
             memory: ${RBAC_KAFKA_CONSUMER_MEMORY_REQUEST}
 
     jobs:
-      - name: tenant-org-id-populator
-        podSpec:
-          image: quay.io/cloudservices/tenant-utils:latest
-          command:
-            - ./org-id-column-populator
-            - -C
-            - -a
-            - account_id
-            - -o
-            - org_id
-            - -t
-            - api_tenant
-            - --ean-translator-addr
-            - http://${TENANT_TRANSLATOR_HOST}:${TENANT_TRANSLATOR_PORT}
-            - --batch-size
-            - "50"
-          env:
-            - name: LOG_FORMAT
-              value: ${LOG_FORMAT}
-            - name: LOG_BATCH_FREQUENCY
-              value: '1'
-          resources:
-            limits:
-              cpu: 300m
-              memory: 1Gi
-            requests:
-              cpu: 50m
-              memory: 512Mi
-      - name: cross-account-request-target-org-populator
-        podSpec:
-          image: quay.io/cloudservices/tenant-utils:latest
-          command:
-            - ./org-id-column-populator
-            - -C
-            - -a
-            - target_account
-            - -o
-            - target_org
-            - -t
-            - api_crossaccountrequest
-            - --ean-translator-addr
-            - http://${TENANT_TRANSLATOR_HOST}:${TENANT_TRANSLATOR_PORT}
-            - --batch-size
-            - "50"
-          env:
-            - name: LOG_FORMAT
-              value: ${LOG_FORMAT}
-            - name: LOG_BATCH_FREQUENCY
-              value: '1'
-          resources:
-            limits:
-              cpu: 300m
-              memory: 1Gi
-            requests:
-              cpu: 50m
-              memory: 512Mi
       - name: user-id-populator
         podSpec:
           image: quay.io/cloudservices/rbac:latest
@@ -1202,6 +1174,8 @@ objects:
               value: ${ROOT_SCOPE_PERMISSIONS}
             - name: TENANT_SCOPE_PERMISSIONS
               value: ${TENANT_SCOPE_PERMISSIONS}
+            - name: DEFAULT_SCOPE_PERMISSIONS
+              value: ${DEFAULT_SCOPE_PERMISSIONS}
             ######## Following envs are different from worker
             - name: S3_AWS_ACCESS_KEY_ID
               valueFrom:
@@ -1249,14 +1223,13 @@ objects:
               cpu: 50m
               memory: 512Mi
           env: *workspace_job_env_vars
-      - name: fix-duplicate-role-binding-uuids
+      - name: fix-orphan-relations
         podSpec:
-          image: quay.io/cloudservices/rbac:latest
+          image: ${IMAGE}:${IMAGE_TAG}
           command:
             - /opt/rbac/rbac/manage.py
-            - fix_duplicate_role_binding_uuids
-            - "--batch-size"
-            - "1000"
+            - fix_orphan_relations
+            - "--all"
           resources:
             limits:
               cpu: 300m
@@ -1264,8 +1237,7 @@ objects:
             requests:
               cpu: 50m
               memory: 512Mi
-          env: *workspace_job_env_vars
-
+          env: *common_env_vars
 - apiVersion: v1
   kind: ConfigMap
   metadata:
@@ -1461,12 +1433,12 @@ parameters:
 - description: Application allow list for role creation in RBAC
   name: ROLE_CREATE_ALLOW_LIST
   value: cost-management,remediations,inventory,policies,advisor,vulnerability,compliance,automation-analytics,notifications,patch,integrations,ros,staleness,config-manager,idmsvc,subscriptions
-- description: Application exclude list for v2 migration (all permissions)
+- description: Comma-separated apps excluded from v2 migration; same list filters the v2 roles list API only
   name: V2_MIGRATION_APP_EXCLUDE_LIST
-  value: approval
+  value: ansible,automation-analytics,cost-management,hybrid-committed-spend,idmsvc,ocm,ocp-advisor,policies,sources
 - description: Whether or not to bootstrap tenants using V2 logic (i.e. creating workspaces and relations).
   name: V2_BOOTSTRAP_TENANT
-  value: 'False'
+  value: 'True'
 - description: Timestamp expiration allowance on destructive actions through the internal RBAC API
   name: RBAC_DESTRUCTIVE_API_ENABLED_UNTIL
   value: ''
@@ -1576,6 +1548,9 @@ parameters:
 - description: Enable sending out notification events of Red Hat changes
   name: NOTIFICATIONS_RH_ENABLED
   value: 'False'
+- description: Enable sending out notification events (typo variant used by service deployer)
+  name: NOTIFICATONS_ENABLED
+  value: 'False'
 - name: TENANT_TRANSLATOR_HOST
   required: true
 - name: TENANT_TRANSLATOR_PORT
@@ -1667,15 +1642,19 @@ parameters:
   value: "https://sso.stage.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token"
 - name: REPLICATION_TO_RELATION_ENABLED
   description: Enable replication to Relation API
-  value: "False"
+  value: "True"
 - name: V2_APIS_ENABLED
   description: Flag to explicitly enable v2 API endpoints
+  value: 'True'
 - name: V2_READ_ONLY_API_MODE
   description: Enforce GET only on RBAC v2 APIs only
   value: 'False'
+- name: V2_EDIT_API_ENABLED
+  description: Fallback for feature flag to enable v2 edit APIs and block v1 write APIs per org
+  value: 'False'
 - name: V1_ROLE_PERMISSION_BLOCK_LIST
   description: Comma-separated list of exact permission strings to hide from v1 API (e.g., rbac:role:read,rbac:group:write)
-  value: ''
+  value: 'rbac:role_binding:view,rbac:role_binding:grant,rbac:role_binding:revoke'
 - name: READ_ONLY_API_MODE
   description: Enforce GET only on RBAC APIs
   value: 'False'
@@ -1705,7 +1684,7 @@ parameters:
   value: 'group.id'
 - description: Flag to enable returning workspace hierarchy in v1 access
   name: WORKSPACE_HIERARCHY_ENABLED
-  value: 'False'
+  value: 'True'
 - name: ADD_UNGROUPED_HOSTS_ID
   description: Add ungrouped hosts workspace id in addition to null
   value: 'False'
@@ -1713,14 +1692,17 @@ parameters:
   description: Remove null value from the list of workspace id
   value: 'False'
 - name: WORKSPACE_ORG_CREATION_LIMIT
-  description: The limit of workspaces for all organisations
+  description: The limit of workspaces for all organizations
   value: '3000'
 - name: WORKSPACE_HIERARCHY_DEPTH_LIMIT
   description: The limit of workspace hierarchy depth
   value: '5'
 - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
   description: When true, prevents the ability to create peer workspaces against the default workspace
-  value: 'False'
+  value: 'True'
+- name: READ_YOUR_WRITES_TIMEOUT_SECONDS
+  description: Timeout in seconds for read-your-writes consistency check after workspace creation
+  value: '10'
 - name: SCOPES
   description: The Scope for token generation
   value: 'openid'
@@ -1728,8 +1710,8 @@ parameters:
   description: The grant type for token generation
   value: 'client_credentials'
 - name: REDHAT_SSO
-  description: The SSO url for rbac environment
-  value: 'sso.stage.redhat.com'
+  description: The SSO url for rbac environment. Leave empty for ephemeral/local to skip JWT auth.
+  value: ''
 - name: SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
   description: The UUID for the role for default root workspace level
   value: ''
@@ -1759,13 +1741,13 @@ parameters:
   value: 300Mi
 - name: RBAC_KAFKA_CONSUMER_TOPIC
   description: The name of the topic for the RBAC Kafka consumer
-  value: 'outbox.event.rbac-consumer-replication-event'
+  value: 'outbox.event.relations-replication-event'
 - name: RBAC_KAFKA_CONSUMER_GROUP_ID
   description: The consumer group ID for the RBAC Kafka consumer
-  value: 'rbac-consumer-group'
+  value: 'connect-relations-sink-connector'
 - name: RBAC_KAFKA_CONSUMER_REPLICAS
   description: The number of replicas for the RBAC Kafka consumer (set to 0 to disable)
-  value: '0'
+  value: '1'
 - name: RBAC_KAFKA_CUSTOM_CONSUMER_BROKER
   description: Custom Kafka broker URL for the RBAC Kafka consumer (if empty, uses default Clowder/localhost configuration)
   value: ''
@@ -1775,3 +1757,9 @@ parameters:
 - name: TENANT_SCOPE_PERMISSIONS
   description: Comma-separated list of permissions that bind to tenant scope (supports wildcards like rbac:*:*)
   value: ''
+- name: DEFAULT_SCOPE_PERMISSIONS
+  description: Comma-separated list of permissions that bind to default workspace scope (more specific patterns override broader TENANT_SCOPE_PERMISSIONS entries)
+  value: ''
+- name: WORKSPACE_ACCESS_TIMING_ENABLED
+  description: Enable detailed timing logs for v2 workspace access checks (for performance investigation)
+  value: 'False'

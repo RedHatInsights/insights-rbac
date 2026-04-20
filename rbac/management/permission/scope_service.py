@@ -15,6 +15,7 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Helper for determining workspace/tenant binding levels for permissions."""
+
 import dataclasses
 from enum import IntEnum
 from typing import Iterable, Self
@@ -159,16 +160,30 @@ class ImplicitResourceService:
 
     _permissions_map: dict[PermissionValue, Scope]
 
-    def __init__(self, root_scope_permissions: list[str], tenant_scope_permissions: list[str]):
+    def __init__(
+        self,
+        root_scope_permissions: list[str],
+        tenant_scope_permissions: list[str],
+        default_scope_permissions: list[str] | None = None,
+    ):
         """
-        Create an ImplicitResourceService with specific root and tenant scope permissions.
+        Create an ImplicitResourceService with specific root, tenant, and default workspace scope permissions.
 
         root_scope_permissions is a set of permissions assigned to the root workspace scope.
         tenant_scope_permissions is a set of permissions assigned to tenant scope.
+        default_scope_permissions is a set of permissions assigned to the default workspace scope.
 
-        Both sets of permissions are represented as V1 permission strings (valid for _PermissionDescriptor.parse_v1).
-        Both sets may contain wildcards.
+        All sets are represented as V1 permission strings (valid for _PermissionDescriptor.parse_v1).
+        All sets may contain wildcards.
+
+        For a given permission, scope_for_permission checks more specific wildcard candidates before broader
+        ones (see scope_for_permission). Listing both ``rbac:*:*`` in tenant_scope_permissions and
+        ``rbac:role_binding:*`` in default_scope_permissions therefore binds role_binding at default workspace
+        and other rbac permissions at tenant scope.
         """
+        if default_scope_permissions is None:
+            default_scope_permissions = []
+
         self._permissions_map = {}
 
         def add_permission(permission: PermissionValue, scope: Scope):
@@ -188,13 +203,17 @@ class ImplicitResourceService:
         for permission_str in tenant_scope_permissions:
             add_permission(PermissionValue.parse_v1(permission_str), Scope.TENANT)
 
+        for permission_str in default_scope_permissions:
+            add_permission(PermissionValue.parse_v1(permission_str), Scope.DEFAULT)
+
     @classmethod
     def from_settings(cls) -> "ImplicitResourceService":
         """
         Create an ImplicitResourceService from the configuration in settings.
 
         Root workspace permissions are determined from the ROOT_SCOPE_PERMISSIONS setting. Tenant permissions are
-        determined from the TENANT_SCOPE_PERMISSIONS setting.
+        determined from the TENANT_SCOPE_PERMISSIONS setting. Default workspace permissions are determined from the
+        DEFAULT_SCOPE_PERMISSIONS setting.
 
         Each setting must be a comma-separated list of V1 permissions strings (as if for
         _PermissionDescriptor.parse_v1); spaces are trimmed from the start and each of each permission. An empty (or
@@ -210,6 +229,7 @@ class ImplicitResourceService:
         return cls(
             root_scope_permissions=parse_setting(settings.ROOT_SCOPE_PERMISSIONS),
             tenant_scope_permissions=parse_setting(settings.TENANT_SCOPE_PERMISSIONS),
+            default_scope_permissions=parse_setting(settings.DEFAULT_SCOPE_PERMISSIONS),
         )
 
     def scope_for_permission(self, permission: str) -> Scope:
@@ -224,7 +244,8 @@ class ImplicitResourceService:
         2. Wildcard app:resource_type:* match.
         3. Wildcard app:*:verb match.
         4. Wildcard app:*:* match.
-        5. Finally, if no match exists, the DEFAULT scope.
+        5. Finally, if no match exists, the DEFAULT scope (including explicit patterns from default_scope_permissions
+        / DEFAULT_SCOPE_PERMISSIONS when they match a candidate).
 
         Note that, if the permission is a wildcard, some of these steps will be redundant. For instance,
         if the permission is app:*:verb, there are only two possible matches: app:*:verb and app:*:*.
@@ -292,9 +313,64 @@ class ImplicitResourceService:
             raise AssertionError(f"Unexpected scope: {scope}")
 
 
+SCOPE_RESOURCE_TYPE: dict[Scope, str] = {
+    Scope.TENANT: "tenant",
+    Scope.ROOT: "workspace",
+    Scope.DEFAULT: "workspace",
+}
+"""Maps each Scope to the resource_type string it binds to."""
+
+
+def scopes_for_resource_type(resource_type: str) -> set[Scope]:
+    """Return all Scope values that map to the given resource_type."""
+    return {scope for scope, rt in SCOPE_RESOURCE_TYPE.items() if rt == resource_type}
+
+
 """
 A global ImplicitResourceService configured using Django Settings.
 
 See ImplicitResourceService.from_settings for details on how this is configured.
 """
 default_implicit_resource_service = ImplicitResourceService.from_settings()
+
+
+class PermissionScopeCache:
+    """In-process cache mapping Permission IDs to their computed Scope.
+
+    The cache is populated lazily on first access and remains valid for the
+    lifetime of the process.  Call ``invalidate()`` after any operation that
+    mutates the Permission table (e.g. seeding) so the next access rebuilds
+    the mapping from the database.
+    """
+
+    def __init__(self, scope_service: ImplicitResourceService):
+        """Create a cache backed by the given scope service."""
+        self._scope_service = scope_service
+        self._ids_by_scope: dict[Scope, frozenset[int]] | None = None
+
+    def _build(self) -> dict[Scope, frozenset[int]]:
+        from management.permission.model import Permission
+
+        result: dict[Scope, set[int]] = {scope: set() for scope in Scope}
+        for row in Permission.objects.values_list("id", "permission", named=True):
+            scope = self._scope_service.scope_for_permission(row.permission)
+            result[scope].add(row.id)
+        return {s: frozenset(ids) for s, ids in result.items()}
+
+    @property
+    def ids_by_scope(self) -> dict[Scope, frozenset[int]]:
+        """Return the cached mapping, building it on first access."""
+        if self._ids_by_scope is None:
+            self._ids_by_scope = self._build()
+        return self._ids_by_scope
+
+    def ids_for_scopes(self, scopes: set[Scope]) -> frozenset[int]:
+        """Return the union of Permission IDs for the given scopes."""
+        return frozenset().union(*(self.ids_by_scope.get(s, frozenset()) for s in scopes))
+
+    def invalidate(self):
+        """Clear the cached mapping so it is rebuilt on next access."""
+        self._ids_by_scope = None
+
+
+permission_scope_cache = PermissionScopeCache(default_implicit_resource_service)

@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the ECSCustomFormatter."""
+
 import logging
 import json
 from django.test import TestCase, RequestFactory

@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Contains utilities for handling platform roles."""
+
 from typing import Callable
 from uuid import UUID
 
@@ -22,6 +23,30 @@ from django.conf import settings
 from management.group.platform import GlobalPolicyIdService
 from management.permission.scope_service import Scope
 from management.tenant_mapping.model import DefaultAccessType
+
+# admin_default seeded system roles that must nest under the admin platform role at ROOT (root workspace),
+# not under the scope implied by their inventory (or other default-scope) permissions.
+ADMIN_DEFAULT_SEEDED_ROLES_FORCE_ROOT_SCOPE = frozenset(
+    (
+        "Inventory Groups Administrator",
+        "Inventory Hosts Administrator",
+    )
+)
+
+
+def admin_platform_parent_scope_for_seeded_system_role(
+    role_name: str, admin_default: bool, permission_derived_scope: Scope, *, apply_override: bool
+) -> Scope:
+    """
+    Return the scope of the admin platform role that should be the parent of this seeded system role.
+
+    When apply_override is False (e.g. when generating tuples to strip all historical variants), the
+    caller's scope is used as-is.
+    """
+    if apply_override and admin_default and role_name in ADMIN_DEFAULT_SEEDED_ROLES_FORCE_ROOT_SCOPE:
+        return Scope.ROOT
+    return permission_derived_scope
+
 
 _uuid_fns: dict[DefaultAccessType, dict[Scope, Callable[[GlobalPolicyIdService], UUID]]] = {
     DefaultAccessType.USER: {

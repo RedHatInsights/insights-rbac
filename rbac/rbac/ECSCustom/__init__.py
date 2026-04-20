@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Custom ecs formatter."""
+
 from urllib.parse import urlparse
 
 import django

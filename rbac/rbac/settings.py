@@ -25,6 +25,7 @@ https://docs.djangoproject.com/en/2.0/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/2.0/ref/settings/
 """
+
 import os
 
 import datetime
@@ -38,7 +39,6 @@ from corsheaders.defaults import default_headers
 from dateutil.parser import parse as parse_dt
 from app_common_python import LoadedConfig, KafkaTopics, DependencyEndpoints
 from feature_flags import FEATURE_FLAGS
-
 
 # Database
 # https://docs.djangoproject.com/en/2.0/ref/settings/#databases
@@ -316,6 +316,7 @@ if CW_AWS_ACCESS_KEY_ID:
 CORS_ORIGIN_ALLOW_ALL = True
 
 CORS_ALLOW_HEADERS = default_headers + ("x-rh-identity", "HTTP_X_RH_IDENTITY")
+CORS_EXPOSE_HEADERS = list(globals().get("CORS_EXPOSE_HEADERS", [])) + ["Mcp-Session-Id"]
 
 APPEND_SLASH = False
 
@@ -410,6 +411,7 @@ if ENVIRONMENT.bool("LOG_DATABASE_QUERIES", default=False):
 
 # Internal API Configuration
 INTERNAL_API_PATH_PREFIXES = ["/_private/"]
+A2S_PATH_PREFIX = "/_private/_a2s/"
 
 try:
     INTERNAL_DESTRUCTIVE_API_OK_UNTIL = parse_dt(
@@ -531,7 +533,7 @@ UMB_PORT = ENVIRONMENT.get_value("UMB_PORT", default="61612")
 # Service account name
 SA_NAME = ENVIRONMENT.get_value("SA_NAME", default="nonprod-hcc-rbac")
 
-REDHAT_SSO = ENVIRONMENT.get_value("REDHAT_SSO", default="sso.stage.redhat.com")
+REDHAT_SSO = ENVIRONMENT.get_value("REDHAT_SSO", default="")
 OPENID_URL = ENVIRONMENT.get_value("OPENID_URL", default="/auth/realms/redhat-external/protocol/openid-connect/token")
 SCOPE = ENVIRONMENT.get_value("SCOPE", default="openid")
 TOKEN_GRANT_TYPE = ENVIRONMENT.get_value("TOKEN_GRANT_TYPE", default="client_credentials")
@@ -583,7 +585,10 @@ ENV_NAME = ENVIRONMENT.get_value("ENV_NAME", default="stage")
 V2_APIS_ENABLED = ENVIRONMENT.bool("V2_APIS_ENABLED", default=False)
 V2_READ_ONLY_API_MODE = ENVIRONMENT.bool("V2_READ_ONLY_API_MODE", default=False)
 WORKSPACE_ACCESS_CHECK_V2_ENABLED = ENVIRONMENT.bool("WORKSPACE_ACCESS_CHECK_V2_ENABLED", default=False)
+# When True, use 'role_binding_view' permission; when False, use 'view' permission for role binding access
+USE_ROLE_BINDING_VIEW_PERMISSION = ENVIRONMENT.bool("USE_ROLE_BINDING_VIEW_PERMISSION", default=True)
 READ_ONLY_API_MODE = ENVIRONMENT.get_value("READ_ONLY_API_MODE", default=False)
+V2_EDIT_API_ENABLED = ENVIRONMENT.bool("V2_EDIT_API_ENABLED", default=False)
 V1_ROLE_PERMISSION_BLOCK_LIST = [
     permission.strip()
     for permission in ENVIRONMENT.get_value("V1_ROLE_PERMISSION_BLOCK_LIST", default="").split(",")
@@ -593,7 +598,7 @@ V1_ROLE_PERMISSION_BLOCK_LIST = [
 # Read-your-writes settings
 READ_YOUR_WRITES_WORKSPACE_ENABLED = ENVIRONMENT.bool("READ_YOUR_WRITES_WORKSPACE_ENABLED", default=False)
 READ_YOUR_WRITES_CHANNEL = ENVIRONMENT.get_value("READ_YOUR_WRITES_CHANNEL", default="READ_YOUR_WRITES_CHANNEL")
-READ_YOUR_WRITES_TIMEOUT_SECONDS = ENVIRONMENT.int("READ_YOUR_WRITES_TIMEOUT_SECONDS", default=2)
+READ_YOUR_WRITES_TIMEOUT_SECONDS = ENVIRONMENT.int("READ_YOUR_WRITES_TIMEOUT_SECONDS", default=10)
 
 # Workspace settings
 WORKSPACE_APPLICATION_NAME = ENVIRONMENT.get_value("WORKSPACE_APPLICATION_NAME", default="inventory")
@@ -606,11 +611,14 @@ WORKSPACE_HIERARCHY_ENABLED = ENVIRONMENT.bool("WORKSPACE_HIERARCHY_ENABLED", Fa
 WORKSPACE_ORG_CREATION_LIMIT = ENVIRONMENT.get_value("WORKSPACE_ORG_CREATION_LIMIT", default=3000)
 WORKSPACE_HIERARCHY_DEPTH_LIMIT = ENVIRONMENT.int("WORKSPACE_HIERARCHY_DEPTH_LIMIT", default=5)
 WORKSPACE_RESTRICT_DEFAULT_PEERS = ENVIRONMENT.bool("WORKSPACE_RESTRICT_DEFAULT_PEERS", default=False)
+# Enable detailed timing logs for v2 workspace access checks (for performance investigation)
+WORKSPACE_ACCESS_TIMING_ENABLED = ENVIRONMENT.bool("WORKSPACE_ACCESS_TIMING_ENABLED", default=False)
 
-# Permission scope configuration used by permission_scope.ImiplicitResourceService.
+# Permission scope configuration used by management.permission.scope_service.ImplicitResourceService.
 # These can include wildcard patterns (e.g. "rbac:*:read" or "advisor:*:*").
 ROOT_SCOPE_PERMISSIONS = ENVIRONMENT.get_value("ROOT_SCOPE_PERMISSIONS", default="")
 TENANT_SCOPE_PERMISSIONS = ENVIRONMENT.get_value("TENANT_SCOPE_PERMISSIONS", default="")
+DEFAULT_SCOPE_PERMISSIONS = ENVIRONMENT.get_value("DEFAULT_SCOPE_PERMISSIONS", default="")
 
 # Org level permissons parent role uuids
 SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID = ENVIRONMENT.get_value("SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID", default="")

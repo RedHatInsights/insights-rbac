@@ -16,6 +16,7 @@
 #
 
 """Custom RBAC Middleware."""
+
 import binascii
 import json
 import logging
@@ -41,7 +42,7 @@ from rest_framework import status
 from api.common import RH_IDENTITY_HEADER, RH_INSIGHTS_REQUEST_ID
 from api.models import Tenant, User
 from api.serializers import extract_header
-
+from rbac.a2s import is_a2s_path as _is_a2s_path
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 req_sys_counter = Counter(
@@ -72,6 +73,7 @@ def catch_integrity_error(func):
 def is_no_auth(request):
     """Check condition for needing to authenticate the user."""
     no_auth_list = [
+        reverse("v1_api:server-ready"),
         reverse("v1_api:server-status"),
         reverse("v1_api:openapi"),
         "/metrics",
@@ -137,9 +139,16 @@ class IdentityHeaderMiddleware:
             try:
                 # If the tenant already exists, we assume it must be bootstrapped if dual writes are enabled.
                 tenant = Tenant.objects.get(org_id=request.user.org_id)
+                # Update account_id if missing and user has it (fixes regression from Phase 0 to Phase 1)
+                needs_update = False
                 if not tenant.ready:
                     tenant.ready = True
-                    tenant.save(update_fields=["ready"])
+                    needs_update = True
+                if tenant.account_id is None and request.user.account:
+                    tenant.account_id = request.user.account
+                    needs_update = True
+                if needs_update:
+                    tenant.save(update_fields=["ready", "account_id"])
             except Tenant.DoesNotExist:
                 if request.user.system:
                     raise Http404()
@@ -219,8 +228,10 @@ class IdentityHeaderMiddleware:
         # Get request ID
         request.req_id = request.META.get(RH_INSIGHTS_REQUEST_ID)
 
-        if any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES]):
-            # This request is for a private API endpoint
+        if any(
+            [request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES]
+        ) and not _is_a2s_path(request):
+            # This request is for a private API endpoint (except _a2s/ which uses public auth)
             return self.get_response(request)
 
         if is_no_auth(request):
@@ -259,6 +270,8 @@ class IdentityHeaderMiddleware:
             # If we did not get the user information or service account information from the "x-rh-identity" header,
             # then the request is directly unauthorized.
             if not user_info and not service_account:
+                if _is_a2s_path(request):
+                    return self.get_response(request)
                 logger.debug("x-rh-identity does not contain user_info or service_account keys: %s", json_rh_auth)
                 return HttpResponseUnauthorizedRequest()
 
@@ -301,6 +314,8 @@ class IdentityHeaderMiddleware:
                         return HttpResponseUnauthorizedRequest()
                     user.username = f"{user.org_id}-{user.user_id}"
         except (KeyError, TypeError, JSONDecodeError):
+            if _is_a2s_path(request):
+                return self.get_response(request)
             user = build_user_from_psk(request) or build_system_user_from_token(
                 request, token_validator=self.token_validator
             )
@@ -318,7 +333,7 @@ class IdentityHeaderMiddleware:
 
         # Code to be executed for each request/response after
         # the view is called.
-        is_internal = any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES])
+        is_internal_request = any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES])
         is_system = False
 
         if hasattr(request, "user") and request.user:
@@ -335,17 +350,17 @@ class IdentityHeaderMiddleware:
             status=response.get("status_code"),
         ).inc()
 
-        IdentityHeaderMiddleware.log_request(request, response, is_internal)
+        IdentityHeaderMiddleware.log_request(request, response, is_internal_request)
         return response
 
     @staticmethod
-    def log_request(request, response, is_internal=False):
+    def log_request(request, response, is_internal_request=False):
         """Log requests for identity middleware.
 
         Args:
             request (object): The request object
             response (object): The response object
-            is_internal (bool): Boolean for if request is internal
+            is_internal_request (bool): Boolean for if request is internal
         """
         query_string = ""
         is_admin = False
@@ -357,6 +372,7 @@ class IdentityHeaderMiddleware:
         if request.META.get("QUERY_STRING"):
             query_string = "?{}".format(request.META.get("QUERY_STRING"))
 
+        is_internal = False
         if hasattr(request, "user") and request.user:
             username = request.user.username
             if username:
@@ -365,6 +381,7 @@ class IdentityHeaderMiddleware:
                 org_id = request.user.org_id
                 is_system = request.user.system
                 user_id = request.user.user_id
+                is_internal = getattr(request.user, "internal", False)
             else:
                 # django.contrib.auth.models.AnonymousUser does not
                 is_admin = is_system = False
@@ -408,6 +425,7 @@ class IdentityHeaderMiddleware:
             "is_admin": is_admin,
             "is_system": is_system,
             "is_internal": is_internal,
+            "is_internal_request": is_internal_request,
         }
         logger.info(log_object)
 

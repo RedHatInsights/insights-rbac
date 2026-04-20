@@ -16,6 +16,7 @@
 #
 
 """Custom Internal RBAC Middleware."""
+
 import binascii
 import logging
 from json.decoder import JSONDecodeError
@@ -31,6 +32,7 @@ from management.utils import build_system_user_from_token, build_user_from_psk
 from api.common import RH_IDENTITY_HEADER
 from api.models import Tenant
 from api.serializers import extract_header
+from rbac.a2s import is_a2s_path
 from .utils import build_internal_user
 
 logger = logging.getLogger(__name__)
@@ -48,13 +50,29 @@ class InternalIdentityHeaderMiddleware(MiddlewareMixin):
             # We are not in an internal API section
             return
 
+        if is_a2s_path(request):
+            # A2S (agent-to-service) paths use public IdentityHeaderMiddleware auth
+            return
+
         user = None
         # If the path starts with /_private/_s2s/, it is using psk to authenticate
         if request.path.startswith("/_private/_s2s/"):
+            req_id = getattr(request, "req_id", None)
+            logger.info(
+                "S2S request received, attempting authentication [request_id=%s, method=%s, path=%s]",
+                req_id,
+                request.method,
+                request.path,
+            )
             user = build_user_from_psk(request) or build_system_user_from_token(request, self.token_validator)
 
             if not user:
-                logger.error("Could not obtain identity on request.")
+                logger.error(
+                    "S2S auth failed: no identity (PSK/token failed) [request_id=%s, method=%s, path=%s]",
+                    req_id,
+                    request.method,
+                    request.path,
+                )
                 return HttpResponseForbidden()
         else:
             try:

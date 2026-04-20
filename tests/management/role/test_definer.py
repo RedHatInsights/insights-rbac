@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the role definer."""
+
 from uuid import UUID
 from django.conf import settings
 from django.test.utils import override_settings
@@ -36,7 +37,11 @@ from management.models import (
 from management.permission.scope_service import Scope
 from management.relation_replicator.relation_replicator import ReplicationEvent, ReplicationEventType
 from management.role.definer import seed_roles, seed_permissions, _seed_platform_roles
-from management.role.platform import platform_v2_role_uuid_for
+from management.role.platform import (
+    ADMIN_DEFAULT_SEEDED_ROLES_FORCE_ROOT_SCOPE,
+    admin_platform_parent_scope_for_seeded_system_role,
+    platform_v2_role_uuid_for,
+)
 from management.role.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
     SeedingRelationApiDualWriteHandler,
@@ -72,6 +77,7 @@ def _child_predicate(parent_uuid: str | UUID, child_uuid: str | UUID):
     )
 
 
+@override_settings(ATOMIC_RETRY_DISABLED=True)
 class RoleDefinerTests(IdentityRequest):
     """Test the role definer functions."""
 
@@ -82,12 +88,22 @@ class RoleDefinerTests(IdentityRequest):
             f"Expected child relation to be present: parent={str(parent_uuid)}, child={str(child_uuid)}",
         )
 
+        platform_role = PlatformRoleV2.objects.get(uuid=parent_uuid)
+        child_role = SeededRoleV2.objects.get(uuid=child_uuid)
+
+        self.assertTrue(platform_role.children.contains(child_role))
+
     def _assert_not_child(self, tuples: InMemoryTuples, parent_uuid: str | UUID, child_uuid: str | UUID):
         self.assertEqual(
             0,
             len(tuples.find_tuples(_child_predicate(parent_uuid=parent_uuid, child_uuid=child_uuid))),
             f"Expected child relation to be absent: parent={str(parent_uuid)}, child={str(child_uuid)}",
         )
+
+        platform_role = PlatformRoleV2.objects.get(uuid=parent_uuid)
+        child_role = SeededRoleV2.objects.get(uuid=child_uuid)
+
+        self.assertFalse(platform_role.children.contains(child_role))
 
     def setUp(self):
         """Set up the role definer tests."""
@@ -260,6 +276,35 @@ class RoleDefinerTests(IdentityRequest):
                     ["unready1", "unready2"],
                     "Unready tenant should not be notified",
                 )
+
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    def test_role_create_skip_notifications(self, send_kafka_message):
+        """Test that skip_notifications suppresses RH notifications during role seeding."""
+        kafka_mock = copy_call_args(send_kafka_message)
+        with self.settings(NOTIFICATIONS_RH_ENABLED=True, NOTIFICATIONS_ENABLED=True):
+            from management.seeds import role_seeding
+
+            role_seeding(skip_notifications=True)
+
+        notification_calls = [c for c in kafka_mock.call_args_list if c.args[0] == settings.NOTIFICATIONS_TOPIC]
+        self.assertEqual(len(notification_calls), 0, "No notifications should be sent when skip_notifications=True")
+
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    def test_role_update_skip_notifications(self, send_kafka_message):
+        """Test that skip_notifications suppresses RH notifications during role update seeding."""
+        kafka_mock = copy_call_args(send_kafka_message)
+        self.try_seed_roles()
+
+        # Force an update by zeroing the version
+        Role.objects.filter(platform_default=True).update(version=0)
+
+        with self.settings(NOTIFICATIONS_RH_ENABLED=True, NOTIFICATIONS_ENABLED=True):
+            from management.seeds import role_seeding
+
+            role_seeding(skip_notifications=True)
+
+        notification_calls = [c for c in kafka_mock.call_args_list if c.args[0] == settings.NOTIFICATIONS_TOPIC]
+        self.assertEqual(len(notification_calls), 0, "No notifications should be sent when skip_notifications=True")
 
     def try_seed_roles(self):
         """Try to seed roles"""
@@ -654,15 +699,20 @@ class RoleDefinerTests(IdentityRequest):
         root_platform_default_uuid = UUID(settings.SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID)
         tenant_platform_default_uuid = UUID(settings.SYSTEM_DEFAULT_TENANT_ROLE_UUID)
         tenant_admin_default_uuid = UUID(settings.SYSTEM_ADMIN_TENANT_ROLE_UUID)
+        root_admin_default_uuid = UUID(settings.SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID)
 
         initial_count = len(tuples)
 
-        # Note that notifications_role and approval_role are platform_default, while inventory_role is admin_default.
+        # Note that notifications_role and approval_role are platform_default, while user_access_role is admin_default.
         notifications_role = Role.objects.public_tenant_only().get(name="Notifications viewer")
         approval_role = Role.objects.public_tenant_only().get(name="Approval Approver")
+        user_access_role = Role.objects.public_tenant_only().get(name="User Access administrator")
+
+        # This role is a special case: when assigned as part of default access (only), it should always be assigned in
+        # root scope. See RHCLOUD-45734 and https://github.com/RedHatInsights/insights-rbac/pull/2653
         inventory_role = Role.objects.public_tenant_only().get(name="Inventory Groups Administrator")
 
-        # Assert that seed_role creates relations in the default scope.
+        # Assert that seed_role creates relations in the default scope for ordinary roles.
         self._assert_child(
             tuples,
             parent_uuid=default_platform_default_uuid,
@@ -676,14 +726,24 @@ class RoleDefinerTests(IdentityRequest):
         self._assert_child(
             tuples,
             parent_uuid=default_admin_default_uuid,
+            child_uuid=user_access_role.uuid,
+        )
+
+        # As mentioned above, this role is a special case and should always have root scope.
+        self._assert_child(
+            tuples,
+            parent_uuid=root_admin_default_uuid,
             child_uuid=inventory_role.uuid,
         )
 
         # Force updating the existing relationships even though the role version numbers have not changed.
-        # This puts approval_role in root scope and inventory_role in tenant scope.
+        # This puts approval_role in root scope and user_access_role in tenant scope.
+        #
+        # inventory_role's permissions become tenant-scoped, but the admin-default assignment always stays in root
+        # scope.
         with self.settings(
             ROOT_SCOPE_PERMISSIONS="approval:actions:create",
-            TENANT_SCOPE_PERMISSIONS="inventory:*:*",
+            TENANT_SCOPE_PERMISSIONS="rbac:*:*,inventory:*:*",
         ):
             seed_roles(force_update_relationships=True)
 
@@ -713,6 +773,18 @@ class RoleDefinerTests(IdentityRequest):
         self._assert_child(
             tuples,
             parent_uuid=tenant_admin_default_uuid,
+            child_uuid=user_access_role.uuid,
+        )
+
+        # inventory_role should still be in the root scope.
+        self._assert_child(
+            tuples,
+            parent_uuid=root_admin_default_uuid,
+            child_uuid=inventory_role.uuid,
+        )
+        self._assert_not_child(
+            tuples,
+            parent_uuid=tenant_admin_default_uuid,
             child_uuid=inventory_role.uuid,
         )
 
@@ -723,10 +795,10 @@ class RoleDefinerTests(IdentityRequest):
         )
 
         # Check that we can also move roles between non-default scopes.
-        # This puts both approval_role and inventory_role in tenant scope.
+        # This puts both approval_role and inventory_role permissions in tenant scope.
         with self.settings(
             ROOT_SCOPE_PERMISSIONS="",
-            TENANT_SCOPE_PERMISSIONS="approval:actions:create,inventory:*:*",
+            TENANT_SCOPE_PERMISSIONS="approval:actions:create,rbac:*:*",
         ):
             seed_roles(force_update_relationships=True)
 
@@ -751,6 +823,23 @@ class RoleDefinerTests(IdentityRequest):
         self._assert_child(
             tuples,
             parent_uuid=tenant_admin_default_uuid,
+            child_uuid=user_access_role.uuid,
+        )
+
+        # inventory_role should still not have moved.
+        self._assert_child(
+            tuples,
+            parent_uuid=root_admin_default_uuid,
+            child_uuid=inventory_role.uuid,
+        )
+        self._assert_not_child(
+            tuples,
+            parent_uuid=default_admin_default_uuid,
+            child_uuid=inventory_role.uuid,
+        )
+        self._assert_not_child(
+            tuples,
+            parent_uuid=tenant_admin_default_uuid,
             child_uuid=inventory_role.uuid,
         )
 
@@ -760,7 +849,45 @@ class RoleDefinerTests(IdentityRequest):
             "Expected overall number of tuples not to change.",
         )
 
+    def test_admin_default_seeded_roles_force_root_scope(self):
+        """Test that all roles in ADMIN_DEFAULT_SEEDED_ROLES_FORCE_ROOT_SCOPE are overridden to ROOT."""
+        for role_name in ADMIN_DEFAULT_SEEDED_ROLES_FORCE_ROOT_SCOPE:
+            for derived_scope in Scope:
+                result = admin_platform_parent_scope_for_seeded_system_role(
+                    role_name, admin_default=True, permission_derived_scope=derived_scope, apply_override=True
+                )
+                self.assertEqual(
+                    result,
+                    Scope.ROOT,
+                    f"{role_name!r} with derived scope {derived_scope.name} should be forced to ROOT",
+                )
 
+    def test_admin_default_force_root_does_not_apply_without_admin_default(self):
+        """Test that the ROOT override only applies when admin_default=True."""
+        for role_name in ADMIN_DEFAULT_SEEDED_ROLES_FORCE_ROOT_SCOPE:
+            result = admin_platform_parent_scope_for_seeded_system_role(
+                role_name, admin_default=False, permission_derived_scope=Scope.DEFAULT, apply_override=True
+            )
+            self.assertEqual(result, Scope.DEFAULT)
+
+    def test_admin_default_force_root_does_not_apply_without_override(self):
+        """Test that the ROOT override is skipped when apply_override=False."""
+        for role_name in ADMIN_DEFAULT_SEEDED_ROLES_FORCE_ROOT_SCOPE:
+            for derived_scope in Scope:
+                result = admin_platform_parent_scope_for_seeded_system_role(
+                    role_name, admin_default=True, permission_derived_scope=derived_scope, apply_override=False
+                )
+                self.assertEqual(result, derived_scope)
+
+    def test_admin_default_force_root_does_not_apply_to_other_roles(self):
+        """Test that ordinary admin_default roles are NOT forced to ROOT."""
+        result = admin_platform_parent_scope_for_seeded_system_role(
+            "Some Other Role", admin_default=True, permission_derived_scope=Scope.DEFAULT, apply_override=True
+        )
+        self.assertEqual(result, Scope.DEFAULT)
+
+
+@override_settings(ATOMIC_RETRY_DISABLED=True)
 class V2RoleSeedingTests(IdentityRequest):
     """Test V2 role seeding functionality."""
 

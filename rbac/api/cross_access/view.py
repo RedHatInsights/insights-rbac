@@ -16,12 +16,13 @@
 #
 
 """View for cross access request."""
+
 from typing import Callable, List, Optional
 
-from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 from django_filters import rest_framework as filters
+from management.atomic_transactions import atomic
 from management.filters import CommonFilters
 from management.principal.proxy import PrincipalProxy
 from management.relation_replicator.relation_replicator import ReplicationEventType
@@ -135,7 +136,8 @@ class CrossAccountRequestViewSet(
         """Patch a cross-account request. Target account admin use it to update status of the request."""
         return super().partial_update(request=request, *args, **kwargs)
 
-    @transaction.atomic
+    # This can operate on V2 tenants, so we need to use a SERIALIZABLE transaction here.
+    @atomic
     def update(self, request, *args, **kwargs):
         """Update a cross-account request. TAM requestor use it to update their requesters."""
         validate_uuid(kwargs.get("pk"), "cross-account request uuid validation")
@@ -189,9 +191,16 @@ class CrossAccountRequestViewSet(
 
         # Replace the user_id with user's info
         for element in result.data["data"]:
-            user_id = element.pop("user_id")
-            requestor_info = principals[user_id]
-            element.update(requestor_info)
+            user_id = element["user_id"]
+            requestor_info = principals.get(user_id)
+
+            if requestor_info is not None:
+                element["user_available"] = True
+
+                del element["user_id"]
+                element.update(requestor_info)
+            else:
+                element["user_available"] = False
 
         return result
 

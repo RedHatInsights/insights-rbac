@@ -16,6 +16,7 @@
 #
 
 """Serializer for workspace management."""
+
 from management.workspace.service import WorkspaceService
 from rest_framework import serializers
 
@@ -50,6 +51,15 @@ class WorkspaceSerializer(serializers.ModelSerializer):
     @property
     def _service(self) -> WorkspaceService:
         return self.context["view"]._service
+
+    def validate(self, attrs):
+        """Require parent_id in the body for PUT (full update) requests."""
+        request = self.context.get("request")
+        if request and request.method == "PUT" and "parent_id" not in attrs:
+            instance = self.instance
+            if instance and instance.type not in (Workspace.Types.ROOT, Workspace.Types.UNGROUPED_HOSTS):
+                raise serializers.ValidationError({"parent_id": "This field is required."})
+        return attrs
 
     def create(self, validated_data):
         """Create the workspace object in the database."""

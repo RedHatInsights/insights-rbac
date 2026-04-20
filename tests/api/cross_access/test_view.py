@@ -20,13 +20,18 @@ from api.models import CrossAccountRequest, Tenant
 from api.cross_access.util import get_cross_principal_name
 from django.urls import reverse
 from django.utils import timezone
-from management.models import Role, Principal
+
+from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
+from management.models import Group, Role, Principal
 from management.notifications.notification_handlers import EVENT_TYPE_RH_TAM_REQUEST_CREATED
 from rest_framework import status
 from rest_framework.test import APIClient
 
 from datetime import timedelta
 from unittest.mock import patch
+
+from management.relation_replicator.relation_replicator import ReplicationEventType
+from management.role.model import BindingMapping
 from management.workspace.model import Workspace
 from migration_tool.in_memory_tuples import (
     all_of,
@@ -42,11 +47,20 @@ from tests.api.cross_access.fixtures import CrossAccountRequestTest
 from django.test.utils import override_settings
 from functools import partial
 
+from tests.util import assert_v1_v2_locally_consistent
+
 URL_LIST = reverse("v1_api:cross-list")
 
 
+@override_settings(ATOMIC_RETRY_DISABLED=True)
 class CrossAccountRequestViewTests(CrossAccountRequestTest):
     """Test the cross account request view."""
+
+    def tearDown(self):
+        with self.subTest(msg="tuple consistency"):
+            assert_v1_v2_locally_consistent(test=self)
+
+        super().tearDown()
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
@@ -211,6 +225,53 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
 
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
         self.assertEqual(response.data["errors"][0]["detail"].code, "permission_denied")
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "username": "test_user",
+                    "email": "test_user@email.com",
+                    "first_name": "user",
+                    "last_name": "test",
+                    "account_number": "567890",
+                    "user_id": "1111111",
+                },
+            ],
+        },
+    )
+    def test_list_missing_user(self, mock_request):
+        """Test listing of cross account request based on account number of identity."""
+        client = APIClient()
+        response = client.get(URL_LIST, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 4)
+
+        data = response.data["data"]
+
+        user1_cars = [r for r in data if r["request_id"] == str(self.request_1.request_id)]
+        user2_cars = [r for r in data if r["request_id"] == str(self.request_2.request_id)]
+
+        self.assertEqual(1, len(user1_cars))
+        self.assertEqual(1, len(user2_cars))
+
+        user1_car = user1_cars[0]
+        user2_car = user2_cars[0]
+
+        self.assertTrue(user1_car["user_available"])
+        self.assertNotIn("user_id", user1_car)
+        self.assertEqual("user", user1_car["first_name"])
+        self.assertEqual("test", user1_car["last_name"])
+        self.assertEqual("test_user@email.com", user1_car["email"])
+
+        self.assertFalse(user2_car["user_available"])
+        self.assertEqual("2222222", user2_car["user_id"])
+        self.assertNotIn("first_name", user2_car)
+        self.assertNotIn("last_name", user2_car)
+        self.assertNotIn("email", user2_car)
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
@@ -660,12 +721,20 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data.get("status"), update_data.get("status"))
 
+        test_group = Group.objects.create(tenant=self.tenant, name="test_group")
+
+        dual_write = RelationApiDualWriteGroupHandler(test_group, ReplicationEventType.ASSIGN_ROLE)
+        dual_write.generate_relations_reset_roles([self.role_1])
+        dual_write.replicate()
+
         binding_mapping = self.role_1.binding_mappings.first()
-        binding_mapping.mappings["groups"] = ["12345f"]  # fake groups to stop it from getting deleted
-        binding_mapping.save()
+
         # From approved to denied
         update_data = {"status": "denied"}
         response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
+
+        # Assigning the group should have prevented the BindingMapping from being deleted.
+        self.assertTrue(BindingMapping.objects.filter(pk=binding_mapping.pk).exists())
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data.get("status"), update_data.get("status"))
@@ -933,11 +1002,11 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
         cross_account_bindings, _ = self.relations.find_group_with_tuples(
             # Tuples which are...
             # grouped by resource
-            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+            group_by=lambda t: (t.resource.type.namespace, t.resource.type.name, t.resource.id),
             # where the resource is one of the default role bindings...
             group_filter=lambda group: group[0] == "rbac"
             and group[1] == "role_binding"
-            and group[2] in {str(binding.subject_id) for binding in default_bindings},
+            and group[2] in {str(binding.subject.subject.id) for binding in default_bindings},
             # and where one of the tuples from that binding has...
             predicates=[
                 all_of(
@@ -956,7 +1025,10 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
 
         # Collect all the bound roles by iterating over the bindings and getting the subjects of the role relation
         bound_roles = {
-            t.subject_id for _, tuples in cross_account_bindings.items() for t in tuples if t.relation == "role"
+            t.subject.subject.id
+            for _, tuples in cross_account_bindings.items()
+            for t in tuples
+            if t.relation == "role"
         }
 
         # Assert the bindings are to roles with the same ID
@@ -987,7 +1059,7 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
             all_of(resource("rbac", "workspace", default_workspace_id), relation("binding"))
         )
 
-        previous_subject_ids = {str(binding.subject_id) for binding in previous_default_bindings}
+        previous_subject_ids = {str(binding.subject.subject.id) for binding in previous_default_bindings}
 
         # generated relations to approve request
         self.approve_request(self.request_4)
@@ -1001,18 +1073,18 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
         # Collect default bindings which were added by approving request
         default_bindings = []
         for binding in all_default_bindings:
-            if str(binding.subject_id) not in previous_subject_ids:
+            if str(binding.subject.subject.id) not in previous_subject_ids:
                 default_bindings.append(binding)
 
         # Of these bindings, look for the ones that are for the user 2222222
         cross_account_bindings, _ = self.relations.find_group_with_tuples(
             # Tuples which are...
             # grouped by resource
-            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+            group_by=lambda t: (t.resource.type.namespace, t.resource.type.name, t.resource.id),
             # where the resource is one of the default role bindings...
             group_filter=lambda group: group[0] == "rbac"
             and group[1] == "role_binding"
-            and group[2] in {str(binding.subject_id) for binding in default_bindings},
+            and group[2] in {str(binding.subject.subject.id) for binding in default_bindings},
             # and where one of the tuples from that binding has...
             predicates=[
                 all_of(
@@ -1031,7 +1103,10 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
 
         # Collect all the bound roles by iterating over the bindings and getting the subjects of the role relation
         bound_roles = {
-            t.subject_id for _, tuples in cross_account_bindings.items() for t in tuples if t.relation == "role"
+            t.subject.subject.id
+            for _, tuples in cross_account_bindings.items()
+            for t in tuples
+            if t.relation == "role"
         }
 
         # Assert the bindings are to roles with the same ID
@@ -1047,11 +1122,11 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
         cross_account_bindings, _ = self.relations.find_group_with_tuples(
             # Tuples which are...
             # grouped by resource
-            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+            group_by=lambda t: (t.resource.type.namespace, t.resource.type.name, t.resource.id),
             # where the resource is one of the default role bindings...
             group_filter=lambda group: group[0] == "rbac"
             and group[1] == "role_binding"
-            and group[2] in {str(binding.subject_id) for binding in default_bindings},
+            and group[2] in {str(binding.subject.subject.id) for binding in default_bindings},
             # and where one of the tuples from that binding has...
             predicates=[
                 all_of(
@@ -1078,7 +1153,7 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
 
         default_bindings = []
         for binding in all_default_bindings:
-            if str(binding.subject_id) not in previous_subject_ids:
+            if str(binding.subject.subject.id) not in previous_subject_ids:
                 default_bindings.append(binding)
 
         self.assertEqual(len(default_bindings), 0, "Default bindings for cross access request roles still exists")

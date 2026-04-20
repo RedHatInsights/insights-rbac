@@ -16,6 +16,7 @@
 #
 
 """View for internal tenant management."""
+
 import json
 import logging
 import uuid
@@ -38,8 +39,11 @@ from internal.errors import SentryDiagnosticError, UserNotFoundError
 from internal.jwt_utils import JWTManager, JWTProvider
 from internal.utils import (
     delete_bindings,
+    fix_admin_default_bindings,
     get_or_create_ungrouped_workspace,
     load_request_body,
+    read_tuples_from_kessel,
+    rebuild_tenant_workspace_relations as rebuild_workspace_relations_util,
     validate_inventory_input,
     validate_relations_input,
 )
@@ -82,15 +86,20 @@ from management.role.relation_api_dual_write_handler import (
 )
 from management.role.serializer import BindingMappingSerializer
 from management.tasks import (
+    bulk_cleanup_orphan_bindings_in_worker,
     clean_invalid_workspace_resource_definitions_in_worker,
+    expire_orphaned_cross_account_requests_in_worker,
     fix_missing_binding_base_tuples_in_worker,
     migrate_binding_scope_in_worker,
     migrate_data_in_worker,
+    remove_deleted_workspace_bindings_in_worker,
+    remove_unassigned_system_binding_mappings_in_worker,
     run_migrations_in_worker,
     run_ocm_performance_in_worker,
     run_seeds_in_worker,
     run_sync_schemas_in_worker,
 )
+from management.tenant_mapping.model import TenantMapping
 from management.tenant_service.v2 import V2TenantBootstrapService
 from management.utils import (
     create_client_channel,
@@ -105,7 +114,7 @@ from migration_tool.in_memory_tuples import InMemoryRelationReplicator, InMemory
 from rest_framework import status
 
 from api.common.pagination import StandardResultsSetPagination, WSGIRequestResultsSetPagination
-from api.cross_access.model import CrossAccountRequest, RequestsRoles
+from api.cross_access.model import RequestsRoles
 from api.models import Tenant, User
 from api.tasks import (
     cross_account_cleanup,
@@ -523,26 +532,20 @@ def get_user_from_bop(username, email):
     user = users[0]
 
     if ("username" not in user) or (not user["username"]) or (user["username"].isspace()):
-        logger.error(
-            f"""invalid data for user '{query_by}={principal}':
-             user found in bop but does not contain required 'username' field"""
-        )
+        logger.error(f"""invalid data for user '{query_by}={principal}':
+            user found in bop but does not contain required 'username' field""")
         raise Exception(
             f"invalid user data for user '{query_by}={principal}': user found in bop but no username exists"
         )
 
     if "is_org_admin" not in user:
         user["is_org_admin"] = False
-        logger.warning(
-            f"""invalid data for user '{query_by}={principal}':
-             user found in bop but does not contain required 'is_org_admin' field"""
-        )
+        logger.warning(f"""invalid data for user '{query_by}={principal}':
+            user found in bop but does not contain required 'is_org_admin' field""")
 
     if "org_id" not in user:
-        logger.error(
-            f"""invalid data for user '{query_by}={principal}':
-             user found in bop but does not contain required 'org_id' field"""
-        )
+        logger.error(f"""invalid data for user '{query_by}={principal}':
+            user found in bop but does not contain required 'org_id' field""")
         raise Exception(f"invalid user data for user '{query_by}={principal}': user found in bop but no org_id exists")
 
     logger.debug(f"successfully queried bop for user: '{user}' with queryBy: '{query_by}'")
@@ -559,8 +562,9 @@ def run_seeds(request):
         type_option = "seed_types"
         force_create_option = "force_create_relationships"
         force_update_option = "force_update_relationships"
+        skip_notifications_option = "skip_notifications"
 
-        valid_options = [type_option, force_create_option, force_update_option]
+        valid_options = [type_option, force_create_option, force_update_option, skip_notifications_option]
         valid_values = ["permissions", "roles", "groups"]
 
         for option in request.GET.keys():
@@ -576,7 +580,7 @@ def run_seeds(request):
                 return HttpResponse(f'Valid options for "{type_option}": {valid_values}.', status=400)
             args = {type: True for type in seed_types}
 
-        for option in [force_create_option, force_update_option]:
+        for option in [force_create_option, force_update_option, skip_notifications_option]:
             value: Optional[str] = request.GET.get(option)
 
             if value is not None:
@@ -968,14 +972,18 @@ def fetch_replication_data(request):
 def bootstrap_tenant(request):
     """View method for bootstrapping a tenant.
 
-    POST /_private/api/utils/bootstrap_tenant/?org_id=12345&force=false
+    POST /_private/api/utils/bootstrap_tenant/?force=false&force_admin_only=false
 
-    org_id:
-        (required) The org_id of the Tenant to bootstrap.
+    Body: {"org_ids": ["12345", "67890"]}
 
     force:
         Whether or not to force replication to happen, even if the Tenant is already bootstrapped.
-        Cannot be 'true' if replication is on, due to inconsistency risk.
+        Cannot be 'true' if replication is on, due to inconsistency risk with custom default groups.
+
+    force_admin_only:
+        Re-replicate only admin default bindings. This is SAFE even when replication is on because
+        admin default bindings are NOT customizable (unlike platform default bindings).
+        Use this to fix tenants that were bootstrapped before admin default groups were seeded.
     """
     if request.method != "POST":
         return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
@@ -986,17 +994,28 @@ def bootstrap_tenant(request):
 
     org_ids_data = json.loads(request.body.decode("utf-8").replace("'", '"'))
     force = request.GET.get("force", "false").lower() == "true"
+    force_admin_only = request.GET.get("force_admin_only", "false").lower() == "true"
+
     if "org_ids" not in org_ids_data or len(org_ids_data["org_ids"]) == 0:
         return HttpResponse(
             'Invalid request: the "org_ids" array in the body must contain at least one org_id', status=400
         )
     org_ids = org_ids_data["org_ids"]
+
+    # force=true has race condition risk with custom default group creation
+    # force_admin_only=true is safe because admin default bindings are not customizable
     if force and settings.REPLICATION_TO_RELATION_ENABLED:
         return HttpResponse(
             "Forcing replication is not allowed when replication is on, "
             "due to race condition with default group customization.",
             status=400,
         )
+
+    # Handle force_admin_only separately - this is safe even with replication on
+    if force_admin_only:
+        results = [fix_admin_default_bindings(org_id) for org_id in org_ids]
+        return JsonResponse({"results": results}, status=200)
+
     with transaction.atomic():
         bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
         for org_id in org_ids:
@@ -1042,16 +1061,16 @@ def clean_binding_mapping(request, binding_id):
 
     POST /_private/api/utils/bindings/<binding_id>/clean
     Params:
-        field=users or groups
+        field=groups (for forwards compatibility)
     """
     if not destructive_ok("api"):
         return HttpResponse("Destructive operations disallowed.", status=400)
     if request.method != "POST":
         return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
     field = request.GET.get("field")
-    if not field or field not in ("users", "groups"):
+    if not field or field != "groups":
         return HttpResponse(
-            'Invalid request, must supply the "users" or "groups" in field.',
+            'The "field" parameter must be "groups".',
             status=400,
         )
 
@@ -1065,68 +1084,41 @@ def clean_binding_mapping(request, binding_id):
                 )
                 .get()
             )
-            if field == "users":
-                relations_to_remove = []
-                # Check if the user should be removed
-                if (
-                    CrossAccountRequest.objects.filter(user_id__in=mapping.mappings["users"])
-                    .filter(roles__id=mapping.role.id)
-                    .filter(status="approved")
-                    .exists()
-                ):
-                    raise Exception(
-                        f"User(s) {mapping.mappings['users']} are still related to approved cross account requests."
-                    )
-                # After migration, if it is still old format with duplication, means
-                # it only binds with expired cars, which we can remove
-                mapping.update_data_format_for_user(relations_to_remove)
-                if relations_to_remove:
-                    replicator.replicate(
-                        ReplicationEvent(
-                            event_type=ReplicationEventType.EXPIRE_CROSS_ACCOUNT_REQUEST,
-                            info={
-                                "users": mapping.mappings["users"],
-                                "org_id": str(mapping.role.tenant.org_id),
-                            },
-                            partition_key=PartitionKey.byEnvironment(),
-                            remove=relations_to_remove,
-                            add=[],
-                        ),
-                    )
-            else:
-                relations_to_remove = []
-                if not mapping.role.system:
-                    raise Exception("Groups can only be cleaned for system roles")
-                # Get the list of group UUIDs from the mapping
-                group_uuids = mapping.mappings.get("groups", [])
 
-                # Get existing groups from the database
-                existing_groups = {
-                    str(group_uuid)
-                    for group_uuid in Group.objects.filter(uuid__in=group_uuids).values_list("uuid", flat=True)
-                }
+            relations_to_remove = []
+            if not mapping.role.system:
+                raise Exception("Groups can only be cleaned for system roles")
+            # Get the list of group UUIDs from the mapping
+            group_uuids = mapping.mappings.get("groups", [])
 
-                # Find missing groups
-                missing_groups = set(group_uuids) - existing_groups
-                if not missing_groups:
-                    raise Exception("No groups to clean")
-                for group in missing_groups:
-                    removal = mapping.unassign_group(group)
-                    if removal is not None:
-                        relations_to_remove.append(removal)
-                if relations_to_remove:
-                    replicator.replicate(
-                        ReplicationEvent(
-                            event_type=ReplicationEventType.MIGRATE_TENANT_GROUPS,
-                            info={
-                                "groups": missing_groups,
-                                "org_id": str(mapping.role.tenant.org_id),
-                            },
-                            partition_key=PartitionKey.byEnvironment(),
-                            remove=relations_to_remove,
-                            add=[],
-                        ),
-                    )
+            # Get existing groups from the database
+            existing_groups = {
+                str(group_uuid)
+                for group_uuid in Group.objects.filter(uuid__in=group_uuids).values_list("uuid", flat=True)
+            }
+
+            # Find missing groups
+            missing_groups = set(group_uuids) - existing_groups
+            if not missing_groups:
+                raise Exception("No groups to clean")
+            for group in missing_groups:
+                removal = mapping.unassign_group(group)
+                if removal is not None:
+                    relations_to_remove.append(removal)
+            if relations_to_remove:
+                replicator.replicate(
+                    ReplicationEvent(
+                        event_type=ReplicationEventType.MIGRATE_TENANT_GROUPS,
+                        info={
+                            "groups": missing_groups,
+                            "org_id": str(mapping.role.tenant.org_id),
+                        },
+                        partition_key=PartitionKey.byEnvironment(),
+                        remove=relations_to_remove,
+                        add=[],
+                    ),
+                )
+
             mapping.save()
         return HttpResponse(f"Binding mapping {json.dumps(mapping.mappings)} cleaned.", status=200)
     except Exception as e:
@@ -1796,6 +1788,66 @@ def check_relation(request):
         )
 
 
+def lookup_subjects(request):
+    """POST to retrieve subjects that have a relationship with a given resource."""
+    # Parse JSON data from the POST request body
+    req_data = load_request_body(request)
+
+    if not validate_relations_input("lookup_subjects", req_data):
+        return JsonResponse({"detail": "Invalid request body provided in request to lookup_subjects."}, status=500)
+
+    # Request parameters for subject lookup on relations api from post request
+    resource_type_name = req_data["resource"]["type"]["name"]
+    resource_type_namespace = req_data["resource"]["type"]["namespace"]
+    resource_id = req_data["resource"]["id"]
+    subject_type_name = req_data["subject_type"]["name"]
+    subject_type_namespace = req_data["subject_type"]["namespace"]
+    relation = req_data["relation"]
+    subject_relation = req_data.get("subject_relation") or None
+    token = jwt_manager.get_jwt_from_redis()
+
+    try:
+        with create_client_channel(settings.RELATION_API_SERVER) as channel:
+            stub = lookup_pb2_grpc.KesselLookupServiceStub(channel)
+
+            request_data = lookup_pb2.LookupSubjectsRequest(
+                resource=common_pb2.ObjectReference(
+                    type=common_pb2.ObjectType(
+                        name=resource_type_name,
+                        namespace=resource_type_namespace,
+                    ),
+                    id=resource_id,
+                ),
+                relation=relation,
+                subject_type=common_pb2.ObjectType(
+                    name=subject_type_name,
+                    namespace=subject_type_namespace,
+                ),
+                subject_relation=subject_relation,
+            )
+
+        # Pass JWT token in metadata
+        metadata = [("authorization", f"Bearer {token}")]
+        responses = stub.LookupSubjects(request_data, metadata=metadata)
+
+        if responses:
+            response_data = []
+            for r in responses:
+                response_to_dict = json_format.MessageToDict(r)
+                response_data.append(response_to_dict)
+            json_response = {"subjects": response_data}
+            return JsonResponse(json_response, status=200)
+        return JsonResponse("No subjects found", status=204, safe=False)
+    except RpcError as e:
+        logger.error(f"gRPC error: {str(e)}")
+        return JsonResponse({"detail": "Error occurred in gRPC call", "error": str(e)}, status=400)
+    except Exception as e:
+        logger.error(f"Unexpected error: {str(e)}")
+        return JsonResponse(
+            {"detail": "Error occurred in call to lookup subjects endpoint", "error": str(e)}, status=500
+        )
+
+
 def group_assignments(request, group_uuid):
     """Calculate and check if group-principals are correct on relations api."""
     group = get_object_or_404(Group, uuid=group_uuid)
@@ -1896,8 +1948,12 @@ def check_bootstrapped_tenants(request, org_id):
             },
         }
         try:
-            bootstrap_tenants_correct = BootstrappedTenantChecker.check_bootstrapped_tenants(mapping)
-            bootstrapped_tenant_response = {"org_id": tenant.org_id, "bootstrapped_correct": bootstrap_tenants_correct}
+            bootstrap_tenants_correct, checks = BootstrappedTenantChecker.check_bootstrapped_tenants(mapping)
+            bootstrapped_tenant_response = {
+                "org_id": tenant.org_id,
+                "bootstrapped_correct": bootstrap_tenants_correct,
+                "relations_checked": checks,
+            }
         except RpcError as e:
             return JsonResponse(
                 {"detail": "gRPC error occurred during inventory bootstrapped tenant check", "error": str(e)},
@@ -2233,9 +2289,14 @@ def migrate_binding_scope(request):
     if request.method != "POST":
         return JsonResponse({"error": "Invalid method, only 'POST' is allowed."}, status=405)
 
-    logger.info(f"Running binding scope migration: {request.method} {request.user.username}")
+    logger.info("Running binding scope migration.")
 
-    migrate_binding_scope_in_worker.delay()
+    raw_sources = request.GET.get("sources", None)
+
+    if raw_sources is not None:
+        migrate_binding_scope_in_worker.delay(sources=raw_sources.split(","))
+    else:
+        migrate_binding_scope_in_worker.delay()
 
     return JsonResponse(
         {"message": "Binding scope migration is running in a background worker."},
@@ -2289,30 +2350,231 @@ def fix_missing_binding_base_tuples(request):
     POST /_private/api/utils/fix_missing_binding_base_tuples/?binding_ids=1,2,3
 
     Query params:
-        binding_ids (optional): Comma-separated list of binding IDs to fix. If not provided, fixes ALL.
+        binding_uuids (optional): Comma-separated list of binding UUIDs to fix. If not provided, fixes ALL.
 
     Triggers a background worker to replicate all tuples for the specified bindings.
     Kessel/SpiceDB handles duplicate tuples gracefully.
 
     Returns 202 Accepted with a message that the worker is running.
     """
-    binding_ids_param = request.GET.get("binding_ids", "")
+    binding_uuids_param = request.GET.get("binding_uuids", "")
 
     logger.info("Fixing missing binding base tuples")
 
     # Parse binding IDs if provided
-    binding_ids = None
-    if binding_ids_param:
-        binding_ids = [int(id.strip()) for id in binding_ids_param.split(",")]
-        logger.info(f"Will fix {len(binding_ids)} specific bindings: {binding_ids}")
+    binding_uuids = None
+    if binding_uuids_param:
+        binding_uuids = [id.strip() for id in binding_uuids_param.split(",")]
+        logger.info(f"Will fix {len(binding_uuids)} specific bindings: {binding_uuids}")
 
     # Trigger the background worker
-    fix_missing_binding_base_tuples_in_worker.delay(binding_ids=binding_ids)
+    fix_missing_binding_base_tuples_in_worker.delay(binding_uuids=binding_uuids)
 
     return JsonResponse(
         {
             "message": "Fix missing binding base tuples is running in a background worker.",
-            "binding_ids": binding_ids if binding_ids else "all",
+            "binding_uuids": binding_uuids if binding_uuids else "all",
         },
         status=202,
     )
+
+
+@require_http_methods(["POST"])
+def cleanup_tenant_orphan_bindings(request, org_id):
+    """
+    Clean up orphaned role binding relationships for a tenant and remigrate bindings.
+
+    POST /_private/api/utils/cleanup_tenant_orphan_bindings/<org_id>/
+
+    This endpoint triggers a background worker task that:
+    1. Uses DFS to discover all workspaces from Kessel
+    2. Identifies orphaned/stale workspace relationships
+    3. Cleans orphaned binding relationships
+    4. Runs migrate_all_role_bindings() to recreate correct relationships
+
+    Query params:
+        dry_run=true: Only report what would be deleted, don't make changes or run migration
+
+    Returns:
+        JSON response indicating the task has been queued
+    """
+    from management.tasks import cleanup_tenant_orphan_bindings_in_worker
+
+    dry_run = request.GET.get("dry_run", "false").lower() == "true"
+
+    # Validate tenant exists before queuing
+    tenant = get_object_or_404(Tenant, org_id=org_id)
+
+    # Validate TenantMapping exists
+    try:
+        tenant.tenant_mapping
+    except TenantMapping.DoesNotExist:
+        return JsonResponse(
+            {"detail": f"No TenantMapping found for tenant {org_id}. Tenant may not be bootstrapped."},
+            status=404,
+        )
+
+    # Validate workspaces exist
+    try:
+        Workspace.objects.root(tenant=tenant)
+        Workspace.objects.default(tenant=tenant)
+    except Workspace.DoesNotExist as e:
+        return JsonResponse(
+            {"detail": f"Missing root or default workspace for tenant {org_id}: {str(e)}"},
+            status=404,
+        )
+
+    logger.info(f"Queuing cleanup task for tenant {org_id} (dry_run={dry_run})")
+
+    # Queue the task
+    cleanup_tenant_orphan_bindings_in_worker.delay(org_id=org_id, dry_run=dry_run)
+
+    return JsonResponse(
+        {
+            "message": f"Cleanup task for tenant {org_id} is running in a background worker.",
+            "org_id": org_id,
+            "dry_run": dry_run,
+        },
+        status=202,
+    )
+
+
+@require_http_methods(["POST"])
+def bulk_cleanup_orphan_bindings(request):
+    """
+    Clean up orphaned role binding relationships.
+
+    POST /_private/api/utils/bulk_cleanup_orphan_bindings/
+
+    Query params:
+        tenant_limit: maximum number of tenants to process (default 100, for testing)
+
+    Returns:
+        JSON response indicating the task has been queued
+    """
+    tenant_limit = int(request.GET.get("tenant_limit", 100))
+
+    try:
+        bulk_cleanup_orphan_bindings_in_worker.delay(tenant_limit=tenant_limit)
+        return JsonResponse(
+            {"message": "Cleanup enqueued in background worker.", "tenant_limit": tenant_limit}, status=202
+        )
+    except Exception as e:
+        logger.exception(f"Error fixing orphan relations, {tenant_limit=}", exc_info=True)
+        return JsonResponse({"detail": f"Error fixing orphan relations: {str(e)}"}, status=500)
+
+
+@require_http_methods(["POST"])
+def rebuild_tenant_workspace_relations(request, org_id):
+    """
+    Rebuild workspace parent relations for a tenant in Kessel.
+
+    POST /_private/api/utils/rebuild_tenant_workspace_relations/<org_id>/
+
+    This endpoint should be run BEFORE cleanup_tenant_orphan_bindings if you suspect
+    workspace parent relations are missing in Kessel. It traverses DB workspaces
+    and ensures their parent relations exist in Kessel.
+
+    Query params:
+        dry_run=true: Only report what would be added, don't make changes
+
+    Returns:
+        JSON response with results of the rebuild operation
+    """
+    dry_run = request.GET.get("dry_run", "false").lower() == "true"
+
+    # Validate tenant exists
+    tenant = get_object_or_404(Tenant, org_id=org_id)
+
+    # Validate workspaces exist
+    try:
+        Workspace.objects.root(tenant=tenant)
+        Workspace.objects.default(tenant=tenant)
+    except Workspace.DoesNotExist as e:
+        return JsonResponse(
+            {"detail": f"Missing root or default workspace for tenant {org_id}: {str(e)}"},
+            status=404,
+        )
+
+    logger.info(f"Rebuilding workspace relations for tenant {org_id} (dry_run={dry_run})")
+
+    # Create a read_tuples function that wraps the internal read_tuples_from_kessel
+    def read_tuples_fn(resource_type, resource_id, relation, subject_type="", subject_id=""):
+        return read_tuples_from_kessel(
+            resource_type=resource_type,
+            resource_id=resource_id,
+            relation=relation,
+            subject_type=subject_type,
+            subject_id=subject_id,
+        )
+
+    replicator = OutboxReplicator()
+
+    try:
+        result = rebuild_workspace_relations_util(
+            tenant=tenant,
+            read_tuples_fn=read_tuples_fn,
+            replicator=replicator,
+            dry_run=dry_run,
+        )
+        return JsonResponse(result, status=200)
+    except Exception as e:
+        logger.exception(f"Error rebuilding workspace relations for tenant {org_id}")
+        return JsonResponse(
+            {"detail": f"Error rebuilding workspace relations: {str(e)}"},
+            status=500,
+        )
+
+
+@require_http_methods(["POST"])
+def remove_unassigned_system_binding_mappings(request):
+    """
+    Remove unassigned system binding mappings (which should not normally be created).
+
+    POST /_private/api/utils/remove_unassigned_system_binding_mappings/
+
+    Returns:
+        JSON response indicating the task has been queued
+    """
+    try:
+        remove_unassigned_system_binding_mappings_in_worker.delay()
+        return JsonResponse({"message": "Cleanup enqueued in background worker."}, status=202)
+    except Exception as e:
+        logger.exception("Error removing unassigned system binding mappings", exc_info=True)
+        return JsonResponse({"detail": f"Error removing unassigned system binding mappings: {str(e)}"}, status=500)
+
+
+@require_http_methods(["POST"])
+def expire_orphaned_cross_account_requests(request):
+    """
+    Expire cross-account requests that no longer correspond to an actual user.
+
+    POST /_private/api/utils/expire_orphaned_cross_account_requests/
+
+    Returns:
+        JSON response indicating the task has been queued
+    """
+    try:
+        expire_orphaned_cross_account_requests_in_worker.delay()
+        return JsonResponse({"message": "Cleanup enqueued in background worker."}, status=202)
+    except Exception as e:
+        logger.exception("Error removing orphaned CARs", exc_info=True)
+        return JsonResponse({"detail": f"Error removing orphaned CARs: {str(e)}"}, status=500)
+
+
+@require_http_methods(["POST"])
+def remove_deleted_workspace_bindings(request):
+    """
+    Remove RoleBindings that reference workspaces that no longer exist.
+
+        POST /_private/api/utils/remove_deleted_workspace_bindings/
+
+    Returns:
+        JSON response indicating the task has been queued
+    """
+    try:
+        remove_deleted_workspace_bindings_in_worker.delay()
+        return JsonResponse({"message": "Cleanup enqueued in background worker."}, status=202)
+    except Exception as e:
+        logger.exception("Error removing bindings for deleted workspaces", exc_info=True)
+        return JsonResponse({"detail": f"Error removing bindings for deleted workspaces: {str(e)}"}, status=500)
