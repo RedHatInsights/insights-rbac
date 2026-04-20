@@ -50,9 +50,10 @@ from migration_tool.migrate import migrate_data, migrate_groups_for_tenant
 
 from management.group.definer import seed_group, clone_default_group_in_public_schema
 from tests.management.role.test_dual_write import RbacFixture
-from tests.v2_util import seed_v2_role_from_v1
+from tests.v2_util import seed_v2_role_from_v1, bootstrap_tenant_for_v2_test
 
 
+@override_settings(ATOMIC_RETRY_DISABLED=True)
 class MigrateTests(TestCase):
     """Test the utils module."""
 
@@ -89,12 +90,11 @@ class MigrateTests(TestCase):
         # two organizations
         # tenant 1 - org_id=1234567
         self.tenant = Tenant.objects.create(org_id="1234567", tenant_name="tenant", ready=True)
-        self.root_workspace = Workspace.objects.create(
-            type=Workspace.Types.ROOT, tenant=self.tenant, name="Root Workspace"
-        )
-        self.default_workspace = Workspace.objects.create(
-            type=Workspace.Types.DEFAULT, tenant=self.tenant, name="Default Workspace", parent=self.root_workspace
-        )
+
+        tenant_bootstrap_result = bootstrap_tenant_for_v2_test(self.tenant)
+        self.default_workspace = tenant_bootstrap_result.default_workspace
+        self.root_workspace = tenant_bootstrap_result.root_workspace
+
         # setup data for organization 1234567
         # Create actual workspaces for the test
         workspace_1 = Workspace.objects.create(
@@ -142,19 +142,12 @@ class MigrateTests(TestCase):
 
         # tenant 2 - org_id=7654321
         another_tenant = Tenant.objects.create(org_id="7654321", ready=True)
+        another_tenant_bootstrap_result = bootstrap_tenant_for_v2_test(another_tenant)
 
         # Create the principal that the cross-account request below will use.
         Principal.objects.create(tenant=self.tenant, username="1111111", user_id="1111111")
 
-        root_workspace_another_tenant = Workspace.objects.create(
-            type=Workspace.Types.ROOT, tenant=another_tenant, name="Root Workspace"
-        )
-        self.default_workspace_for_another_tenant = Workspace.objects.create(
-            type=Workspace.Types.DEFAULT,
-            tenant=another_tenant,
-            name="Default Workspace",
-            parent=root_workspace_another_tenant,
-        )
+        self.default_workspace_for_another_tenant = another_tenant_bootstrap_result.default_workspace
         self.another_tenant = another_tenant
 
         Group.objects.create(name="another_group", tenant=another_tenant)
@@ -408,18 +401,31 @@ class MigrateTestTupleStore(TestCase):
         self.o1 = self.fixture.new_tenant("o1")
         self.o2 = self.fixture.new_tenant("o2")
 
+        o1_w1 = Workspace.objects.create(
+            tenant=self.o1.tenant, parent=Workspace.objects.default(tenant=self.o1.tenant), name="o1_w1"
+        )
+
+        o1_w2 = Workspace.objects.create(
+            tenant=self.o1.tenant, parent=Workspace.objects.default(tenant=self.o1.tenant), name="o1_w2"
+        )
+
+        self.o1_w1_id = str(o1_w1.id)
+        self.o1_w2_id = str(o1_w2.id)
+
         # Tenanted objects for o1
         self.o1_r1 = self.fixture.new_custom_role(
             "o1_r1", self.fixture.workspace_access(default=["app5:res5:verb5"]), self.o1.tenant
         )
         self.o1_r2 = self.fixture.new_custom_role(
-            "o1_r2", self.fixture.workspace_access(o1_w1=["app1:res1:verb1"]), self.o1.tenant
+            "o1_r2", self.fixture.workspace_access(**{self.o1_w1_id: ["app1:res1:verb1"]}), self.o1.tenant
         )
         self.o1_r3 = self.fixture.new_custom_role(
             "o1_r3",
             self.fixture.workspace_access(
-                o1_w1=["app2:res2:verb2"],
-                o1_w2=["app2:res2:verb2", "app3:res3:verb3"],
+                **{
+                    self.o1_w1_id: ["app2:res2:verb2"],
+                    self.o1_w2_id: ["app2:res2:verb2", "app3:res3:verb3"],
+                }
             ),
             self.o1.tenant,
         )
@@ -478,10 +484,10 @@ class MigrateTestTupleStore(TestCase):
             default_bindings.traverse_subject(
                 # and find which ones have
                 [
-                    # a role relation, to a role which has only the app5 perm (and no others)
+                    # a role relation, to o1_r1 (app5 perm); only=False because role also has #owner@tenant
                     all_of(
                         relation("role"),
-                        self.relations.subject_is_resource_of(relation("app5_res5_verb5"), only=True),
+                        self.relations.subject_is_resource_of(relation("app5_res5_verb5"), only=False),
                     ),
                     # and a subject relation to the custom default group's members
                     all_of(relation("subject"), subject("rbac", "group", self.o1_default_group.uuid, "member")),
@@ -540,12 +546,12 @@ class MigrateTestTupleStore(TestCase):
         # 4
         self.assertTrue(
             self.relations.find_tuples(
-                all_of(resource("rbac", "workspace", "o1_w1"), relation("binding"))
+                all_of(resource("rbac", "workspace", self.o1_w1_id), relation("binding"))
             ).traverse_subject(
                 [
                     all_of(
                         relation("role"),
-                        self.relations.subject_is_resource_of(relation("app1_res1_verb1"), only=True),
+                        self.relations.subject_is_resource_of(relation("app1_res1_verb1"), only=False),
                     ),
                     all_of(relation("subject"), subject("rbac", "group", self.o1_g1.uuid, "member")),
                 ]
@@ -556,12 +562,12 @@ class MigrateTestTupleStore(TestCase):
         # 3
         self.assertTrue(
             self.relations.find_tuples(
-                all_of(resource("rbac", "workspace", "o1_w1"), relation("binding"))
+                all_of(resource("rbac", "workspace", self.o1_w1_id), relation("binding"))
             ).traverse_subject(
                 [
                     all_of(
                         relation("role"),
-                        self.relations.subject_is_resource_of(relation("app2_res2_verb2"), only=True),
+                        self.relations.subject_is_resource_of(relation("app2_res2_verb2"), only=False),
                     ),
                 ]
             ),
@@ -571,13 +577,13 @@ class MigrateTestTupleStore(TestCase):
         # 4
         self.assertTrue(
             self.relations.find_tuples(
-                all_of(resource("rbac", "workspace", "o1_w2"), relation("binding"))
+                all_of(resource("rbac", "workspace", self.o1_w2_id), relation("binding"))
             ).traverse_subject(
                 [
                     all_of(
                         relation("role"),
                         self.relations.subject_is_resource_of(
-                            [relation("app2_res2_verb2"), relation("app3_res3_verb3")], only=True
+                            [relation("app2_res2_verb2"), relation("app3_res3_verb3")], only=False
                         ),
                     ),
                 ]
@@ -608,7 +614,7 @@ class MigrateTestTupleStore(TestCase):
                 [
                     all_of(
                         relation("role"),
-                        self.relations.subject_is_resource_of(relation("app5_res5_verb5"), only=True),
+                        self.relations.subject_is_resource_of(relation("app5_res5_verb5"), only=False),
                     ),
                     all_of(relation("subject"), subject("rbac", "group", self.o2_g1.uuid, "member")),
                 ]
@@ -616,7 +622,8 @@ class MigrateTestTupleStore(TestCase):
             "missing o2_r1 binding",
         )
 
-        self.assertEqual(29, len(self.relations))
+        # Includes rbac/role#owner@rbac/tenant for each migrated custom role (29 baseline + 5 owner edges).
+        self.assertEqual(34, len(self.relations))
 
     @override_settings(REPLICATION_TO_RELATION_ENABLED=True, PRINCIPAL_USER_DOMAIN="redhat", READ_ONLY_API_MODE=True)
     def test_empty_resource_id_filtered_out(self):

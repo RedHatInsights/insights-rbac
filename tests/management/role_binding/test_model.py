@@ -245,8 +245,8 @@ class RoleBindingModelTests(IdentityRequest):
         with self.assertRaises(RoleBindingGroup.DoesNotExist):
             RoleBindingGroup.objects.get(id=bg_id)
 
-    def test_rolebindinggroup_cascade_delete_on_group(self):
-        """Test that deleting a group deletes its binding entries."""
+    def test_rolebindinggroup_protect_delete_on_group(self):
+        """Test that deleting a group with existing binding entries fails."""
         binding = RoleBinding.objects.create(
             role=self.role,
             resource_type="workspace",
@@ -261,14 +261,13 @@ class RoleBindingModelTests(IdentityRequest):
 
         bg_id = bg.id
         group_id = self.group1.id
-        self.group1.delete()
 
-        with self.assertRaises(Group.DoesNotExist):
-            Group.objects.get(id=group_id)
+        with transaction.atomic():
+            with self.assertRaises(IntegrityError):
+                self.group1.delete()
 
-        # Group entry should be deleted
-        with self.assertRaises(RoleBindingGroup.DoesNotExist):
-            RoleBindingGroup.objects.get(id=bg_id)
+        self.assertTrue(Group.objects.filter(id=group_id).exists())
+        self.assertTrue(RoleBindingGroup.objects.filter(id=bg_id).exists())
 
     def test_complete_rolebinding_scenario(self):
         """Test a complete scenario with role binding and groups."""
@@ -363,6 +362,32 @@ class RoleBindingModelTests(IdentityRequest):
         self.assertFalse(migration_value.role.is_system)
         self.assertCountEqual([str(group_uuid)], migration_value.groups)
         self.assertEqual({}, migration_value.users)
+
+    def test_role_binding_group_has_created_timestamp(self):
+        """Test that RoleBindingGroup gets a created timestamp when a group is assigned."""
+        binding: RoleBinding = RoleBinding.objects.create(
+            role=self.role,
+            resource_type="workspace",
+            resource_id="ws-12345",
+            tenant=self.tenant,
+        )
+        binding.update_groups([self.group1])
+
+        entry = RoleBindingGroup.objects.get(binding=binding, group=self.group1)
+        self.assertIsNotNone(entry.created)
+
+    def test_role_binding_principal_has_created_timestamp(self):
+        """Test that RoleBindingPrincipal gets a created timestamp when a principal is assigned."""
+        binding: RoleBinding = RoleBinding.objects.create(
+            role=self.role,
+            resource_type="workspace",
+            resource_id="ws-12345",
+            tenant=self.tenant,
+        )
+        binding.update_principals([("test_source", self.principal1)])
+
+        entry = RoleBindingPrincipal.objects.get(binding=binding, principal=self.principal1)
+        self.assertIsNotNone(entry.created)
 
     def test_update_groups(self):
         binding: RoleBinding = RoleBinding.objects.create(

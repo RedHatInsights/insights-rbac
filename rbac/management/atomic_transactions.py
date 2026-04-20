@@ -46,6 +46,22 @@ def atomic(func):
     return wrapper
 
 
+def atomic_with_retry(retries: int):
+    """Wrap a method in a SERIALIZABLE transaction, while ensuring it retries on serialization failure."""
+
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            if is_atomic_disabled():
+                return transaction.atomic()(func)(*args, **kwargs)
+            else:
+                return pgtransaction.atomic(isolation_level=ISOLATION_LEVEL, retry=retries)(func)(*args, **kwargs)
+
+        return wrapper
+
+    return decorator
+
+
 def atomic_block():
     """Return a context manager that can be used to turn a block into a SERIALIZABLE transaction."""
     if is_atomic_disabled():

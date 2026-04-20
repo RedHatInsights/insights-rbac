@@ -37,12 +37,15 @@ Usage:
     assert_v1_write_allowed(tenant)
 """
 
+import enum
 import logging
 
 from django.db import connection
 from django.utils import timezone
 from management.tenant_mapping.model import TenantMapping
 from management.tenant_service.v2 import TenantNotBootstrappedError
+
+from api.models import Tenant
 
 logger = logging.getLogger(__name__)
 
@@ -55,11 +58,18 @@ _LOCK_FOR_SHARE_SQL = (  # sourcery: disable=sql-injection-risk
 )
 
 
-def _lock_for_share(tenant):
+def _lock_for_share(tenant: Tenant) -> tuple:
     """Lock the TenantMapping row FOR SHARE. Returns (id, v2_write_activated_at) or None."""
     with connection.cursor() as cursor:
         cursor.execute(_LOCK_FOR_SHARE_SQL, [tenant.id])  # sourcery: disable=sql-injection-risk
-        return cursor.fetchone()
+        row = cursor.fetchone()
+
+        if row is None:
+            raise TenantNotBootstrappedError(
+                f"Tenant {tenant.org_id} has no TenantMapping; writes require tenant bootstrapping."
+            )
+
+        return row
 
 
 class V1WriteBlockedError(Exception):
@@ -68,19 +78,15 @@ class V1WriteBlockedError(Exception):
     pass
 
 
-def ensure_v2_write_activated(tenant):
+def ensure_v2_write_activated(tenant: Tenant):
     """Mark the tenant as V2-activated if not already. Must be called inside a transaction.
 
     Takes a shared lock first; if already V2, returns immediately (allows concurrent V2
     reads). If not yet V2, escalates to an exclusive lock and writes. This minimises
     contention compared to always using FOR UPDATE.
     """
-    row = _lock_for_share(tenant)
-    if row is None:
-        raise TenantNotBootstrappedError(
-            f"Tenant {tenant.org_id} has no TenantMapping; V2 writes require tenant bootstrapping."
-        )
-    _pk, v2_activated = row
+    _pk, v2_activated = _lock_for_share(tenant)
+
     if v2_activated is not None:
         return
 
@@ -97,7 +103,7 @@ def ensure_v2_write_activated(tenant):
     logger.info("Tenant %s activated for V2 writes", tenant.org_id)
 
 
-def is_v2_write_activated(tenant):
+def is_v2_write_activated(tenant: Tenant):
     """Check if the tenant has been activated for V2 writes (without locking).
 
     This is a non-locking read for use in permission classes as a fast check.
@@ -111,20 +117,35 @@ def is_v2_write_activated(tenant):
         return False
 
 
-def assert_v1_write_allowed(tenant):
+class TenantVersion(enum.IntEnum):
+    """The possible versions a tenant can be in."""
+
+    VERSION_1 = 1
+    VERSION_2 = 2
+
+
+def lock_tenant_version(tenant: Tenant):
+    """Lock a tenant to its current version for the duration of the transaction. Returns the version of the tenant."""
+    _, v2_activated = _lock_for_share(tenant)
+
+    if v2_activated is None:
+        return TenantVersion.VERSION_1
+
+    return TenantVersion.VERSION_2
+
+
+def assert_v1_write_allowed(tenant: Tenant):
     """Assert that V1 writes are still allowed for this tenant. Must be called inside a transaction.
 
     Uses FOR SHARE: a tenant cannot transition V2->V1, and the shared lock prevents a
     concurrent V2 activation (which needs FOR UPDATE) from converting the tenant while
     this V1 write is in progress. Concurrent V1 writes are not blocked by each other.
     """
-    row = _lock_for_share(tenant)
-    if row is None:
-        raise TenantNotBootstrappedError(
-            f"Tenant {tenant.org_id} has no TenantMapping; V1 writes require tenant bootstrapping."
-        )
+    # We could just use lock_tenant_version here, but we instead do the check directly in order to give a better error
+    # message.
 
-    _pk, v2_activated = row
+    _pk, v2_activated = _lock_for_share(tenant)
+
     if v2_activated is not None:
         raise V1WriteBlockedError(
             f"Tenant {tenant.org_id} has been activated for V2 writes "

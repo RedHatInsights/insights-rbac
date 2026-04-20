@@ -26,7 +26,7 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError
 from django.db.models import QuerySet
 from management.atomic_transactions import atomic
-from management.exceptions import RequiredFieldError
+from management.exceptions import NotFoundError, RequiredFieldError
 from management.permission.exceptions import InvalidPermissionDataError
 from management.permission.model import PermissionValue
 from management.permission.scope_service import Scope, permission_scope_cache, scopes_for_resource_type
@@ -39,6 +39,7 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEvent,
     ReplicationEventType,
 )
+from management.role.relations import role_owner_relationship
 from management.role.v2_exceptions import (
     CustomRoleRequiredError,
     InvalidRolePermissionsError,
@@ -48,6 +49,7 @@ from management.role.v2_exceptions import (
     RolesNotFoundError,
 )
 from management.role.v2_model import CustomRoleV2, RoleV2
+from management.role.v2_role_scope import v2_role_excluded_applications
 from management.role_binding.model import RoleBinding
 from management.utils import as_uuid
 
@@ -103,6 +105,15 @@ class RoleV2Service:
         if not_found:
             raise PermissionsNotFoundError(list(not_found))
 
+        excluded_apps = v2_role_excluded_applications()
+        if excluded_apps:
+            bad_apps = sorted({p.application for p in permissions if p.application in excluded_apps})
+            if bad_apps:
+                raise InvalidRolePermissionsError(
+                    "Permissions from migration-excluded applications cannot be used in V2 custom roles: "
+                    + ", ".join(bad_apps)
+                )
+
         return permissions
 
     @atomic
@@ -127,6 +138,10 @@ class RoleV2Service:
 
             tuples_to_add, _ = CustomRoleV2.replication_tuples(role, new_permissions=permissions)
 
+            tenant_resource_id = tenant.tenant_resource_id()
+            if tenant_resource_id:
+                tuples_to_add.append(role_owner_relationship(role.uuid, tenant_resource_id))
+
             self._replicator.replicate(
                 ReplicationEvent(
                     event_type=ReplicationEventType.CREATE_CUSTOM_ROLE,
@@ -143,6 +158,10 @@ class RoleV2Service:
                 len(permissions),
                 tenant.org_id,
             )
+
+            # Attach resolved permissions to avoid extra query in serializer
+            # It solves stale prefetch cache issue, do not remove it
+            role._resolved_permissions = permissions
 
             return role
 
@@ -180,7 +199,7 @@ class RoleV2Service:
                 .first()
             )
             if not role:
-                raise RolesNotFoundError([role_uuid])
+                raise NotFoundError("role", role_uuid)
 
             # Capture current state before update for outbox replication
             # The permissions are already loaded from prefetch_related above
@@ -211,10 +230,11 @@ class RoleV2Service:
                 tenant.org_id,
             )
 
+            # Attach resolved permissions to avoid extra query in serializer
+            role._resolved_permissions = permissions
+
             return role
 
-        except RolesNotFoundError:
-            raise
         except ValidationError as e:
             error_msg = str(e)
             if "name" in error_msg.lower() and "already exists" in error_msg.lower():
@@ -230,7 +250,7 @@ class RoleV2Service:
     def list(self, params: dict) -> QuerySet:
         """Get a list of roles for the tenant, including seeded roles from the public tenant."""
         fields = params.get("fields")
-        queryset = RoleV2.objects.for_tenant(self.tenant).assignable()
+        queryset = RoleV2.objects.for_tenant(self.tenant).assignable().excluding_out_of_scope_v2_roles()
         if fields:
             queryset = queryset.with_fields(fields)
 
@@ -325,6 +345,10 @@ class RoleV2Service:
                 raise AssertionError("Relations should not be added while deleting roles.")
 
             relations_to_remove.extend(to_remove)
+
+            tenant_resource_id = role.tenant.tenant_resource_id()
+            if tenant_resource_id:
+                relations_to_remove.append(role_owner_relationship(role.uuid, tenant_resource_id))
 
         self._replicator.replicate(
             ReplicationEvent(

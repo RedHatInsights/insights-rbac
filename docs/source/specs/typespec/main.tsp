@@ -517,8 +517,8 @@ namespace Workspaces {
         @doc("Offset for offset-based pagination.")
         @query offset?: Offset = DefaultOffset;
 
-        @doc("Defaults to all when param is not supplied.")
-        @query type?: WorkspaceTypesQueryParam = WorkspaceTypesQueryParam.all;
+        @doc("Filter by workspace type. Supports comma-separated values (e.g. type=standard,ungrouped-hosts). Defaults to all when not supplied. Case-insensitive.")
+        @query type?: string = "all";
         @doc("Case sensitive exact match of workspace by name.")
         @query name?: string;
         @doc("Filter workspaces by parent workspace UUID. Returns only direct children of the specified workspace. Useful for lazy-loading a nested tree structure.")
@@ -713,12 +713,19 @@ namespace Workspaces {
 @tag("Role Bindings")
 @doc("Operations about role bindings")
 namespace RoleBindings {
-    const DefaultRoleBindingBySubjectFieldMask: FieldMask = "resource(id),subject(id),roles(id)";
+    const DefaultRoleBindingBySubjectFieldMask: FieldMask = "resource(id),subject(id,type),roles(id)";
 
-    @doc("Type of subject for role bindings")
-    enum SubjectType {
+    @doc("Subject kind for create/batch, by-subject, and list filters on the binding's subject (group UUID or user/principal UUID). Does not include principal as a separate type string; for external user ID use GET /role-bindings/ with granted_subject_type=principal and granted_subject.principal.user_id.")
+    enum BindingSubjectType {
         user,
         group,
+    }
+
+    @doc("Effective-grant filter for GET /role-bindings/ only. With type principal, use query granted_subject.principal.user_id. Cannot be combined with subject_type/subject_id on the same request. Not used on /role-bindings/by-subject/.")
+    enum GrantedSubjectFilterType {
+        user,
+        group,
+        principal,
     }
 
     @discriminator("type")
@@ -774,7 +781,7 @@ namespace RoleBindings {
     @doc("Request body for creating role bindings")
     @example(#{
         resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
-        subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: SubjectType.group },
+        subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: BindingSubjectType.group },
         role: #{ id: "550e8400-e29b-41d4-a716-446655440002" }
     })
     model CreateRoleBindingsRequest {
@@ -791,7 +798,7 @@ namespace RoleBindings {
             @doc("UUID that uniquely identifies the subject")
             id: UUID;
             @doc("Type of subject")
-            type: SubjectType;
+            type: BindingSubjectType;
         };
         @doc("Role to assign")
         role: {
@@ -805,12 +812,12 @@ namespace RoleBindings {
         requests: #[
             #{
                 resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
-                subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: SubjectType.group },
+                subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: BindingSubjectType.group },
                 role: #{ id: "550e8400-e29b-41d4-a716-446655440002" }
             },
             #{
                 resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
-                subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: SubjectType.user },
+                subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: BindingSubjectType.user },
                 role: #{ id: "550e8400-e29b-41d4-a716-446655440003" }
             }
         ]
@@ -895,7 +902,7 @@ namespace RoleBindings {
         sources?: Resource[];
     }
 
-    @doc("List role bindings grouped by subject")
+    @doc("List role bindings grouped by subject. subject_type (optional) is user or group only, with subject_id as UUID. granted_subject_type, granted_subject_id, and granted_subject.principal.user_id are not query parameters on this path—use GET /role-bindings/ for those filters.")
     @summary("List role bindings grouped by subject")
     @route("by-subject/")
     @opExample(#{
@@ -1003,10 +1010,10 @@ namespace RoleBindings {
         @doc("Filter by resource type")
         @example(ResourceType.workspace)
         @query resource_type: ResourceType;
-        @doc("Filter by subject type")
-        @example(SubjectType.group)
-        @query subject_type?: SubjectType;
-        @doc("Filter by subject ID")
+        @doc("Filter by binding subject kind: group or user (principal UUID). There is no granted_subject.* on this endpoint.")
+        @example(BindingSubjectType.group)
+        @query subject_type?: BindingSubjectType;
+        @doc("Filter by subject ID (group UUID or user/principal UUID)")
         @example("550e8400-e29b-41d4-a716-446655440004")
         @query subject_id?: string;
 
@@ -1029,12 +1036,12 @@ namespace RoleBindings {
                 requests: #[
                     #{
                         resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
-                        subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: SubjectType.group },
+                        subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa6", type: BindingSubjectType.group },
                         role: #{ id: "550e8400-e29b-41d4-a716-446655440002" }
                     },
                     #{
                         resource: #{ id: "550e8400-e29b-41d4-a716-446655440001", type: "workspace" },
-                        subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: SubjectType.user },
+                        subject: #{ id: "3fa85f64-5717-4562-b3fc-2c963f66afa7", type: BindingSubjectType.user },
                         role: #{ id: "550e8400-e29b-41d4-a716-446655440003" }
                     }
                 ]
@@ -1069,15 +1076,14 @@ namespace RoleBindings {
         ]
     })
     model UpdateRoleBindingsRequest {
-        @doc("Roles to assign (replaces existing roles for the target binding)")
-        @minItems(1)
+        @doc("Roles to assign (replaces existing roles for the target binding). Empty array removes all bindings.")
         roles: {
             @doc("Role identifier")
             id: UUID;
         }[];
     }
 
-    @doc("Update roles for a specific subject on a resource. Replaces all existing roles with the provided roles.")
+    @doc("Update roles for a specific subject on a resource. Replaces all existing roles with the provided roles. subject_type is user or group only (UUID via subject_id). granted_subject.* query params are not supported here; use GET /role-bindings/ to filter by external user ID.")
     @summary("Update role bindings")
     @route("by-subject/")
     @opExample(#{
@@ -1085,7 +1091,7 @@ namespace RoleBindings {
             resource_id: "550e8400-e29b-41d4-a716-446655440001",
             resource_type: ResourceType.workspace,
             subject_id: "3fa85f64-5717-4562-b3fc-2c963f66afa6",
-            subject_type: SubjectType.group,
+            subject_type: BindingSubjectType.group,
             body: #{
                 roles: #[
                     #{ id: "550e8400-e29b-41d4-a716-446655440002" },
@@ -1116,9 +1122,9 @@ namespace RoleBindings {
         @example("550e8400-e29b-41d4-a716-446655440004")
         @query subject_id: string;
 
-        @doc("Identify the subject type for the set of role bindings to replace")
-        @example(SubjectType.group)
-        @query subject_type: SubjectType;
+        @doc("Subject kind: group or user (principal UUID). No granted_subject.* params on this path.")
+        @example(BindingSubjectType.group)
+        @query subject_type: BindingSubjectType;
 
         @body body: UpdateRoleBindingsRequest;
 
@@ -1186,6 +1192,8 @@ namespace RoleBindings {
         subject?: Subject;
         @doc("The resource on which the subject is granted the role")
         resource?: Resource;
+        @doc("Resources from which this role binding is sourced (direct or inherited)")
+        sources?: Resource[];
     }
 
     @doc("List role bindings")
@@ -1214,7 +1222,12 @@ namespace RoleBindings {
                     },
                     resource: #{
                         id: "550e8400-e29b-41d4-a716-446655440001"
-                    }
+                    },
+                    sources: #[
+                        #{
+                            id: "550e8400-e29b-41d4-a716-446655440001"
+                        }
+                    ]
                 }
             ]
         }
@@ -1237,16 +1250,34 @@ namespace RoleBindings {
         @example("workspace")
         @query resource_type?: string;
 
-        @doc("Filter by subject type (e.g., 'group' or 'user')")
-        @example(SubjectType.group)
-        @query subject_type?: SubjectType;
+        @doc("Org ID of the tenant resource to filter by. Cannot be combined with resource_id. When provided, resource_type is implicitly 'tenant'.")
+        @example("12345678")
+        @query("resource.tenant.org_id") resource_tenant_org_id?: string;
+
+        @doc("Filter by binding subject type (group or user) on each row. Distinct from granted_subject_type.")
+        @example(BindingSubjectType.group)
+        @query subject_type?: BindingSubjectType;
 
         @doc("Filter by subject ID")
         @example("3fa85f64-5717-4562-b3fc-2c963f66afa6")
         @query subject_id?: string;
 
+        @query exclude_sources?: ExcludeSources = ExcludeSources.none;
+
+        @doc("Filter by the type of subject effectively granted access. When 'user', returns role bindings granted directly to the user and through their group memberships. When 'group', returns role bindings granted to the group. When 'principal', filters by external user ID via granted_subject.principal.user_id. Cannot be combined with subject_type/subject_id.")
+        @example(GrantedSubjectFilterType.user)
+        @query granted_subject_type?: GrantedSubjectFilterType;
+
+        @doc("ID of the subject effectively granted access. Accepts a principal UUID or group UUID. Required when granted_subject_type is 'user' or 'group'.")
+        @example("3fa85f64-5717-4562-b3fc-2c963f66afa6")
+        @query granted_subject_id?: string;
+
+        @doc("External user ID of the principal effectively granted access. Required when granted_subject_type is 'principal'.")
+        @example("jsmith")
+        @query("granted_subject.principal.user_id") granted_subject_principal_user_id?: string;
+
         @doc("Control which fields are included in the response to optimize payload size.")
-        @query fields?: FieldMask = "resource(id),role(id),subject(id,type)";
+        @query fields?: FieldMask = "resource(id),role(id),subject(id,type),sources(id)";
 
         @doc("Default sort is by the time the role was first created. Prefix with '-' for descending order.")
         @query order_by?: OrderBy = "role.id";
@@ -1274,7 +1305,8 @@ namespace Roles {
         ]
     })
     model CreateOrUpdateRoleRequest {
-        @doc("A human readable name for the role. Must be unique within a tenant.")
+        @doc("A human readable name for the role. Must be unique within a tenant. Asterisks (*) are not allowed.")
+        @pattern("^[^*]+$")
         name: string;
         @doc("A description of the role to help clarify its purpose. Does not need to be unique.")
         description?: string;

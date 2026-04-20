@@ -16,25 +16,25 @@
 #
 """View for RoleV2 management."""
 
-from management.atomic_transactions import atomic, atomic_block
+from management.atomic_transactions import atomic_block
 from management.audit_log.model import AuditLog
 from management.base_viewsets import BaseV2ViewSet
-from management.permissions import RoleAccessPermission
+from management.permissions.role_v2_access import RoleV2KesselAccessPermission
 from management.permissions.v2_edit_api_access import V2WriteRequiresWorkspacesEnabled
 from management.role.v2_exceptions import CustomRoleRequiredError, RolesNotFoundError
 from management.role.v2_model import RoleV2
 from management.role.v2_serializer import (
-    RoleFieldSelection,
     RoleV2BulkDeleteRequestSerializer,
     RoleV2ListSerializer,
     RoleV2RequestSerializer,
     RoleV2ResponseSerializer,
-    _validate_fields_parameter,
+    validate_fields_parameter,
 )
 from management.role.v2_service import RoleV2Service
-from management.utils import FieldSelectionValidationError, v2response_error_from_errors
+from management.utils import v2response_error_from_errors
 from management.v2_mixins import AtomicOperationsMixin
 from rest_framework import status
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from api.common.pagination import V2CursorPagination
@@ -50,7 +50,7 @@ class RoleV2CursorPagination(V2CursorPagination):
 class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
     """RoleV2 ViewSet."""
 
-    permission_classes = (RoleAccessPermission, V2WriteRequiresWorkspacesEnabled)
+    permission_classes = (RoleV2KesselAccessPermission, V2WriteRequiresWorkspacesEnabled)
     queryset = RoleV2.objects.exclude(type=RoleV2.Types.PLATFORM)
     serializer_class = RoleV2ResponseSerializer
     pagination_class = RoleV2CursorPagination
@@ -69,15 +69,30 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         base_qs = RoleV2.objects.for_tenant(self.request.tenant).assignable().with_fields(fields)
 
         if self.action in ("list", "retrieve"):
-            return base_qs
+            return base_qs.excluding_out_of_scope_v2_roles()
         return base_qs.filter(type=RoleV2.Types.CUSTOM)
 
     def get_serializer_context(self):
         """Add validated fields parameter to serializer context."""
         context = super().get_serializer_context()
+
+        fields_param = self.request.query_params.get("fields", "").replace("\x00", "")
+
         if self.action == "retrieve":
-            fields_param = self.request.query_params.get("fields", "").replace("\x00", "")
-            context["fields"] = _validate_fields_parameter(fields_param, RoleV2Service.DEFAULT_RETRIEVE_FIELDS)
+            # Lenient validation for read operations (silently filters invalid fields per AIP-161)
+            context["fields"] = validate_fields_parameter(fields_param, RoleV2Service.DEFAULT_RETRIEVE_FIELDS)
+        elif self.action in ("create", "update"):
+            # Strict validation for write operations (errors on invalid fields per AIP-161)
+            # Cache the result to avoid validating twice
+            if not hasattr(self.request, "_validated_fields"):
+                try:
+                    self.request._validated_fields = validate_fields_parameter(
+                        fields_param, self.DEFAULT_CREATE_UPDATE_FIELDS, strict=True
+                    )
+                except ValidationError as e:
+                    # Re-raise with field attribution for proper error formatting
+                    raise ValidationError({"fields": e.detail})
+            context["fields"] = self.request._validated_fields
         return context
 
     def get_serializer_class(self):
@@ -87,36 +102,6 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         if self.action == "bulk_destroy":
             return RoleV2BulkDeleteRequestSerializer
         return RoleV2ResponseSerializer
-
-    def _parse_fields_param(self, fields_str: str | None) -> set[str]:
-        """
-        Parse and validate the fields query parameter.
-
-        Args:
-            fields_str: Comma-separated list of field names from query params
-
-        Returns:
-            Set of validated field names
-
-        Note:
-            Invalid fields are silently ignored and filtered out.
-            If all fields are invalid, returns default fields.
-        """
-        if not fields_str:
-            return self.DEFAULT_CREATE_UPDATE_FIELDS
-
-        try:
-            field_selection = RoleFieldSelection.parse(fields_str)
-        except FieldSelectionValidationError:
-            # Invalid fields - return defaults and let the request proceed
-            return self.DEFAULT_CREATE_UPDATE_FIELDS
-
-        if not field_selection:
-            return self.DEFAULT_CREATE_UPDATE_FIELDS
-
-        # Resolve to actual response serializer fields (filters out invalid fields)
-        resolved = field_selection.root_fields & set(RoleV2ResponseSerializer.Meta.fields)
-        return resolved or self.DEFAULT_CREATE_UPDATE_FIELDS
 
     def list(self, request, *args, **kwargs):
         """Get a list of roles."""
@@ -136,11 +121,8 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         serializer = RoleV2ResponseSerializer(page, many=True, context=context)
         return self.get_paginated_response(serializer.data)
 
-    def create(self, request, *args, **kwargs):
+    def perform_atomic_create(self, request, *args, **kwargs):
         """Create a role and return the full response representation."""
-        # Validate and parse fields query parameter
-        fields = self._parse_fields_param(request.query_params.get("fields"))
-
         with atomic_block():
             serializer = self.get_serializer(data=request.data)
             serializer.is_valid(raise_exception=True)
@@ -149,18 +131,15 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
             audit_log = AuditLog()
             audit_log.log_create(request=request, resource=AuditLog.ROLE_V2)
 
-        # Build response with field selection and permission ordering
+        # Build response with field selection (from context) and permission ordering
         input_permissions = request.data.get("permissions", [])
-        response_serializer = RoleV2ResponseSerializer(
-            role, context={"request": request, "input_permissions": input_permissions, "fields": fields}
-        )
+        context = self.get_serializer_context()
+        context["input_permissions"] = input_permissions
+        response_serializer = RoleV2ResponseSerializer(role, context=context)
         return Response(response_serializer.data, status=status.HTTP_201_CREATED)
 
-    def update(self, request, *args, **kwargs):
+    def perform_atomic_update(self, request, *args, **kwargs):
         """Update a role and return the full response representation."""
-        # Validate and parse fields query parameter
-        fields = self._parse_fields_param(request.query_params.get("fields"))
-
         with atomic_block():
             instance = self.get_object()
 
@@ -171,16 +150,19 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
             serializer.is_valid(raise_exception=True)
             role = serializer.save()
 
-        # Build response with field selection and permission ordering
+        # Build response with field selection (from context) and permission ordering
         input_permissions = request.data.get("permissions", [])
-        response_serializer = RoleV2ResponseSerializer(
-            role, context={"request": request, "input_permissions": input_permissions, "fields": fields}
-        )
+        context = self.get_serializer_context()
+        context["input_permissions"] = input_permissions
+        response_serializer = RoleV2ResponseSerializer(role, context=context)
         return Response(response_serializer.data, status=status.HTTP_200_OK)
 
-    @atomic
     def bulk_destroy(self, request, *args, **kwargs):
         """Delete multiple roles atomically."""
+        return self._atomic_action(self._perform_bulk_destroy, "bulk_destroy", request, *args, **kwargs)
+
+    def _perform_bulk_destroy(self, request, *args, **kwargs):
+        """Core bulk destroy logic."""
         service = RoleV2Service(tenant=request.tenant)
 
         serializer = self.get_serializer(data=request.data)
