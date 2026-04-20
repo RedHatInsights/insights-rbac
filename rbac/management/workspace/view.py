@@ -27,7 +27,7 @@ from management.atomic_transactions import atomic_with_retry
 from management.audit_log.model import AuditLog
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions.workspace_access import WorkspaceAccessPermission
-from management.utils import clean_query_param, validate_and_get_key
+from management.utils import clean_query_param, validate_and_get_key, validate_and_get_key_multi
 from management.workspace.filters import WorkspaceAccessFilterBackend, WorkspaceObjectAccessMixin
 from management.workspace.service import WorkspaceService
 from psycopg2.errors import DeadlockDetected, SerializationFailure
@@ -181,13 +181,30 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
         Access filtering is handled by WorkspaceAccessFilterBackend.
         Ordering is handled by OrderingFilter (supports ?order_by=name or ?order_by=-name).
         This method only handles additional query parameter filtering.
+
+        The ``type`` query parameter supports comma-separated values so that
+        callers can request multiple workspace types in a single request, e.g.
+        ``?type=standard,ungrouped-hosts``.
         """
         all_types = "all"
+        valid_types = [v.lower() for v in Workspace.Types.values] + [all_types]
         # Use filter_queryset to apply all filter backends (including access filtering and ordering)
         queryset = self.filter_queryset(self.get_queryset())
 
-        type_values = Workspace.Types.values + [all_types]
-        type_field = validate_and_get_key(request.query_params, "type", type_values, all_types)
+        # Sanitize the raw type parameter for NUL bytes (consistent with name/parent_id/ids)
+        type_raw = clean_query_param(request.query_params.get("type"), "type")
+
+        # Support comma-separated type values (e.g. "standard,ungrouped-hosts")
+        type_fields = validate_and_get_key_multi(
+            {"type": type_raw} if type_raw is not None else {},
+            "type",
+            valid_types,
+            default_value=all_types,
+        )
+        # Collapse: if "all" is among the values, treat as unfiltered
+        if all_types in type_fields:
+            type_fields = [all_types]
+
         name = clean_query_param(request.query_params.get("name"), "name")
         parent_id = clean_query_param(request.query_params.get("parent_id"), "parent_id")
         id_filter = clean_query_param(request.query_params.get("ids"), "ids")
@@ -208,10 +225,10 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
 
             # When filtering by ids, default to standard type unless type is explicitly specified
             if "type" not in request.query_params:
-                type_field = Workspace.Types.STANDARD
+                type_fields = [Workspace.Types.STANDARD]
 
-        if type_field != all_types:
-            queryset = queryset.filter(type=type_field)
+        if type_fields != [all_types]:
+            queryset = queryset.filter(type__in=type_fields)
         if name:
             queryset = queryset.filter(name__icontains=name)
         if parent_id:

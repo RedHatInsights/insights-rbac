@@ -95,14 +95,13 @@ class Workspace(TenantAwareModel):
                 self.description = self.SpecialDescriptions.UNGROUPED_HOSTS
 
         if self.type == self.Types.ROOT:
-            if self.parent is not None:
+            if self.parent_id is not None:
                 raise serializers.ValidationError({"root_parent": "Root workspace must not have a parent."})
-        elif self.parent is None:
+        elif self.parent_id is None:
             if self.type == self.Types.STANDARD:
-                if self.parent_id is None:
-                    workspace_object = Workspace.objects.get(type=self.Types.DEFAULT, tenant=self.tenant_id)
-                    self.parent = workspace_object
-                    self.parent_id = workspace_object.id
+                workspace_object = Workspace.objects.get(type=self.Types.DEFAULT, tenant=self.tenant_id)
+                self.parent = workspace_object
+                self.parent_id = workspace_object.id
             else:
                 raise ValidationError({"workspace": f"{self.type} workspaces must have a parent workspace."})
         elif self.type == self.Types.DEFAULT and self.parent.type != self.Types.ROOT:
