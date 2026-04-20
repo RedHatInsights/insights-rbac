@@ -101,8 +101,26 @@ class DualWriteTestCase(TestCase):
         super().setUp()
         self.tuples = InMemoryTuples()
         self.fixture = RbacFixture()
-        self.tenant = self.fixture.new_tenant(org_id="1234567").tenant
+
+        bootstrapped_tenant = self.fixture.new_tenant(org_id="1234567")
+        self.tenant = bootstrapped_tenant.tenant
         self.test_tenant = self.tenant
+
+        ws_1 = Workspace.objects.create(
+            tenant=self.tenant, parent=bootstrapped_tenant.default_workspace, name="DualWriteTestCase Workspace 1"
+        )
+
+        ws_2 = Workspace.objects.create(
+            tenant=self.tenant, parent=bootstrapped_tenant.default_workspace, name="DualWriteTestCase Workspace 2"
+        )
+
+        ws_3 = Workspace.objects.create(
+            tenant=self.tenant, parent=bootstrapped_tenant.default_workspace, name="DualWriteTestCase Workspace 3"
+        )
+
+        self.ws_1_id = str(ws_1.id)
+        self.ws_2_id = str(ws_2.id)
+        self.ws_3_id = str(ws_3.id)
 
     def switch_to_new_tenant(self, name: str, org_id: str) -> Tenant:
         """Switch to a new tenant with the given name and org_id."""
@@ -180,6 +198,29 @@ class DualWriteTestCase(TestCase):
         dual_write.replicate_new_or_updated_role(role)
         return role
 
+    def _test_workspace_perms(self, ws_1: Optional[list[str]], ws_2: Optional[list[str]], ws_3: Optional[list[str]]):
+        workspace_perms = {}
+
+        for ws_id, requested_perms in [(self.ws_1_id, ws_1), (self.ws_2_id, ws_2), (self.ws_3_id, ws_3)]:
+            if requested_perms is not None:
+                workspace_perms[ws_id] = requested_perms
+
+        return workspace_perms
+
+    def given_v1_role_on_test_workspaces(
+        self,
+        name: str,
+        default: list[str] = [],
+        ws_1: Optional[list[str]] = None,
+        ws_2: Optional[list[str]] = None,
+        ws_3: Optional[list[str]] = None,
+    ) -> Role:
+        """Create a new custom role with the given ID and permissions for the pre-created test workspaces."""
+
+        return self.given_v1_role(
+            name=name, default=default, **self._test_workspace_perms(ws_1=ws_1, ws_2=ws_2, ws_3=ws_3)
+        )
+
     def given_update_to_v1_role(
         self, role: Role, default: list[str] = [], replicator: Optional[RelationReplicator] = None, **kwargs: list[str]
     ):
@@ -192,6 +233,19 @@ class DualWriteTestCase(TestCase):
         )
         dual_write.replicate_new_or_updated_role(role)
         return role
+
+    def given_update_to_v1_role_on_test_workspaces(
+        self,
+        role: Role,
+        default: list[str] = [],
+        ws_1: Optional[list[str]] = None,
+        ws_2: Optional[list[str]] = None,
+        ws_3: Optional[list[str]] = None,
+    ) -> Role:
+        """Create a new custom role with the given ID and permissions for the pre-created test workspaces."""
+        return self.given_update_to_v1_role(
+            role=role, default=default, **self._test_workspace_perms(ws_1=ws_1, ws_2=ws_2, ws_3=ws_3)
+        )
 
     def given_v1_role_removed(self, role: Role, replicator: Optional[RelationReplicator] = None):
         """Remove the given custom role."""
@@ -324,7 +378,8 @@ class DualWriteTestCase(TestCase):
 
     def expect_v2_roles_with_permissions(self, count: int, permissions: list[str]) -> list[str]:
         """Assert there is a role matching the given permissions and return its ID."""
-        roles, unmatched = self.tuples.find_group_with_tuples(
+        permission_tuples = self.tuples.find_tuples(lambda t: t.relation != "owner")
+        roles, unmatched = permission_tuples.find_group_with_tuples(
             [
                 all_of(
                     resource_type("rbac", "role"),
@@ -593,13 +648,13 @@ class DualWriteGroupTestCase(DualWriteTestCase):
         )
 
     def test_custom_roles_group_assignments_tuples(self):
-        role_1 = self.given_v1_role(
+        role_1 = self.given_v1_role_on_test_workspaces(
             "r1",
             default=["app1:hosts:read", "inventory:hosts:write"],
             ws_2=["app1:hosts:read", "inventory:hosts:write"],
         )
 
-        role_2 = self.given_v1_role(
+        role_2 = self.given_v1_role_on_test_workspaces(
             "r2",
             default=["app2:hosts:read", "inventory:systems:write"],
             ws_2=["app2:hosts:read", "inventory:systems:write"],
@@ -662,7 +717,7 @@ class DualWriteGroupTestCase(DualWriteTestCase):
         self.assertEqual(mappings["groups"], [str(group.uuid)])
 
     def test_adding_same_role_again_and_unassign_it_once(self):
-        role_test = self.given_v1_role(
+        role_test = self.given_v1_role_on_test_workspaces(
             "rtest",
             default=["app1:hosts:read", "inventory:hosts:write"],
             ws_2=["app1:hosts:read", "inventory:hosts:write"],
@@ -819,13 +874,13 @@ class DualWriteGroupTestCase(DualWriteTestCase):
 
     def test_delete_group_removes_group_from_role_bindings(self):
         # Add two groups to two roles
-        role_1 = self.given_v1_role(
+        role_1 = self.given_v1_role_on_test_workspaces(
             "r1",
             default=["app1:hosts:read", "inventory:hosts:write"],
             ws_2=["app1:hosts:read", "inventory:hosts:write"],
         )
 
-        role_2 = self.given_v1_role(
+        role_2 = self.given_v1_role_on_test_workspaces(
             "r2",
             default=["app2:hosts:read", "inventory:systems:write"],
             ws_2=["app2:hosts:read", "inventory:systems:write"],
@@ -977,7 +1032,7 @@ class DualWriteGroupTestCase(DualWriteTestCase):
         )
 
     def test_delete_group_removes_role_binding_for_system_roles_if_last_group(self):
-        role_1 = self.given_v1_role(
+        role_1 = self.given_v1_role_on_test_workspaces(
             "r1",
             default=["app1:hosts:read", "inventory:hosts:write"],
             ws_2=["app1:hosts:read", "inventory:hosts:write"],
@@ -1017,7 +1072,7 @@ class DualWriteGroupTestCase(DualWriteTestCase):
 
     def test_delete_group_keeps_role_binding_for_system_roles_if_not_last_group(self):
         """Keep the role binding if it still has other groups assigned to it."""
-        role_1 = self.given_v1_role(
+        role_1 = self.given_v1_role_on_test_workspaces(
             "r1",
             default=["app1:hosts:read", "inventory:hosts:write"],
             ws_2=["app1:hosts:read", "inventory:hosts:write"],
@@ -2148,7 +2203,7 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
 
     def test_non_default_resource_only(self):
         """Test a role with access to a specific resource only."""
-        for workspaces in [["ws_1"], ["ws_1", "ws_2", "ws_3", "ws_4"]]:
+        for workspaces in [[self.ws_1_id], [self.ws_1_id, self.ws_2_id, self.ws_3_id]]:
             for permissions in [
                 ["inventory:hosts:read"],
                 ["inventory:hosts:read", "inventory:hosts:write", "inventory:hosts:delete"],
@@ -2158,7 +2213,7 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
 
     def test_many_different_permissions(self):
         """Test creating a role with many different sets of permissions."""
-        role = self.given_v1_role(
+        role = self.given_v1_role_on_test_workspaces(
             "r1", default=["inventory:hosts:read"], ws_1=["inventory:hosts:write"], ws_2=["inventory:hosts:delete"]
         )
 
@@ -2167,15 +2222,15 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
 
         for workspace, permissions in [
             (self.default_workspace(), ["inventory:hosts:read"]),
-            ("ws_1", ["inventory:hosts:write"]),
-            ("ws_2", ["inventory:hosts:delete"]),
+            (self.ws_1_id, ["inventory:hosts:write"]),
+            (self.ws_2_id, ["inventory:hosts:delete"]),
         ]:
             role = self.expect_1_v2_role_with_permissions(permissions)
             self.expect_1_role_binding_to_workspace(workspace, for_v2_roles=[role], for_groups=[str(group.uuid)])
 
     def test_partial_overlap(self):
         """Test creating a role where some, but not all, workspaces share the same permissions."""
-        role = self.given_v1_role(
+        role = self.given_v1_role_on_test_workspaces(
             "r1",
             default=["inventory:hosts:read"],
             ws_1=["inventory:hosts:read"],
@@ -2193,14 +2248,14 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
             self.default_workspace(), for_v2_roles=[read_role], for_groups=[str(group.uuid)]
         )
 
-        self.expect_1_role_binding_to_workspace("ws_1", for_v2_roles=[read_role], for_groups=[str(group.uuid)])
+        self.expect_1_role_binding_to_workspace(self.ws_1_id, for_v2_roles=[read_role], for_groups=[str(group.uuid)])
 
-        self.expect_1_role_binding_to_workspace("ws_2", for_v2_roles=[write_role], for_groups=[str(group.uuid)])
-        self.expect_1_role_binding_to_workspace("ws_3", for_v2_roles=[write_role], for_groups=[str(group.uuid)])
+        self.expect_1_role_binding_to_workspace(self.ws_2_id, for_v2_roles=[write_role], for_groups=[str(group.uuid)])
+        self.expect_1_role_binding_to_workspace(self.ws_3_id, for_v2_roles=[write_role], for_groups=[str(group.uuid)])
 
     def test_role_with_same_default_and_resource_permission_reuses_same_v2_role(self):
         """With same resource permissions (when one of those is the default workspace), reuse the same v2 role."""
-        role = self.given_v1_role(
+        role = self.given_v1_role_on_test_workspaces(
             "r1",
             default=["app1:hosts:read", "inventory:hosts:write"],
             ws_2=["app1:hosts:read", "inventory:hosts:write"],
@@ -2213,17 +2268,17 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
         self.expect_1_role_binding_to_workspace(
             self.default_workspace(), for_v2_roles=[id], for_groups=[str(group.uuid)]
         )
-        self.expect_1_role_binding_to_workspace("ws_2", for_v2_roles=[id], for_groups=[str(group.uuid)])
+        self.expect_1_role_binding_to_workspace(self.ws_2_id, for_v2_roles=[id], for_groups=[str(group.uuid)])
 
     def test_add_permissions_to_role(self):
         """Modify the role in place when adding permissions."""
-        role = self.given_v1_role(
+        role = self.given_v1_role_on_test_workspaces(
             "r1",
             default=["app1:hosts:read", "inventory:hosts:write"],
             ws_2=["app1:hosts:read", "inventory:hosts:write"],
         )
 
-        self.given_update_to_v1_role(
+        self.given_update_to_v1_role_on_test_workspaces(
             role,
             default=["app1:hosts:read", "inventory:hosts:write"],
             ws_2=["app1:hosts:read", "inventory:hosts:write", "app2:hosts:read"],
@@ -2242,17 +2297,19 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
             for_v2_roles=[role_for_default],
             for_groups=[str(group.uuid)],
         )
-        self.expect_1_role_binding_to_workspace("ws_2", for_v2_roles=[role_for_ws_2], for_groups=[str(group.uuid)])
+        self.expect_1_role_binding_to_workspace(
+            self.ws_2_id, for_v2_roles=[role_for_ws_2], for_groups=[str(group.uuid)]
+        )
 
     def test_remove_permissions_from_role(self):
         """Modify the role in place when removing permissions."""
-        role = self.given_v1_role(
+        role = self.given_v1_role_on_test_workspaces(
             "r1",
             default=["app1:hosts:read", "inventory:hosts:write"],
             ws_2=["app1:hosts:read", "inventory:hosts:write"],
         )
 
-        self.given_update_to_v1_role(
+        self.given_update_to_v1_role_on_test_workspaces(
             role,
             default=["app1:hosts:read", "inventory:hosts:write"],
             ws_2=["app1:hosts:read"],
@@ -2269,24 +2326,26 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
             for_v2_roles=[role_for_default],
             for_groups=[str(group.uuid)],
         )
-        self.expect_1_role_binding_to_workspace("ws_2", for_v2_roles=[role_for_ws_2], for_groups=[str(group.uuid)])
+        self.expect_1_role_binding_to_workspace(
+            self.ws_2_id, for_v2_roles=[role_for_ws_2], for_groups=[str(group.uuid)]
+        )
 
     def test_remove_permissions_from_role_back_to_original(self):
         """Modify the role in place when removing permissions, consolidating roles."""
         """Modify the role in place when adding permissions."""
-        role = self.given_v1_role(
+        role = self.given_v1_role_on_test_workspaces(
             "r1",
             default=["app1:hosts:read", "inventory:hosts:write"],
             ws_2=["app1:hosts:read", "inventory:hosts:write"],
         )
 
-        self.given_update_to_v1_role(
+        self.given_update_to_v1_role_on_test_workspaces(
             role,
             default=["app1:hosts:read", "inventory:hosts:write"],
             ws_2=["app1:hosts:read", "inventory:hosts:write", "app2:hosts:read"],
         )
 
-        self.given_update_to_v1_role(
+        self.given_update_to_v1_role_on_test_workspaces(
             role,
             default=["app1:hosts:read", "inventory:hosts:write"],
             ws_2=["app1:hosts:read", "inventory:hosts:write"],
@@ -2294,11 +2353,11 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
 
         id = self.expect_1_v2_role_with_permissions(["app1:hosts:read", "inventory:hosts:write"])
         self.expect_1_role_binding_to_workspace(self.default_workspace(), for_v2_roles=[id], for_groups=[])
-        self.expect_1_role_binding_to_workspace("ws_2", for_v2_roles=[id], for_groups=[])
+        self.expect_1_role_binding_to_workspace(self.ws_2_id, for_v2_roles=[id], for_groups=[])
 
     def test_add_resource_uses_existing_groups(self):
         """New bindings get existing groups."""
-        role = self.given_v1_role(
+        role = self.given_v1_role_on_test_workspaces(
             "r1",
             default=["app1:hosts:read", "inventory:hosts:write"],
             ws_2=["app1:hosts:read", "inventory:hosts:write"],
@@ -2309,7 +2368,7 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
         self.given_roles_assigned_to_group(g1, roles=[role])
         self.given_roles_assigned_to_group(g2, roles=[role])
 
-        self.given_update_to_v1_role(
+        self.given_update_to_v1_role_on_test_workspaces(
             role,
             default=["app1:hosts:read", "inventory:hosts:write"],
             ws_2=["app1:hosts:read", "inventory:hosts:write"],
@@ -2318,11 +2377,13 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
 
         role = self.expect_1_v2_role_with_permissions(["app1:hosts:read", "inventory:hosts:write"])
 
-        self.expect_1_role_binding_to_workspace("ws_3", for_v2_roles=[role], for_groups=[str(g1.uuid), str(g2.uuid)])
+        self.expect_1_role_binding_to_workspace(
+            self.ws_3_id, for_v2_roles=[role], for_groups=[str(g1.uuid), str(g2.uuid)]
+        )
 
     def test_delete_role(self):
         """Delete the role and its bindings when deleting a custom role."""
-        role = self.given_v1_role(
+        role = self.given_v1_role_on_test_workspaces(
             "r1",
             default=["app1:hosts:read", "inventory:hosts:write"],
             ws_2=["app1:hosts:read", "inventory:hosts:write"],
@@ -2362,13 +2423,13 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
 
     def test_remove_resource_removes_role_binding(self):
         """Remove the role binding when removing the resource from attribute filter."""
-        role = self.given_v1_role(
+        role = self.given_v1_role_on_test_workspaces(
             "r1",
             default=["app1:hosts:read", "inventory:hosts:write"],
             ws_2=["app1:hosts:read", "inventory:hosts:write"],
         )
 
-        self.given_update_to_v1_role(
+        self.given_update_to_v1_role_on_test_workspaces(
             role,
             ws_2=["app1:hosts:read", "inventory:hosts:write"],
         )
@@ -2376,17 +2437,17 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
         role = self.expect_1_v2_role_with_permissions(["app1:hosts:read", "inventory:hosts:write"])
 
         self.expect_num_role_bindings(1)
-        self.expect_1_role_binding_to_workspace("ws_2", for_v2_roles=[role], for_groups=[])
+        self.expect_1_role_binding_to_workspace(self.ws_2_id, for_v2_roles=[role], for_groups=[])
 
     def test_two_roles_with_same_resource_permissions_create_two_v2_roles(self):
         """Create two v2 roles when two roles have the same resource permissions across different resources."""
-        self.given_v1_role(
+        self.given_v1_role_on_test_workspaces(
             "r1",
             default=["app1:hosts:read", "inventory:hosts:write"],
             ws_2=["app1:hosts:read", "inventory:hosts:write"],
         )
 
-        self.given_v1_role(
+        self.given_v1_role_on_test_workspaces(
             "r2",
             default=["app1:hosts:read", "inventory:hosts:write"],
             ws_2=["app1:hosts:read", "inventory:hosts:write"],
@@ -2396,12 +2457,12 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
 
         self.expect_1_role_binding_to_workspace(self.default_workspace(), for_v2_roles=[roles[0]], for_groups=[])
         self.expect_1_role_binding_to_workspace(self.default_workspace(), for_v2_roles=[roles[1]], for_groups=[])
-        self.expect_1_role_binding_to_workspace("ws_2", for_v2_roles=[roles[0]], for_groups=[])
-        self.expect_1_role_binding_to_workspace("ws_2", for_v2_roles=[roles[1]], for_groups=[])
+        self.expect_1_role_binding_to_workspace(self.ws_2_id, for_v2_roles=[roles[0]], for_groups=[])
+        self.expect_1_role_binding_to_workspace(self.ws_2_id, for_v2_roles=[roles[1]], for_groups=[])
 
     def test_unassigned_role_keeps_role_binding(self):
         """Unassigning a role from a group does not remove the role binding."""
-        role = self.given_v1_role(
+        role = self.given_v1_role_on_test_workspaces(
             "r1",
             default=["app1:hosts:read", "inventory:hosts:write"],
             ws_2=["app1:hosts:read", "inventory:hosts:write"],
@@ -2422,7 +2483,7 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
 
     def test_assign_group_no_rolebindngs(self):
         """Test assigning a group to a custom role before RoleBindings have been created for it."""
-        role = self.given_v1_role(
+        role = self.given_v1_role_on_test_workspaces(
             "r1",
             default=["app1:hosts:read", "inventory:hosts:write"],
         )
@@ -2576,6 +2637,17 @@ class DualWriteCustomRolesTestCase(DualWriteTestCase):
 
         with self.assertRaises(DualWriteException):
             self.given_update_to_v1_role(role, default=["inventory:*:*"])
+
+    def test_ignore_out_of_tenant_workspace(self):
+        another_tenant = Tenant.objects.create(tenant_name="another tenant", org_id="23456")
+        bootstrap_result = bootstrap_tenant_for_v2_test(another_tenant)
+
+        role = self.given_v1_role("a role", default=[], **{str(bootstrap_result.root_workspace.id): ["inventory:*:*"]})
+
+        # There should be no binding in the default workspace because there are no permissions there.
+        # There should be no binding in the other tenant's workspace because it should be ignored.
+        self.assertFalse(BindingMapping.objects.filter(role=role).exists())
+        self.assertFalse(RoleBinding.objects.filter(role__v1_source=role).exists())
 
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)

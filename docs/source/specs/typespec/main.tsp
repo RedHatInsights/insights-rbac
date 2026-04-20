@@ -517,8 +517,8 @@ namespace Workspaces {
         @doc("Offset for offset-based pagination.")
         @query offset?: Offset = DefaultOffset;
 
-        @doc("Defaults to all when param is not supplied.")
-        @query type?: WorkspaceTypesQueryParam = WorkspaceTypesQueryParam.all;
+        @doc("Filter by workspace type. Supports comma-separated values (e.g. type=standard,ungrouped-hosts). Defaults to all when not supplied. Case-insensitive.")
+        @query type?: string = "all";
         @doc("Case sensitive exact match of workspace by name.")
         @query name?: string;
         @doc("Filter workspaces by parent workspace UUID. Returns only direct children of the specified workspace. Useful for lazy-loading a nested tree structure.")
@@ -713,7 +713,7 @@ namespace Workspaces {
 @tag("Role Bindings")
 @doc("Operations about role bindings")
 namespace RoleBindings {
-    const DefaultRoleBindingBySubjectFieldMask: FieldMask = "resource(id),subject(id),roles(id)";
+    const DefaultRoleBindingBySubjectFieldMask: FieldMask = "resource(id),subject(id,type),roles(id)";
 
     @doc("Subject kind for create/batch, by-subject, and list filters on the binding's subject (group UUID or user/principal UUID). Does not include principal as a separate type string; for external user ID use GET /role-bindings/ with granted_subject_type=principal and granted_subject.principal.user_id.")
     enum BindingSubjectType {

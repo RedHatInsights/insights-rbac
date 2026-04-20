@@ -259,6 +259,7 @@ class RoleSerializer(serializers.ModelSerializer):
             message = "System roles may not be updated."
             error = {key: [_(message)]}
             raise serializers.ValidationError(error)
+        _validate_name_not_system_role(data.get("name"), data.get("display_name"), self.instance)
         return super().validate(data)
 
 
@@ -411,15 +412,6 @@ class RolePatchSerializer(RoleSerializer):
         instance = update_role(instance, validated_data, clear_access=False)
         return instance
 
-    def validate(self, data):
-        """Validate the input data of patching role."""
-        if self.instance.system:
-            key = "role.update"
-            message = "System roles may not be updated."
-            error = {key: [_(message)]}
-            raise serializers.ValidationError(error)
-        return super().validate(data)
-
 
 class BindingMappingSerializer(serializers.ModelSerializer):
     """Serializer for the binding mapping."""
@@ -429,6 +421,27 @@ class BindingMappingSerializer(serializers.ModelSerializer):
 
         model = BindingMapping
         fields = "__all__"
+
+
+def _validate_name_not_system_role(name, display_name, instance=None):
+    """Validate that name/display_name do not conflict with system role names (case-insensitive)."""
+    public_tenant = Tenant.objects.get(tenant_name="public")
+
+    if name and (not instance or instance.name != name):
+        if Role.objects.filter(system=True, tenant=public_tenant, name__iexact=name).exists():
+            raise serializers.ValidationError(
+                {"name": [_("Role name '%(name)s' conflicts with an existing system role.") % {"name": name}]}
+            )
+
+    if display_name and (not instance or instance.display_name != display_name):
+        if Role.objects.filter(system=True, tenant=public_tenant, display_name__iexact=display_name).exists():
+            raise serializers.ValidationError(
+                {
+                    "display_name": [
+                        _("Display name '%(name)s' conflicts with an existing system role.") % {"name": display_name}
+                    ]
+                }
+            )
 
 
 def obtain_applications(obj):

@@ -23,9 +23,11 @@ import pgtransaction
 from django.core.exceptions import ValidationError
 from django.db import OperationalError, transaction
 from django_filters import rest_framework as filters
+from management.atomic_transactions import atomic_with_retry
+from management.audit_log.model import AuditLog
 from management.base_viewsets import BaseV2ViewSet
 from management.permissions.workspace_access import WorkspaceAccessPermission
-from management.utils import clean_query_param, validate_and_get_key
+from management.utils import clean_query_param, validate_and_get_key, validate_and_get_key_multi
 from management.workspace.filters import WorkspaceAccessFilterBackend, WorkspaceObjectAccessMixin
 from management.workspace.service import WorkspaceService
 from psycopg2.errors import DeadlockDetected, SerializationFailure
@@ -95,6 +97,17 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
             return super().get_queryset().select_for_update()
         return super().get_queryset()
 
+    def _log_audit(self, request, action, workspace, description):
+        """Create an audit log entry for a workspace operation."""
+        audit_log = AuditLog()
+        audit_log.log_v2(
+            request=request,
+            resource_type=AuditLog.WORKSPACE,
+            action=action,
+            resource_uuid=workspace.id,
+            description=description,
+        )
+
     def get_object(self):
         """Get the object, validating the UUID first."""
         pk = self.kwargs.get("pk")
@@ -123,6 +136,12 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
                     {"parent_id": f"Parent workspace '{parent_id}' doesn't exist in tenant"}
                 )
         return super().create(request=request, args=args, kwargs=kwargs)
+
+    def perform_create(self, serializer):
+        """Create workspace and log audit entry."""
+        super().perform_create(serializer)
+        workspace = serializer.instance
+        self._log_audit(self.request, AuditLog.CREATE, workspace, f"Created workspace: {workspace.name}")
 
     def create(self, request, *args, **kwargs):
         """Create a Workspace."""
@@ -162,13 +181,30 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
         Access filtering is handled by WorkspaceAccessFilterBackend.
         Ordering is handled by OrderingFilter (supports ?order_by=name or ?order_by=-name).
         This method only handles additional query parameter filtering.
+
+        The ``type`` query parameter supports comma-separated values so that
+        callers can request multiple workspace types in a single request, e.g.
+        ``?type=standard,ungrouped-hosts``.
         """
         all_types = "all"
+        valid_types = [v.lower() for v in Workspace.Types.values] + [all_types]
         # Use filter_queryset to apply all filter backends (including access filtering and ordering)
         queryset = self.filter_queryset(self.get_queryset())
 
-        type_values = Workspace.Types.values + [all_types]
-        type_field = validate_and_get_key(request.query_params, "type", type_values, all_types)
+        # Sanitize the raw type parameter for NUL bytes (consistent with name/parent_id/ids)
+        type_raw = clean_query_param(request.query_params.get("type"), "type")
+
+        # Support comma-separated type values (e.g. "standard,ungrouped-hosts")
+        type_fields = validate_and_get_key_multi(
+            {"type": type_raw} if type_raw is not None else {},
+            "type",
+            valid_types,
+            default_value=all_types,
+        )
+        # Collapse: if "all" is among the values, treat as unfiltered
+        if all_types in type_fields:
+            type_fields = [all_types]
+
         name = clean_query_param(request.query_params.get("name"), "name")
         parent_id = clean_query_param(request.query_params.get("parent_id"), "parent_id")
         id_filter = clean_query_param(request.query_params.get("ids"), "ids")
@@ -189,10 +225,10 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
 
             # When filtering by ids, default to standard type unless type is explicitly specified
             if "type" not in request.query_params:
-                type_field = Workspace.Types.STANDARD
+                type_fields = [Workspace.Types.STANDARD]
 
-        if type_field != all_types:
-            queryset = queryset.filter(type=type_field)
+        if type_fields != [all_types]:
+            queryset = queryset.filter(type__in=type_fields)
         if name:
             queryset = queryset.filter(name__icontains=name)
         if parent_id:
@@ -202,7 +238,7 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
         serializer = self.get_serializer(page, many=True)
         return self.get_paginated_response(serializer.data)
 
-    @transaction.atomic()
+    @atomic_with_retry(retries=3)
     def destroy(self, request, *args, **kwargs):
         """
         Destroy the instance.
@@ -212,8 +248,19 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
         return super().destroy(request, *args, **kwargs)
 
     def perform_destroy(self, instance):
-        """Delegate to service for destroy logic."""
+        """Delegate to service for destroy logic and log audit entry."""
         self._service.destroy(instance)
+        self._log_audit(self.request, AuditLog.DELETE, instance, f"Deleted workspace: {instance.name}")
+
+    def perform_update(self, serializer):
+        """Update workspace and log audit entry."""
+        instance = serializer.instance
+        audit_log = AuditLog()
+        description = audit_log.find_edited_field(
+            AuditLog.WORKSPACE, f"workspace {instance.name}", self.request, instance
+        )
+        super().perform_update(serializer)
+        self._log_audit(self.request, AuditLog.EDIT, instance, description)
 
     @transaction.atomic()
     def update(self, request, *args, **kwargs):
@@ -238,7 +285,14 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
         target_workspace_id = self._parent_id_query_param_validation(request)
         workspace = self.get_object()
         serializer = self.get_serializer(workspace)
-        return serializer.move(workspace, target_workspace_id)
+        result = serializer.move(workspace, target_workspace_id)
+        self._log_audit(
+            request,
+            AuditLog.EDIT,
+            workspace,
+            f"Moved workspace: {workspace.name} to parent {workspace.parent.name}",
+        )
+        return result
 
     @action(detail=True, methods=["post"], url_path="move")
     def move(self, request, *args, **kwargs):

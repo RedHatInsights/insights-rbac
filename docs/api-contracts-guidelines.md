@@ -1,130 +1,189 @@
-# insights-rbac API Contracts Guidelines
+# API Contracts Guidelines
 
-## 1. API Versioning
+Rules and patterns for maintaining API contract consistency in insights-rbac.
 
-- The application serves two API versions at `api/rbac/v1/` and `api/rbac/v2/`, controlled by the `API_PATH_PREFIX` env var (default `api/`).
-- v2 APIs are gated behind `settings.V2_APIS_ENABLED`. Never register v2 routes outside the `if settings.V2_APIS_ENABLED` block in `rbac/rbac/urls.py`.
-- The global exception handler (`api/common/exception_handler.py`) dispatches to `custom_exception_handler` (v1) or `custom_exception_handler_v2` (v2) based on path. Both versions MUST be kept in sync when adding new exception types.
-- v1 write endpoints are blocked when workspaces are enabled (`V1WriteBlockedWhenWorkspacesEnabled`). v2 write endpoints require workspaces enabled (`V2WriteRequiresWorkspacesEnabled`). Always apply the correct guard.
+## Dual API Versions
 
-## 2. Response Envelope Formats
+Two API versions coexist. They share models and database but differ in routing, response format, pagination, error handling, and access control.
 
-### v1 List Responses
-```json
-{"meta": {"count": N, "limit": N, "offset": N}, "links": {"first": "...", "next": "...", "previous": "...", "last": "..."}, "data": [...]}
+- **v1** (`/api/rbac/v1/`): Always registered. Group-based RBAC. Uses `DefaultRouter`, `ModelViewSet` mixins, `StandardResultsSetPagination` (limit/offset), and JSON error arrays.
+- **v2** (`/api/rbac/v2/`): Conditionally registered via `V2_APIS_ENABLED` setting in `rbac/rbac/urls.py:46`. Workspace-based model. Uses `V2Router` (with custom batch routes), `BaseV2ViewSet`, and RFC 7807 Problem Details errors.
+
+Never register v2 routes unconditionally. The feature flag check in `urls.py` is the gate.
+
+## URL Routing
+
+### v1 (`management/urls.py`)
+- `DefaultRouter` registers `GroupViewSet`, `RoleViewSet`, `PermissionViewSet`, `AuditLogViewSet`.
+- `PrincipalView` and `AccessView` are plain `APIView` at fixed paths.
+
+### v2 (`management/v2_urls.py`)
+- `V2Router` extends `DefaultRouter` with two custom `Route` entries for batch operations:
+  - `{prefix}:batchCreate/` maps POST to `batch_create` action.
+  - `{prefix}:batchDelete/` maps POST to `bulk_destroy` action.
+- Registered viewsets: `WorkspaceViewSet`, `RoleBindingViewSet`, `RoleV2ViewSet`.
+
+When adding a v2 endpoint, register on `V2Router` in `v2_urls.py`. For batch operations, use the existing `:batchCreate` / `:batchDelete` route pattern (colon prefix, camelCase action name).
+
+## ViewSet Patterns
+
+### v1: Manual mixin composition
+```python
+class RoleViewSet(
+    mixins.CreateModelMixin, mixins.DestroyModelMixin,
+    mixins.ListModelMixin, mixins.RetrieveModelMixin,
+    mixins.UpdateModelMixin, viewsets.GenericViewSet,
+):
 ```
-Uses `StandardResultsSetPagination` (LimitOffsetPagination). Default limit=10, max=1000.
+- Uses `lookup_field = "uuid"` for detail routes.
+- Wraps write operations in `transaction.atomic()` inline.
+- `get_serializer_class()` switches serializer based on `request.path` and `request.method`.
 
-### v2 List Responses (offset-based: Workspaces)
-Same envelope as v1. Uses `V2ResultsSetPagination`. Supports `limit=-1` to return all results.
+### v2: `BaseV2ViewSet` (`management/base_viewsets.py`)
+Provides the same mixin set as above plus:
+- `renderer_classes` includes `ProblemJSONRenderer` for `application/problem+json` content negotiation.
+- `pagination_class = V2ResultsSetPagination` by default (offset-based with `limit=-1` support).
+- `get_queryset()` auto-filters by `request.tenant` and orders by `name, -modified`.
 
-### v2 List Responses (cursor-based: RoleBindings, Roles)
+All new v2 viewsets must inherit `BaseV2ViewSet`.
+
+### AtomicOperationsMixin (`management/v2_mixins.py`)
+v2 viewsets that perform writes should also inherit `AtomicOperationsMixin`:
+- Wraps `create`, `update`, `destroy` in `pgtransaction.atomic(isolation_level=SERIALIZABLE, retry=self.atomic_retry)` where `atomic_retry=3`.
+- Subclasses of `AtomicOperationsMixin` must NOT override `create()`/`update()`/`destroy()` directly. Override `perform_atomic_create()`, `perform_atomic_update()`, `perform_atomic_destroy()` instead. A `__init_subclass__` check enforces this at class definition time.
+- Handles `SerializationFailure` (409) and `DeadlockDetected` (500) after retry exhaustion.
+
+## Pagination
+
+### v1: `StandardResultsSetPagination` (limit/offset)
+Response envelope:
 ```json
-{"meta": {"limit": N}, "links": {"next": "...", "previous": "..."}, "data": [...]}
+{"meta": {"count": N, "limit": L, "offset": O}, "links": {"first": "...", "next": "...", "previous": "...", "last": "..."}, "data": [...]}
 ```
-Uses `V2CursorPagination`. No `count`, `offset`, `first`, or `last` keys. Supports `limit=-1`. Default limit=10, max=1000.
+Default limit: 10. Max limit: 1000.
 
-### v1 Error Responses
+### v2 offset: `V2ResultsSetPagination`
+Same envelope as v1. Adds `limit=-1` to disable pagination (returns all results).
+
+### v2 cursor: `V2CursorPagination`
+Response envelope (no `count`, no `first`/`last`):
 ```json
-{"errors": [{"detail": "...", "source": "...", "status": "400"}]}
+{"meta": {"limit": L}, "links": {"next": "...", "previous": "..."}, "data": [...]}
+```
+Ordering uses dot-notation field mapping (e.g., `group.name`, `role.modified`). Each model type has its own `FIELD_MAPPING` dict. Invalid `order_by` values raise `ValidationError` with the list of valid fields.
+
+Workspaces use offset pagination (`V2ResultsSetPagination` subclass, `max_limit=3000`). Role bindings and roles use cursor pagination (`V2CursorPagination`).
+
+## Serializer Conventions
+
+### v1 serializers
+- Inherit `serializers.ModelSerializer` (often with `SerializerCreateOverrideMixin` which auto-injects `tenant` on create).
+- Use `lookup_field = "uuid"` on the viewset, not the serializer.
+- Dynamic field inclusion via `get_serializer()` passing a `fields` kwarg (e.g., `RoleDynamicSerializer`).
+
+### v2 serializers: input/output split
+v2 endpoints use separate serializers for input validation and output formatting:
+- **Input serializers** (`*InputSerializer`, `*RequestSerializer`): Validate query params or request body. Usually `serializers.Serializer` (not `ModelSerializer`). Contain `validate_*` methods. Service layer calls happen in `create()`/`save()`.
+- **Output serializers** (`*OutputSerializer`, `*ResponseSerializer`): Format response data. Use `SerializerMethodField` extensively for dynamic field selection.
+
+Example from role bindings:
+```
+RoleBindingListInputSerializer   -> validates query params
+RoleBindingListOutputSerializer  -> formats response with field masking
 ```
 
-### v2 Error Responses (Problem Details)
+### Field selection (`?fields=`)
+v2 endpoints support a `fields` query parameter for response field masking. The parsing infrastructure lives in `management/utils.py`:
+- `FieldSelection` base class with `VALID_ROOT_FIELDS` and `VALID_NESTED_FIELDS` class vars.
+- Subclass per endpoint (e.g., `RoleBindingFieldSelection`, `RoleFieldSelection`).
+- Syntax: `subject(group.name,id),role(name),last_modified`.
+
+For roles, field selection uses simple set-based masking (pop fields from `self.fields` in `__init__`). For role bindings, the `RoleBindingFieldMaskingMixin` provides shared `_build_subject_data`, `_build_role_data`, `_build_resource_data` helpers.
+
+When adding fields parameters: subclass `FieldSelection`, define valid fields, add a `validate_fields` method to the input serializer.
+
+### NUL byte sanitization
+v2 input serializers strip `\x00` bytes in `to_internal_value()`. Follow this pattern for any new v2 input serializer.
+
+### Dotted query param remapping
+Some query params use dots (e.g., `resource.tenant.org_id`). Remap in `to_internal_value()` via a `DOTTED_PARAM_MAP` dict to underscore field names. See `RoleBindingListInputSerializer`.
+
+## Error Response Formats
+
+### v1 errors
 ```json
-{"status": 400, "title": "The request payload contains invalid syntax.", "detail": "...", "errors": [...]}
+{"errors": [{"detail": "...", "source": "field_name", "status": "400"}]}
 ```
-Content-Type: `application/problem+json`. Titles come from `PROBLEM_TITLES` dict in `management/utils.py`. Use `v2response_error_from_errors()` to build these.
+Dispatched by `custom_exception_handler()` in `api/common/exception_handler.py`.
 
-## 3. ViewSet Patterns
+### v2 errors: RFC 7807 Problem Details
+```json
+{"status": 400, "title": "The request payload contains invalid syntax.", "detail": "...", "errors": [{"message": "...", "field": "..."}]}
+```
+Dispatched by `custom_exception_handler_v2()`. Content type: `application/problem+json`.
 
-### v1 ViewSets
-- Inherit from DRF mixins + `viewsets.GenericViewSet` or `viewsets.ModelViewSet` directly.
-- Use `StandardResultsSetPagination`.
-- Registered in `management/urls.py` via `DefaultRouter`.
+The version-routing handler `exception_version_handler` checks the request path for `/v2/` to select the correct handler. This is configured globally in `REST_FRAMEWORK["EXCEPTION_HANDLER"]`.
 
-### v2 ViewSets
-- MUST inherit from `BaseV2ViewSet` (`management/base_viewsets.py`), which composes individual DRF mixins and adds `ProblemJSONRenderer` and `V2ResultsSetPagination`.
-- `BaseV2ViewSet.get_queryset()` automatically filters by `request.tenant` and orders by `name, -modified`. Override with care.
-- For write operations (create/update/destroy), use `AtomicOperationsMixin` from `management/v2_mixins.py`. This wraps mutations in `SERIALIZABLE` isolation transactions with retry=3.
-- When using `AtomicOperationsMixin`, NEVER override `create()`, `update()`, or `destroy()` directly. Override `perform_atomic_create()`, `perform_atomic_update()`, `perform_atomic_destroy()` instead. The mixin enforces this at class definition time via `__init_subclass__`.
-- v2 routes are registered in `management/v2_urls.py` via `V2Router`, which extends `DefaultRouter` with `:batchCreate` and `:batchDelete` custom routes.
+### Domain exceptions (`management/exceptions.py`)
+- `NotFoundError(resource_type, resource_id)` -- converted to 404 Problem Details.
+- `InvalidFieldError(field, message)` -- converted to 400 Problem Details.
+- `RequiredFieldError(field_name)` -- converted to 400 Problem Details.
 
-## 4. URL Routing Conventions
+Raise these from service layer code; the global exception handler formats them. Do NOT catch and re-raise as `serializers.ValidationError` in views -- let them propagate.
 
-- v1: resource names are plural, lowercase (`groups`, `roles`, `permissions`, `auditlogs`). Some endpoints are plain views (`principals/`, `access/`).
-- v2: resource names are plural, kebab-case (`workspaces`, `role-bindings`, `roles`).
-- v2 batch operations use colon-prefixed action names: `/role-bindings:batchCreate/`, `/roles:batchDelete/`.
-- v2 sub-resource endpoints use path segments: `/role-bindings/by-subject/`.
-- Workspace has a custom action: `/{id}/move/`.
-- All URLs end with trailing slashes.
+### Problem titles mapping
+Defined in `management/utils.py:PROBLEM_TITLES`. Standard titles for 400, 401, 403, 404, 409, 500. Do not invent custom titles outside this mapping.
 
-## 5. Serializer Patterns
+## Content Negotiation
 
-### Input vs Output Serializers
-- v2 endpoints use SEPARATE input and output serializers. Input serializers validate query parameters or request bodies. Output serializers format responses. Name them `*InputSerializer` / `*OutputSerializer` or `*RequestSerializer` / `*ResponseSerializer`.
-- v1 often uses a single serializer for both directions, sometimes with `RoleDynamicSerializer` patterns.
+- v1: Only `JSONRenderer` (configured globally in `REST_FRAMEWORK["DEFAULT_RENDERER_CLASSES"]`).
+- v2: `JSONRenderer` + `ProblemJSONRenderer` (added via `BaseV2ViewSet.renderer_classes`). The `ProblemJSONRenderer` accepts `application/problem+json` in the `Accept` header but renders standard JSON.
 
-### Tenant Injection
-- v1 serializers that create objects use `SerializerCreateOverrideMixin` to auto-inject `tenant=self.context["request"].tenant` into `ModelClass.objects.create()`.
-- v2 serializers delegate creation to a service layer, passing tenant explicitly: `self.service.create(..., tenant=tenant)`.
+## OpenAPI Spec
 
-### Field Selection (v2 only, AIP-161 pattern)
-- The `fields` query parameter controls response fields using `FieldSelection` from `management/utils.py`.
-- Syntax: `field1,field2` for root fields; `object(field1,field2)` for nested fields.
-- Each endpoint defines its own `FieldSelection` subclass with `VALID_ROOT_FIELDS` and `VALID_NESTED_FIELDS` class variables.
-- Read operations: silently filter invalid fields. Write operations: raise `ValidationError` for invalid fields (strict mode).
-- Serializers dynamically pop unrequested fields in `__init__` or `to_representation`.
+### Source of truth
+v2 spec is generated from TypeSpec at `docs/source/specs/typespec/main.tsp`. Output goes to `docs/source/specs/v2/openapi.json` and `openapi.yaml`.
 
-### NUL Byte Sanitization
-- All v2 input serializers MUST override `to_internal_value()` to strip `\x00` (NUL) bytes from string values before validation.
+### Serving
+- v1: `GET /api/rbac/v1/openapi.json` serves `docs/source/specs/openapi.json`.
+- v2: `GET /api/rbac/v2/openapi.json` serves `docs/source/specs/v2/openapi.json`.
 
-## 6. Filtering and Query Parameters
+Both are static file reads, not auto-generated from DRF.
 
-- v1 uses `CommonFilters(django_filters.FilterSet)` with `name_filter()` supporting `name_match=partial|exact`.
-- v2 validates query parameters via dedicated input serializers (not django-filters). Call `input_serializer.is_valid(raise_exception=True)` before using `validated_data`.
-- v2 ordering uses `order_by` query parameter with dot notation (`group.name`, `role.modified`, `-role.created`). Field mappings are defined in `V2CursorPagination` (`GROUP_FIELD_MAPPING`, `USER_FIELD_MAPPING`, `ROLE_BINDING_FIELD_MAPPING`). Invalid fields raise `ValidationError`.
-- `validate_and_get_key()` in `management/utils.py` validates query params against allowed values with a default fallback.
-- `validate_uuid()` validates UUID format; use it for all UUID path/query params.
+### Regenerating
+```bash
+make generate_v2_spec   # Requires TypeSpec installed in docs/source/specs/typespec/
+```
 
-## 7. Concurrency and Transaction Handling
+When changing v2 API contracts, update `main.tsp` first, regenerate the spec, then implement. The TypeSpec file is the contract; the code must match it.
 
-- v2 write operations use `pgtransaction.atomic(isolation_level=SERIALIZABLE, retry=3)`.
-- `SerializationFailure` returns 409 (or 503 for workspaces). `DeadlockDetected` returns 500. Always handle `OperationalError` and inspect `__cause__`.
-- Workspace views use `Retry-After: 1` header on 503 responses.
-- The `is_atomic_disabled()` setting allows skipping transactions in tests.
+### TypeSpec conventions in `main.tsp`
+- Reusable models: `ListResponse<Item>`, `ItemResponse<Item, StatusCode>`, `ProblemDetails<Status>`.
+- Pagination models: `CursorPaginationMeta/Links` (for roles, role bindings) and `OffsetPaginationMeta/Links` (for workspaces).
+- `FieldMask`, `Limit`, `Cursor`, `Offset`, `OrderBy` are custom scalars with documentation.
+- Batch operations use `:batchCreate/` and `:batchDelete/` route suffixes (colon prefix).
+- All error responses use `Problems.CommonProblems` (401, 403, 500) plus specific `Problem400`/`Problem404`.
 
-## 8. Service Layer (v2)
+## Multi-tenancy in Serializers
 
-- v2 endpoints follow a View -> Serializer -> Service -> Model pattern.
-- Services live in `management/<resource>/service.py` (e.g., `WorkspaceService`, `RoleBindingService`, `RoleV2Service`).
-- Service methods are responsible for business logic, model operations, and relation replication. Serializers handle validation and delegate to services.
-- Domain exceptions (`RequiredFieldError`, `InvalidFieldError`, `NotFoundError`, `RolesNotFoundError`) are raised by services and caught by the global exception handler or serializer-level try/except.
+- v1: `SerializerCreateOverrideMixin.create()` injects `tenant=self.context["request"].tenant` into `Model.objects.create()`. v1 serializers for tenant-aware models should inherit this mixin.
+- v2: Service layer handles tenant. Serializers call `self.context["request"].tenant` and pass to service methods.
 
-## 9. OpenAPI / TypeSpec Specification
+Never rely on implicit tenant. Always explicitly pass or filter by tenant.
 
-- The TypeSpec spec lives at `docs/source/specs/typespec/main.tsp`. It generates OpenAPI 3 output in `tsp-output/@typespec/openapi3/`.
-- v2 OpenAPI is served at `api/rbac/v2/openapi.json` via `api/openapi/view.py`.
-- When adding or modifying v2 endpoints, update `main.tsp` to match. Key conventions:
-  - All models use `@example` decorators. All operations use `@opExample`.
-  - Error responses use `Problems.ProblemDetails<Status>` models.
-  - Pagination models: `CursorPaginationMeta`/`CursorPaginationLinks` for cursor-based; `OffsetPaginationMeta`/`OffsetPaginationLinks` for offset-based.
-  - `FieldMask`, `Limit`, `Cursor`, `Offset`, `OrderBy` are custom scalars -- reuse them.
-  - Compile with `tsp compile .` from the typespec directory after changes.
+## Access Control Integration
 
-## 10. Permission Classes
+v2 viewsets declare two layers:
+1. `permission_classes` tuple -- endpoint-level permission checks (e.g., `WorkspaceAccessPermission`, `RoleBindingKesselAccessPermission`).
+2. `filter_backends` -- queryset filtering (e.g., `WorkspaceAccessFilterBackend`).
 
-- Every ViewSet MUST declare `permission_classes`. v1 uses `RoleAccessPermission`, `GroupAccessPermission`, etc.
-- v2 uses Kessel-based permissions (e.g., `RoleV2KesselAccessPermission`, `RoleBindingKesselAccessPermission`, `WorkspaceAccessPermission`).
-- Write-guard permissions (`V1WriteBlockedWhenWorkspacesEnabled` / `V2WriteRequiresWorkspacesEnabled`) must be included for any mutating endpoint.
+The permission class order matters. `V2WriteRequiresWorkspacesEnabled` is a guard that blocks writes when workspaces feature is disabled; it goes last. `RoleBindingSystemUserAccessPermission` goes first to allow system-to-system calls to bypass Kessel checks.
 
-## 11. Key Conventions Checklist
+## Service Layer Pattern
 
-- v2 list serializers: Use separate input serializer for query param validation
-- v2 response format: `{meta, links, data}` envelope -- never return bare lists
-- v2 errors: Always `application/problem+json` with `{status, title, detail}` structure
-- Pagination links: Rewritten to partial URLs (path + query only, no host) via `link_rewrite()`
-- UUIDs: Use `UUIDStringField` (hex with hyphens) for API-facing UUID fields
-- v2 lookup field: Roles use `lookup_field = "uuid"`, not `pk`
-- Batch operations: Max 100 items (`@maxItems(100)` / `max_length=100`)
-- HTTP methods: Roles v2 explicitly restricts to `["get", "post", "put", "head", "options"]` -- no PATCH or DELETE on individual roles
-- Tenant scoping: ALL queries must filter by tenant. `BaseV2ViewSet` does this automatically; v1 views use `get_*_queryset()` helpers from `management/querysets.py`
+v2 business logic lives in `service.py` files, not views or serializers:
+- Views validate input, call service, format output.
+- Serializers parse/validate data, delegate creation to service via `create()`/`save()`.
+- Services handle validation, database operations, relation replication, event publishing.
+
+Keep views thin. Services are the transaction boundary (or `AtomicOperationsMixin` wraps them).
