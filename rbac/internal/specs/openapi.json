@@ -3799,18 +3799,16 @@
           "content": {
             "application/json": {
               "example": {
-                "value": {
-                  "filter": {
-                    "resource_namespace": "rbac",
-                    "resource_type": "group",
-                    "resource_id": "bob_club",
-                    "relation": "member",
-                    "subject_filter": {
-                      "subject_namespace": "rbac",
-                      "subject_type": "principal",
-                      "subject_id": "bob",
-                      "relation": null
-                    }
+                "filter": {
+                  "resource_namespace": "rbac",
+                  "resource_type": "group",
+                  "resource_id": "bob_club",
+                  "relation": "member",
+                  "subject_filter": {
+                    "subject_namespace": "rbac",
+                    "subject_type": "principal",
+                    "subject_id": "bob",
+                    "relation": null
                   }
                 }
               }

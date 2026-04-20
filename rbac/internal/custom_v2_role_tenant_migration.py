@@ -18,14 +18,14 @@
 """Backfill rbac/role#owner@rbac/tenant for custom V2 roles from each role's tenant row.
 
 Scans the ``RoleV2`` table only (custom roles are on the order of thousands), not the tenant table
-(millions of rows). Streams rows with ``QuerySet.iterator()`` and ``itertools.batched`` so Django
-handles fetch batching; each batch is still wrapped in ``atomic_block()`` (SERIALIZABLE) like before.
+(millions of rows). Each batch is locked with ``select_for_update()`` inside an ``atomic_block()``
+to prevent concurrent V1 dual-write operations (which run at READ COMMITTED) from modifying roles
+mid-replication.
 """
 
 from __future__ import annotations
 
 import logging
-from itertools import batched
 from typing import Any
 
 from django.conf import settings
@@ -100,22 +100,27 @@ def replicate_custom_v2_role_owner_relationships(
 
     Raises ``TenantResourceIdMissingError`` if any custom role's tenant has no ``tenant_resource_id()``.
 
-    Streams rows with ``iterator()`` (see Django docs for fetch behavior with ``select_related``).
-    Each batch of up to ``DEFAULT_CHUNK_SIZE`` roles is processed inside a separate SERIALIZABLE
-    transaction (see ``atomic_block``).
+    Each batch of up to ``DEFAULT_CHUNK_SIZE`` roles is locked with ``select_for_update()`` inside
+    an ``atomic_block()`` (SERIALIZABLE) to guard against concurrent V1 dual-write operations that
+    run at READ COMMITTED. Keyset pagination (``pk__gt``) is used to advance between batches.
     """
     if replicator is None:
-        if settings.REPLICATION_TO_RELATION_ENABLED:
-            replicator = OutboxReplicator()
-        raise ValueError("Replication to relations is disabled")
+        if not settings.REPLICATION_TO_RELATION_ENABLED:
+            raise ValueError("Replication to relations is disabled")
+        replicator = OutboxReplicator()
 
     replicated_count = 0
+    last_pk = 0
 
-    for chunk in batched(_base_queryset().iterator(), DEFAULT_CHUNK_SIZE):
+    while True:
         with atomic_block():
+            chunk = list(_base_queryset().filter(pk__gt=last_pk).select_for_update()[:DEFAULT_CHUNK_SIZE])
+            if not chunk:
+                break
             for role in chunk:
                 _replicate_role(role, replicator)
                 replicated_count += 1
+            last_pk = chunk[-1].pk
 
     return {
         "replicated_count": replicated_count,
