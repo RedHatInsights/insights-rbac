@@ -1657,26 +1657,26 @@ class ToolTimeoutError(Exception):
     """
 
 
+_MCP_TOOL_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+    max_workers=settings.MCP_TOOL_MAX_WORKERS,
+    thread_name_prefix="mcp-tool",
+)
+
+
 def _execute_with_timeout(fn: Callable[..., Any], timeout: int, *args: Any, **kwargs: Any) -> Any:
     """Execute a tool function with a timeout.
 
-    Uses concurrent.futures.ThreadPoolExecutor so the timeout is safe
-    in multi-threaded WSGI containers (unlike signal.alarm which only
-    works on the main thread).
+    Uses the module-level ThreadPoolExecutor so threads are reused across
+    calls instead of creating a new executor per request.
 
     Raises ToolTimeoutError if the function does not complete within the
-    given timeout (seconds).  On timeout, shutdown(wait=False) is used
-    so the caller returns immediately -- the background thread will
-    finish on its own without blocking the HTTP response.
+    given timeout (seconds).
     """
-    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
-    future = executor.submit(fn, *args, **kwargs)
+    future = _MCP_TOOL_EXECUTOR.submit(fn, *args, **kwargs)
     try:
         return future.result(timeout=timeout)
     except concurrent.futures.TimeoutError:
         raise ToolTimeoutError(f"Tool execution exceeded {timeout}s timeout")
-    finally:
-        executor.shutdown(wait=False)
 
 
 def _handle_tools_call(request: HttpRequest, request_id: Any, params: dict[str, Any]) -> JsonResponse:
@@ -1733,10 +1733,16 @@ def _handle_tools_call(request: HttpRequest, request_id: Any, params: dict[str, 
     timeout = getattr(settings, "MCP_TOOL_TIMEOUT_SECONDS", 30)
 
     try:
-        if config.passes_request:
-            result = _execute_with_timeout(config.fn, timeout, request, **arguments)
+        if timeout > 0:
+            if config.passes_request:
+                result = _execute_with_timeout(config.fn, timeout, request, **arguments)
+            else:
+                result = _execute_with_timeout(config.fn, timeout, **arguments)
         else:
-            result = _execute_with_timeout(config.fn, timeout, **arguments)
+            if config.passes_request:
+                result = config.fn(request, **arguments)
+            else:
+                result = config.fn(**arguments)
 
         if track:
             duration = time.monotonic() - start
