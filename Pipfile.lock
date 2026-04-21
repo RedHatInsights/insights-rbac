@@ -1,7 +1,7 @@
 {
     "_meta": {
         "hash": {
-            "sha256": "b020bde23723d1058a5014311069f704a6f6374bc13246a57bcbd0943a1d81d8"
+            "sha256": "48bc6c5f5b4c70822fa4f55ea4c1e77ca67844aee52cfe31f5fbacff553b852b"
         },
         "pipfile-spec": 6,
         "requires": {
@@ -427,12 +427,12 @@
         },
         "django": {
             "hashes": [
-                "sha256:5788fce61da23788a8ce6f02583765ab060d396720924789f97fa42119d37f7a",
-                "sha256:a31589db5188d074c63f0945c3888fad104627dfcc236fb2b97f71f89da33bc4"
+                "sha256:14359c809fc16e8f81fd2b59d7d348e4d2d799da6840b10522b6edf7b8afc1da",
+                "sha256:8cfa2572b3f2768b2e84983cf3c4811877a01edb64e817986ec5d60751c113ac"
             ],
             "index": "pypi",
-            "markers": "python_version >= '3.10'",
-            "version": "==5.2.13"
+            "markers": "python_version >= '3.12'",
+            "version": "==6.0.4"
         },
         "django-cors-headers": {
             "hashes": [
@@ -481,11 +481,11 @@
         },
         "django-prometheus": {
             "hashes": [
-                "sha256:073628243d2a6de6a8a8c20e5b512872dfb85d66e1b60b28bcf1eca0155dad95",
-                "sha256:7fe5af7f7c9ad9cd8a429fe0f3f1bf651f0e244f77162147869eab7ec09cc5e7"
+                "sha256:5b46b5f07b02ba8dd7abdb03a3c39073e8fd9120e2293a1ecb949bbb865378ac",
+                "sha256:67da5c73d8e859aa73f6e11f52341c482691b17f8bd9844157cff6cdf51ce9bc"
             ],
             "index": "pypi",
-            "version": "==2.4.1"
+            "version": "==2.4.0"
         },
         "django-tenants": {
             "hashes": [
@@ -1658,11 +1658,11 @@
         },
         "uvicorn": {
             "hashes": [
-                "sha256:6c942071b68f07e178264b9152f1f16dfac5da85880c4ce06366a96d70d4f31e",
-                "sha256:ce937c99a2cc70279556967274414c087888e8cec9f9c94644dfca11bd3ced89"
+                "sha256:2db26f588131aeec7439de00f2dd52d5f210710c1f01e407a52c90b880d1fd4f",
+                "sha256:3fe650df136c5bd2b9b06efc5980636344a2fbb840e9ddd86437d53144fa335d"
             ],
             "markers": "sys_platform != 'emscripten'",
-            "version": "==0.44.0"
+            "version": "==0.45.0"
         },
         "validate-email": {
             "hashes": [
