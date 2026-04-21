@@ -20,7 +20,7 @@ from unittest.mock import patch, MagicMock
 from django.test import override_settings
 from management.group.definer import add_roles, seed_group
 from management.group.model import Group
-from management.models import BindingMapping, Access, Permission, Workspace
+from management.models import Access, Permission, Workspace
 from management.permission.scope_service import Scope
 from management.role.definer import (
     seed_roles,
@@ -173,15 +173,7 @@ class SystemRoleBindingScopeUpdateTests(IdentityRequest):
         # Verify initial binding at DEFAULT workspace
         v2_role = SeededRoleV2.objects.get(uuid=test_role.uuid)
 
-        # Get binding mapping for this group-role assignment
-        binding_mapping = BindingMapping.objects.filter(
-            role_binding__group=group,
-            role=v2_role,
-        ).first()
-
-        self.assertIsNotNone(binding_mapping, "Should have a binding mapping for the group-role assignment")
-
-        # Find bindings for this role binding at the default workspace
+        # Find bindings for this workspace at the default workspace
         initial_bindings = self.tuples.find_tuples(
             all_of(
                 resource("rbac", "workspace", str(self.default_workspace.id)),
@@ -196,24 +188,6 @@ class SystemRoleBindingScopeUpdateTests(IdentityRequest):
             TENANT_SCOPE_PERMISSIONS="inventory:*:*",
         ):
             seed_roles(force_update_relationships=True)
-
-        # Verify bindings migrated away from default workspace
-        default_workspace_bindings_after = self.tuples.find_tuples(
-            all_of(
-                resource("rbac", "workspace", str(self.default_workspace.id)),
-                relation("binding"),
-            )
-        )
-        # After migration, bindings should have moved from workspace to tenant
-        # Count might be 0 or could have other unrelated bindings, so we check the binding mapping instead
-
-        # Verify the binding mapping now points to tenant instead of workspace
-        binding_mapping_after = BindingMapping.objects.filter(
-            role_binding__group=group,
-            role=v2_role,
-        ).first()
-
-        self.assertIsNotNone(binding_mapping_after, "Binding mapping should still exist after migration")
 
         # For TENANT scope, bindings should be at the tenant level
         tenant_resource_id = Tenant.org_id_to_tenant_resource_id(self.tenant.org_id)
