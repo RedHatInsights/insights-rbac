@@ -116,10 +116,22 @@ class SystemRoleBindingScopeUpdateTests(IdentityRequest):
             seed_roles(force_update_relationships=True)
 
         # Verify that migration was called for the scope change (DEFAULT → TENANT)
-        mock_migrate_bindings.assert_called_once()
+        # Note: Migration might be called for multiple roles (e.g., other inventory roles),
+        # so we check that it was called for our specific test_role
+        mock_migrate_bindings.assert_called()
+
+        # Find the call(s) for our test role
+        test_role_calls = [call for call in mock_migrate_bindings.call_args_list if call[0][0] == test_role]
+
+        self.assertEqual(
+            len(test_role_calls),
+            1,
+            f"Migration should be called exactly once for test role {test_role.name}. "
+            f"Found {len(test_role_calls)} call(s).",
+        )
 
         # Verify it was called with correct arguments
-        call_args = mock_migrate_bindings.call_args[0]
+        call_args = test_role_calls[0][0]
         role_arg, old_scope_arg, new_scope_arg = call_args
 
         self.assertEqual(role_arg, test_role, "Migration should be called for the test role")
