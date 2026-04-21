@@ -370,3 +370,32 @@ class RoleBindingInventoryChecker(InventoryApiBaseChecker):
         else:
             logger.info(f"RoleBinding: {binding_uuid} has the correct relations in inventory.")
         return binding_check
+
+
+class CustomRolePermissionChecker(InventoryApiBaseChecker):
+    """Subclass to check custom role permission relations are correct on inventory api."""
+
+    def check_custom_role_permissions(self, permission_tuples: Sequence[RelationTuple], role_uuid: str) -> bool:
+        """Core logic to check custom role permission relations on inventory api.
+
+        Each permission tuple represents: rbac/role:<uuid>#<permission>@rbac/principal:*
+
+        Args:
+            permission_tuples: List of RelationTuple objects from CustomRoleV2._permission_tuple()
+            role_uuid: UUID of the custom role being checked
+
+        Returns:
+            True if all relations exist in the inventory, False otherwise
+        """
+        if not permission_tuples:
+            logger.debug(f"CustomRole: {role_uuid} has no permissions, skipping check")
+            return True
+
+        check_requests = [relation_tuple_to_check_request(tuple_obj) for tuple_obj in permission_tuples]
+
+        permission_check = self.check_inventory_core(check_requests)
+        if not permission_check:
+            logger.warning(f"CustomRole: {role_uuid} does not have the expected permission relations in inventory.")
+        else:
+            logger.info(f"CustomRole: {role_uuid} has the correct permission relations in inventory.")
+        return permission_check

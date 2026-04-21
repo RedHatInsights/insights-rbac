@@ -19,6 +19,7 @@
 from unittest.mock import patch
 
 from django.test import override_settings
+from management.models import CustomRoleV2, Permission
 from management.tasks import run_kessel_parity_checks_in_worker
 from management.workspace.model import Workspace
 from tests.identity_request import IdentityRequest
@@ -51,21 +52,21 @@ class ParityCheckTasksTest(IdentityRequest):
             parent=self.default_workspace,
         )
 
-    @override_settings(PARITY_CHECK_ORG_IDS="")
+    @override_settings(PARITY_CHECK_ENABLED=True, PARITY_CHECK_ORG_IDS="")
     def test_parity_check_task_no_org_ids_configured(self):
         """Test parity check task when no org_ids are configured."""
         result = run_kessel_parity_checks_in_worker()
 
         self.assertEqual(result, {"message": "No org_ids configured"})
 
-    @override_settings(PARITY_CHECK_ORG_IDS="   ,  ,  ")
+    @override_settings(PARITY_CHECK_ENABLED=True, PARITY_CHECK_ORG_IDS="   ,  ,  ")
     def test_parity_check_task_empty_org_ids_list(self):
         """Test parity check task when org_ids list is empty after stripping."""
         result = run_kessel_parity_checks_in_worker()
 
         self.assertEqual(result, {"message": "No org_ids configured"})
 
-    @override_settings(PARITY_CHECK_ORG_IDS="999999999")
+    @override_settings(PARITY_CHECK_ENABLED=True, PARITY_CHECK_ORG_IDS="999999999")
     def test_parity_check_task_tenant_not_found(self):
         """Test parity check task when tenant is not found."""
         result = run_kessel_parity_checks_in_worker()
@@ -75,7 +76,7 @@ class ParityCheckTasksTest(IdentityRequest):
         self.assertEqual(result["passed_tenants"], 0)
         self.assertEqual(result["failed_tenants"], 0)
 
-    @override_settings(PARITY_CHECK_ORG_IDS="test_org_id")
+    @override_settings(PARITY_CHECK_ENABLED=True, PARITY_CHECK_ORG_IDS="test_org_id")
     @patch(
         "management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace_descendants"
     )
@@ -103,7 +104,7 @@ class ParityCheckTasksTest(IdentityRequest):
         self.assertEqual(result["tenants_checked"][0]["workspace_pairs_checked"], 0)
         self.assertFalse(result["tenants_checked"][0]["passed"])
 
-    @override_settings(PARITY_CHECK_ORG_IDS="test_org_id")
+    @override_settings(PARITY_CHECK_ENABLED=True, PARITY_CHECK_ORG_IDS="test_org_id")
     @patch(
         "management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace_descendants"
     )
@@ -141,7 +142,7 @@ class ParityCheckTasksTest(IdentityRequest):
         self.assertIn("p95_seconds", result["timing"])
         self.assertIn("p99_seconds", result["timing"])
 
-    @override_settings(PARITY_CHECK_ORG_IDS="test_org_id")
+    @override_settings(PARITY_CHECK_ENABLED=True, PARITY_CHECK_ORG_IDS="test_org_id")
     @patch(
         "management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace_descendants"
     )
@@ -170,7 +171,30 @@ class ParityCheckTasksTest(IdentityRequest):
         self.assertEqual(result["tenants_checked"][0]["workspace_pairs_checked"], 2)
         self.assertFalse(result["tenants_checked"][0]["passed"])
 
-    @override_settings(PARITY_CHECK_ORG_IDS="test_org_1, test_org_2, 999999")
+    @override_settings(PARITY_CHECK_ENABLED=True, PARITY_CHECK_ORG_IDS="test_org_id, test_org_id")
+    @patch(
+        "management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace_descendants"
+    )
+    def test_parity_check_task_deduplicates_org_ids(self, mock_check_workspace):
+        """Test parity check task deduplicates org_ids and only processes a tenant once."""
+        # Update tenant org_id to match the duplicated org_id in settings
+        self.tenant.org_id = "test_org_id"
+        self.tenant.save()
+
+        # Mock the checker to return True
+        mock_check_workspace.return_value = True
+
+        result = run_kessel_parity_checks_in_worker()
+
+        # Only one tenant should be processed despite duplicate org_id
+        self.assertEqual(result["total_tenants"], 1)
+        self.assertEqual(len(result["tenants_checked"]), 1)
+        self.assertEqual(result["tenants_checked"][0]["org_id"], "test_org_id")
+
+        # Ensure the workspace checker is only called once (not twice)
+        mock_check_workspace.assert_called_once()
+
+    @override_settings(PARITY_CHECK_ENABLED=True, PARITY_CHECK_ORG_IDS="test_org_1, test_org_2, 999999")
     @patch(
         "management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace_descendants"
     )
@@ -223,7 +247,7 @@ class ParityCheckTasksTest(IdentityRequest):
         root2.delete()
         tenant2.delete()
 
-    @override_settings(PARITY_CHECK_ORG_IDS="test_org_id")
+    @override_settings(PARITY_CHECK_ENABLED=True, PARITY_CHECK_ORG_IDS="test_org_id")
     @patch(
         "management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace_descendants"
     )
@@ -256,7 +280,7 @@ class ParityCheckTasksTest(IdentityRequest):
         for workspace_id, parent_id in zip(workspace_ids, parent_ids):
             self.assertIn((workspace_id, parent_id), called_pairs)
 
-    @override_settings(PARITY_CHECK_ORG_IDS="test_org_id")
+    @override_settings(PARITY_CHECK_ENABLED=True, PARITY_CHECK_ORG_IDS="test_org_id")
     @patch(
         "management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace_descendants"
     )
@@ -284,3 +308,194 @@ class ParityCheckTasksTest(IdentityRequest):
         self.assertFalse(result["tenants_checked"][0]["passed"])
         self.assertIn("error", result["tenants_checked"][0])
         self.assertIn("gRPC connection timeout", result["tenants_checked"][0]["error"])
+
+    @override_settings(PARITY_CHECK_ENABLED=True, PARITY_CHECK_ORG_IDS="test_org_id")
+    @patch(
+        "management.inventory_checker.inventory_api_check.CustomRolePermissionChecker.check_custom_role_permissions"
+    )
+    @patch(
+        "management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace_descendants"
+    )
+    def test_parity_check_with_custom_roles_all_pass(self, mock_check_workspace, mock_check_role_perms):
+        """Test parity check when both workspace and custom role checks pass."""
+        # Update tenant org_id to match settings
+        self.tenant.org_id = "test_org_id"
+        self.tenant.save()
+
+        # Create custom roles with permissions
+        role1 = CustomRoleV2.objects.create(name="role1", tenant=self.tenant)
+        perm1 = Permission.objects.create(permission="inventory:hosts:read", tenant=self.tenant)
+        role1.permissions.add(perm1)
+
+        role2 = CustomRoleV2.objects.create(name="role2", tenant=self.tenant)
+        perm2 = Permission.objects.create(permission="inventory:hosts:write", tenant=self.tenant)
+        role2.permissions.add(perm2)
+
+        # Mock both checkers to return True
+        mock_check_workspace.return_value = True
+        mock_check_role_perms.return_value = True
+
+        result = run_kessel_parity_checks_in_worker()
+
+        # Verify workspace check was called
+        mock_check_workspace.assert_called_once()
+
+        # Verify custom role checks were called (once per role)
+        self.assertEqual(mock_check_role_perms.call_count, 2)
+
+        # Verify result
+        self.assertEqual(result["total_tenants"], 1)
+        self.assertEqual(result["total_workspace_pairs_checked"], 2)
+        self.assertEqual(result["total_custom_roles_checked"], 2)
+        self.assertEqual(result["passed_tenants"], 1)
+        self.assertEqual(result["failed_tenants"], 0)
+        self.assertEqual(len(result["tenants_checked"]), 1)
+
+        tenant_result = result["tenants_checked"][0]
+        self.assertEqual(tenant_result["org_id"], "test_org_id")
+        self.assertTrue(tenant_result["workspace_check_passed"])
+        self.assertTrue(tenant_result["custom_role_check_passed"])
+        self.assertTrue(tenant_result["passed"])
+        self.assertEqual(tenant_result["custom_roles_checked"], 2)
+        self.assertEqual(len(tenant_result["role_results"]), 2)
+
+    @override_settings(PARITY_CHECK_ENABLED=True, PARITY_CHECK_ORG_IDS="test_org_id")
+    @patch(
+        "management.inventory_checker.inventory_api_check.CustomRolePermissionChecker.check_custom_role_permissions"
+    )
+    @patch(
+        "management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace_descendants"
+    )
+    def test_parity_check_custom_role_fails_workspace_passes(self, mock_check_workspace, mock_check_role_perms):
+        """Test parity check when workspace passes but custom role check fails."""
+        # Update tenant org_id to match settings
+        self.tenant.org_id = "test_org_id"
+        self.tenant.save()
+
+        # Create a custom role
+        role1 = CustomRoleV2.objects.create(name="role1", tenant=self.tenant)
+        perm1 = Permission.objects.create(permission="inventory:hosts:read", tenant=self.tenant)
+        role1.permissions.add(perm1)
+
+        # Mock workspace check to pass, custom role check to fail
+        mock_check_workspace.return_value = True
+        mock_check_role_perms.return_value = False
+
+        result = run_kessel_parity_checks_in_worker()
+
+        # Verify result - tenant fails because custom role check failed
+        self.assertEqual(result["total_tenants"], 1)
+        self.assertEqual(result["passed_tenants"], 0)
+        self.assertEqual(result["failed_tenants"], 1)
+
+        tenant_result = result["tenants_checked"][0]
+        self.assertTrue(tenant_result["workspace_check_passed"])
+        self.assertFalse(tenant_result["custom_role_check_passed"])
+        self.assertFalse(tenant_result["passed"])
+
+    @override_settings(PARITY_CHECK_ENABLED=True, PARITY_CHECK_ORG_IDS="test_org_id")
+    @patch(
+        "management.inventory_checker.inventory_api_check.CustomRolePermissionChecker.check_custom_role_permissions"
+    )
+    @patch(
+        "management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace_descendants"
+    )
+    def test_parity_check_workspace_fails_custom_role_passes(self, mock_check_workspace, mock_check_role_perms):
+        """Test parity check when custom role passes but workspace check fails."""
+        # Update tenant org_id to match settings
+        self.tenant.org_id = "test_org_id"
+        self.tenant.save()
+
+        # Create a custom role
+        role1 = CustomRoleV2.objects.create(name="role1", tenant=self.tenant)
+        perm1 = Permission.objects.create(permission="inventory:hosts:read", tenant=self.tenant)
+        role1.permissions.add(perm1)
+
+        # Mock workspace check to fail, custom role check to pass
+        mock_check_workspace.return_value = False
+        mock_check_role_perms.return_value = True
+
+        result = run_kessel_parity_checks_in_worker()
+
+        # Verify result - tenant fails because workspace check failed
+        self.assertEqual(result["total_tenants"], 1)
+        self.assertEqual(result["passed_tenants"], 0)
+        self.assertEqual(result["failed_tenants"], 1)
+
+        tenant_result = result["tenants_checked"][0]
+        self.assertFalse(tenant_result["workspace_check_passed"])
+        self.assertTrue(tenant_result["custom_role_check_passed"])
+        self.assertFalse(tenant_result["passed"])
+
+    @override_settings(PARITY_CHECK_ENABLED=True, PARITY_CHECK_ORG_IDS="test_org_id")
+    @patch(
+        "management.inventory_checker.inventory_api_check.CustomRolePermissionChecker.check_custom_role_permissions"
+    )
+    @patch(
+        "management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace_descendants"
+    )
+    def test_parity_check_no_custom_roles(self, mock_check_workspace, mock_check_role_perms):
+        """Test parity check when tenant has no custom roles."""
+        # Update tenant org_id to match settings
+        self.tenant.org_id = "test_org_id"
+        self.tenant.save()
+
+        # Mock workspace check to pass
+        mock_check_workspace.return_value = True
+
+        result = run_kessel_parity_checks_in_worker()
+
+        # Verify custom role checker was never called
+        mock_check_role_perms.assert_not_called()
+
+        # Verify result - tenant passes based on workspace check only
+        self.assertEqual(result["total_tenants"], 1)
+        self.assertEqual(result["total_custom_roles_checked"], 0)
+        self.assertEqual(result["passed_tenants"], 1)
+        self.assertEqual(result["failed_tenants"], 0)
+
+        tenant_result = result["tenants_checked"][0]
+        self.assertTrue(tenant_result["workspace_check_passed"])
+        self.assertTrue(tenant_result["custom_role_check_passed"])
+        self.assertTrue(tenant_result["passed"])
+        self.assertEqual(tenant_result["custom_roles_checked"], 0)
+        self.assertEqual(len(tenant_result["role_results"]), 0)
+
+    @override_settings(PARITY_CHECK_ENABLED=True, PARITY_CHECK_ORG_IDS="test_org_id")
+    @patch(
+        "management.inventory_checker.inventory_api_check.CustomRolePermissionChecker.check_custom_role_permissions"
+    )
+    @patch(
+        "management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace_descendants"
+    )
+    def test_parity_check_custom_role_with_no_permissions(self, mock_check_workspace, mock_check_role_perms):
+        """Test parity check when custom role has no permissions."""
+        # Update tenant org_id to match settings
+        self.tenant.org_id = "test_org_id"
+        self.tenant.save()
+
+        # Create a custom role with no permissions
+        CustomRoleV2.objects.create(name="empty-role", tenant=self.tenant)
+
+        # Mock workspace check to pass
+        mock_check_workspace.return_value = True
+        # Empty permission list returns True
+        mock_check_role_perms.return_value = True
+
+        result = run_kessel_parity_checks_in_worker()
+
+        # Verify custom role checker was called once (for the role with no permissions)
+        self.assertEqual(mock_check_role_perms.call_count, 1)
+        # Verify the call was with empty tuple list
+        call_args = mock_check_role_perms.call_args[0]
+        self.assertEqual(len(call_args[0]), 0)
+
+        # Verify result
+        self.assertEqual(result["total_tenants"], 1)
+        self.assertEqual(result["total_custom_roles_checked"], 1)
+        self.assertEqual(result["passed_tenants"], 1)
+
+        tenant_result = result["tenants_checked"][0]
+        self.assertTrue(tenant_result["passed"])
+        self.assertEqual(tenant_result["custom_roles_checked"], 1)
+        self.assertEqual(tenant_result["role_results"][0]["permission_count"], 0)
