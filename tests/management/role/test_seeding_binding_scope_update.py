@@ -288,9 +288,11 @@ class SystemRoleBindingScopeUpdateTests(IdentityRequest):
         )
         RoleBindingGroup.objects.create(group=v2_group, binding=v2_binding)
 
-        # Manually replicate the binding to the in-memory tuples
-        for tuple_data in v2_binding.to_tuples():
-            self.replicator.replicate(tuple_data)
+        # Manually add the binding tuples to the in-memory tuple store
+        # We need to add both the binding tuples (role + resource) and the subject tuple (group)
+        for tuple_data in v2_binding.binding_tuples():
+            self.tuples.add(tuple_data)
+        self.tuples.add(v2_binding._group_subject_tuple(v2_group))
 
         # Verify initial binding at DEFAULT workspace
 
