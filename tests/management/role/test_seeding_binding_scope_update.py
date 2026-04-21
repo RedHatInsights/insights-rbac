@@ -267,7 +267,7 @@ class SystemRoleBindingScopeUpdateTests(IdentityRequest):
 
     def test_determine_old_scope_calculates_from_permissions_when_no_parents(self):
         """Test that _determine_old_scope falls back to calculating from permissions when role has no parents."""
-        from management.permission.scope_service import ResourceDefinitionService
+        from management.permission.scope_service import ImplicitResourceService
         from management.role.definer import _seed_platform_roles
 
         # Seed roles to set up platform roles
@@ -275,7 +275,7 @@ class SystemRoleBindingScopeUpdateTests(IdentityRequest):
         seed_roles()
 
         platform_roles = _seed_platform_roles()
-        resource_service = ResourceDefinitionService()
+        resource_service = ImplicitResourceService.from_settings()
 
         # Find a non-default system role (no platform parents)
         non_default_role = (
