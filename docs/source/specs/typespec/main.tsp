@@ -1544,26 +1544,65 @@ namespace Roles {
 @doc("Operations about permissions")
 namespace Permissions {
 
+    model Pagination {
+        @doc("Pagination metadata")
+        meta: OffsetPaginationMeta;
+
+        @doc("Pagination links")
+        links: OffsetPaginationLinks;
+    }
+
+    @example(#{
+        meta: #{
+            count: 100,
+            limit: 10,
+            offset: 0
+        },
+        links: #{
+            first: "/api/rbac/v2/permissions/?limit=10&offset=0",
+            next: "/api/rbac/v2/permissions/?limit=10&offset=10",
+            previous: null,
+            last: "/api/rbac/v2/permissions/?limit=10&offset=90"
+        },
+        data: #[
+            #{
+                application: "rbac",
+                resource_type: "workspace",
+                operation: "read"
+            }
+        ]
+    })
+    model PermissionListResponse {
+        ...Pagination;
+
+        @doc("List of permissions")
+        data: Permission[];
+    }
+
     @doc("List the permissions for a tenant")
     @summary("By default, responses are sorted in ascending order by permission application.")
     @opExample(#{
         parameters: #{
-            limit: 10
+            limit: 10,
+            offset: 0
         },
         returnType: #{
-            _: 200,
             meta: #{
-                limit: 10
+                count: 100,
+                limit: 10,
+                offset: 0
             },
             links: #{
-                next: "/api/rbac/v2/permissions/?limit=10&application=rbac&cursor=eyJpZCI6IjEyMyJ9",
-                previous: null
+                first: "/api/rbac/v2/permissions/?limit=10&offset=0",
+                next: "/api/rbac/v2/permissions/?limit=10&offset=10",
+                previous: null,
+                last: "/api/rbac/v2/permissions/?limit=10&offset=90"
             },
             data: #[
                 #{
                     application: "rbac",
                     resource_type: "workspace",
-                    operation: "read",
+                    operation: "read"
                 }
             ]
         }
@@ -1571,8 +1610,8 @@ namespace Permissions {
     @get op list(
         @query limit?: Limit = DefaultLimit;
 
-        @doc("Cursor for cursor-based pagination.")
-        @query cursor?: Cursor;
+        @doc("Offset for offset-based pagination.")
+        @query offset?: Offset = DefaultOffset;
 
         @doc("Filter by application name. Exact match by default. You may also use a comma-separated list to match on multiple applications.")
         @query application?: string;
@@ -1588,5 +1627,5 @@ namespace Permissions {
 
         @doc("Sort by specified field(s), prefix with '-' for descending order. Allowed fields: application, resource_type, operation.")
         @query order_by?: OrderBy = "application";
-    ): ListResponse<Permission> | Problems.CommonProblems | Problems.Problem400;
+    ): PermissionListResponse | Problems.CommonProblems | Problems.Problem400;
 }

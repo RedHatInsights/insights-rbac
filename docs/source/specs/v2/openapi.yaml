@@ -22,12 +22,14 @@ paths:
               - $ref: '#/components/schemas/Limit'
             default: 10
           explode: false
-        - name: cursor
+        - name: offset
           in: query
           required: false
-          description: Cursor for cursor-based pagination.
+          description: Offset for offset-based pagination.
           schema:
-            $ref: '#/components/schemas/Cursor'
+            allOf:
+              - $ref: '#/components/schemas/Offset'
+            default: 0
           explode: false
         - name: application
           in: query
@@ -74,26 +76,17 @@ paths:
           content:
             application/json:
               schema:
-                type: object
-                required:
-                  - meta
-                  - links
-                  - data
-                properties:
-                  meta:
-                    $ref: '#/components/schemas/CursorPaginationMeta'
-                  links:
-                    $ref: '#/components/schemas/CursorPaginationLinks'
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Permission'
+                $ref: '#/components/schemas/Permissions.PermissionListResponse'
               example:
                 meta:
+                  count: 100
                   limit: 10
+                  offset: 0
                 links:
-                  next: /api/rbac/v2/permissions/?limit=10&application=rbac&cursor=eyJpZCI6IjEyMyJ9
+                  first: /api/rbac/v2/permissions/?limit=10&offset=0
+                  next: /api/rbac/v2/permissions/?limit=10&offset=10
                   previous: null
+                  last: /api/rbac/v2/permissions/?limit=10&offset=90
                 data:
                   - application: rbac
                     resource_type: workspace
@@ -2166,6 +2159,54 @@ components:
         application: rbac
         resource_type: workspace
         operation: read
+    Permissions.Pagination:
+      type: object
+      required:
+        - meta
+        - links
+      properties:
+        meta:
+          allOf:
+            - $ref: '#/components/schemas/OffsetPaginationMeta'
+          description: Pagination metadata
+        links:
+          allOf:
+            - $ref: '#/components/schemas/OffsetPaginationLinks'
+          description: Pagination links
+    Permissions.PermissionListResponse:
+      type: object
+      required:
+        - meta
+        - links
+        - data
+      properties:
+        meta:
+          allOf:
+            - $ref: '#/components/schemas/OffsetPaginationMeta'
+          description: Pagination metadata
+        links:
+          allOf:
+            - $ref: '#/components/schemas/OffsetPaginationLinks'
+          description: Pagination links
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Permission'
+          description: List of permissions
+      example:
+        meta:
+          count: 100
+          limit: 10
+          offset: 0
+        links:
+          first: /api/rbac/v2/permissions/?limit=10&offset=0
+          next: /api/rbac/v2/permissions/?limit=10&offset=10
+          previous: null
+          last: /api/rbac/v2/permissions/?limit=10&offset=90
+        data:
+          - application: rbac
+            resource_type: workspace
+            operation: read
     Problems.Problem400:
       type: object
       required:
