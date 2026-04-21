@@ -157,23 +157,23 @@ class WorkspaceOrderingTestCase(IdentityRequest, TestCase):
         self.assertEqual(standard_ws, sorted(standard_ws))
 
     def test_invalid_ordering_fields(self, mock_flag):
-        """Test that invalid order_by fields are handled gracefully."""
+        """Test that invalid order_by fields return 400 Bad Request."""
         test_cases = [
-            {"query": "order_by=invalid_field", "description": "non-existent field"},
-            {"query": "order_by=id", "description": "disallowed field (id)"},
-            {"query": "order_by=-invalid", "description": "invalid field with minus prefix"},
-            {"query": "order_by=name;DROP TABLE", "description": "SQL injection attempt"},
-            {"query": "order_by=name,invalid,type", "description": "mixed valid and invalid fields"},
+            {"query": "order_by=invalid_field", "invalid": ["invalid_field"]},
+            {"query": "order_by=id", "invalid": ["id"]},
+            {"query": "order_by=-invalid", "invalid": ["invalid"]},
+            {"query": "order_by=name;DROP TABLE", "invalid": ["name;DROP TABLE"]},
+            {"query": "order_by=name,invalid,type", "invalid": ["invalid"]},
         ]
 
         for test_case in test_cases:
-            with self.subTest(description=test_case["description"]):
+            with self.subTest(query=test_case["query"]):
                 response = self._get_workspaces(test_case["query"])
-                # DRF OrderingFilter silently ignores invalid fields and returns 200
-                self.assertEqual(response.status_code, status.HTTP_200_OK)
-                # Should fall back to default ordering when field is invalid
-                data = response.json()["data"]
-                self._assert_field_sorted(data, "name")
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                data = response.json()
+                self.assertIn("errors", data)
+                for invalid_field in test_case["invalid"]:
+                    self.assertIn(invalid_field, str(data))
 
     def test_ordering_integration(self, mock_flag):
         """Test ordering with filters, pagination, and other query parameters."""
@@ -216,25 +216,34 @@ class WorkspaceOrderingTestCase(IdentityRequest, TestCase):
         # Oldest created should be last (Alpha)
         self.assertEqual(data[-1]["name"], "Alpha")
 
-    def test_malformed_ordering_parameters(self, mock_flag):
-        """Test handling of malformed ordering parameters."""
+    def test_malformed_ordering_parameters_invalid(self, mock_flag):
+        """Test that malformed ordering parameters return 400 Bad Request."""
         test_cases = [
             {"query": "order_by=--name", "description": "double minus prefix"},
             {"query": "order_by=name--", "description": "trailing dashes"},
-            {"query": "order_by= name", "description": "leading space"},
-            {"query": "order_by=name ", "description": "trailing space"},
             {"query": "order_by=NAME", "description": "uppercase field name"},
             {"query": "order_by=-NAME", "description": "uppercase field with prefix"},
             {"query": "order_by=../../../etc/passwd", "description": "path traversal attempt"},
-            {"query": "order_by=name&order_by=type", "description": "duplicate parameter"},
         ]
 
         for test_case in test_cases:
             with self.subTest(description=test_case["description"]):
                 response = self._get_workspaces(test_case["query"])
-                # Should handle malformed input gracefully without crashing
-                self.assertIn(response.status_code, [status.HTTP_200_OK, status.HTTP_400_BAD_REQUEST])
-                # If successful, should return data
-                if response.status_code == status.HTTP_200_OK:
-                    data = response.json()["data"]
-                    self.assertIsNotNone(data)
+                self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+                data = response.json()
+                self.assertIn("errors", data)
+
+    def test_malformed_ordering_parameters_valid(self, mock_flag):
+        """Test that whitespace-trimmed and duplicate params are handled."""
+        test_cases = [
+            {"query": "order_by= name", "description": "leading space (trimmed to 'name')"},
+            {"query": "order_by=name ", "description": "trailing space (trimmed to 'name')"},
+            {"query": "order_by=name&order_by=type", "description": "duplicate param (last value wins)"},
+        ]
+
+        for test_case in test_cases:
+            with self.subTest(description=test_case["description"]):
+                response = self._get_workspaces(test_case["query"])
+                self.assertEqual(response.status_code, status.HTTP_200_OK)
+                data = response.json()["data"]
+                self.assertIsNotNone(data)
