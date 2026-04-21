@@ -275,10 +275,24 @@ class SystemRoleBindingScopeUpdateTests(IdentityRequest):
 
         # Create a group and assign the role in V2 tenant
         v2_group = Group.objects.create(name="V2 Test Group", tenant=v2_tenant, system=False)
-        add_roles(v2_group, [test_role.uuid], v2_tenant)
+
+        # Get the V2 role and create a role binding at DEFAULT workspace
+        v2_role = SeededRoleV2.objects.get(uuid=test_role.uuid)
+        from management.role_binding.model import RoleBinding, RoleBindingGroup
+
+        v2_binding = RoleBinding.objects.create(
+            role=v2_role,
+            resource_type="workspace",
+            resource_id=str(v2_default_workspace.id),
+            tenant=v2_tenant,
+        )
+        RoleBindingGroup.objects.create(group=v2_group, binding=v2_binding)
+
+        # Manually replicate the binding to the in-memory tuples
+        for tuple_data in v2_binding.to_tuples():
+            self.replicator.replicate(tuple_data)
 
         # Verify initial binding at DEFAULT workspace
-        v2_role = SeededRoleV2.objects.get(uuid=test_role.uuid)
 
         # Find bindings for this workspace
         initial_bindings = self.tuples.find_tuples(
