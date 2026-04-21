@@ -34,11 +34,15 @@ from internal.utils import (
     replicate_missing_binding_tuples,
 )
 from management.health.healthcheck import redis_health
-from management.inventory_checker.inventory_api_check import WorkspaceRelationInventoryChecker
+from management.inventory_checker.inventory_api_check import (
+    CustomRolePermissionChecker,
+    WorkspaceRelationInventoryChecker,
+)
 from management.principal.cleaner import (
     clean_tenants_principals,
     process_principal_events_from_umb,
 )
+from management.role.v2_model import CustomRoleV2
 from management.workspace.model import Workspace
 from migration_tool.migrate import migrate_data
 from migration_tool.migrate_binding_scope import migrate_all_role_bindings
@@ -182,6 +186,9 @@ def run_kessel_parity_checks_in_worker():
     Returns:
         dict: Summary statistics with checks performed, passed, and failed counts.
     """
+    if not getattr(settings, "PARITY_CHECK_ENABLED", False):
+        return {"message": "Parity checks disabled"}
+
     org_ids_str = settings.PARITY_CHECK_ORG_IDS
     org_ids = [org_id.strip() for org_id in org_ids_str.split(",") if org_id.strip()]
     # Deduplicate org_ids while preserving order to avoid redundant work and double-counting
@@ -196,6 +203,7 @@ def run_kessel_parity_checks_in_worker():
     stats = {
         "total_tenants": 0,
         "total_workspace_pairs_checked": 0,
+        "total_custom_roles_checked": 0,
         "passed_tenants": 0,
         "failed_tenants": 0,
         "tenants_not_found": 0,
@@ -203,7 +211,8 @@ def run_kessel_parity_checks_in_worker():
     }
     tenant_durations = []
 
-    checker = WorkspaceRelationInventoryChecker()
+    workspace_checker = WorkspaceRelationInventoryChecker()
+    role_permission_checker = CustomRolePermissionChecker()
 
     # Bulk fetch all tenants to avoid N+1 queries
     tenants = {t.org_id: t for t in Tenant.objects.filter(org_id__in=org_ids)}
@@ -221,18 +230,18 @@ def run_kessel_parity_checks_in_worker():
             stats["total_tenants"] += 1
 
             workspaces = (
-                Workspace.objects.filter(tenant=tenant)
+                Workspace.objects.filter(tenant=tenant, parent_id__isnull=False)
                 .exclude(type=Workspace.Types.ROOT)
                 .values_list("id", "parent_id")
             )
 
-            workspace_pairs = [(str(w_id), str(parent_id)) for (w_id, parent_id) in workspaces if parent_id]
+            workspace_pairs = [(str(w_id), str(parent_id)) for (w_id, parent_id) in workspaces]
             pairs_count = len(workspace_pairs)
 
             workspace_check_passed = True
             if workspace_pairs:
                 logger.info(f"Checking {pairs_count} workspace parent relations for tenant {org_id}")
-                workspace_check_passed = checker.check_workspace_descendants(workspace_pairs)
+                workspace_check_passed = workspace_checker.check_workspace_descendants(workspace_pairs)
             else:
                 # No pairs means no default workspace with a parent — this is unexpected and should be flagged
                 logger.warning(f"No workspace pairs to check for tenant {org_id} — missing default workspace?")
@@ -240,7 +249,32 @@ def run_kessel_parity_checks_in_worker():
 
             stats["total_workspace_pairs_checked"] += pairs_count
 
-            if workspace_check_passed:
+            custom_roles = CustomRoleV2.objects.filter(tenant=tenant).prefetch_related("permissions")
+            custom_role_check_passed = True
+            role_results = []
+
+            for role in custom_roles:
+                permission_tuples = [CustomRoleV2._permission_tuple(role, perm) for perm in role.permissions.all()]
+                role_passed = role_permission_checker.check_custom_role_permissions(permission_tuples, str(role.uuid))
+                role_results.append(
+                    {
+                        "role_uuid": str(role.uuid),
+                        "role_name": role.name,
+                        "permission_count": len(permission_tuples),
+                        "passed": role_passed,
+                    }
+                )
+                if not role_passed:
+                    custom_role_check_passed = False
+
+            stats["total_custom_roles_checked"] += len(role_results)
+            if role_results:
+                logger.info(f"Checked {len(role_results)} custom role(s) for tenant {org_id}")
+
+            # Tenant passes only if BOTH workspace and custom role checks pass
+            tenant_passed = workspace_check_passed and custom_role_check_passed
+
+            if tenant_passed:
                 stats["passed_tenants"] += 1
                 logger.info(f"Parity check PASSED for tenant {org_id}")
             else:
@@ -255,7 +289,11 @@ def run_kessel_parity_checks_in_worker():
                 {
                     "org_id": org_id,
                     "workspace_pairs_checked": pairs_count,
-                    "passed": workspace_check_passed,
+                    "workspace_check_passed": workspace_check_passed,
+                    "custom_roles_checked": len(role_results),
+                    "custom_role_check_passed": custom_role_check_passed,
+                    "role_results": role_results,
+                    "passed": tenant_passed,
                     "duration_seconds": round(tenant_elapsed, 3),
                 }
             )
@@ -275,7 +313,6 @@ def run_kessel_parity_checks_in_worker():
                 }
             )
 
-    # Compute timing percentiles
     timing_stats = {}
     if tenant_durations:
         sorted_durations = sorted(tenant_durations)
@@ -296,7 +333,8 @@ def run_kessel_parity_checks_in_worker():
         f"Passed: {stats['passed_tenants']}, "
         f"Failed: {stats['failed_tenants']}, "
         f"Not Found: {stats['tenants_not_found']}, "
-        f"Total workspace pairs: {stats['total_workspace_pairs_checked']}"
+        f"Total workspace pairs: {stats['total_workspace_pairs_checked']}, "
+        f"Total custom roles: {stats['total_custom_roles_checked']}"
     )
 
     stats["timing"] = timing_stats

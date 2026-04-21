@@ -16,9 +16,12 @@
 #
 """View for RoleV2 management."""
 
+import logging
+
 from management.atomic_transactions import atomic_block
 from management.audit_log.model import AuditLog
 from management.base_viewsets import BaseV2ViewSet
+from management.notifications.notification_handlers import custom_v2_role_obj_change_notification_handler
 from management.permissions.role_v2_access import RoleV2KesselAccessPermission
 from management.permissions.v2_edit_api_access import V2WriteRequiresWorkspacesEnabled
 from management.role.v2_exceptions import CustomRoleRequiredError, RolesNotFoundError
@@ -131,6 +134,13 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
             audit_log = AuditLog()
             audit_log.log_create(request=request, resource=AuditLog.ROLE_V2)
 
+        try:
+            custom_v2_role_obj_change_notification_handler(role, "created", request.user)
+        except Exception:
+            logging.error(
+                f"Failed to send notification for created role: role pk={role.pk!r}, name={role.name!r}", exc_info=True
+            )
+
         # Build response with field selection (from context) and permission ordering
         input_permissions = request.data.get("permissions", [])
         context = self.get_serializer_context()
@@ -149,6 +159,13 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
             serializer = self.get_serializer(instance, data=request.data)
             serializer.is_valid(raise_exception=True)
             role = serializer.save()
+
+        try:
+            custom_v2_role_obj_change_notification_handler(role, "updated", request.user)
+        except Exception:
+            logging.error(
+                f"Failed to send notification for updated role: role pk={role.pk!r}, name={role.name!r}", exc_info=True
+            )
 
         # Build response with field selection (from context) and permission ordering
         input_permissions = request.data.get("permissions", [])
@@ -191,5 +208,16 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
                 {"title": "An internal error occurred.", "detail": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
             )
+
+        # We don't allow a revert here because sending a notification in the middle could fail. This would make it
+        # unclear what to do with all of the earlier notifications that have already been sent.
+        for role in removed_roles:
+            try:
+                custom_v2_role_obj_change_notification_handler(role, "deleted", request.user)
+            except Exception:
+                logging.error(
+                    f"Failed to send notification for deleted role: role pk={role.pk!r}, name={role.name!r}",
+                    exc_info=True,
+                )
 
         return Response(status=status.HTTP_204_NO_CONTENT)
