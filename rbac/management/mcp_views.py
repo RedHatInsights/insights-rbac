@@ -18,6 +18,7 @@
 """MCP endpoint for RBAC using Anthropic MCP Python SDK for tool registration and schema generation."""
 
 import asyncio
+import concurrent.futures
 import inspect
 import json
 import logging
@@ -1647,6 +1648,37 @@ def _normalize_tool_result(result: Any) -> str:
     return json.dumps(result, default=str)
 
 
+class ToolTimeoutError(Exception):
+    """Raised when a tool exceeds its execution timeout.
+
+    Distinct from the built-in TimeoutError so that _handle_tools_call can
+    distinguish infrastructure timeouts from TimeoutError raised by the
+    tool itself (e.g. from ``requests`` or other libraries).
+    """
+
+
+def _execute_with_timeout(fn: Callable[..., Any], timeout: int, *args: Any, **kwargs: Any) -> Any:
+    """Execute a tool function with a timeout.
+
+    Uses concurrent.futures.ThreadPoolExecutor so the timeout is safe
+    in multi-threaded WSGI containers (unlike signal.alarm which only
+    works on the main thread).
+
+    Raises ToolTimeoutError if the function does not complete within the
+    given timeout (seconds).  On timeout, shutdown(wait=False) is used
+    so the caller returns immediately -- the background thread will
+    finish on its own without blocking the HTTP response.
+    """
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    future = executor.submit(fn, *args, **kwargs)
+    try:
+        return future.result(timeout=timeout)
+    except concurrent.futures.TimeoutError:
+        raise ToolTimeoutError(f"Tool execution exceeded {timeout}s timeout")
+    finally:
+        executor.shutdown(wait=False)
+
+
 def _handle_tools_call(request: HttpRequest, request_id: Any, params: dict[str, Any]) -> JsonResponse:
     """Handle MCP tools/call request.
 
@@ -1656,6 +1688,11 @@ def _handle_tools_call(request: HttpRequest, request_id: Any, params: dict[str, 
 
     Tools that need auth context receive the Django request as the first
     argument, so no thread-local state is needed.
+
+    Tool execution is wrapped in a configurable timeout (MCP_TOOL_TIMEOUT_SECONDS,
+    default 30s) using a ThreadPoolExecutor. On timeout, a JSON-RPC internal
+    error (-32603) is returned and a Prometheus metric with status="timeout"
+    is recorded.
     """
     tool_name: str = params.get("name", "")
     if "arguments" not in params:
@@ -1693,12 +1730,13 @@ def _handle_tools_call(request: HttpRequest, request_id: Any, params: dict[str, 
 
     track = tool_name != "hello"
     start = time.monotonic() if track else 0
+    timeout = getattr(settings, "MCP_TOOL_TIMEOUT_SECONDS", 30)
 
     try:
         if config.passes_request:
-            result = config.fn(request, **arguments)
+            result = _execute_with_timeout(config.fn, timeout, request, **arguments)
         else:
-            result = config.fn(**arguments)
+            result = _execute_with_timeout(config.fn, timeout, **arguments)
 
         if track:
             duration = time.monotonic() - start
@@ -1707,6 +1745,12 @@ def _handle_tools_call(request: HttpRequest, request_id: Any, params: dict[str, 
 
         content = [{"type": "text", "text": _normalize_tool_result(result)}]
         return _success_response(request_id, {"content": content, "isError": False})
+    except ToolTimeoutError:
+        duration = time.monotonic() - start if track else timeout
+        if track:
+            _record_metric(tool_name, "timeout", duration)
+        logger.error("mcp: tools/call tool='%s' timed out after %ds", tool_name, timeout)
+        return _error_response(request_id, -32603, f"Tool execution timed out after {timeout}s")
     except TypeError as exc:
         if track:
             _record_metric(tool_name, "invalid_params", time.monotonic() - start)
