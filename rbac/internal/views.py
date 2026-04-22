@@ -35,6 +35,7 @@ from django.views.decorators.http import require_http_methods
 from feature_flags import FEATURE_FLAGS
 from google.protobuf import json_format
 from grpc import RpcError
+from internal.custom_v2_role_tenant_migration import replicate_custom_v2_role_owner_relationships
 from internal.errors import SentryDiagnosticError, UserNotFoundError
 from internal.jwt_utils import JWTManager, JWTProvider
 from internal.utils import (
@@ -2578,3 +2579,26 @@ def remove_deleted_workspace_bindings(request):
     except Exception as e:
         logger.exception("Error removing bindings for deleted workspaces", exc_info=True)
         return JsonResponse({"detail": f"Error removing bindings for deleted workspaces: {str(e)}"}, status=500)
+
+
+@require_http_methods(["POST"])
+def migrate_custom_v2_roles_to_tenant(request):
+    """Replicate owner tuples for custom V2 roles from each role's tenant resource id.
+
+    POST /_private/api/utils/migrate_custom_v2_roles_to_tenant/
+
+    Iterates ``RoleV2`` with ``type=custom`` (scans custom roles only, not every tenant row). With
+    ``tenant`` loaded, emits ``rbac/role#owner@rbac/tenant`` for ``tenant.tenant_resource_id()``.
+    Fails with 500 if any custom role's tenant has no resource id. Does not update role rows.
+
+    Returns:
+        JSON with ``replicated``, ``skipped``, and counts.
+    """
+    logger.info("migrate_custom_v2_roles_to_tenant")
+
+    try:
+        result = replicate_custom_v2_role_owner_relationships()
+        return JsonResponse(result, status=200)
+    except Exception as e:
+        logger.exception("migrate_custom_v2_roles_to_tenant failed", exc_info=True)
+        return JsonResponse({"detail": str(e)}, status=500)

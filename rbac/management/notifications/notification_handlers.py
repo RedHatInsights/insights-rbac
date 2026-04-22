@@ -26,6 +26,7 @@ from uuid import uuid4
 
 from core.kafka import RBACProducer
 from django.conf import settings
+from management.role.v2_model import RoleV2
 
 from api.models import Tenant
 
@@ -113,6 +114,29 @@ def role_obj_change_notification_handler(role_obj, operation, user=None):
     # Role updated (including access/resourceDefinition update)
     elif operation == "updated":
         event_type = "custom-role-updated"
+
+    notify(event_type, payload, org_id)
+
+
+def custom_v2_role_obj_change_notification_handler(role_obj: RoleV2, operation: str, user):
+    """Signal handler for setting notification message when RoleV2 object changes."""
+    if not settings.NOTIFICATIONS_ENABLED:
+        return
+
+    if role_obj.type != RoleV2.Types.CUSTOM:
+        raise ValueError("Notifications are supported only for custom V2 roles")
+
+    org_id = user.org_id
+    payload = payload_builder(user.username, role_obj)
+
+    event_type = {
+        "created": "custom-v2-role-created",
+        "deleted": "custom-v2-role-deleted",
+        "updated": "custom-v2-role-updated",
+    }.get(operation)
+
+    if event_type is None:
+        raise ValueError(f"Invalid operation: {operation!r}")
 
     notify(event_type, payload, org_id)
 
