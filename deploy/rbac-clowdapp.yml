@@ -1551,10 +1551,6 @@ parameters:
 - description: Enable sending out notification events (typo variant used by service deployer)
   name: NOTIFICATONS_ENABLED
   value: 'False'
-- name: TENANT_TRANSLATOR_HOST
-  required: true
-- name: TENANT_TRANSLATOR_PORT
-  value: '8892'
 - name: GUNICORN_WORKER_MULTIPLIER
   value: '2'
 - name: GUNICORN_THREAD_LIMIT
