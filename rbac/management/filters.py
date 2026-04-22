@@ -50,7 +50,7 @@ class ValidatedOrderingFilter(OrderingFilter):
             message = "{} query parameter value '{}' is invalid. {} are valid inputs.".format(
                 self.ordering_param, ", ".join(invalid_fields), sorted(valid_field_names)
             )
-            raise serializers.ValidationError({"detail": message})
+            raise serializers.ValidationError({self.ordering_param: message})
 
         return super().get_ordering(request, queryset, view)
 
