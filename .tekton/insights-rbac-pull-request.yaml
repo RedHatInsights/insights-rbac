@@ -189,7 +189,7 @@ spec:
       - name: POSTGRESQL_PORT
         value: "5432"
       - name: DATABASE_HOST
-        value: 0.0.0.0
+        value: localhost
       runAfter:
       - clone-repository-oci-ta
       taskSpec:
@@ -242,6 +242,21 @@ spec:
             #!/bin/bash
             set -ex
             echo "RUN THE UNIT TESTS"
+
+            # Install PostgreSQL client for pg_isready
+            dnf install -y postgresql
+
+            # Wait for PostgreSQL to be ready
+            echo "Waiting for PostgreSQL to be ready..."
+            for i in {1..30}; do
+              if pg_isready -h ${DATABASE_HOST} -p ${DATABASE_PORT} -U ${DATABASE_USER}; then
+                echo "PostgreSQL is ready!"
+                break
+              fi
+              echo "Waiting for PostgreSQL... attempt $i/30"
+              sleep 2
+            done
+
             pip install --upgrade pip
             pip install tox
             tox -r
