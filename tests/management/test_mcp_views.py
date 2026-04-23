@@ -24,7 +24,7 @@ from importlib import reload
 from django.test import override_settings
 from django.urls import clear_url_caches
 from django.utils import timezone
-from management.mcp_views import ToolConfig, _permission_matches
+from management.mcp_views import ApiVersion, ToolConfig, _TOOL_CONFIG, _permission_matches
 from management.models import Access, Group, Permission, Policy, Principal, Role
 from management.role.v2_model import RoleV2
 from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
@@ -636,8 +636,8 @@ class MCPViewTests(MCPToolTestMixin, IdentityRequest):
 
     # --- New read-only tools tests ---
 
-    def test_tools_list_includes_all_new_tools(self):
-        """Positive: tools/list includes all newly added read-only tools."""
+    def test_tools_list_includes_non_v2_tools(self):
+        """Positive: tools/list includes all non-V2-only tools when V2 is disabled."""
         body = {"jsonrpc": "2.0", "method": "tools/list", "id": 2, "params": {}}
         response = self.client.post(self.url, data=json.dumps(body), content_type="application/json", **self.headers)
 
@@ -650,7 +650,6 @@ class MCPViewTests(MCPToolTestMixin, IdentityRequest):
             "list_permission_options",
             "list_audit_logs",
             "search_roles",
-            "list_roles",
             "get_role",
             "list_role_access",
             "list_groups",
@@ -661,12 +660,21 @@ class MCPViewTests(MCPToolTestMixin, IdentityRequest):
             "get_cross_account_request",
             "list_workspaces",
             "get_workspace",
-            "list_role_bindings",
-            "list_role_bindings_by_subject",
             "check_user_permission",
         ]
         for tool in expected_tools:
             self.assertIn(tool, tool_names, f"Tool '{tool}' missing from tools/list")
+
+    def test_tools_list_excludes_v2_only_tools_when_v2_disabled(self):
+        """Negative: V2-only tools are hidden when V2_APIS_ENABLED=False."""
+        body = {"jsonrpc": "2.0", "method": "tools/list", "id": 2, "params": {}}
+        response = self.client.post(self.url, data=json.dumps(body), content_type="application/json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_names = [t["name"] for t in response.json()["result"]["tools"]]
+        v2_only_tools = [name for name, cfg in _TOOL_CONFIG.items() if cfg.api_version == ApiVersion.V2]
+        for tool in v2_only_tools:
+            self.assertNotIn(tool, tool_names, f"V2-only tool '{tool}' should be hidden")
 
     # --- get_status ---
 
@@ -976,6 +984,8 @@ class MCPViewV2ToolsTests(MCPToolTestMixin, IdentityRequest):
 
     def setUp(self):
         """Set up the MCP V2 tool tests."""
+        reload(urls)
+        clear_url_caches()
         super().setUp()
         self.url = "/_private/_a2s/mcp/"
         self.client = APIClient()
@@ -998,27 +1008,17 @@ class MCPViewV2ToolsTests(MCPToolTestMixin, IdentityRequest):
         Principal.objects.all().delete()
         super().tearDown()
 
-    # --- list_roles / get_role ---
+    # --- V2 gating: tools/list includes V2-only tools ---
 
-    def test_list_roles_success(self):
-        """Positive: list_roles returns role data."""
-        response = self._call_tool("list_roles")
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        data = response.json()
-        self.assertFalse(data["result"]["isError"])
-        tool_output = self._get_tool_output(response)
-        self.assertIn("meta", tool_output)
-        self.assertIn("data", tool_output)
-
-    def test_list_roles_without_auth_returns_error(self):
-        """Permission: list_roles without auth returns auth error."""
-        response = self._call_tool("list_roles", use_auth=False)
+    def test_tools_list_includes_v2_only_tools_when_v2_enabled(self):
+        """Positive: V2-only tools are visible when V2_APIS_ENABLED=True."""
+        body = {"jsonrpc": "2.0", "method": "tools/list", "id": 2, "params": {}}
+        response = self.client.post(self.url, data=json.dumps(body), content_type="application/json", **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        data = response.json()
-        self.assertIn("error", data)
-        self.assertEqual(data["error"]["code"], -32000)
+        tool_names = [t["name"] for t in response.json()["result"]["tools"]]
+        self.assertIn("list_role_bindings", tool_names)
+        self.assertIn("list_role_bindings_by_subject", tool_names)
 
     # --- list_workspaces / get_workspace ---
 
@@ -1195,7 +1195,7 @@ class MCPCheckUserPermissionTests(MCPToolTestMixin, IdentityRequest):
 
 
 class MCPSearchRolesTests(MCPToolTestMixin, IdentityRequest):
-    """Tests for the search_roles MCP tool."""
+    """Tests for the unified search_roles MCP tool (V1 path)."""
 
     def setUp(self):
         """Set up search_roles tests."""
@@ -1208,8 +1208,8 @@ class MCPSearchRolesTests(MCPToolTestMixin, IdentityRequest):
         Role.objects.all().delete()
         super().tearDown()
 
-    def test_search_roles_success(self):
-        """Positive: search_roles returns role data."""
+    def test_search_roles_v1_success(self):
+        """Positive: search_roles on V1 org returns role data with org_version=v1."""
         Role.objects.create(name="test_v1_role", tenant=self.tenant)
         response = self._call_tool("search_roles")
 
@@ -1219,9 +1219,10 @@ class MCPSearchRolesTests(MCPToolTestMixin, IdentityRequest):
         tool_output = self._get_tool_output(response)
         self.assertIn("meta", tool_output)
         self.assertIn("data", tool_output)
+        self.assertEqual(tool_output["org_version"], "v1")
 
-    def test_search_roles_filter_by_name(self):
-        """Positive: search_roles filters by name."""
+    def test_search_roles_v1_filter_by_name(self):
+        """Positive: search_roles on V1 org filters by name."""
         Role.objects.create(name="Patch Reviewer", tenant=self.tenant)
         Role.objects.create(name="Other Role", tenant=self.tenant)
         response = self._call_tool("search_roles", {"name": "Patch Reviewer"})
@@ -1231,6 +1232,7 @@ class MCPSearchRolesTests(MCPToolTestMixin, IdentityRequest):
         self.assertTrue(tool_output["meta"]["count"] >= 1)
         for role in tool_output["data"]:
             self.assertIn("Patch Reviewer", role["name"])
+        self.assertEqual(tool_output["org_version"], "v1")
 
     def test_search_roles_without_auth_returns_error(self):
         """Permission: search_roles without auth returns auth error."""
@@ -1512,3 +1514,175 @@ class MCPCheckUserPermissionV2Tests(MCPToolTestMixin, IdentityRequest):
         self.assertTrue(tool_output["allowed"])
         self.assertEqual(tool_output["matched_permission"], "vulnerability:vulnerability:*")
         self.assertEqual(tool_output["org_version"], "v2")
+
+
+@override_settings(BYPASS_BOP_VERIFICATION=True, V2_APIS_ENABLED=True)
+class MCPUnifiedSearchRolesV2Tests(MCPToolTestMixin, IdentityRequest):
+    """Tests for the unified search_roles MCP tool routing to V2."""
+
+    def setUp(self):
+        """Set up V2 search_roles tests."""
+        reload(urls)
+        clear_url_caches()
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.get_kessel_principal_id",
+                return_value="localhost/test-user-id",
+            )
+        )
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.WorkspaceInventoryAccessChecker.check_resource_access",
+                return_value=True,
+            )
+        )
+        TenantMapping.objects.create(tenant=self.tenant, v2_write_activated_at=timezone.now())
+
+    def tearDown(self):
+        """Tear down V2 search_roles tests."""
+        RoleV2.objects.all().delete()
+        TenantMapping.objects.all().delete()
+        super().tearDown()
+
+    def test_search_roles_v2_success(self):
+        """Positive: search_roles on V2 org returns role data with org_version=v2."""
+        RoleV2.objects.create(name="V2 Custom Role", tenant=self.tenant, type=RoleV2.Types.CUSTOM)
+        response = self._call_tool("search_roles")
+
+        self.assertEqual(response.status_code, 200)
+        tool_output = self._get_tool_output(response)
+        self.assertIn("meta", tool_output)
+        self.assertIn("data", tool_output)
+        self.assertEqual(tool_output["org_version"], "v2")
+
+    def test_search_roles_v2_filter_by_name(self):
+        """Positive: search_roles on V2 org filters by name."""
+        RoleV2.objects.create(name="Cost Reader", tenant=self.tenant, type=RoleV2.Types.CUSTOM)
+        RoleV2.objects.create(name="Other V2 Role", tenant=self.tenant, type=RoleV2.Types.CUSTOM)
+        response = self._call_tool("search_roles", {"name": "Cost Reader"})
+
+        self.assertEqual(response.status_code, 200)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["org_version"], "v2")
+        role_names = [r["name"] for r in tool_output["data"]]
+        self.assertIn("Cost Reader", role_names)
+
+
+@override_settings(BYPASS_BOP_VERIFICATION=True, V2_APIS_ENABLED=True)
+class MCPUnifiedGetRoleTests(MCPToolTestMixin, IdentityRequest):
+    """Tests for the unified get_role MCP tool routing to V1 and V2."""
+
+    def setUp(self):
+        """Set up get_role tests."""
+        reload(urls)
+        clear_url_caches()
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.get_kessel_principal_id",
+                return_value="localhost/test-user-id",
+            )
+        )
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.WorkspaceInventoryAccessChecker.check_resource_access",
+                return_value=True,
+            )
+        )
+
+    def tearDown(self):
+        """Tear down get_role tests."""
+        RoleV2.objects.all().delete()
+        Permission.objects.all().delete()
+        TenantMapping.objects.all().delete()
+        Role.objects.all().delete()
+        super().tearDown()
+
+    def test_get_role_v1_returns_role_with_permissions(self):
+        """Positive: get_role on V1 org returns role details with permissions and org_version=v1."""
+        perm = Permission.objects.create(
+            application="cost-management",
+            resource_type="cost_model",
+            verb="read",
+            permission="cost-management:cost_model:read",
+            tenant=self.tenant,
+        )
+        role = Role.objects.create(name="Cost Reader V1", tenant=self.tenant)
+        access = Access.objects.create(role=role, permission=perm, tenant=self.tenant)
+        Policy.objects.create(name="auto_policy", group=None, tenant=self.tenant).roles.add(role)
+
+        response = self._call_tool("get_role", {"role_uuid": str(role.uuid)})
+
+        self.assertEqual(response.status_code, 200)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["uuid"], str(role.uuid))
+        self.assertEqual(tool_output["org_version"], "v1")
+        self.assertIn("permissions", tool_output)
+
+        access.delete()
+        perm.delete()
+
+    def test_get_role_v2_returns_role_with_permissions(self):
+        """Positive: get_role on V2 org returns role details with permissions and org_version=v2."""
+        TenantMapping.objects.create(tenant=self.tenant, v2_write_activated_at=timezone.now())
+
+        perm = Permission.objects.create(
+            application="vulnerability",
+            resource_type="vulnerability",
+            verb="read",
+            permission="vulnerability:vulnerability:read",
+            tenant=self.tenant,
+        )
+        role = RoleV2.objects.create(name="Vuln Reader V2", tenant=self.tenant)
+        role.permissions.add(perm)
+
+        response = self._call_tool("get_role", {"role_uuid": str(role.uuid)})
+
+        self.assertEqual(response.status_code, 200)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["id"], str(role.uuid))
+        self.assertEqual(tool_output["org_version"], "v2")
+        self.assertIn("permissions", tool_output)
+
+
+class MCPDeploymentGatingTests(MCPToolTestMixin, IdentityRequest):
+    """Tests for deployment-level V2 tool gating."""
+
+    def setUp(self):
+        """Set up gating tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+
+    def test_calling_v2_tool_when_v2_disabled_returns_error(self):
+        """Negative: calling a V2-only tool when V2 is disabled returns a clear error."""
+        response = self._call_tool("list_role_bindings")
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertIn("V2 APIs", data["error"]["message"])
+
+    def test_api_version_classification(self):
+        """Verify all tools have an api_version set."""
+        for tool_name, config in _TOOL_CONFIG.items():
+            self.assertIn(
+                config.api_version,
+                (ApiVersion.UNIFIED, ApiVersion.COMMON, ApiVersion.V1, ApiVersion.V2, ApiVersion.UNVERSIONED),
+                f"Tool '{tool_name}' has unexpected api_version: {config.api_version}",
+            )
+
+    def test_unified_tools_are_always_listed(self):
+        """Positive: unified tools appear in tools/list regardless of V2 setting."""
+        body = {"jsonrpc": "2.0", "method": "tools/list", "id": 2, "params": {}}
+        response = self.client.post(self.url, data=json.dumps(body), content_type="application/json", **self.headers)
+
+        tool_names = [t["name"] for t in response.json()["result"]["tools"]]
+        self.assertIn("search_roles", tool_names)
+        self.assertIn("get_role", tool_names)
+        self.assertIn("check_user_permission", tool_names)
