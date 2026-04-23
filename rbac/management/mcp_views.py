@@ -35,7 +35,6 @@ from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
-from redis import exceptions as redis_exceptions
 from management.access.view import AccessView
 from management.audit_log.view import AuditLogViewSet
 from management.group.view import GroupViewSet
@@ -48,6 +47,7 @@ from management.tenant_mapping.v2_activation import is_v2_write_activated
 from management.workspace.view import WorkspaceViewSet
 from mcp.server.fastmcp import FastMCP
 from prometheus_client import Counter, Histogram
+from redis import exceptions as redis_exceptions
 
 from api.common import RH_IDENTITY_HEADER
 from api.cross_access.view import CrossAccountRequestViewSet
