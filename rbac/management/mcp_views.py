@@ -39,10 +39,8 @@ from management.audit_log.view import AuditLogViewSet
 from management.group.view import GroupViewSet
 from management.permission.view import PermissionViewSet
 from management.principal.view import PrincipalView
-from management.role.v2_model import RoleV2
 from management.role.v2_view import RoleV2ViewSet
 from management.role.view import RoleViewSet
-from management.role_binding.model import RoleBinding
 from management.role_binding.view import RoleBindingViewSet
 from management.tenant_mapping.v2_activation import is_v2_write_activated
 from management.workspace.view import WorkspaceViewSet
@@ -298,7 +296,8 @@ def _call_view(
 # │ get_workspace                   │ GET /api/v2/workspaces/{uuid}/             │
 # │ list_role_bindings              │ GET /api/v2/role-bindings/                 │
 # │ list_role_bindings_by_subject   │ GET /api/v2/role-bindings/by-subject/      │
-# │ check_user_permission           │ GET /api/v1/access/ (post-processed)       │
+# │ check_user_permission           │ V1: GET /api/v1/access/                    │
+# │                                 │ V2: role-bindings → roles (view-delegated) │
 # └─────────────────────────────────┴────────────────────────────────────────────┘
 
 
@@ -994,10 +993,86 @@ def check_user_permission(
         )
 
     tenant = getattr(request, "tenant", None)
-    if tenant and is_v2_write_activated(tenant):
-        return _check_user_permission_v2(request, username, permission)
+    if not tenant or not is_v2_write_activated(tenant):
+        return _check_user_permission_v1(request, username, permission)
 
-    return _check_user_permission_v1(request, username, permission)
+    from management.principal.model import Principal
+
+    principal = Principal.objects.filter(username=username, tenant=tenant).first()
+    if not principal:
+        return json.dumps(
+            {
+                "allowed": False,
+                "username": username,
+                "permission": permission,
+                "org_version": "v2",
+                "hint": f"User '{username}' not found in this organization.",
+            }
+        )
+
+    bindings_path = reverse("v2_management:role-bindings-list")
+    raw = _call_view(
+        request,
+        _role_binding_list_view,
+        bindings_path,
+        {
+            "granted_subject_type": "user",
+            "granted_subject_id": str(principal.uuid),
+            "limit": "1000",
+        },
+    )
+    bindings_data = json.loads(raw)
+    bindings = bindings_data.get("data", [])
+
+    if not bindings:
+        return json.dumps(
+            {
+                "allowed": False,
+                "username": username,
+                "permission": permission,
+                "org_version": "v2",
+                "total_bindings_checked": 0,
+                "hint": f"User '{username}' has no role bindings in this V2 organization. "
+                f"Use list_role_bindings(granted_subject_type='user', "
+                f"granted_subject_id='{principal.uuid}') to see all role bindings.",
+            }
+        )
+
+    role_uuids = {b["role"]["id"] for b in bindings if b.get("role", {}).get("id")}
+
+    for role_uuid in role_uuids:
+        role_path = reverse("v2_management:roles-detail", kwargs={"uuid": role_uuid})
+        role_raw = _call_view(request, _role_v2_detail_view, role_path, {}, uuid=role_uuid)
+        role_data = json.loads(role_raw)
+
+        for perm in role_data.get("permissions", []):
+            perm_str = f"{perm['application']}:{perm['resource_type']}:{perm['operation']}"
+            if _permission_matches(perm_str, permission):
+                return json.dumps(
+                    {
+                        "allowed": True,
+                        "username": username,
+                        "permission": permission,
+                        "matched_permission": perm_str,
+                        "role_name": role_data.get("name"),
+                        "role_uuid": str(role_uuid),
+                        "org_version": "v2",
+                    }
+                )
+
+    return json.dumps(
+        {
+            "allowed": False,
+            "username": username,
+            "permission": permission,
+            "org_version": "v2",
+            "total_roles_checked": len(role_uuids),
+            "hint": f"User '{username}' does not have permission '{permission}' in this V2 organization. "
+            f"Use list_role_bindings(granted_subject_type='user', "
+            f"granted_subject_id='{principal.uuid}') to see all role bindings, "
+            f"or search_roles(permission='{permission}') to find which roles grant this permission.",
+        }
+    )
 
 
 def _check_user_permission_v1(request: HttpRequest, username: str, permission: str) -> str:
@@ -1056,90 +1131,6 @@ def _check_user_permission_v1(request: HttpRequest, username: str, permission: s
             "hint": f"User '{username}' does not have permission '{permission}'. "
             f"Use list_access(username='{username}', application='{application}') to see all "
             f"permissions, or list_groups(username='{username}') to trace the group/role chain.",
-        }
-    )
-
-
-def _check_user_permission_v2(request: HttpRequest, username: str, permission: str) -> str:
-    """Check user permission using V2 role bindings."""
-    from management.principal.model import Principal
-
-    tenant = request.tenant
-
-    principal = Principal.objects.filter(username=username, tenant=tenant).first()
-    if not principal:
-        return json.dumps(
-            {
-                "allowed": False,
-                "username": username,
-                "permission": permission,
-                "org_version": "v2",
-                "hint": f"User '{username}' not found in this organization.",
-            }
-        )
-
-    bindings = list(
-        RoleBinding.objects.for_tenant(tenant)
-        .for_granted_subject("user", granted_subject_id=str(principal.uuid))
-        .prefetch_related("role__permissions", "role__children__permissions")
-    )
-
-    if not bindings:
-        return json.dumps(
-            {
-                "allowed": False,
-                "username": username,
-                "permission": permission,
-                "org_version": "v2",
-                "total_bindings_checked": 0,
-                "hint": f"User '{username}' has no role bindings in this V2 organization. "
-                f"Use list_role_bindings(granted_subject_type='user', "
-                f"granted_subject_id='{principal.uuid}') to see all role bindings.",
-            }
-        )
-
-    roles_checked: set[str] = set()
-    for binding in bindings:
-        role = binding.role
-        if not role:
-            continue
-
-        if role.type == RoleV2.Types.PLATFORM:
-            roles_to_check = list(role.children.all())
-        else:
-            roles_to_check = [role]
-
-        for r in roles_to_check:
-            role_uuid_str = str(r.uuid)
-            if role_uuid_str in roles_checked:
-                continue
-            roles_checked.add(role_uuid_str)
-
-            for perm in r.permissions.all():
-                if _permission_matches(perm.permission, permission):
-                    return json.dumps(
-                        {
-                            "allowed": True,
-                            "username": username,
-                            "permission": permission,
-                            "matched_permission": perm.permission,
-                            "role_name": r.name,
-                            "role_uuid": role_uuid_str,
-                            "org_version": "v2",
-                        }
-                    )
-
-    return json.dumps(
-        {
-            "allowed": False,
-            "username": username,
-            "permission": permission,
-            "org_version": "v2",
-            "total_roles_checked": len(roles_checked),
-            "hint": f"User '{username}' does not have permission '{permission}' in this V2 organization. "
-            f"Use list_role_bindings(granted_subject_type='user', "
-            f"granted_subject_id='{principal.uuid}') to see all role bindings, "
-            f"or search_roles(permission='{permission}') to find which roles grant this permission.",
         }
     )
 

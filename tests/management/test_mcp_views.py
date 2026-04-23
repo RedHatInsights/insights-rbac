@@ -1360,6 +1360,19 @@ class MCPCheckUserPermissionV2Tests(MCPToolTestMixin, IdentityRequest):
         self.test_username = self.user_data["username"]
         self.principal = Principal.objects.create(username=self.test_username, tenant=self.tenant)
 
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.get_kessel_principal_id",
+                return_value="localhost/test-user-id",
+            )
+        )
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.WorkspaceInventoryAccessChecker.check_resource_access",
+                return_value=True,
+            )
+        )
+
         # Activate V2 for this tenant
         TenantMapping.objects.create(tenant=self.tenant, v2_write_activated_at=timezone.now())
 
