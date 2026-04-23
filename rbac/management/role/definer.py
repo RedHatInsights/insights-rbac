@@ -346,7 +346,7 @@ def _seed_v2_role_from_v1(v1_role, display_name, description, public_tenant, pla
                 "description": description,
                 "tenant": public_tenant,
                 "v1_source": v1_role,
-                "scope": scope.value,
+                "last_seed_scope": scope.value,
             },
         )
         if v2_created:
