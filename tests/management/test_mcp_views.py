@@ -19,16 +19,39 @@
 import json
 from unittest.mock import patch
 
+from django.test import override_settings
+from management.mcp_views import ToolConfig, _permission_matches
+from management.models import Access, Group, Permission, Policy, Principal, Role
 from rest_framework import status
 from rest_framework.test import APIClient
-
-from api.models import Tenant
-from management.mcp_views import ToolConfig
-from management.models import Access, Group, Permission, Policy, Principal, Role
 from tests.identity_request import IdentityRequest
 
+from api.models import Tenant
 
-class MCPViewTests(IdentityRequest):
+
+class MCPToolTestMixin:
+    """Shared helpers for calling MCP tools in tests."""
+
+    def _call_tool(self, tool_name, arguments=None, use_auth=True):
+        """Helper to call an MCP tool and return the parsed response."""
+        body = {
+            "jsonrpc": "2.0",
+            "method": "tools/call",
+            "id": 100,
+            "params": {"name": tool_name, "arguments": arguments or {}},
+        }
+        kwargs = {"data": json.dumps(body), "content_type": "application/json"}
+        if use_auth:
+            kwargs.update(self.headers)
+        return self.client.post(self.url, **kwargs)
+
+    def _get_tool_output(self, response):
+        """Extract tool output from MCP response."""
+        data = response.json()
+        return json.loads(data["result"]["content"][0]["text"])
+
+
+class MCPViewTests(MCPToolTestMixin, IdentityRequest):
     """Test the MCP endpoint at /_private/_a2s/mcp/ (agent-to-service with public auth)."""
 
     def setUp(self):
@@ -602,6 +625,613 @@ class MCPViewTests(IdentityRequest):
             self.assertEqual(response.status_code, status.HTTP_200_OK)
             data = response.json()
             self.assertEqual(data["id"], "abc-123")
+
+    # --- New read-only tools tests ---
+
+    def test_tools_list_includes_all_new_tools(self):
+        """Positive: tools/list includes all newly added read-only tools."""
+        body = {"jsonrpc": "2.0", "method": "tools/list", "id": 2, "params": {}}
+        response = self.client.post(self.url, data=json.dumps(body), content_type="application/json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_names = [t["name"] for t in response.json()["result"]["tools"]]
+        expected_tools = [
+            "get_status",
+            "list_access",
+            "list_permissions",
+            "list_permission_options",
+            "list_audit_logs",
+            "search_roles",
+            "list_roles",
+            "get_role",
+            "list_role_access",
+            "list_groups",
+            "get_group",
+            "list_group_principals",
+            "list_group_roles",
+            "list_cross_account_requests",
+            "get_cross_account_request",
+            "list_workspaces",
+            "get_workspace",
+            "list_role_bindings",
+            "list_role_bindings_by_subject",
+            "check_user_permission",
+        ]
+        for tool in expected_tools:
+            self.assertIn(tool, tool_names, f"Tool '{tool}' missing from tools/list")
+
+    # --- get_status ---
+
+    def test_get_status_returns_server_info(self):
+        """Positive: get_status returns server status with auth."""
+        response = self._call_tool("get_status")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertIn("api_version", tool_output)
+        self.assertIn("commit", tool_output)
+
+    # --- list_permissions ---
+
+    def test_list_permissions_success(self):
+        """Positive: list_permissions returns permission data."""
+        Permission.objects.create(
+            application="rbac",
+            resource_type="roles",
+            verb="read",
+            permission="rbac:roles:read",
+            tenant=self.tenant,
+        )
+        response = self._call_tool("list_permissions")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertIn("meta", tool_output)
+        self.assertIn("data", tool_output)
+
+    def test_list_permissions_filters_by_application(self):
+        """Positive: list_permissions filters results by application argument."""
+        Permission.objects.create(
+            application="rbac",
+            resource_type="roles",
+            verb="read",
+            permission="rbac:roles:read",
+            tenant=self.tenant,
+        )
+        Permission.objects.create(
+            application="cost-management",
+            resource_type="reports",
+            verb="read",
+            permission="cost-management:reports:read",
+            tenant=self.tenant,
+        )
+        response = self._call_tool("list_permissions", {"application": "rbac"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        permissions = tool_output["data"]
+        self.assertTrue(len(permissions) >= 1)
+        for perm in permissions:
+            self.assertTrue(perm["permission"].startswith("rbac:"))
+
+    def test_list_permissions_without_auth_returns_error(self):
+        """Permission: list_permissions without auth returns auth error."""
+        response = self._call_tool("list_permissions", use_auth=False)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    # --- list_audit_logs ---
+
+    def test_list_audit_logs_success(self):
+        """Positive: list_audit_logs returns audit log data."""
+        response = self._call_tool("list_audit_logs")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertIn("meta", tool_output)
+        self.assertIn("data", tool_output)
+
+    def test_list_audit_logs_without_auth_returns_error(self):
+        """Permission: list_audit_logs without auth returns auth error."""
+        response = self._call_tool("list_audit_logs", use_auth=False)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    # --- list_groups / get_group / list_group_principals ---
+
+    def test_list_groups_success(self):
+        """Positive: list_groups returns group data."""
+        Group.objects.create(name="test_group", tenant=self.tenant)
+        response = self._call_tool("list_groups")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertIn("meta", tool_output)
+        self.assertIn("data", tool_output)
+
+    def test_list_groups_without_auth_returns_error(self):
+        """Permission: list_groups without auth returns auth error."""
+        response = self._call_tool("list_groups", use_auth=False)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    def test_get_group_success(self):
+        """Positive: get_group returns group detail."""
+        group = Group.objects.create(name="detail_group", tenant=self.tenant)
+        response = self._call_tool("get_group", {"group_uuid": str(group.uuid)})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["name"], "detail_group")
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [{"username": "test_user"}],
+        },
+    )
+    def test_list_group_principals_success(self, mock_request):
+        """Positive: list_group_principals returns principals in group."""
+        group = Group.objects.create(name="principals_group", tenant=self.tenant)
+        group.principals.add(self.principal)
+        response = self._call_tool("list_group_principals", {"group_uuid": str(group.uuid)})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertIn("data", tool_output)
+
+    # --- list_cross_account_requests / get_cross_account_request ---
+
+    def test_list_cross_account_requests_success(self):
+        """Positive: list_cross_account_requests returns request data."""
+        response = self._call_tool("list_cross_account_requests")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertIn("meta", tool_output)
+        self.assertIn("data", tool_output)
+
+    def test_list_cross_account_requests_without_auth_returns_error(self):
+        """Permission: list_cross_account_requests without auth returns auth error."""
+        response = self._call_tool("list_cross_account_requests", use_auth=False)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    # --- list_access ---
+
+    def test_list_access_success(self):
+        """Positive: list_access returns access data for the authenticated principal."""
+        role = Role.objects.create(name="access_role", tenant=self.tenant)
+        perm = Permission.objects.create(
+            application="rbac",
+            resource_type="roles",
+            verb="read",
+            permission="rbac:roles:read",
+            tenant=self.tenant,
+        )
+        Access.objects.create(permission=perm, role=role, tenant=self.tenant)
+        group = Group.objects.create(name="access_group", tenant=self.tenant)
+        group.principals.add(self.principal)
+        policy = Policy.objects.create(name="access_policy", group=group, tenant=self.tenant)
+        policy.roles.add(role)
+
+        response = self._call_tool("list_access", {"application": "rbac"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertIn("data", tool_output)
+
+    def test_list_access_without_auth_returns_error(self):
+        """Permission: list_access without auth returns auth error."""
+        response = self._call_tool("list_access", {"application": "rbac"}, use_auth=False)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    # --- list_permission_options ---
+
+    def test_list_permission_options_success(self):
+        """Positive: list_permission_options returns distinct field values."""
+        Permission.objects.create(
+            application="rbac",
+            resource_type="roles",
+            verb="read",
+            permission="rbac:roles:read",
+            tenant=self.tenant,
+        )
+        Permission.objects.create(
+            application="cost-management",
+            resource_type="reports",
+            verb="read",
+            permission="cost-management:reports:read",
+            tenant=self.tenant,
+        )
+        response = self._call_tool("list_permission_options", {"field": "application"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertIn("data", tool_output)
+        self.assertIn("meta", tool_output)
+
+    def test_list_permission_options_without_auth_returns_error(self):
+        """Permission: list_permission_options without auth returns auth error."""
+        response = self._call_tool("list_permission_options", {"field": "application"}, use_auth=False)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    # --- list_group_roles ---
+
+    def test_list_group_roles_success(self):
+        """Positive: list_group_roles returns roles for a group."""
+        group = Group.objects.create(name="roles_group", tenant=self.tenant)
+        role = Role.objects.create(name="test_role", tenant=self.tenant)
+        policy = Policy.objects.create(name="test_policy", group=group, tenant=self.tenant)
+        policy.roles.add(role)
+
+        response = self._call_tool("list_group_roles", {"group_uuid": str(group.uuid)})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertIn("data", tool_output)
+
+    def test_list_group_roles_without_auth_returns_error(self):
+        """Permission: list_group_roles without auth returns auth error."""
+        response = self._call_tool(
+            "list_group_roles",
+            {"group_uuid": "00000000-0000-0000-0000-000000000000"},
+            use_auth=False,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    # --- list_role_access ---
+
+    def test_list_role_access_success(self):
+        """Positive: list_role_access returns access for a role."""
+        role = Role.objects.create(name="access_detail_role", tenant=self.tenant)
+        perm = Permission.objects.create(
+            application="rbac",
+            resource_type="principals",
+            verb="read",
+            permission="rbac:principals:read",
+            tenant=self.tenant,
+        )
+        Access.objects.create(permission=perm, role=role, tenant=self.tenant)
+
+        response = self._call_tool("list_role_access", {"role_uuid": str(role.uuid)})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertIn("data", tool_output)
+        self.assertTrue(len(tool_output["data"]) >= 1)
+
+    def test_list_role_access_without_auth_returns_error(self):
+        """Permission: list_role_access without auth returns auth error."""
+        response = self._call_tool(
+            "list_role_access",
+            {"role_uuid": "00000000-0000-0000-0000-000000000000"},
+            use_auth=False,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+
+@override_settings(V2_APIS_ENABLED=True)
+class MCPViewV2ToolsTests(MCPToolTestMixin, IdentityRequest):
+    """Test the MCP V2 tools that require V2_APIS_ENABLED=True."""
+
+    def setUp(self):
+        """Set up the MCP V2 tool tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.principal = Principal.objects.create(username="test_user", tenant=self.tenant)
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.get_kessel_principal_id",
+                return_value="localhost/test-user-id",
+            )
+        )
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.WorkspaceInventoryAccessChecker.check_resource_access",
+                return_value=True,
+            )
+        )
+
+    def tearDown(self):
+        """Tear down MCP V2 tool tests."""
+        Principal.objects.all().delete()
+        super().tearDown()
+
+    # --- list_roles / get_role ---
+
+    def test_list_roles_success(self):
+        """Positive: list_roles returns role data."""
+        response = self._call_tool("list_roles")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertIn("meta", tool_output)
+        self.assertIn("data", tool_output)
+
+    def test_list_roles_without_auth_returns_error(self):
+        """Permission: list_roles without auth returns auth error."""
+        response = self._call_tool("list_roles", use_auth=False)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    # --- list_workspaces / get_workspace ---
+
+    def test_list_workspaces_success(self):
+        """Positive: list_workspaces returns workspace data."""
+        response = self._call_tool("list_workspaces")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertIn("meta", tool_output)
+        self.assertIn("data", tool_output)
+
+    def test_list_workspaces_without_auth_returns_error(self):
+        """Permission: list_workspaces without auth returns auth error."""
+        response = self._call_tool("list_workspaces", use_auth=False)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    # --- list_role_bindings ---
+
+    def test_list_role_bindings_success(self):
+        """Positive: list_role_bindings returns role binding data."""
+        response = self._call_tool("list_role_bindings")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertIn("meta", tool_output)
+        self.assertIn("data", tool_output)
+
+    def test_list_role_bindings_without_auth_returns_error(self):
+        """Permission: list_role_bindings without auth returns auth error."""
+        response = self._call_tool("list_role_bindings", use_auth=False)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    # --- list_role_bindings_by_subject ---
+
+    def test_list_role_bindings_by_subject_without_auth_returns_error(self):
+        """Permission: list_role_bindings_by_subject without auth returns auth error."""
+        response = self._call_tool(
+            "list_role_bindings_by_subject",
+            {"resource_id": "test-id", "resource_type": "workspace"},
+            use_auth=False,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+
+class PermissionMatchesTests(IdentityRequest):
+    """Unit tests for the _permission_matches helper function."""
+
+    def test_exact_match(self):
+        """Positive: exact permission match returns True."""
+        self.assertTrue(_permission_matches("cost-management:cost_model:write", "cost-management:cost_model:write"))
+
+    def test_wildcard_all(self):
+        """Positive: full wildcard matches any permission in the same app."""
+        self.assertTrue(_permission_matches("cost-management:*:*", "cost-management:cost_model:write"))
+
+    def test_wildcard_verb(self):
+        """Positive: verb wildcard matches any verb."""
+        self.assertTrue(_permission_matches("cost-management:cost_model:*", "cost-management:cost_model:write"))
+
+    def test_mismatch_verb(self):
+        """Negative: different verb does not match."""
+        self.assertFalse(_permission_matches("cost-management:cost_model:read", "cost-management:cost_model:write"))
+
+    def test_mismatch_app(self):
+        """Negative: different application does not match."""
+        self.assertFalse(_permission_matches("inventory:hosts:read", "cost-management:hosts:read"))
+
+    def test_malformed_granted(self):
+        """Negative: malformed granted permission returns False."""
+        self.assertFalse(_permission_matches("invalid-format", "cost-management:cost_model:write"))
+
+    def test_malformed_requested(self):
+        """Negative: malformed requested permission returns False."""
+        self.assertFalse(_permission_matches("cost-management:cost_model:write", "invalid"))
+
+
+@override_settings(BYPASS_BOP_VERIFICATION=True)
+class MCPCheckUserPermissionTests(MCPToolTestMixin, IdentityRequest):
+    """Tests for the check_user_permission MCP tool."""
+
+    def setUp(self):
+        """Set up check_user_permission tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.test_username = self.user_data["username"]
+        self.principal = Principal.objects.create(username=self.test_username, tenant=self.tenant)
+
+        role = Role.objects.create(name="test_role", tenant=self.tenant)
+        perm = Permission.objects.create(
+            application="rbac",
+            resource_type="roles",
+            verb="read",
+            permission="rbac:roles:read",
+            tenant=self.tenant,
+        )
+        Access.objects.create(permission=perm, role=role, tenant=self.tenant)
+        group = Group.objects.create(name="test_group", tenant=self.tenant)
+        group.principals.add(self.principal)
+        policy = Policy.objects.create(name="test_policy", group=group, tenant=self.tenant)
+        policy.roles.add(role)
+
+    def tearDown(self):
+        """Tear down check_user_permission tests."""
+        Policy.objects.all().delete()
+        Access.objects.all().delete()
+        Role.objects.all().delete()
+        Permission.objects.all().delete()
+        Group.objects.all().delete()
+        Principal.objects.all().delete()
+        super().tearDown()
+
+    def test_invalid_permission_format(self):
+        """Negative: invalid permission format returns error."""
+        response = self._call_tool("check_user_permission", {"username": self.test_username, "permission": "invalid"})
+
+        self.assertEqual(response.status_code, 200)
+        tool_output = self._get_tool_output(response)
+        self.assertIn("error", tool_output)
+        self.assertIn("application:resource_type:verb", tool_output["error"])
+
+    def test_permission_allowed(self):
+        """Positive: check_user_permission returns allowed=True when user has permission."""
+        response = self._call_tool(
+            "check_user_permission", {"username": self.test_username, "permission": "rbac:roles:read"}
+        )
+
+        self.assertEqual(response.status_code, 200)
+        tool_output = self._get_tool_output(response)
+        self.assertTrue(tool_output["allowed"])
+        self.assertEqual(tool_output["username"], self.test_username)
+        self.assertEqual(tool_output["matched_permission"], "rbac:roles:read")
+
+    def test_permission_denied(self):
+        """Negative: check_user_permission returns allowed=False when user lacks permission."""
+        response = self._call_tool(
+            "check_user_permission", {"username": self.test_username, "permission": "rbac:roles:write"}
+        )
+
+        self.assertEqual(response.status_code, 200)
+        tool_output = self._get_tool_output(response)
+        self.assertFalse(tool_output["allowed"])
+        self.assertIn("hint", tool_output)
+
+    def test_without_auth_returns_error(self):
+        """Permission: check_user_permission without auth returns auth error."""
+        response = self._call_tool(
+            "check_user_permission",
+            {"username": self.test_username, "permission": "rbac:roles:read"},
+            use_auth=False,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+
+class MCPSearchRolesTests(MCPToolTestMixin, IdentityRequest):
+    """Tests for the search_roles MCP tool."""
+
+    def setUp(self):
+        """Set up search_roles tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+
+    def tearDown(self):
+        """Tear down search_roles tests."""
+        Role.objects.all().delete()
+        super().tearDown()
+
+    def test_search_roles_success(self):
+        """Positive: search_roles returns role data."""
+        Role.objects.create(name="test_v1_role", tenant=self.tenant)
+        response = self._call_tool("search_roles")
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertIn("meta", tool_output)
+        self.assertIn("data", tool_output)
+
+    def test_search_roles_filter_by_name(self):
+        """Positive: search_roles filters by name."""
+        Role.objects.create(name="Patch Reviewer", tenant=self.tenant)
+        Role.objects.create(name="Other Role", tenant=self.tenant)
+        response = self._call_tool("search_roles", {"name": "Patch Reviewer"})
+
+        self.assertEqual(response.status_code, 200)
+        tool_output = self._get_tool_output(response)
+        self.assertTrue(tool_output["meta"]["count"] >= 1)
+        for role in tool_output["data"]:
+            self.assertIn("Patch Reviewer", role["name"])
+
+    def test_search_roles_without_auth_returns_error(self):
+        """Permission: search_roles without auth returns auth error."""
+        response = self._call_tool("search_roles", use_auth=False)
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
 
 
 class MCPViewNonAdminTests(IdentityRequest):

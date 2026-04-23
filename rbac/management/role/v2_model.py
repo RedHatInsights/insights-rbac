@@ -22,6 +22,7 @@ from __future__ import annotations
 import logging
 from typing import Iterable, Optional
 
+from django.contrib.postgres.indexes import GinIndex
 from django.db import models
 from django.db.models import signals
 from django.utils import timezone
@@ -69,6 +70,9 @@ class RoleV2(TenantAwareModel):
         ordering = ["name", "modified"]
         constraints = [
             models.UniqueConstraint(fields=["name", "tenant"], name="unique role v2 name per tenant"),
+        ]
+        indexes = [
+            GinIndex(fields=["name"], name="rolev2_name_trgm_idx", opclasses=["gin_trgm_ops"]),
         ]
 
     def clean(self):

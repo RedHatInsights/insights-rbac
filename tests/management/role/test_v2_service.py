@@ -277,11 +277,11 @@ class RoleV2ServiceTests(IdentityRequest):
             tenant=self.tenant,
         )
 
-        # Then: Permission tuples are replicated
+        # Then: Permission tuples and owner tuple are replicated
         role_uuid = str(role.uuid)
 
-        # Should have 2 permission tuples (one per permission)
-        self.assertEqual(len(tuples), 2)
+        # Should have 2 permission tuples + 1 owner tuple
+        self.assertEqual(len(tuples), 3)
 
         # Verify the read permission tuple exists
         read_tuples = tuples.find_tuples(
@@ -302,6 +302,16 @@ class RoleV2ServiceTests(IdentityRequest):
             )
         )
         self.assertEqual(len(write_tuples), 1, "Expected 1 write permission tuple")
+
+        # Verify the owner tuple exists
+        owner_tuples = tuples.find_tuples(
+            all_of(
+                resource("rbac", "role", role_uuid),
+                relation("owner"),
+                subject("rbac", "tenant", self.tenant.tenant_resource_id()),
+            )
+        )
+        self.assertEqual(len(owner_tuples), 1, "Expected 1 owner tuple")
 
     def test_update_role_with_empty_description_succeeds(self):
         """Test that updating a role with empty description succeeds."""
@@ -396,8 +406,8 @@ class RoleV2ServiceTests(IdentityRequest):
         # - Kept: {read} (unchanged, so not touched by delta)
 
         # The InMemoryTuples tracks the final state after all operations
-        # After update, we should have exactly 2 tuples (the new permissions)
-        self.assertEqual(len(tuples), 2)
+        # After update, we should have exactly 3 tuples (2 permissions + 1 owner)
+        self.assertEqual(len(tuples), 3)
 
         # Verify the read permission tuple still exists (it was in both old and new)
         read_tuples = tuples.find_tuples(

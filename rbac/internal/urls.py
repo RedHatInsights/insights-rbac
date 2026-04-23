@@ -119,6 +119,11 @@ urlpatterns = [
     path("api/utils/rebuild_tenant_workspace_relations/<str:org_id>/", views.rebuild_tenant_workspace_relations),
     path("api/utils/remove_unassigned_system_binding_mappings/", views.remove_unassigned_system_binding_mappings),
     path("api/utils/expire_orphaned_cross_account_requests/", views.expire_orphaned_cross_account_requests),
+    path("api/utils/remove_deleted_workspace_bindings/", views.remove_deleted_workspace_bindings),
+    path(
+        "api/utils/migrate_custom_v2_roles_to_tenant/",
+        views.migrate_custom_v2_roles_to_tenant,
+    ),
 ]
 
 urlpatterns.extend(integration_urlpatterns)

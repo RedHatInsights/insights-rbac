@@ -927,6 +927,9 @@ class ExpireOrphanCrossAccountRequests(DualWriteTestCase):
         self.role = self.given_v1_system_role("a role", ["rbac:*:*"])
         self.group, _ = self.given_group("a group", ["p1"])
 
+    def _do_expire(self):
+        expire_orphaned_cross_account_requests(replicator=InMemoryRelationReplicator(self.tuples))
+
     @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="")
     def test_expire_orphans(self):
         self.given_roles_assigned_to_group(self.group, [self.role])
@@ -955,7 +958,7 @@ class ExpireOrphanCrossAccountRequests(DualWriteTestCase):
             for_principals=[self.source_user_id],
         )
 
-        expire_orphaned_cross_account_requests(replicator=InMemoryRelationReplicator(self.tuples))
+        self._do_expire()
 
         car.refresh_from_db()
         self.assertEqual(car.status, "expired")
@@ -976,6 +979,53 @@ class ExpireOrphanCrossAccountRequests(DualWriteTestCase):
 
         # We should not have created a RoleBinding.
         self.assertFalse(RoleBinding.objects.filter(tenant=self.tenant).exists())
+
+    def test_expire_orphans_with_bad_role_binding(self):
+        car_a = self.given_car(self.source_user_id, [self.role])
+        car_b = self.given_car(self.source_user_id, [self.role])
+
+        # Currently, we will create a RoleBinding for the CAR. (This was not always the case in the past.)
+        self.assertEqual(RoleBinding.objects.filter(tenant=self.tenant).count(), 1)
+
+        # Orphan the CAR, but leave an empty RoleBinding around. (This apparently happened in production, possibly as a
+        # result of migrating the CAR and then deleting the principal?)
+        RoleBindingGroup.objects.filter(binding__tenant=self.tenant).delete()
+        RoleBindingPrincipal.objects.filter(binding__tenant=self.tenant).delete()
+        self.source_principal.delete()
+
+        # We should also have created a BindingMapping.
+        mapping = BindingMapping.objects.get(role=self.role)
+
+        # Ensure that this RoleBinding exists and fetch it so that we can ensure it's deleted later.
+        role_binding = RoleBinding.objects.filter(uuid=mapping.mappings["id"]).get()
+
+        def expect_binding_count(count: int):
+            self.assertEqual(
+                count,
+                self.tuples.count_tuples(
+                    all_of(resource("rbac", "workspace", self.default_workspace()), relation("binding"))
+                ),
+            )
+
+        # The CARs should have created a binding in Kessel.
+        expect_binding_count(1)
+
+        self._do_expire()
+
+        # The role binding should have been removed from Kessel.
+        expect_binding_count(0)
+
+        # Both the BindingMapping and RoleBinding should have been deleted (the former because it now has no subjects,
+        # the latter because it was incorrect).
+
+        self.assertFalse(BindingMapping.objects.filter(pk=mapping.pk).exists())
+        self.assertFalse(RoleBinding.objects.filter(pk=role_binding.pk).exists())
+
+        car_a.refresh_from_db()
+        car_b.refresh_from_db()
+
+        self.assertEqual(car_a.status, "expired")
+        self.assertEqual(car_b.status, "expired")
 
     def test_preserve_not_orphaned(self):
         car = self.given_car(self.source_user_id, [self.role])
@@ -1000,7 +1050,7 @@ class ExpireOrphanCrossAccountRequests(DualWriteTestCase):
 
         expect_exists()
 
-        expire_orphaned_cross_account_requests()
+        self._do_expire()
 
         car.refresh_from_db()
         self.assertEqual(car.status, "approved")
@@ -1024,15 +1074,13 @@ class ExpireOrphanCrossAccountRequests(DualWriteTestCase):
                 BindingMapping.objects.get(role=self.role).mappings["users"],
                 {str(car.source_key()): self.source_user_id},
             )
-            self.assertTrue(
-                RoleBindingPrincipal.objects.filter(
-                    principal=self.source_principal, binding__role__v1_source=self.role
-                ).exists()
-            )
 
         expect_exists()
 
-        expire_orphaned_cross_account_requests()
+        RoleBinding.objects.filter(tenant=self.tenant).delete()
+        self.source_principal.delete()
+
+        self._do_expire()
 
         car.refresh_from_db()
         self.assertEqual(car.status, "approved")

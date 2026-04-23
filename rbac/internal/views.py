@@ -35,6 +35,7 @@ from django.views.decorators.http import require_http_methods
 from feature_flags import FEATURE_FLAGS
 from google.protobuf import json_format
 from grpc import RpcError
+from internal.custom_v2_role_tenant_migration import replicate_custom_v2_role_owner_relationships
 from internal.errors import SentryDiagnosticError, UserNotFoundError
 from internal.jwt_utils import JWTManager, JWTProvider
 from internal.utils import (
@@ -92,6 +93,7 @@ from management.tasks import (
     fix_missing_binding_base_tuples_in_worker,
     migrate_binding_scope_in_worker,
     migrate_data_in_worker,
+    remove_deleted_workspace_bindings_in_worker,
     remove_unassigned_system_binding_mappings_in_worker,
     run_migrations_in_worker,
     run_ocm_performance_in_worker,
@@ -561,8 +563,9 @@ def run_seeds(request):
         type_option = "seed_types"
         force_create_option = "force_create_relationships"
         force_update_option = "force_update_relationships"
+        skip_notifications_option = "skip_notifications"
 
-        valid_options = [type_option, force_create_option, force_update_option]
+        valid_options = [type_option, force_create_option, force_update_option, skip_notifications_option]
         valid_values = ["permissions", "roles", "groups"]
 
         for option in request.GET.keys():
@@ -578,7 +581,7 @@ def run_seeds(request):
                 return HttpResponse(f'Valid options for "{type_option}": {valid_values}.', status=400)
             args = {type: True for type in seed_types}
 
-        for option in [force_create_option, force_update_option]:
+        for option in [force_create_option, force_update_option, skip_notifications_option]:
             value: Optional[str] = request.GET.get(option)
 
             if value is not None:
@@ -2289,7 +2292,12 @@ def migrate_binding_scope(request):
 
     logger.info("Running binding scope migration.")
 
-    migrate_binding_scope_in_worker.delay()
+    raw_sources = request.GET.get("sources", None)
+
+    if raw_sources is not None:
+        migrate_binding_scope_in_worker.delay(sources=raw_sources.split(","))
+    else:
+        migrate_binding_scope_in_worker.delay()
 
     return JsonResponse(
         {"message": "Binding scope migration is running in a background worker."},
@@ -2553,3 +2561,44 @@ def expire_orphaned_cross_account_requests(request):
     except Exception as e:
         logger.exception("Error removing orphaned CARs", exc_info=True)
         return JsonResponse({"detail": f"Error removing orphaned CARs: {str(e)}"}, status=500)
+
+
+@require_http_methods(["POST"])
+def remove_deleted_workspace_bindings(request):
+    """
+    Remove RoleBindings that reference workspaces that no longer exist.
+
+        POST /_private/api/utils/remove_deleted_workspace_bindings/
+
+    Returns:
+        JSON response indicating the task has been queued
+    """
+    try:
+        remove_deleted_workspace_bindings_in_worker.delay()
+        return JsonResponse({"message": "Cleanup enqueued in background worker."}, status=202)
+    except Exception as e:
+        logger.exception("Error removing bindings for deleted workspaces", exc_info=True)
+        return JsonResponse({"detail": f"Error removing bindings for deleted workspaces: {str(e)}"}, status=500)
+
+
+@require_http_methods(["POST"])
+def migrate_custom_v2_roles_to_tenant(request):
+    """Replicate owner tuples for custom V2 roles from each role's tenant resource id.
+
+    POST /_private/api/utils/migrate_custom_v2_roles_to_tenant/
+
+    Iterates ``RoleV2`` with ``type=custom`` (scans custom roles only, not every tenant row). With
+    ``tenant`` loaded, emits ``rbac/role#owner@rbac/tenant`` for ``tenant.tenant_resource_id()``.
+    Fails with 500 if any custom role's tenant has no resource id. Does not update role rows.
+
+    Returns:
+        JSON with ``replicated``, ``skipped``, and counts.
+    """
+    logger.info("migrate_custom_v2_roles_to_tenant")
+
+    try:
+        result = replicate_custom_v2_role_owner_relationships()
+        return JsonResponse(result, status=200)
+    except Exception as e:
+        logger.exception("migrate_custom_v2_roles_to_tenant failed", exc_info=True)
+        return JsonResponse({"detail": str(e)}, status=500)

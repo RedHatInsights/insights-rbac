@@ -34,15 +34,44 @@ from django.urls import reverse
 from django.utils.decorators import method_decorator
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
+from management.access.view import AccessView
+from management.audit_log.view import AuditLogViewSet
+from management.group.view import GroupViewSet
+from management.permission.view import PermissionViewSet
 from management.principal.view import PrincipalView
+from management.role.v2_view import RoleV2ViewSet
+from management.role.view import RoleViewSet
+from management.role_binding.view import RoleBindingViewSet
+from management.workspace.view import WorkspaceViewSet
 from mcp.server.fastmcp import FastMCP
 from prometheus_client import Counter, Histogram
 
 from api.common import RH_IDENTITY_HEADER
+from api.cross_access.view import CrossAccountRequestViewSet
+from api.status.view import status as status_view_fn
 
-# Cache the view function — PrincipalView.as_view() returns a new callable each time,
+# Cache view functions — .as_view() returns a new callable each time,
 # but the result is stateless and reusable.
 _principal_view = PrincipalView.as_view()
+_status_view = status_view_fn
+_access_view = AccessView.as_view()
+_permission_list_view = PermissionViewSet.as_view({"get": "list"})
+_permission_options_view = PermissionViewSet.as_view({"get": "options"})
+_auditlog_list_view = AuditLogViewSet.as_view({"get": "list"})
+_role_access_view = RoleViewSet.as_view({"get": "access"})
+_role_v1_list_view = RoleViewSet.as_view({"get": "list"})
+_role_v2_list_view = RoleV2ViewSet.as_view({"get": "list"})
+_role_v2_detail_view = RoleV2ViewSet.as_view({"get": "retrieve"})
+_group_list_view = GroupViewSet.as_view({"get": "list"})
+_group_detail_view = GroupViewSet.as_view({"get": "retrieve"})
+_group_principals_view = GroupViewSet.as_view({"get": "principals"})
+_group_roles_view = GroupViewSet.as_view({"get": "roles"})
+_cross_account_list_view = CrossAccountRequestViewSet.as_view({"get": "list"})
+_cross_account_detail_view = CrossAccountRequestViewSet.as_view({"get": "retrieve"})
+_workspace_list_view = WorkspaceViewSet.as_view({"get": "list"})
+_workspace_detail_view = WorkspaceViewSet.as_view({"get": "retrieve"})
+_role_binding_list_view = RoleBindingViewSet.as_view({"get": "list"})
+_role_binding_by_subject_view = RoleBindingViewSet.as_view({"get": "by_subject"})
 
 logger = logging.getLogger(__name__)
 
@@ -166,7 +195,11 @@ def _clone_request(source: HttpRequest, path: str, **kwargs: Any) -> HttpRequest
 
 
 @register_tool(
-    description="Say hello or send a greeting to RBAC. Responds with your message and the current server date.",
+    description=(
+        "Say hello to the RBAC service. Returns your message echoed back along with "
+        "the current server date in UTC. No authentication required. "
+        "Use this to verify MCP connectivity."
+    ),
 )
 def hello(message: str = "Hello, World!") -> str:
     """Respond to a greeting — no authentication required."""
@@ -175,7 +208,17 @@ def hello(message: str = "Hello, World!") -> str:
 
 
 @register_tool(
-    description="List principals (users) for the authenticated organization",
+    description=(
+        "List principals (users) for the authenticated organization. "
+        "Supports pagination (limit/offset), sorting (asc/desc), and filtering by status "
+        "(enabled/disabled/all). Set 'usernames' (comma-separated) to look up specific users. "
+        "Set 'match_criteria' to 'exact' (default) or 'partial' for username matching. "
+        "Set username_only='true' to return only usernames. "
+        "TROUBLESHOOTING: To confirm a user exists and check their org admin status, call "
+        "list_principals(usernames='<user>', match_criteria='exact'). "
+        "Returns: {meta: {count}, links, data: [{username, email, first_name, last_name, is_org_admin, ...}]}. "
+        "Calls: GET /api/v1/principals/"
+    ),
     requires_auth=True,
 )
 def list_principals(
@@ -186,6 +229,8 @@ def list_principals(
     sort_order: str = "asc",
     status: str = "enabled",
     username_only: str = "false",
+    usernames: str = "",
+    match_criteria: str = "",
 ) -> str:
     """List principals by delegating to PrincipalView."""
     query_params: dict[str, str] = {
@@ -195,14 +240,802 @@ def list_principals(
         "status": status,
         "username_only": username_only,
     }
+    if usernames:
+        query_params["usernames"] = usernames
+    if match_criteria:
+        query_params["match_criteria"] = match_criteria
 
     path = reverse("v1_management:principals")
-    view_request = _clone_request(request, path, data=query_params)
-    response = _principal_view(view_request)
+    return _call_view(request, _principal_view, path, query_params)
 
-    if hasattr(response, "data"):
-        return json.dumps(response.data, default=str)
+
+def _call_view(
+    request: HttpRequest,
+    view: Callable[..., Any],
+    path: str,
+    query_params: dict[str, str],
+    **view_kwargs: str,
+) -> str:
+    """Call a Django view with cloned request and return the response body.
+
+    For detail views, pass the lookup kwarg as a keyword argument,
+    e.g. ``_call_view(request, view, path, {}, pk=value)``.
+
+    DRF responses are rendered via their configured renderer so the
+    output matches exactly what the API would return.
+    """
+    view_request = _clone_request(request, path, data=query_params)
+    response = view(view_request, **view_kwargs)
+    if hasattr(response, "render"):
+        response = response.render()
     return response.content.decode()
+
+
+# ┌─────────────────────────────────┬────────────────────────────────────────────┐
+# │ MCP Tool                        │ API Endpoint                               │
+# ├─────────────────────────────────┼────────────────────────────────────────────┤
+# │ hello                           │ (none — in-process greeting)               │
+# │ list_principals                 │ GET /api/v1/principals/                    │
+# │ get_status                      │ GET /api/v1/status/                        │
+# │ list_permissions                │ GET /api/v1/permissions/                   │
+# │ list_permission_options         │ GET /api/v1/permissions/options/            │
+# │ list_audit_logs                 │ GET /api/v1/auditlogs/                     │
+# │ list_access                     │ GET /api/v1/access/                        │
+# │ search_roles                    │ GET /api/v1/roles/                         │
+# │ list_roles                      │ GET /api/v2/roles/                         │
+# │ get_role                        │ GET /api/v2/roles/{uuid}/                  │
+# │ list_role_access                │ GET /api/v1/roles/{uuid}/access/           │
+# │ list_groups                     │ GET /api/v1/groups/                        │
+# │ get_group                       │ GET /api/v1/groups/{uuid}/                 │
+# │ list_group_principals           │ GET /api/v1/groups/{uuid}/principals/      │
+# │ list_group_roles                │ GET /api/v1/groups/{uuid}/roles/           │
+# │ list_cross_account_requests     │ GET /api/v1/cross-account-requests/        │
+# │ get_cross_account_request       │ GET /api/v1/cross-account-requests/{id}/   │
+# │ list_workspaces                 │ GET /api/v2/workspaces/                    │
+# │ get_workspace                   │ GET /api/v2/workspaces/{uuid}/             │
+# │ list_role_bindings              │ GET /api/v2/role-bindings/                 │
+# │ list_role_bindings_by_subject   │ GET /api/v2/role-bindings/by-subject/      │
+# │ check_user_permission           │ GET /api/v1/access/ (post-processed)       │
+# └─────────────────────────────────┴────────────────────────────────────────────┘
+
+
+@register_tool(
+    description=(
+        "Get RBAC server status including API version, commit hash, server address, "
+        "platform info, Python version and loaded modules. No authentication required. "
+        "Calls: GET /api/v1/status/"
+    ),
+)
+def get_status(request: HttpRequest) -> str:
+    """Return server status by delegating to the status view."""
+    path = reverse("v1_api:server-status")
+    return _call_view(request, _status_view, path, {})
+
+
+@register_tool(
+    description=(
+        "List permissions available in RBAC. Each permission has the format 'application:resource_type:verb'. "
+        "Filter by application, resource_type, or verb. Supports pagination and ordering by 'permission' or "
+        "'-permission'. "
+        "Returns: {meta: {count}, links, data: [{application, resource_type, verb, permission}]}. "
+        "Calls: GET /api/v1/permissions/"
+    ),
+    requires_auth=True,
+)
+def list_permissions(
+    request: HttpRequest,
+    *,
+    application: str = "",
+    resource_type: str = "",
+    verb: str = "",
+    limit: int = 10,
+    offset: int = 0,
+    order_by: str = "",
+) -> str:
+    """List permissions by delegating to PermissionViewSet."""
+    query_params: dict[str, str] = {
+        "limit": str(limit),
+        "offset": str(offset),
+    }
+    if application:
+        query_params["application"] = application
+    if resource_type:
+        query_params["resource_type"] = resource_type
+    if verb:
+        query_params["verb"] = verb
+    if order_by:
+        query_params["order_by"] = order_by
+
+    path = reverse("v1_management:permission-list")
+    return _call_view(request, _permission_list_view, path, query_params)
+
+
+@register_tool(
+    description=(
+        "List audit log entries recording RBAC changes for the authenticated organization. "
+        "Each entry records who changed what (principal, resource_type, action). "
+        "Filter by principal_username (who made the change), resource_type "
+        "(group/role/role_v2/user/permission/workspace/role_binding), or action (add/edit/delete/create/remove). "
+        "TROUBLESHOOTING: To investigate who made a specific RBAC change, filter by resource_type and action. "
+        "To see all changes by a specific user, set principal_username. "
+        "Order by: 'created', 'principal_username', 'resource_type', 'action' (prefix with '-' to reverse). "
+        "Returns: {meta: {count}, links, data: [{principal_username, description, action, created, ...}]}. "
+        "Calls: GET /api/v1/auditlogs/"
+    ),
+    requires_auth=True,
+)
+def list_audit_logs(
+    request: HttpRequest,
+    *,
+    limit: int = 10,
+    offset: int = 0,
+    order_by: str = "-created",
+    principal_username: str = "",
+    resource_type: str = "",
+    action: str = "",
+) -> str:
+    """List audit logs by delegating to AuditLogViewSet."""
+    query_params: dict[str, str] = {
+        "limit": str(limit),
+        "offset": str(offset),
+        "order_by": order_by,
+    }
+    if principal_username:
+        query_params["principal_username"] = principal_username
+    if resource_type:
+        query_params["resource_type"] = resource_type
+    if action:
+        query_params["action"] = action
+    path = reverse("v1_management:auditlog-list")
+    return _call_view(request, _auditlog_list_view, path, query_params)
+
+
+@register_tool(
+    description=(
+        "List access permissions for a principal. By default shows access for the currently "
+        "authenticated user. Set 'username' to query another user's access (requires org admin "
+        "or rbac:principal:read permission). Each entry is a permission string "
+        "with optional resource definitions that further constrain it. "
+        "TROUBLESHOOTING: To check what user X can do, call "
+        "list_access(username='X', application='<app>'). This resolves all groups, "
+        "roles, and policies for that user and returns their effective permissions. "
+        "Order by: 'application', 'resource_type', 'verb' (prefix with '-' to reverse). "
+        "Returns: {meta: {count}, links, data: [{permission, resourceDefinitions: [...]}]}. "
+        "Calls: GET /api/v1/access/"
+    ),
+    requires_auth=True,
+)
+def list_access(
+    request: HttpRequest,
+    *,
+    application: str,
+    username: str = "",
+    limit: int = 10,
+    offset: int = 0,
+    order_by: str = "",
+    status: str = "enabled",
+) -> str:
+    """List principal access by delegating to AccessView."""
+    query_params: dict[str, str] = {
+        "application": application,
+        "limit": str(limit),
+        "offset": str(offset),
+        "status": status,
+    }
+    if username:
+        query_params["username"] = username
+    if order_by:
+        query_params["order_by"] = order_by
+
+    path = reverse("v1_management:access")
+    return _call_view(request, _access_view, path, query_params)
+
+
+@register_tool(
+    description=(
+        "Get distinct values for a permission field. Use this to discover what applications, "
+        "resource_types, or verbs exist. The 'field' parameter is required and must be one of: "
+        "'application', 'resource_type', 'verb'. Optionally filter by application, resource_type, "
+        "or verb (comma-separated for multiple). "
+        "Returns: {meta: {count}, links, data: ['value1', 'value2', ...]}. "
+        "Calls: GET /api/v1/permissions/options/"
+    ),
+    requires_auth=True,
+)
+def list_permission_options(
+    request: HttpRequest,
+    *,
+    field: str,
+    application: str = "",
+    resource_type: str = "",
+    verb: str = "",
+    limit: int = 10,
+    offset: int = 0,
+) -> str:
+    """List distinct permission field values by delegating to PermissionViewSet.options."""
+    query_params: dict[str, str] = {
+        "field": field,
+        "limit": str(limit),
+        "offset": str(offset),
+    }
+    if application:
+        query_params["application"] = application
+    if resource_type:
+        query_params["resource_type"] = resource_type
+    if verb:
+        query_params["verb"] = verb
+
+    path = reverse("v1_management:permission-options")
+    return _call_view(request, _permission_options_view, path, query_params)
+
+
+@register_tool(
+    description=(
+        "List roles assigned to a specific group. Shows which roles are associated with the group "
+        "through policies. Filter by role_name, role_description, role_display_name, or role_system (boolean). "
+        "Order by: 'name', 'display_name', 'modified', 'policyCount' (prefix with '-' to reverse). "
+        "Set exclude='true' to list roles NOT in the group. "
+        "Returns: {meta: {count}, links, data: [{uuid, name, description, system, platform_default, ...}]}. "
+        "Calls: GET /api/v1/groups/{uuid}/roles/"
+    ),
+    requires_auth=True,
+)
+def list_group_roles(
+    request: HttpRequest,
+    *,
+    group_uuid: str,
+    limit: int = 10,
+    offset: int = 0,
+    order_by: str = "",
+    role_name: str = "",
+    role_description: str = "",
+    role_display_name: str = "",
+    role_system: str = "",
+    exclude: str = "false",
+) -> str:
+    """List roles for a group by delegating to GroupViewSet.roles."""
+    query_params: dict[str, str] = {
+        "limit": str(limit),
+        "offset": str(offset),
+    }
+    if order_by:
+        query_params["order_by"] = order_by
+    if role_name:
+        query_params["role_name"] = role_name
+    if role_description:
+        query_params["role_description"] = role_description
+    if role_display_name:
+        query_params["role_display_name"] = role_display_name
+    if role_system:
+        query_params["role_system"] = role_system
+    if exclude != "false":
+        query_params["exclude"] = exclude
+
+    path = reverse("v1_management:group-roles", kwargs={"uuid": group_uuid})
+    return _call_view(request, _group_roles_view, path, query_params, uuid=group_uuid)
+
+
+@register_tool(
+    description=(
+        "List access permissions granted by a specific role (V1 API). Each access entry is a "
+        "permission string with optional resource definitions. "
+        "Returns: {meta: {count}, links, data: [{permission, resourceDefinitions: [...]}]}. "
+        "Calls: GET /api/v1/roles/{uuid}/access/"
+    ),
+    requires_auth=True,
+)
+def list_role_access(
+    request: HttpRequest,
+    *,
+    role_uuid: str,
+    limit: int = 10,
+    offset: int = 0,
+) -> str:
+    """List access for a role by delegating to RoleViewSet.access."""
+    query_params: dict[str, str] = {
+        "limit": str(limit),
+        "offset": str(offset),
+    }
+    path = reverse("v1_management:role-access", kwargs={"uuid": role_uuid})
+    return _call_view(request, _role_access_view, path, query_params, uuid=role_uuid)
+
+
+@register_tool(
+    description=(
+        "Search and filter roles by name, display_name, permission, application, or system flag. "
+        "Best tool for answering 'which role grants permission X?' or 'find role named Y'. "
+        "TROUBLESHOOTING: To find a role by name, call search_roles(name='<role_name>'). "
+        "To find which roles grant a specific permission, call "
+        "search_roles(permission='<app>:<resource>:<verb>'). Accepts comma-separated permissions. "
+        "To see all roles for an application, call search_roles(application='<app>'). "
+        "Order by: 'name', 'display_name', 'modified', 'policyCount' (prefix with '-' to reverse). "
+        "Returns: {meta: {count}, links, data: [{uuid, name, display_name, description, system, ...}]}. "
+        "Calls: GET /api/v1/roles/"
+    ),
+    requires_auth=True,
+)
+def search_roles(
+    request: HttpRequest,
+    *,
+    limit: int = 10,
+    offset: int = 0,
+    name: str = "",
+    display_name: str = "",
+    permission: str = "",
+    application: str = "",
+    system: str = "",
+    order_by: str = "",
+) -> str:
+    """Search roles by delegating to RoleViewSet."""
+    query_params: dict[str, str] = {
+        "limit": str(limit),
+        "offset": str(offset),
+    }
+    if name:
+        query_params["name"] = name
+    if display_name:
+        query_params["display_name"] = display_name
+    if permission:
+        query_params["permission"] = permission
+    if application:
+        query_params["application"] = application
+    if system:
+        query_params["system"] = system
+    if order_by:
+        query_params["order_by"] = order_by
+
+    path = reverse("v1_management:role-list")
+    return _call_view(request, _role_v1_list_view, path, query_params)
+
+
+@register_tool(
+    description=(
+        "List roles using the V2 API. Roles define sets of permissions that can be bound to "
+        "subjects via role bindings. Order by: 'name', '-name', 'last_modified', '-last_modified'. "
+        "Returns: {meta: {count}, links, data: [{uuid, name, description, permissions, ...}]}. "
+        "Calls: GET /api/v2/roles/"
+    ),
+    requires_auth=True,
+)
+def list_roles(
+    request: HttpRequest,
+    *,
+    limit: int = 10,
+    offset: int = 0,
+    order_by: str = "",
+) -> str:
+    """List V2 roles by delegating to RoleV2ViewSet."""
+    query_params: dict[str, str] = {
+        "limit": str(limit),
+        "offset": str(offset),
+    }
+    if order_by:
+        query_params["order_by"] = order_by
+    path = reverse("v2_management:roles-list")
+    return _call_view(request, _role_v2_list_view, path, query_params)
+
+
+@register_tool(
+    description=(
+        "Get details of a specific role by UUID using the V2 API. Returns the role's name, "
+        "description, and the list of permissions it grants. "
+        "Returns: {uuid, name, description, permissions: [{application, resource_type, verb}]}. "
+        "Calls: GET /api/v2/roles/{uuid}/"
+    ),
+    requires_auth=True,
+)
+def get_role(
+    request: HttpRequest,
+    *,
+    role_uuid: str,
+) -> str:
+    """Get a single V2 role by delegating to RoleV2ViewSet."""
+    path = reverse("v2_management:roles-detail", kwargs={"uuid": role_uuid})
+    return _call_view(request, _role_v2_detail_view, path, {}, uuid=role_uuid)
+
+
+@register_tool(
+    description=(
+        "List groups for the authenticated organization. Groups are collections of principals "
+        "that can be assigned roles via policies. Filter by name (partial match), username "
+        "(groups a specific user belongs to), or role_names (groups that have a specific role assigned). "
+        "TROUBLESHOOTING: To find which groups a user belongs to, call list_groups(username='<user>'). "
+        "To find groups with a specific role, call list_groups(role_names='<role_name>'). "
+        "Order by: 'name', '-name', 'modified', '-modified', 'principalCount', '-principalCount', "
+        "'policyCount', '-policyCount'. "
+        "Returns: {meta: {count}, links, data: [{uuid, name, description, principalCount, ...}]}. "
+        "Calls: GET /api/v1/groups/"
+    ),
+    requires_auth=True,
+)
+def list_groups(
+    request: HttpRequest,
+    *,
+    limit: int = 10,
+    offset: int = 0,
+    name: str = "",
+    username: str = "",
+    role_names: str = "",
+    order_by: str = "",
+) -> str:
+    """List groups by delegating to GroupViewSet."""
+    query_params: dict[str, str] = {
+        "limit": str(limit),
+        "offset": str(offset),
+    }
+    if name:
+        query_params["name"] = name
+    if username:
+        query_params["username"] = username
+    if role_names:
+        query_params["role_names"] = role_names
+    if order_by:
+        query_params["order_by"] = order_by
+
+    path = reverse("v1_management:group-list")
+    return _call_view(request, _group_list_view, path, query_params)
+
+
+@register_tool(
+    description=(
+        "Get details of a specific group by UUID, including its name, description, "
+        "principal count, policy count, and role count. "
+        "Returns: {uuid, name, description, principalCount, policyCount, roleCount, ...}. "
+        "Calls: GET /api/v1/groups/{uuid}/"
+    ),
+    requires_auth=True,
+)
+def get_group(
+    request: HttpRequest,
+    *,
+    group_uuid: str,
+) -> str:
+    """Get a single group by delegating to GroupViewSet."""
+    path = reverse("v1_management:group-detail", kwargs={"uuid": group_uuid})
+    return _call_view(request, _group_detail_view, path, {}, uuid=group_uuid)
+
+
+@register_tool(
+    description=(
+        "List principals (users) that are members of a specific group. "
+        "Optionally filter by principal_type. "
+        "Returns: {meta: {count}, links, data: [{username, email, first_name, last_name, ...}]}. "
+        "Calls: GET /api/v1/groups/{uuid}/principals/"
+    ),
+    requires_auth=True,
+)
+def list_group_principals(
+    request: HttpRequest,
+    *,
+    group_uuid: str,
+    limit: int = 10,
+    offset: int = 0,
+    principal_type: str = "",
+) -> str:
+    """List principals in a group by delegating to GroupViewSet.principals."""
+    query_params: dict[str, str] = {
+        "limit": str(limit),
+        "offset": str(offset),
+    }
+    if principal_type:
+        query_params["principal_type"] = principal_type
+
+    path = reverse("v1_management:group-principals", kwargs={"uuid": group_uuid})
+    return _call_view(request, _group_principals_view, path, query_params, uuid=group_uuid)
+
+
+@register_tool(
+    description=(
+        "List cross-account access requests. These allow users from one org (e.g. Red Hat TAMs) "
+        "to request temporary access to another org's resources. "
+        "Set query_by='target_org' (default) to see requests INTO your org, or "
+        "query_by='user_id' to see requests you made to other orgs. "
+        "Filter by status (pending/approved/denied/expired/cancelled), org_id, or approved_only. "
+        "TROUBLESHOOTING: To see who from Red Hat currently has access to your org, call "
+        "list_cross_account_requests(query_by='target_org', status='approved'). "
+        "Order by: 'request_id', 'start_date', 'end_date', 'created', 'modified', "
+        "'status' (prefix with '-' to reverse). "
+        "Returns: {meta: {count}, links, data: [{request_id, target_account, status, start_date, end_date, ...}]}. "
+        "Calls: GET /api/v1/cross-account-requests/"
+    ),
+    requires_auth=True,
+)
+def list_cross_account_requests(
+    request: HttpRequest,
+    *,
+    limit: int = 10,
+    offset: int = 0,
+    query_by: str = "",
+    status: str = "",
+    org_id: str = "",
+    approved_only: str = "",
+    order_by: str = "",
+) -> str:
+    """List cross-account requests by delegating to CrossAccountRequestViewSet."""
+    query_params: dict[str, str] = {
+        "limit": str(limit),
+        "offset": str(offset),
+    }
+    if query_by:
+        query_params["query_by"] = query_by
+    if status:
+        query_params["status"] = status
+    if org_id:
+        query_params["org_id"] = org_id
+    if approved_only:
+        query_params["approved_only"] = approved_only
+    if order_by:
+        query_params["order_by"] = order_by
+
+    path = reverse("v1_api:cross-list")
+    return _call_view(request, _cross_account_list_view, path, query_params)
+
+
+@register_tool(
+    description=(
+        "Get details of a specific cross-account access request by its ID, including "
+        "status, start/end dates, target account, and the requested roles. "
+        "Returns: {request_id, target_account, status, start_date, end_date, created, roles, ...}. "
+        "Calls: GET /api/v1/cross-account-requests/{request_id}/"
+    ),
+    requires_auth=True,
+)
+def get_cross_account_request(
+    request: HttpRequest,
+    *,
+    request_id: str,
+) -> str:
+    """Get a single cross-account request by delegating to CrossAccountRequestViewSet."""
+    path = reverse("v1_api:cross-detail", kwargs={"pk": request_id})
+    return _call_view(request, _cross_account_detail_view, path, {}, pk=request_id)
+
+
+@register_tool(
+    description=(
+        "List workspaces for the authenticated organization (V2 API). Workspaces are hierarchical "
+        "containers used to scope role bindings to specific resource boundaries. "
+        "Order by: 'name', 'created', 'modified', 'type' (prefix with '-' to reverse). "
+        "Returns: {meta: {count}, links, data: [{uuid, name, description, type, parent_id, created, ...}]}. "
+        "Calls: GET /api/v2/workspaces/"
+    ),
+    requires_auth=True,
+)
+def list_workspaces(
+    request: HttpRequest,
+    *,
+    limit: int = 10,
+    offset: int = 0,
+    order_by: str = "",
+) -> str:
+    """List workspaces by delegating to WorkspaceViewSet."""
+    query_params: dict[str, str] = {
+        "limit": str(limit),
+        "offset": str(offset),
+    }
+    if order_by:
+        query_params["order_by"] = order_by
+
+    path = reverse("v2_management:workspace-list")
+    return _call_view(request, _workspace_list_view, path, query_params)
+
+
+@register_tool(
+    description=(
+        "Get details of a specific workspace by UUID (V2 API). Returns the workspace's name, "
+        "type, parent, and optionally its full ancestry chain (set include_ancestry=true). "
+        "Returns: {uuid, name, description, type, parent_id, created, modified, ...}. "
+        "Calls: GET /api/v2/workspaces/{uuid}/"
+    ),
+    requires_auth=True,
+)
+def get_workspace(
+    request: HttpRequest,
+    *,
+    workspace_uuid: str,
+    include_ancestry: bool = False,
+) -> str:
+    """Get a single workspace by delegating to WorkspaceViewSet."""
+    query_params: dict[str, str] = {}
+    if include_ancestry:
+        query_params["include_ancestry"] = "true"
+
+    path = reverse("v2_management:workspace-detail", kwargs={"pk": workspace_uuid})
+    return _call_view(request, _workspace_detail_view, path, query_params, pk=workspace_uuid)
+
+
+@register_tool(
+    description=(
+        "List role bindings for the authenticated organization (V2 API). A role binding assigns "
+        "a role to a subject (user/group) within a resource scope (e.g. workspace). "
+        "Filter by role_id, resource_type, resource_id, subject_type, or subject_id. "
+        "ACCESS RESOLUTION: To find what permissions a user has (or which are missing) in V2, "
+        "(1) call list_role_bindings(granted_subject_type='user', granted_subject_id='<user_id>') "
+        "to find all effective bindings including those inherited through group membership "
+        "(this is the V2 equivalent of list_access(username=X) for V1), "
+        "(2) for each binding extract the role UUID, "
+        "(3) call get_role(role_uuid=...) or list_role_access(role_uuid=...) to inspect "
+        "the role's permissions, (4) compare against the required permissions to identify "
+        "what is granted and what is missing. "
+        "Returns: {meta: {count}, links, data: [{uuid, role, resource, subject, ...}]}. "
+        "Calls: GET /api/v2/role-bindings/"
+    ),
+    requires_auth=True,
+)
+def list_role_bindings(
+    request: HttpRequest,
+    *,
+    limit: int = 10,
+    offset: int = 0,
+    role_id: str = "",
+    resource_type: str = "",
+    resource_id: str = "",
+    subject_type: str = "",
+    subject_id: str = "",
+    granted_subject_type: str = "",
+    granted_subject_id: str = "",
+) -> str:
+    """List role bindings by delegating to RoleBindingViewSet."""
+    query_params: dict[str, str] = {
+        "limit": str(limit),
+        "offset": str(offset),
+    }
+    if role_id:
+        query_params["role_id"] = role_id
+    if resource_type:
+        query_params["resource_type"] = resource_type
+    if resource_id:
+        query_params["resource_id"] = resource_id
+    if subject_type:
+        query_params["subject_type"] = subject_type
+    if subject_id:
+        query_params["subject_id"] = subject_id
+    if granted_subject_type:
+        query_params["granted_subject_type"] = granted_subject_type
+    if granted_subject_id:
+        query_params["granted_subject_id"] = granted_subject_id
+
+    path = reverse("v2_management:role-bindings-list")
+    return _call_view(request, _role_binding_list_view, path, query_params)
+
+
+@register_tool(
+    description=(
+        "List role bindings grouped by subject (V2 API). Shows which roles each subject "
+        "(user/group) has within a specific resource. Requires resource_id and resource_type. "
+        "Optionally filter by subject_type and subject_id. "
+        "Returns: {meta: {count}, links, data: [{subject, roles: [...], ...}]}. "
+        "Calls: GET /api/v2/role-bindings/by-subject/"
+    ),
+    requires_auth=True,
+)
+def list_role_bindings_by_subject(
+    request: HttpRequest,
+    *,
+    resource_id: str,
+    resource_type: str,
+    subject_type: str = "",
+    subject_id: str = "",
+    limit: int = 10,
+    offset: int = 0,
+) -> str:
+    """List role bindings by subject by delegating to RoleBindingViewSet.by_subject."""
+    query_params: dict[str, str] = {
+        "resource_id": resource_id,
+        "resource_type": resource_type,
+        "limit": str(limit),
+        "offset": str(offset),
+    }
+    if subject_type:
+        query_params["subject_type"] = subject_type
+    if subject_id:
+        query_params["subject_id"] = subject_id
+
+    path = reverse("v2_management:role-bindings-by-subject")
+    return _call_view(request, _role_binding_by_subject_view, path, query_params)
+
+
+def _permission_matches(granted_permission: str, requested_permission: str) -> bool:
+    """Check if a granted permission matches a requested permission, supporting wildcards.
+
+    Supports exact match and wildcard patterns in the granted permission:
+    - "app:resource:verb" matches "app:resource:verb" (exact)
+    - "app:*:*" matches "app:resource:verb" (wildcard resource and verb)
+    - "app:resource:*" matches "app:resource:verb" (wildcard verb)
+    """
+    granted_parts = granted_permission.split(":")
+    requested_parts = requested_permission.split(":")
+    if len(granted_parts) != 3 or len(requested_parts) != 3:
+        return False
+    return all(g == "*" or g == r for g, r in zip(granted_parts, requested_parts))
+
+
+@register_tool(
+    description=(
+        "Check whether a specific user has a specific permission (V1 only). Returns true/false "
+        "with the matched permission and resource definitions if granted. "
+        "The permission format is 'application:resource_type:verb' (e.g., "
+        "'cost-management:cost_model:write'). Supports wildcard matching. "
+        "Requires org admin or rbac:principal:read permission to check another user. "
+        "ACCESS RESOLUTION: This is the fastest way to answer 'Can user X do Y?' in V1. "
+        "For V2 applications, use list_role_bindings — see its ACCESS RESOLUTION section "
+        "for the step-by-step workflow to find what permissions a user has or is missing. "
+        "Returns: {allowed: bool, username, permission, matched_permission, resource_definitions} "
+        "or {allowed: false, hint: str}. "
+        "Calls: GET /api/v1/access/?username=X&application=Y (internally)"
+    ),
+    requires_auth=True,
+)
+def check_user_permission(
+    request: HttpRequest,
+    *,
+    username: str,
+    permission: str,
+) -> str:
+    """Check if a user has a specific permission by delegating to AccessView."""
+    parts = permission.split(":")
+    if len(parts) != 3:
+        return json.dumps(
+            {
+                "error": "Permission must be in format 'application:resource_type:verb'. "
+                "Example: 'cost-management:cost_model:write'"
+            }
+        )
+
+    application = parts[0]
+    query_params: dict[str, str] = {
+        "application": application,
+        "username": username,
+        "limit": "1000",
+    }
+    path = reverse("v1_management:access")
+
+    try:
+        raw = _call_view(request, _access_view, path, query_params)
+    except Exception as e:
+        return json.dumps(
+            {
+                "error": f"Failed to check permissions: {e}",
+                "hint": "Requires org admin or rbac:principal:read permission to check another user.",
+            }
+        )
+
+    data = json.loads(raw)
+
+    if "detail" in data:
+        return json.dumps(
+            {
+                "allowed": False,
+                "error": data["detail"],
+                "hint": "Requires org admin or rbac:principal:read permission to check another user.",
+            }
+        )
+
+    access_list = data.get("data", [])
+
+    for entry in access_list:
+        entry_permission = entry.get("permission", "")
+        if _permission_matches(entry_permission, permission):
+            return json.dumps(
+                {
+                    "allowed": True,
+                    "username": username,
+                    "permission": permission,
+                    "matched_permission": entry_permission,
+                    "resource_definitions": entry.get("resourceDefinitions", []),
+                }
+            )
+
+    return json.dumps(
+        {
+            "allowed": False,
+            "username": username,
+            "permission": permission,
+            "total_permissions_checked": len(access_list),
+            "hint": f"User '{username}' does not have permission '{permission}'. "
+            f"Use list_access(username='{username}', application='{application}') to see all "
+            f"permissions, or list_groups(username='{username}') to trace the group/role chain.",
+        }
+    )
 
 
 # --- JSON-RPC parsing ---

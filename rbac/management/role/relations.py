@@ -87,3 +87,14 @@ def role_child_relationship(parent_uuid: UUID | str, child_uuid: UUID | str) -> 
         subject_id=str(child_uuid),
         relation="child",
     )
+
+
+def role_owner_relationship(role_uuid: UUID | str, tenant_resource_id: str) -> RelationTuple:
+    """Get the relationship for a role's owner tenant (rbac/role:<uuid>#owner@rbac/tenant:<id>)."""
+    return create_relationship(
+        resource_name=("rbac", "role"),
+        resource_id=str(role_uuid),
+        subject_name=("rbac", "tenant"),
+        subject_id=tenant_resource_id,
+        relation="owner",
+    )

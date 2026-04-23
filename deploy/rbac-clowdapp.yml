@@ -798,62 +798,6 @@ objects:
             memory: ${RBAC_KAFKA_CONSUMER_MEMORY_REQUEST}
 
     jobs:
-      - name: tenant-org-id-populator
-        podSpec:
-          image: quay.io/cloudservices/tenant-utils:latest
-          command:
-            - ./org-id-column-populator
-            - -C
-            - -a
-            - account_id
-            - -o
-            - org_id
-            - -t
-            - api_tenant
-            - --ean-translator-addr
-            - http://${TENANT_TRANSLATOR_HOST}:${TENANT_TRANSLATOR_PORT}
-            - --batch-size
-            - "50"
-          env:
-            - name: LOG_FORMAT
-              value: ${LOG_FORMAT}
-            - name: LOG_BATCH_FREQUENCY
-              value: '1'
-          resources:
-            limits:
-              cpu: 300m
-              memory: 1Gi
-            requests:
-              cpu: 50m
-              memory: 512Mi
-      - name: cross-account-request-target-org-populator
-        podSpec:
-          image: quay.io/cloudservices/tenant-utils:latest
-          command:
-            - ./org-id-column-populator
-            - -C
-            - -a
-            - target_account
-            - -o
-            - target_org
-            - -t
-            - api_crossaccountrequest
-            - --ean-translator-addr
-            - http://${TENANT_TRANSLATOR_HOST}:${TENANT_TRANSLATOR_PORT}
-            - --batch-size
-            - "50"
-          env:
-            - name: LOG_FORMAT
-              value: ${LOG_FORMAT}
-            - name: LOG_BATCH_FREQUENCY
-              value: '1'
-          resources:
-            limits:
-              cpu: 300m
-              memory: 1Gi
-            requests:
-              cpu: 50m
-              memory: 512Mi
       - name: user-id-populator
         podSpec:
           image: quay.io/cloudservices/rbac:latest
@@ -1281,8 +1225,7 @@ objects:
           env: *workspace_job_env_vars
       - name: fix-orphan-relations
         podSpec:
-          image: quay.io/cloudservices/rbac:latest
-          imagePullPolicy: Always
+          image: ${IMAGE}:${IMAGE_TAG}
           command:
             - /opt/rbac/rbac/manage.py
             - fix_orphan_relations
@@ -1608,10 +1551,6 @@ parameters:
 - description: Enable sending out notification events (typo variant used by service deployer)
   name: NOTIFICATONS_ENABLED
   value: 'False'
-- name: TENANT_TRANSLATOR_HOST
-  required: true
-- name: TENANT_TRANSLATOR_PORT
-  value: '8892'
 - name: GUNICORN_WORKER_MULTIPLIER
   value: '2'
 - name: GUNICORN_THREAD_LIMIT
@@ -1699,7 +1638,7 @@ parameters:
   value: "https://sso.stage.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token"
 - name: REPLICATION_TO_RELATION_ENABLED
   description: Enable replication to Relation API
-  value: "False"
+  value: "True"
 - name: V2_APIS_ENABLED
   description: Flag to explicitly enable v2 API endpoints
   value: 'True'
@@ -1749,7 +1688,7 @@ parameters:
   description: Remove null value from the list of workspace id
   value: 'False'
 - name: WORKSPACE_ORG_CREATION_LIMIT
-  description: The limit of workspaces for all organisations
+  description: The limit of workspaces for all organizations
   value: '3000'
 - name: WORKSPACE_HIERARCHY_DEPTH_LIMIT
   description: The limit of workspace hierarchy depth

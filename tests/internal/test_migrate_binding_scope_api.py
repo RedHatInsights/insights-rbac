@@ -32,7 +32,7 @@ from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.definer import seed_roles
 from management.role.model import Role
-from management.role.v2_model import CustomRoleV2, SeededRoleV2
+from management.role.v2_model import CustomRoleV2, RoleV2, SeededRoleV2
 from management.role.v2_service import RoleV2Service
 from management.role_binding.model import RoleBinding
 from management.tenant_mapping.v2_activation import ensure_v2_write_activated
@@ -49,6 +49,9 @@ from migration_tool.migrate_binding_scope import (
     migrate_custom_role_bindings,
     migrate_system_role_bindings_for_group,
     migrate_all_role_bindings,
+    car_source,
+    system_role_source,
+    custom_role_source,
 )
 from migration_tool.utils import create_relationship
 from api.models import Tenant
@@ -490,10 +493,21 @@ class BindingScopeMigrationTupleVerificationTest(TestCase):
         migrate_all_role_bindings(replicator, self.tenant)
 
         v2_role = CustomRoleV2.objects.filter(v1_source=v1_role).get()
+        v2_role_uuid = str(v2_role.uuid)
 
         def assert_role_binding_count(count: int):
             self.assertEqual(RoleBinding.objects.filter(role=v2_role).count(), count)
-            self.assertEqual(self.tuples.count_tuples(resource("rbac", "role", str(v2_role.uuid))), count)
+            if count == 0:
+                self.assertEqual(self.tuples.count_tuples(resource("rbac", "role", v2_role_uuid)), 0)
+            else:
+                role_in_db = CustomRoleV2.objects.get(uuid=v2_role_uuid)
+                expected_on_role = role_in_db.permissions.count()
+                if self.tenant.tenant_resource_id():
+                    expected_on_role += 1  # rbac/role#owner@rbac/tenant (V2 dual-write)
+                self.assertEqual(
+                    self.tuples.count_tuples(resource("rbac", "role", v2_role_uuid)),
+                    expected_on_role,
+                )
 
         # Convert the tenant to V2.
         ensure_v2_write_activated(self.tenant)
@@ -1039,6 +1053,81 @@ class CrossAccountRequestMigrationTest(DualWriteTestCase):
         expect_binding_count(0)
 
         self._assert_v1_v2_locally_consistent()
+
+
+@override_settings(ATOMIC_RETRY_DISABLED=True)
+class SourceRestrictionTest(DualWriteTestCase):
+    def _do_migrate(self, sources: set[str]):
+        migrate_all_role_bindings(replicator=InMemoryRelationReplicator(self.tuples), sources=sources)
+
+    @override_settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS="")
+    def test_by_source(self):
+        direct_system_role = self.given_v1_system_role("system role", ["rbac:*:*"])
+        car_system_role = self.given_v1_system_role("another system role", ["rbac:*:*"])
+        custom_role = self.given_v1_role("custom role", default=["rbac:*:*"])
+
+        car_tenant = self.fixture.new_tenant(org_id="car_source").tenant
+        car_principal = self.fixture.new_principals_in_tenant(["car_principal"], car_tenant)[0]
+
+        group, _ = self.given_group("group", ["p1"])
+
+        self.given_roles_assigned_to_group(group, [direct_system_role, custom_role])
+        self.given_car(user_id=car_principal.user_id, roles=[car_system_role])
+
+        def expect_bindings(system_group_workspace: str, system_car_workspace: str, custom_workspace: str):
+            v2_custom_role = RoleV2.objects.get(v1_source=custom_role)
+
+            self.expect_1_role_binding_to_workspace(
+                system_group_workspace,
+                for_v2_roles=[str(direct_system_role.uuid)],
+                for_groups=[str(group.uuid)],
+            )
+
+            self.expect_1_role_binding_to_workspace(
+                system_car_workspace,
+                for_v2_roles=[str(car_system_role.uuid)],
+                for_groups=[],
+                for_principals=[car_principal.user_id],
+            )
+
+            self.expect_1_role_binding_to_workspace(
+                custom_workspace,
+                for_v2_roles=[str(v2_custom_role.uuid)],
+                for_groups=[str(group.uuid)],
+            )
+
+        # Test that a source is migrated only when it is provided. We just cursorily check the relations here. The
+        # details are tested more thoroughly elsewhere.
+        with self.settings(ROOT_SCOPE_PERMISSIONS="rbac:*:*"):
+            expect_bindings(
+                system_group_workspace=self.default_workspace(),
+                system_car_workspace=self.default_workspace(),
+                custom_workspace=self.default_workspace(),
+            )
+
+            self._do_migrate({system_role_source})
+
+            expect_bindings(
+                system_group_workspace=self.root_workspace(),
+                system_car_workspace=self.default_workspace(),
+                custom_workspace=self.default_workspace(),
+            )
+
+            self._do_migrate({car_source})
+
+            expect_bindings(
+                system_group_workspace=self.root_workspace(),
+                system_car_workspace=self.root_workspace(),
+                custom_workspace=self.default_workspace(),
+            )
+
+            self._do_migrate({custom_role_source})
+
+            expect_bindings(
+                system_group_workspace=self.root_workspace(),
+                system_car_workspace=self.root_workspace(),
+                custom_workspace=self.root_workspace(),
+            )
 
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)

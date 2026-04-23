@@ -21,6 +21,7 @@ from collections.abc import Iterable
 from importlib import reload
 from unittest.mock import ANY, patch
 
+from django.conf import settings
 from django.test import override_settings
 from django.urls import clear_url_caches, reverse
 from django.utils.dateparse import parse_datetime
@@ -43,6 +44,7 @@ from management.utils import PRINCIPAL_CACHE, as_uuid
 from rbac import urls
 from tests.identity_request import IdentityRequest
 from tests.v2_util import bootstrap_tenant_for_v2_test
+from unittest.mock import ANY, patch
 
 CACHE_PATCH_TARGET = "management.role.v2_service.permission_scope_cache"
 
@@ -1063,7 +1065,9 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertIn("workspaces", str(response.data).lower())
         mock_is_v2_edit_enabled.assert_called_once_with(self.customer_data["org_id"])
 
-    def test_create_role_success(self):
+    @override_settings(NOTIFICATIONS_ENABLED=True)
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    def test_create_role_success(self, send_kafka_message):
         """Test creating a role via API returns 201"""
         data = {
             "name": "API Test Role",
@@ -1084,6 +1088,28 @@ class RoleV2ViewSetTests(IdentityRequest):
         )
 
         self._assert_audit_log(action=AuditLog.CREATE, description=f"Created V2 role: {data['name']}")
+
+        send_kafka_message.assert_called_with(
+            settings.NOTIFICATIONS_TOPIC,
+            {
+                "bundle": "console",
+                "application": "rbac",
+                "event_type": "custom-v2-role-created",
+                "timestamp": ANY,
+                "events": [
+                    {
+                        "metadata": {},
+                        "payload": {
+                            "name": data["name"],
+                            "username": self.user_data["username"],
+                            "uuid": response.data["id"],
+                        },
+                    }
+                ],
+                "org_id": self.tenant.org_id,
+            },
+            ANY,
+        )
 
     def test_create_role_multiple_permissions(self):
         """Test creating a role with multiple permissions returns all permissions."""
@@ -1214,6 +1240,50 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertIn("detail", response.data)
         self.assertEqual(response.data["status"], 400)
         self.assertIn("already exists", response.data["detail"])
+
+    def test_create_role_with_seeded_role_name_returns_400(self):
+        """Test that creating a custom role with the same name as a seeded role is rejected."""
+        public_tenant, _ = Tenant.objects.get_or_create(tenant_name="public")
+        SeededRoleV2.objects.create(name="Vulnerability viewer", description="Seeded", tenant=public_tenant)
+
+        data = {
+            "name": "vulnerability viewer",
+            "description": "Custom role with seeded name",
+            "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
+        }
+
+        response = self.client.post(self.url, data, format="json")
+
+        # ProblemDetails response: verify HTTP status, structure, and detail message
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("status", response.data)
+        self.assertIn("detail", response.data)
+        self.assertEqual(response.data["status"], 400)
+        self.assertIn("conflicts with an existing system role", response.data["detail"])
+
+    def test_update_role_to_seeded_role_name_returns_400(self):
+        """Test that updating a custom role to a seeded role name is rejected."""
+        public_tenant, _ = Tenant.objects.get_or_create(tenant_name="public")
+        SeededRoleV2.objects.create(name="Patch viewer", description="Seeded", tenant=public_tenant)
+
+        role = CustomRoleV2.objects.create(name="My Custom Role", description="Custom", tenant=self.tenant)
+        role.permissions.add(self.permission2)
+
+        update_url = reverse("v2_management:roles-detail", kwargs={"uuid": str(role.uuid)})
+        data = {
+            "name": "PATCH VIEWER",
+            "description": "Trying to rename to seeded name",
+            "permissions": [{"application": "inventory", "resource_type": "hosts", "operation": "read"}],
+        }
+
+        response = self.client.put(update_url, data, format="json")
+
+        # ProblemDetails response: verify HTTP status, structure, and detail message
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertIn("status", response.data)
+        self.assertIn("detail", response.data)
+        self.assertEqual(response.data["status"], 400)
+        self.assertIn("conflicts with an existing system role", response.data["detail"])
 
     def test_create_role_missing_permissions_returns_problem_details(self):
         """Test that missing permissions returns ProblemDetails format."""
@@ -1362,7 +1432,9 @@ class RoleV2ViewSetTests(IdentityRequest):
     # Tests for PUT /api/v2/roles/{uuid}/ (update)
     # ==========================================================================
 
-    def test_update_role_success(self):
+    @override_settings(NOTIFICATIONS_ENABLED=True)
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    def test_update_role_success(self, send_kafka_message):
         """Test updating a role via API returns 200."""
         role = CustomRoleV2.objects.create(
             name="Original Role",
@@ -1394,6 +1466,28 @@ class RoleV2ViewSetTests(IdentityRequest):
         self._assert_audit_log(
             action=AuditLog.EDIT,
             description=f"V2 role {role.name}:\nEdited name\nEdited description\nEdited permissions",
+        )
+
+        send_kafka_message.assert_called_with(
+            settings.NOTIFICATIONS_TOPIC,
+            {
+                "bundle": "console",
+                "application": "rbac",
+                "event_type": "custom-v2-role-updated",
+                "timestamp": ANY,
+                "events": [
+                    {
+                        "metadata": {},
+                        "payload": {
+                            "name": data["name"],
+                            "username": self.user_data["username"],
+                            "uuid": response.data["id"],
+                        },
+                    }
+                ],
+                "org_id": self.tenant.org_id,
+            },
+            ANY,
         )
 
     def test_update_role_changes_permissions(self):
@@ -1810,7 +1904,9 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertIn("errors", data)
         self.assertEqual(data["errors"], [{"message": data["detail"], "field": "ids"}])
 
-    def test_delete(self):
+    @override_settings(NOTIFICATIONS_ENABLED=True)
+    @patch("core.kafka.RBACProducer.send_kafka_message")
+    def test_delete(self, send_kafka_message):
         create_response = self._create_role()
         response = self._request_delete({"ids": [create_response["id"]]})
 
@@ -1818,6 +1914,28 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertFalse(RoleV2.objects.filter(uuid=create_response["id"]).exists())
 
         self._assert_audit_log(action=AuditLog.DELETE, description=f"Deleted V2 role: {create_response['name']}")
+
+        send_kafka_message.assert_called_with(
+            settings.NOTIFICATIONS_TOPIC,
+            {
+                "bundle": "console",
+                "application": "rbac",
+                "event_type": "custom-v2-role-deleted",
+                "timestamp": ANY,
+                "events": [
+                    {
+                        "metadata": {},
+                        "payload": {
+                            "name": create_response["name"],
+                            "username": self.user_data["username"],
+                            "uuid": create_response["id"],
+                        },
+                    }
+                ],
+                "org_id": self.tenant.org_id,
+            },
+            ANY,
+        )
 
     def test_delete_empty(self):
         """Test that deleting 0 roles is successful."""

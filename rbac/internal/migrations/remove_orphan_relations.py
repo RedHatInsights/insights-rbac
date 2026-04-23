@@ -20,23 +20,20 @@ import logging
 from collections.abc import Callable, Iterable
 from typing import Protocol
 
-import pgtransaction
-from django.db.models import QuerySet
-
 from api.models import Tenant
-from django.db import transaction
+from django.db import transaction, OperationalError
 from internal.utils import (
     replicate_missing_binding_tuples,
     iterate_tuples_from_kessel,
     lock_binding_mappings_with_roles_by_uuid,
 )
-from management.atomic_transactions import atomic_block
-from management.role.model import BindingMapping
+from management.atomic_transactions import atomic, atomic_block
 from management.models import Role, Workspace
 from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import ReplicationEvent, ReplicationEventType, PartitionKey
-from management.role.v2_model import RoleV2, SeededRoleV2
+from management.role.relations import role_owner_relationship
+from management.role.v2_model import RoleV2
 from management.role_binding.model import RoleBinding
 from management.tenant_mapping.model import DefaultAccessType
 from management.tenant_mapping.v2_activation import (
@@ -47,6 +44,7 @@ from management.tenant_service.v2 import lock_tenant_for_bootstrap, TenantBootst
 from migration_tool.in_memory_tuples import RelationTuple
 from migration_tool.models import V2boundresource, role_permission_tuple
 from migration_tool.utils import create_relationship
+from psycopg2.errors import DeadlockDetected, SerializationFailure
 from kessel.relations.v1beta1.common_pb2 import Relationship
 
 logger = logging.getLogger(__name__)
@@ -200,27 +198,20 @@ def _collect_remote_relations_for_binding(
     return result
 
 
-def _collect_custom_role_permission_relations(
-    role_id: str, read_tuples_typed: _ReadTuplesTyped
-) -> list[RelationTuple]:
+def _collect_role_resource_relations(role_id: str, read_tuples_typed: _ReadTuplesTyped) -> list[RelationTuple]:
     """
-    Collect permission relations to remove for a custom V2 role.
+    Collect all relations whose resource is rbac/role:<role_id> (permissions, owner, etc.).
 
-    Args:
-        role_id: The role UUID to clean permissions for
-        read_tuples_typed: Function to read tuples from Kessel
-
-    Returns:
-        list: Relations to remove for this role's permissions
+    Permission-only reads miss tuples such as ``#owner@rbac/tenant:...`` that V1 dual-write creates
+    alongside permission edges; those must be included when reconciling or removing a deleted role.
     """
-
     return list(
         read_tuples_typed(
             resource_type="role",
             resource_id=role_id,
             relation="",
-            subject_type="principal",
-            subject_id="*",
+            subject_type="",
+            subject_id="",
         )
     )
 
@@ -407,9 +398,7 @@ def _remove_orphaned_custom_role_relations(
         batch_raw_role_ids -= system_role_ids
 
         actual_relations_by_role_id = {
-            role_id: set(
-                _collect_custom_role_permission_relations(role_id=role_id, read_tuples_typed=read_tuples_typed)
-            )
+            role_id: set(_collect_role_resource_relations(role_id=role_id, read_tuples_typed=read_tuples_typed))
             for role_id in batch_raw_role_ids
         }
 
@@ -438,14 +427,18 @@ def _remove_orphaned_custom_role_relations(
 
                 actual_relations: set[RelationTuple] = actual_relations_by_role_id[role_id]
 
-                expected_relations: set[RelationTuple] = (
-                    {
+                if local_role is None:
+                    expected_relations: set[RelationTuple] = set()
+                else:
+                    expected_relations = {
                         _as_relation_tuple(role_permission_tuple(role_id=role_id, permission=p.v2_string()))
                         for p in local_role.permissions.all()
                     }
-                    if local_role is not None
-                    else set()
-                )
+                    tenant_resource_id = local_role.tenant.tenant_resource_id()
+                    if tenant_resource_id:
+                        expected_relations.add(
+                            _as_relation_tuple(role_owner_relationship(local_role.uuid, tenant_resource_id))
+                        )
 
                 orphan_relations = actual_relations - expected_relations
 
@@ -557,18 +550,14 @@ def _local_workspace_ids_for(tenant: Tenant) -> set[str]:
     return set(str(u) for u in Workspace.objects.filter(tenant=tenant).values_list("id", flat=True))
 
 
+# This synchronizes with workspace creation in WorkspaceService being SERIALIZABLE (ensuring that a workspace we're
+# interested in isn't created after we check).
+@atomic
 def _remove_orphaned_workspace_parent_relations(
     tenant: Tenant, workspace_data: _RemoteWorkspaceData, commit_removal: _CommitRemoval
 ) -> int:
     """Removes any parent relations for workspaces that no longer exist locally, then returns the number removed."""
     remote_ids = workspace_data.workspace_ids()
-
-    # We do not need to lock workspaces locally while doing this. Workspace IDs are always random UUIDs, so there being
-    # a *new* workspace with an ID we are interested in created between the time we check and the time we commit the
-    # removals is virtually impossible.
-    #
-    # There is also no issue if a workspace has been locally deleted but the deletion has not yet been replicated.
-    # It can't be recreated (for the reasons above), and redundantly deleting the relation will have no effect.
 
     existing_local_ids = _local_workspace_ids_for(tenant)
     orphaned_ids = remote_ids - existing_local_ids
@@ -780,6 +769,32 @@ def cleanup_tenant_orphaned_relationships(
     }
 
 
+def _run_removal_with_retry(tenant: Tenant, read_tuples_fn, dry_run: bool):
+    attempts_remaining = 3
+
+    while True:
+        try:
+            return cleanup_tenant_orphaned_relationships(
+                tenant=tenant,
+                read_tuples_fn=read_tuples_fn,
+                dry_run=dry_run,
+            )
+
+        # OperationalError is here based on actual serialization failures we've seen.
+        # DeadlockDetected and SerializationFailure are here based on the psycopg code.
+        except (OperationalError, DeadlockDetected, SerializationFailure) as e:
+            attempts_remaining -= 1
+
+            logger.info(
+                f"Got database error while attempting to fix orphans for tenant with org_id={tenant.org_id!r}. "
+                f"{attempts_remaining} attempts left.",
+                exc_info=True,
+            )
+
+            if attempts_remaining <= 0:
+                raise
+
+
 def cleanup_tenant_orphan_bindings(org_id: str, dry_run: bool = False, *, read_tuples_fn=None) -> dict:
     """
     Remove orphaned role binding relationships for a tenant and re-replicate all binding mappings.
@@ -808,7 +823,7 @@ def cleanup_tenant_orphan_bindings(org_id: str, dry_run: bool = False, *, read_t
 
     try:
         # Clean orphaned relationships
-        cleanup_result = cleanup_tenant_orphaned_relationships(
+        cleanup_result = _run_removal_with_retry(
             tenant=tenant,
             read_tuples_fn=(read_tuples_fn if read_tuples_fn is not None else iterate_tuples_from_kessel),
             dry_run=dry_run,
