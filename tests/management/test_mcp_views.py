@@ -19,14 +19,22 @@
 import json
 from unittest.mock import patch
 
+from importlib import reload
+
 from django.test import override_settings
+from django.urls import clear_url_caches
+from django.utils import timezone
+from management.mcp_views import ToolConfig, _permission_matches
+from management.models import Access, Group, Permission, Policy, Principal, Role
+from management.role.v2_model import RoleV2
+from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
+from management.tenant_mapping.model import TenantMapping
 from rest_framework import status
 from rest_framework.test import APIClient
+from tests.identity_request import IdentityRequest
 
 from api.models import Tenant
-from management.mcp_views import ToolConfig
-from management.models import Access, Group, Permission, Policy, Principal, Role
-from tests.identity_request import IdentityRequest
+from rbac import urls
 
 
 class MCPToolTestMixin:
@@ -641,6 +649,7 @@ class MCPViewTests(MCPToolTestMixin, IdentityRequest):
             "list_permissions",
             "list_permission_options",
             "list_audit_logs",
+            "search_roles",
             "list_roles",
             "get_role",
             "list_role_access",
@@ -654,6 +663,7 @@ class MCPViewTests(MCPToolTestMixin, IdentityRequest):
             "get_workspace",
             "list_role_bindings",
             "list_role_bindings_by_subject",
+            "check_user_permission",
         ]
         for tool in expected_tools:
             self.assertIn(tool, tool_names, f"Tool '{tool}' missing from tools/list")
@@ -1070,6 +1080,168 @@ class MCPViewV2ToolsTests(MCPToolTestMixin, IdentityRequest):
         self.assertEqual(data["error"]["code"], -32000)
 
 
+class PermissionMatchesTests(IdentityRequest):
+    """Unit tests for the _permission_matches helper function."""
+
+    def test_exact_match(self):
+        """Positive: exact permission match returns True."""
+        self.assertTrue(_permission_matches("cost-management:cost_model:write", "cost-management:cost_model:write"))
+
+    def test_wildcard_all(self):
+        """Positive: full wildcard matches any permission in the same app."""
+        self.assertTrue(_permission_matches("cost-management:*:*", "cost-management:cost_model:write"))
+
+    def test_wildcard_verb(self):
+        """Positive: verb wildcard matches any verb."""
+        self.assertTrue(_permission_matches("cost-management:cost_model:*", "cost-management:cost_model:write"))
+
+    def test_mismatch_verb(self):
+        """Negative: different verb does not match."""
+        self.assertFalse(_permission_matches("cost-management:cost_model:read", "cost-management:cost_model:write"))
+
+    def test_mismatch_app(self):
+        """Negative: different application does not match."""
+        self.assertFalse(_permission_matches("inventory:hosts:read", "cost-management:hosts:read"))
+
+    def test_malformed_granted(self):
+        """Negative: malformed granted permission returns False."""
+        self.assertFalse(_permission_matches("invalid-format", "cost-management:cost_model:write"))
+
+    def test_malformed_requested(self):
+        """Negative: malformed requested permission returns False."""
+        self.assertFalse(_permission_matches("cost-management:cost_model:write", "invalid"))
+
+
+@override_settings(BYPASS_BOP_VERIFICATION=True)
+class MCPCheckUserPermissionTests(MCPToolTestMixin, IdentityRequest):
+    """Tests for the check_user_permission MCP tool."""
+
+    def setUp(self):
+        """Set up check_user_permission tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.test_username = self.user_data["username"]
+        self.principal = Principal.objects.create(username=self.test_username, tenant=self.tenant)
+
+        role = Role.objects.create(name="test_role", tenant=self.tenant)
+        perm = Permission.objects.create(
+            application="rbac",
+            resource_type="roles",
+            verb="read",
+            permission="rbac:roles:read",
+            tenant=self.tenant,
+        )
+        Access.objects.create(permission=perm, role=role, tenant=self.tenant)
+        group = Group.objects.create(name="test_group", tenant=self.tenant)
+        group.principals.add(self.principal)
+        policy = Policy.objects.create(name="test_policy", group=group, tenant=self.tenant)
+        policy.roles.add(role)
+
+    def tearDown(self):
+        """Tear down check_user_permission tests."""
+        Policy.objects.all().delete()
+        Access.objects.all().delete()
+        Role.objects.all().delete()
+        Permission.objects.all().delete()
+        Group.objects.all().delete()
+        Principal.objects.all().delete()
+        super().tearDown()
+
+    def test_invalid_permission_format(self):
+        """Negative: invalid permission format returns error."""
+        response = self._call_tool("check_user_permission", {"username": self.test_username, "permission": "invalid"})
+
+        self.assertEqual(response.status_code, 200)
+        tool_output = self._get_tool_output(response)
+        self.assertIn("error", tool_output)
+        self.assertIn("application:resource_type:verb", tool_output["error"])
+
+    def test_permission_allowed(self):
+        """Positive: check_user_permission returns allowed=True when user has permission."""
+        response = self._call_tool(
+            "check_user_permission", {"username": self.test_username, "permission": "rbac:roles:read"}
+        )
+
+        self.assertEqual(response.status_code, 200)
+        tool_output = self._get_tool_output(response)
+        self.assertTrue(tool_output["allowed"])
+        self.assertEqual(tool_output["username"], self.test_username)
+        self.assertEqual(tool_output["matched_permission"], "rbac:roles:read")
+
+    def test_permission_denied(self):
+        """Negative: check_user_permission returns allowed=False when user lacks permission."""
+        response = self._call_tool(
+            "check_user_permission", {"username": self.test_username, "permission": "rbac:roles:write"}
+        )
+
+        self.assertEqual(response.status_code, 200)
+        tool_output = self._get_tool_output(response)
+        self.assertFalse(tool_output["allowed"])
+        self.assertIn("hint", tool_output)
+
+    def test_without_auth_returns_error(self):
+        """Permission: check_user_permission without auth returns auth error."""
+        response = self._call_tool(
+            "check_user_permission",
+            {"username": self.test_username, "permission": "rbac:roles:read"},
+            use_auth=False,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+
+class MCPSearchRolesTests(MCPToolTestMixin, IdentityRequest):
+    """Tests for the search_roles MCP tool."""
+
+    def setUp(self):
+        """Set up search_roles tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+
+    def tearDown(self):
+        """Tear down search_roles tests."""
+        Role.objects.all().delete()
+        super().tearDown()
+
+    def test_search_roles_success(self):
+        """Positive: search_roles returns role data."""
+        Role.objects.create(name="test_v1_role", tenant=self.tenant)
+        response = self._call_tool("search_roles")
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertIn("meta", tool_output)
+        self.assertIn("data", tool_output)
+
+    def test_search_roles_filter_by_name(self):
+        """Positive: search_roles filters by name."""
+        Role.objects.create(name="Patch Reviewer", tenant=self.tenant)
+        Role.objects.create(name="Other Role", tenant=self.tenant)
+        response = self._call_tool("search_roles", {"name": "Patch Reviewer"})
+
+        self.assertEqual(response.status_code, 200)
+        tool_output = self._get_tool_output(response)
+        self.assertTrue(tool_output["meta"]["count"] >= 1)
+        for role in tool_output["data"]:
+            self.assertIn("Patch Reviewer", role["name"])
+
+    def test_search_roles_without_auth_returns_error(self):
+        """Permission: search_roles without auth returns auth error."""
+        response = self._call_tool("search_roles", use_auth=False)
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+
 class MCPViewNonAdminTests(IdentityRequest):
     """Test the MCP endpoint for non-admin users via _private/_a2s/mcp/."""
 
@@ -1172,3 +1344,171 @@ class MCPViewNonAdminTests(IdentityRequest):
         self.assertIsInstance(tool_output["errors"], list)
         self.assertGreater(len(tool_output["errors"]), 0)
         self.assertEqual(tool_output["errors"][0]["status"], "403")
+
+
+@override_settings(BYPASS_BOP_VERIFICATION=True, V2_APIS_ENABLED=True)
+class MCPCheckUserPermissionV2Tests(MCPToolTestMixin, IdentityRequest):
+    """Tests for check_user_permission auto-detecting V2 orgs and using role bindings."""
+
+    def setUp(self):
+        """Set up V2 check_user_permission tests with tenant mapping and role bindings."""
+        reload(urls)
+        clear_url_caches()
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.test_username = self.user_data["username"]
+        self.principal = Principal.objects.create(username=self.test_username, tenant=self.tenant)
+
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.get_kessel_principal_id",
+                return_value="localhost/test-user-id",
+            )
+        )
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.WorkspaceInventoryAccessChecker.check_resource_access",
+                return_value=True,
+            )
+        )
+
+        # Activate V2 for this tenant
+        TenantMapping.objects.create(tenant=self.tenant, v2_write_activated_at=timezone.now())
+
+        # Create V2 role with a permission
+        self.v2_perm = Permission.objects.create(
+            application="vulnerability",
+            resource_type="vulnerability",
+            verb="read",
+            permission="vulnerability:vulnerability:read",
+            tenant=self.tenant,
+        )
+        self.v2_role = RoleV2.objects.create(name="Vuln Reader", tenant=self.tenant)
+        self.v2_role.permissions.add(self.v2_perm)
+
+        # Create role binding assigning the role directly to the principal
+        self.binding = RoleBinding.objects.create(
+            tenant=self.tenant,
+            role=self.v2_role,
+            resource_type="workspace",
+            resource_id="root-workspace-id",
+        )
+        RoleBindingPrincipal.objects.create(binding=self.binding, principal=self.principal, source="direct")
+
+    def tearDown(self):
+        """Tear down V2 check_user_permission tests."""
+        RoleBindingPrincipal.objects.all().delete()
+        RoleBindingGroup.objects.all().delete()
+        RoleBinding.objects.all().delete()
+        RoleV2.objects.all().delete()
+        Permission.objects.all().delete()
+        TenantMapping.objects.all().delete()
+        Principal.objects.all().delete()
+        super().tearDown()
+
+    def test_v2_permission_allowed(self):
+        """Positive: V2 org auto-detects and returns allowed=True via role bindings."""
+        response = self._call_tool(
+            "check_user_permission",
+            {"username": self.test_username, "permission": "vulnerability:vulnerability:read"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        tool_output = self._get_tool_output(response)
+        self.assertTrue(tool_output["allowed"])
+        self.assertEqual(tool_output["username"], self.test_username)
+        self.assertEqual(tool_output["matched_permission"], "vulnerability:vulnerability:read")
+        self.assertEqual(tool_output["role_name"], "Vuln Reader")
+        self.assertEqual(tool_output["org_version"], "v2")
+
+    def test_v2_permission_denied(self):
+        """Negative: V2 org returns allowed=False when user lacks the permission."""
+        response = self._call_tool(
+            "check_user_permission",
+            {"username": self.test_username, "permission": "vulnerability:vulnerability:write"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        tool_output = self._get_tool_output(response)
+        self.assertFalse(tool_output["allowed"])
+        self.assertEqual(tool_output["org_version"], "v2")
+        self.assertIn("hint", tool_output)
+
+    def test_v2_user_not_found(self):
+        """Negative: V2 org returns hint when user doesn't exist."""
+        response = self._call_tool(
+            "check_user_permission",
+            {"username": "nonexistent_user", "permission": "vulnerability:vulnerability:read"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        tool_output = self._get_tool_output(response)
+        self.assertFalse(tool_output["allowed"])
+        self.assertEqual(tool_output["org_version"], "v2")
+        self.assertIn("not found", tool_output["hint"])
+
+    def test_v2_permission_via_group(self):
+        """Positive: V2 org resolves permissions inherited through group membership."""
+        # Create a group and add the principal to it
+        group = Group.objects.create(name="vuln_readers_group", tenant=self.tenant)
+        group.principals.add(self.principal)
+
+        # Create a separate role binding assigned to the group
+        write_perm = Permission.objects.create(
+            application="vulnerability",
+            resource_type="vulnerability",
+            verb="write",
+            permission="vulnerability:vulnerability:write",
+            tenant=self.tenant,
+        )
+        write_role = RoleV2.objects.create(name="Vuln Writer", tenant=self.tenant)
+        write_role.permissions.add(write_perm)
+        group_binding = RoleBinding.objects.create(
+            tenant=self.tenant,
+            role=write_role,
+            resource_type="workspace",
+            resource_id="root-workspace-id",
+        )
+        RoleBindingGroup.objects.create(binding=group_binding, group=group)
+
+        response = self._call_tool(
+            "check_user_permission",
+            {"username": self.test_username, "permission": "vulnerability:vulnerability:write"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        tool_output = self._get_tool_output(response)
+        self.assertTrue(tool_output["allowed"])
+        self.assertEqual(tool_output["role_name"], "Vuln Writer")
+        self.assertEqual(tool_output["org_version"], "v2")
+
+    def test_v2_wildcard_match(self):
+        """Positive: V2 wildcard permission matching works."""
+        wildcard_perm = Permission.objects.create(
+            application="vulnerability",
+            resource_type="vulnerability",
+            verb="*",
+            permission="vulnerability:vulnerability:*",
+            tenant=self.tenant,
+        )
+        wildcard_role = RoleV2.objects.create(name="Vuln Wildcard", tenant=self.tenant)
+        wildcard_role.permissions.add(wildcard_perm)
+        wildcard_binding = RoleBinding.objects.create(
+            tenant=self.tenant,
+            role=wildcard_role,
+            resource_type="workspace",
+            resource_id="root-workspace-id",
+        )
+        RoleBindingPrincipal.objects.create(binding=wildcard_binding, principal=self.principal, source="direct")
+
+        response = self._call_tool(
+            "check_user_permission",
+            {"username": self.test_username, "permission": "vulnerability:vulnerability:write"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        tool_output = self._get_tool_output(response)
+        self.assertTrue(tool_output["allowed"])
+        self.assertEqual(tool_output["matched_permission"], "vulnerability:vulnerability:*")
+        self.assertEqual(tool_output["org_version"], "v2")

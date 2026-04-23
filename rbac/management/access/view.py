@@ -17,6 +17,8 @@
 
 """View for principal access."""
 
+import logging
+
 from django.db.models import Prefetch
 from management.cache import AccessCache
 from management.models import Access, ResourceDefinition
@@ -34,6 +36,8 @@ from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.settings import api_settings
 from rest_framework.views import APIView
+
+logger = logging.getLogger(__name__)
 
 ORDER_FIELD = "order_by"
 VALID_ORDER_VALUES = ["application", "resource_type", "verb", "-application", "-resource_type", "-verb"]
@@ -164,6 +168,12 @@ class AccessView(APIView):
 
         v2_error = validate_v2_application_param(request)
         if v2_error is not None:
+            # Only v2-enabled orgs can receive a validation error from validate_v2_application_param.
+            logger.info(
+                "V2 org called v1 /access/ endpoint: org_id=%s application=%s result=rejected",
+                getattr(request.user, "org_id", None),
+                request.query_params.get(APPLICATION_KEY, ""),
+            )
             return v2_error
 
         principal = get_principal_from_request(request)
