@@ -1307,14 +1307,22 @@ class AccessViewTests(IdentityRequest):
         self.assertIn("legacy_app:*:*", permissions)
 
     @override_settings(V2_MIGRATION_APP_EXCLUDE_LIST=["legacy_app"])
+    @patch("management.access.view.logger")
     @patch("management.access.view.is_v2_edit_enabled_for_request", return_value=True)
-    def test_access_v2_tenant_disallowed_app_rejected(self, _mock_v2):
+    def test_access_v2_tenant_disallowed_app_rejected(self, _mock_v2, mock_log):
         """V2 orgs are rejected when querying an app not in V2_MIGRATION_APP_EXCLUDE_LIST."""
         client = APIClient()
         url = f"{reverse('v1_management:access')}?application=other_app"
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("Disallowed", response.data.get("detail", ""))
+        mock_log.info.assert_called_once()
+        msg, arg_org, arg_app = mock_log.info.call_args[0]
+        self.assertIn("result=rejected", msg)
+        self.assertIn("org_id=%s", msg)
+        self.assertIn("application=%s", msg)
+        self.assertEqual(str(self.tenant.org_id), str(arg_org))
+        self.assertEqual("other_app", arg_app)
 
     @override_settings(V2_MIGRATION_APP_EXCLUDE_LIST=["legacy_app"])
     @patch("management.access.view.is_v2_edit_enabled_for_request", return_value=True)
