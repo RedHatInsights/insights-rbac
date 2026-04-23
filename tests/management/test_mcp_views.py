@@ -1499,3 +1499,42 @@ class MCPCheckUserPermissionV2Tests(MCPToolTestMixin, IdentityRequest):
         self.assertTrue(tool_output["allowed"])
         self.assertEqual(tool_output["matched_permission"], "vulnerability:vulnerability:*")
         self.assertEqual(tool_output["org_version"], "v2")
+
+
+class MCPToolDescriptionOverrideTests(MCPToolTestMixin, IdentityRequest):
+    """Test that Redis-backed description overrides are applied in tools/list."""
+
+    def setUp(self):
+        """Set up."""
+        super().setUp()
+        self.mcp_url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+
+    @patch(
+        "management.mcp_views._get_all_description_overrides",
+        return_value={"hello": "Overridden description for MCP"},
+    )
+    def test_override_appears_in_tools_list(self, mock_overrides):
+        """After setting an override, tools/list returns the overridden description."""
+        body = {"jsonrpc": "2.0", "method": "tools/list", "id": 2, "params": {}}
+        response = self.client.post(
+            self.mcp_url, data=json.dumps(body), content_type="application/json", **self.headers
+        )
+        self.assertEqual(response.status_code, 200)
+        tools = response.json()["result"]["tools"]
+        hello_tool = next(t for t in tools if t["name"] == "hello")
+        self.assertEqual(hello_tool["description"], "Overridden description for MCP")
+
+    @patch(
+        "management.mcp_views._get_all_description_overrides",
+        return_value={"hello": "custom hello"},
+    )
+    def test_non_overridden_tools_keep_defaults(self, mock_overrides):
+        """Overriding one tool does not affect other tools."""
+        body = {"jsonrpc": "2.0", "method": "tools/list", "id": 2, "params": {}}
+        response = self.client.post(
+            self.mcp_url, data=json.dumps(body), content_type="application/json", **self.headers
+        )
+        tools = response.json()["result"]["tools"]
+        principals_tool = next(t for t in tools if t["name"] == "list_principals")
+        self.assertIn("List principals", principals_tool["description"])
