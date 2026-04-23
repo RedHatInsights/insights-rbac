@@ -1686,3 +1686,152 @@ class MCPDeploymentGatingTests(MCPToolTestMixin, IdentityRequest):
         self.assertIn("search_roles", tool_names)
         self.assertIn("get_role", tool_names)
         self.assertIn("check_user_permission", tool_names)
+
+
+class MCPToolDescriptionOverrideTests(MCPToolTestMixin, IdentityRequest):
+    """Test that Redis-backed description overrides are applied in tools/list."""
+
+    def setUp(self):
+        """Set up."""
+        super().setUp()
+        self.mcp_url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+
+    @patch(
+        "management.mcp_views._get_all_description_overrides",
+        return_value={"hello": "Overridden description for MCP"},
+    )
+    def test_override_appears_in_tools_list(self, mock_overrides):
+        """After setting an override, tools/list returns the overridden description."""
+        body = {"jsonrpc": "2.0", "method": "tools/list", "id": 2, "params": {}}
+        response = self.client.post(
+            self.mcp_url, data=json.dumps(body), content_type="application/json", **self.headers
+        )
+        self.assertEqual(response.status_code, 200)
+        tools = response.json()["result"]["tools"]
+        hello_tool = next(t for t in tools if t["name"] == "hello")
+        self.assertEqual(hello_tool["description"], "Overridden description for MCP")
+
+    @patch(
+        "management.mcp_views._get_all_description_overrides",
+        return_value={"hello": "custom hello"},
+    )
+    def test_non_overridden_tools_keep_defaults(self, mock_overrides):
+        """Overriding one tool does not affect other tools."""
+        body = {"jsonrpc": "2.0", "method": "tools/list", "id": 2, "params": {}}
+        response = self.client.post(
+            self.mcp_url, data=json.dumps(body), content_type="application/json", **self.headers
+        )
+        tools = response.json()["result"]["tools"]
+        principals_tool = next(t for t in tools if t["name"] == "list_principals")
+        self.assertIn("List principals", principals_tool["description"])
+
+
+class MCPToolDescriptionEndpointTests(MCPToolTestMixin, IdentityRequest):
+    """Test the internal endpoint for managing MCP tool description overrides."""
+
+    def setUp(self):
+        """Set up."""
+        super().setUp()
+        self.base_url = "/_private/api/utils/mcp_tool_descriptions/"
+        self.client = APIClient()
+        internal_context = self._create_request_context(self.customer_data, self.user_data, is_internal=True)
+        self.internal_headers = internal_context["request"].META
+
+        self._override_store = {}
+        patcher_get_all = patch(
+            "management.mcp_views._get_all_description_overrides",
+            side_effect=lambda: dict(self._override_store),
+        )
+        patcher_get = patch(
+            "management.mcp_views._get_description_override",
+            side_effect=lambda name: self._override_store.get(name),
+        )
+        patcher_set = patch(
+            "management.mcp_views._set_description_override",
+            side_effect=lambda name, desc: self._override_store.__setitem__(name, desc),
+        )
+        patcher_delete = patch(
+            "management.mcp_views._delete_description_override",
+            side_effect=lambda name: self._override_store.pop(name, None),
+        )
+        patcher_get_all.start()
+        patcher_get.start()
+        patcher_set.start()
+        patcher_delete.start()
+        self.addCleanup(patcher_get_all.stop)
+        self.addCleanup(patcher_get.stop)
+        self.addCleanup(patcher_set.stop)
+        self.addCleanup(patcher_delete.stop)
+
+    def test_list_descriptions_returns_all_tools(self):
+        """GET list returns all registered tools with default descriptions."""
+        response = self.client.get(self.base_url, **self.internal_headers)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        tool_names = [t["tool_name"] for t in data["tools"]]
+        self.assertIn("hello", tool_names)
+        self.assertIn("list_principals", tool_names)
+        hello_tool = next(t for t in data["tools"] if t["tool_name"] == "hello")
+        self.assertIsNotNone(hello_tool["default_description"])
+        self.assertIsNone(hello_tool["override_description"])
+        self.assertEqual(hello_tool["active_description"], hello_tool["default_description"])
+
+    def test_get_single_tool_description(self):
+        """GET single tool returns its default description."""
+        response = self.client.get(f"{self.base_url}hello/", **self.internal_headers)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["tool_name"], "hello")
+        self.assertIsNone(data["override_description"])
+        self.assertIn("RBAC service", data["default_description"])
+
+    def test_set_description_override(self):
+        """PUT sets description override for a tool."""
+        new_desc = "Custom hello description for testing"
+        response = self.client.put(
+            f"{self.base_url}hello/",
+            data=json.dumps({"description": new_desc}),
+            content_type="application/json",
+            **self.internal_headers,
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["tool_name"], "hello")
+        self.assertEqual(data["override_description"], new_desc)
+
+    def test_delete_override_reverts_to_default(self):
+        """DELETE removes override and reverts to default description."""
+        self._override_store["hello"] = "temporary override"
+
+        response = self.client.delete(f"{self.base_url}hello/", **self.internal_headers)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIsNone(data["override_description"])
+
+        response = self.client.get(f"{self.base_url}hello/", **self.internal_headers)
+        data = response.json()
+        self.assertIsNone(data["override_description"])
+
+    def test_unknown_tool_returns_404(self):
+        """PUT/DELETE/GET for unknown tool returns 404."""
+        response = self.client.get(f"{self.base_url}nonexistent_tool/", **self.internal_headers)
+        self.assertEqual(response.status_code, 404)
+
+        response = self.client.put(
+            f"{self.base_url}nonexistent_tool/",
+            data=json.dumps({"description": "test"}),
+            content_type="application/json",
+            **self.internal_headers,
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_put_without_description_returns_400(self):
+        """PUT without description field returns 400."""
+        response = self.client.put(
+            f"{self.base_url}hello/",
+            data=json.dumps({}),
+            content_type="application/json",
+            **self.internal_headers,
+        )
+        self.assertEqual(response.status_code, 400)

@@ -47,6 +47,7 @@ from management.tenant_mapping.v2_activation import is_v2_write_activated
 from management.workspace.view import WorkspaceViewSet
 from mcp.server.fastmcp import FastMCP
 from prometheus_client import Counter, Histogram
+from redis import exceptions as redis_exceptions
 
 from api.common import RH_IDENTITY_HEADER
 from api.cross_access.view import CrossAccountRequestViewSet
@@ -99,6 +100,51 @@ _request_factory = RequestFactory()
 # Headers forwarded from the original request to internal view requests,
 # beyond the identity header (which is always forwarded).
 _FORWARDED_HEADERS = ("HTTP_X_REQUEST_ID", "HTTP_X_RH_INSIGHTS_REQUEST_ID")
+
+# --- Tool description overrides (Redis-backed, no restart needed) ---
+
+_REDIS_DESC_PREFIX = "mcp:desc:"
+
+
+def _get_redis():
+    """Get a Redis connection using the shared connection pool from management.cache."""
+    from management.cache import _connection_pool
+
+    from redis import Redis
+
+    return Redis(connection_pool=_connection_pool, ssl=settings.REDIS_SSL)
+
+
+def _get_description_override(tool_name: str) -> str | None:
+    try:
+        value = _get_redis().get(f"{_REDIS_DESC_PREFIX}{tool_name}")
+        return value.decode() if value else None
+    except redis_exceptions.RedisError:
+        logger.debug("mcp: redis unavailable for description override, tool=%s", tool_name)
+        return None
+
+
+def _set_description_override(tool_name: str, description: str) -> None:
+    _get_redis().set(f"{_REDIS_DESC_PREFIX}{tool_name}", description)
+
+
+def _delete_description_override(tool_name: str) -> None:
+    _get_redis().delete(f"{_REDIS_DESC_PREFIX}{tool_name}")
+
+
+def _get_all_description_overrides() -> dict[str, str]:
+    try:
+        r = _get_redis()
+        keys = r.keys(f"{_REDIS_DESC_PREFIX}*")
+        if not keys:
+            return {}
+        values = r.mget(keys)
+        prefix_len = len(_REDIS_DESC_PREFIX)
+        return {k.decode()[prefix_len:]: v.decode() for k, v in zip(keys, values) if v is not None}
+    except redis_exceptions.RedisError:
+        logger.debug("mcp: redis unavailable for description overrides")
+        return {}
+
 
 # --- MCP Server setup using the Anthropic MCP Python SDK ---
 
@@ -1367,10 +1413,11 @@ def _is_v2_available() -> bool:
 def _handle_tools_list(request: HttpRequest, request_id: Any, params: dict[str, Any]) -> JsonResponse:
     """Handle MCP tools/list request using FastMCP's registered tools."""
     v2_available = _is_v2_available()
+    overrides = _get_all_description_overrides()
     tools_data = [
         {
             "name": tool.name,
-            "description": tool.description or "",
+            "description": overrides.get(tool.name, tool.description or ""),
             "inputSchema": tool.inputSchema,
         }
         for tool in _get_tools()
