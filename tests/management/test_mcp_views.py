@@ -1564,13 +1564,31 @@ class MCPToolDescriptionEndpointTests(MCPToolTestMixin, IdentityRequest):
         internal_context = self._create_request_context(self.customer_data, self.user_data, is_internal=True)
         self.internal_headers = internal_context["request"].META
 
-    def tearDown(self):
-        """Clean up any Redis overrides."""
-        from management.mcp_views import _delete_description_override, _get_all_description_overrides
-
-        for tool_name in _get_all_description_overrides():
-            _delete_description_override(tool_name)
-        super().tearDown()
+        self._override_store = {}
+        patcher_get_all = patch(
+            "management.mcp_views._get_all_description_overrides",
+            side_effect=lambda: dict(self._override_store),
+        )
+        patcher_get = patch(
+            "management.mcp_views._get_description_override",
+            side_effect=lambda name: self._override_store.get(name),
+        )
+        patcher_set = patch(
+            "management.mcp_views._set_description_override",
+            side_effect=lambda name, desc: self._override_store.__setitem__(name, desc),
+        )
+        patcher_delete = patch(
+            "management.mcp_views._delete_description_override",
+            side_effect=lambda name: self._override_store.pop(name, None),
+        )
+        patcher_get_all.start()
+        patcher_get.start()
+        patcher_set.start()
+        patcher_delete.start()
+        self.addCleanup(patcher_get_all.stop)
+        self.addCleanup(patcher_get.stop)
+        self.addCleanup(patcher_set.stop)
+        self.addCleanup(patcher_delete.stop)
 
     def test_list_descriptions_returns_all_tools(self):
         """GET list returns all registered tools with default descriptions."""
@@ -1610,9 +1628,7 @@ class MCPToolDescriptionEndpointTests(MCPToolTestMixin, IdentityRequest):
 
     def test_delete_override_reverts_to_default(self):
         """DELETE removes override and reverts to default description."""
-        from management.mcp_views import _set_description_override
-
-        _set_description_override("hello", "temporary override")
+        self._override_store["hello"] = "temporary override"
 
         response = self.client.delete(f"{self.base_url}hello/", **self.internal_headers)
         self.assertEqual(response.status_code, 200)
