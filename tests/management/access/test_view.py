@@ -1317,12 +1317,10 @@ class AccessViewTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("Disallowed", response.data.get("detail", ""))
         mock_log.info.assert_called_once()
-        msg, arg_org, arg_app = mock_log.info.call_args[0]
-        self.assertIn("result=rejected", msg)
-        self.assertIn("org_id=%s", msg)
-        self.assertIn("application=%s", msg)
-        self.assertEqual(str(self.tenant.org_id), str(arg_org))
-        self.assertEqual("other_app", arg_app)
+        log_msg = mock_log.info.call_args[0][0] % mock_log.info.call_args[0][1:]
+        self.assertIn("result=rejected", log_msg)
+        self.assertIn(str(self.tenant.org_id), log_msg)
+        self.assertIn("other_app", log_msg)
 
     @override_settings(V2_MIGRATION_APP_EXCLUDE_LIST=["legacy_app"])
     @patch("management.access.view.is_v2_edit_enabled_for_request", return_value=True)
@@ -1343,3 +1341,120 @@ class AccessViewTests(IdentityRequest):
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("other_app", response.data.get("detail", ""))
+
+    @override_settings(V2_MIGRATION_APP_EXCLUDE_LIST=["legacy_app"])
+    @patch("management.access.view.is_v2_edit_enabled_for_request", return_value=True)
+    def test_access_v2_org_metric_disallowed_app(self, _mock_v2):
+        """Test that the counter is incremented when a v2 org requests a disallowed application."""
+        from management.access.view import v1_access_by_v2_org_total
+
+        client = APIClient()
+        url = f"{reverse('v1_management:access')}?application=other_app"
+        before = v1_access_by_v2_org_total.labels(
+            org_id=self.customer_data["org_id"], application="other_app", caller_type="user"
+        )._value.get()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        after = v1_access_by_v2_org_total.labels(
+            org_id=self.customer_data["org_id"], application="other_app", caller_type="user"
+        )._value.get()
+        self.assertEqual(after, before + 1)
+
+    @override_settings(V2_MIGRATION_APP_EXCLUDE_LIST=["legacy_app"])
+    @patch("management.access.view.is_v2_edit_enabled_for_request", return_value=True)
+    def test_access_v2_org_metric_empty_app(self, _mock_v2):
+        """Test that the counter is incremented when a v2 org requests with empty application."""
+        from management.access.view import v1_access_by_v2_org_total
+
+        client = APIClient()
+        url = f"{reverse('v1_management:access')}?application="
+        before = v1_access_by_v2_org_total.labels(
+            org_id=self.customer_data["org_id"], application="", caller_type="user"
+        )._value.get()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        after = v1_access_by_v2_org_total.labels(
+            org_id=self.customer_data["org_id"], application="", caller_type="user"
+        )._value.get()
+        self.assertEqual(after, before + 1)
+
+    @override_settings(V2_MIGRATION_APP_EXCLUDE_LIST=["legacy_app"])
+    @patch("management.access.view.logger")
+    @patch("management.access.view.is_v2_edit_enabled_for_request", return_value=True)
+    def test_access_v2_org_metric_logs_context(self, _mock_v2, mock_logger):
+        """Test that a structured log line is emitted when a v2 org is rejected from v1 /access."""
+        client = APIClient()
+        url = f"{reverse('v1_management:access')}?application=other_app"
+        response = client.get(url, **self.headers, HTTP_USER_AGENT="insights-chrome/1.0")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        mock_logger.info.assert_called_once()
+        log_msg = mock_logger.info.call_args[0][0] % mock_logger.info.call_args[0][1:]
+        self.assertIn("result=rejected", log_msg)
+        self.assertIn(self.customer_data["org_id"], log_msg)
+        self.assertIn("other_app", log_msg)
+        self.assertIn("caller_type=user", log_msg)
+        self.assertIn("user_id=", log_msg)
+        self.assertIn("request_id=", log_msg)
+        self.assertIn("user_agent=insights-chrome/1.0", log_msg)
+
+    @override_settings(V2_MIGRATION_APP_EXCLUDE_LIST=["legacy_app"])
+    @patch("management.access.view.is_v2_edit_enabled_for_request", return_value=True)
+    def test_access_v2_org_metric_service_account_caller_type(self, _mock_v2):
+        """Test that the metric labels caller_type as service_account for service account requests."""
+        from management.access.view import v1_access_by_v2_org_total
+
+        client = APIClient()
+        url = f"{reverse('v1_management:access')}?application=other_app"
+        before = v1_access_by_v2_org_total.labels(
+            org_id=self.customer_data["org_id"], application="other_app", caller_type="service_account"
+        )._value.get()
+        response = client.get(url, **self.headers_service_account)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        after = v1_access_by_v2_org_total.labels(
+            org_id=self.customer_data["org_id"], application="other_app", caller_type="service_account"
+        )._value.get()
+        self.assertEqual(after, before + 1)
+
+    @override_settings(ROLE_CREATE_ALLOW_LIST="legacy_app")
+    @override_settings(V2_MIGRATION_APP_EXCLUDE_LIST=["legacy_app"])
+    @patch("management.access.view.is_v2_edit_enabled_for_request", return_value=True)
+    def test_access_v2_org_allowed_app_no_metric(self, _mock_v2):
+        """Test that the counter is NOT incremented when a v2 org requests an allowed application."""
+        from management.access.view import v1_access_by_v2_org_total
+
+        perm = Permission.objects.create(permission="legacy_app:*:*", tenant=self.tenant)
+        role = Role.objects.create(name="allowed_metric_role", tenant=self.tenant)
+        Access.objects.create(role=role, permission=perm, tenant=self.tenant)
+        policy = Policy.objects.create(name="allowed_metric_policy", tenant=self.tenant)
+        policy.roles.add(role)
+        policy.group = self.group
+        policy.save()
+
+        client = APIClient()
+        url = f"{reverse('v1_management:access')}?application=legacy_app"
+        before = v1_access_by_v2_org_total.labels(
+            org_id=self.customer_data["org_id"], application="legacy_app", caller_type="user"
+        )._value.get()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        after = v1_access_by_v2_org_total.labels(
+            org_id=self.customer_data["org_id"], application="legacy_app", caller_type="user"
+        )._value.get()
+        self.assertEqual(after, before)
+
+    @patch("management.access.view.is_v2_edit_enabled_for_request", return_value=False)
+    def test_access_v1_org_no_metric(self, _mock_v2):
+        """Test that the counter is NOT incremented for non-v2 orgs."""
+        from management.access.view import v1_access_by_v2_org_total
+
+        client = APIClient()
+        url = f"{reverse('v1_management:access')}?application=app"
+        before = v1_access_by_v2_org_total.labels(
+            org_id=self.customer_data["org_id"], application="app", caller_type="user"
+        )._value.get()
+        response = client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        after = v1_access_by_v2_org_total.labels(
+            org_id=self.customer_data["org_id"], application="app", caller_type="user"
+        )._value.get()
+        self.assertEqual(after, before)
