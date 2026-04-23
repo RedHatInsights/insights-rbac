@@ -42,6 +42,7 @@ from management.principal.view import PrincipalView
 from management.role.v2_view import RoleV2ViewSet
 from management.role.view import RoleViewSet
 from management.role_binding.view import RoleBindingViewSet
+from management.tenant_mapping.v2_activation import is_v2_write_activated
 from management.workspace.view import WorkspaceViewSet
 from mcp.server.fastmcp import FastMCP
 from prometheus_client import Counter, Histogram
@@ -295,7 +296,8 @@ def _call_view(
 # │ get_workspace                   │ GET /api/v2/workspaces/{uuid}/             │
 # │ list_role_bindings              │ GET /api/v2/role-bindings/                 │
 # │ list_role_bindings_by_subject   │ GET /api/v2/role-bindings/by-subject/      │
-# │ check_user_permission           │ GET /api/v1/access/ (post-processed)       │
+# │ check_user_permission           │ V1: GET /api/v1/access/                    │
+# │                                 │ V2: role-bindings → roles (view-delegated) │
 # └─────────────────────────────────┴────────────────────────────────────────────┘
 
 
@@ -392,13 +394,14 @@ def list_audit_logs(
 
 @register_tool(
     description=(
-        "List access permissions for a principal. By default shows access for the currently "
-        "authenticated user. Set 'username' to query another user's access (requires org admin "
-        "or rbac:principal:read permission). Each entry is a permission string "
+        "List access permissions for a principal (V1 API only). By default shows access for the "
+        "currently authenticated user. Set 'username' to query another user's access (requires "
+        "org admin or rbac:principal:read permission). Each entry is a permission string "
         "with optional resource definitions that further constrain it. "
-        "TROUBLESHOOTING: To check what user X can do, call "
-        "list_access(username='X', application='<app>'). This resolves all groups, "
-        "roles, and policies for that user and returns their effective permissions. "
+        "IMPORTANT: This is a V1-only endpoint. For V2 organizations, this returns only legacy "
+        "V1 access and does NOT include V2 role binding permissions. For V2 orgs, use "
+        "check_user_permission (which auto-detects V1/V2) or list_role_bindings with "
+        "granted_subject_type='principal' and granted_subject_principal_user_id='<username>'. "
         "Order by: 'application', 'resource_type', 'verb' (prefix with '-' to reverse). "
         "Returns: {meta: {count}, links, data: [{permission, resourceDefinitions: [...]}]}. "
         "Calls: GET /api/v1/access/"
@@ -849,13 +852,16 @@ def get_workspace(
         "a role to a subject (user/group) within a resource scope (e.g. workspace). "
         "Filter by role_id, resource_type, resource_id, subject_type, or subject_id. "
         "ACCESS RESOLUTION: To find what permissions a user has (or which are missing) in V2, "
-        "(1) call list_role_bindings(granted_subject_type='user', granted_subject_id='<user_id>') "
-        "to find all effective bindings including those inherited through group membership "
+        "(1) call list_role_bindings(granted_subject_type='principal', "
+        "granted_subject_principal_user_id='<username>') to find all effective bindings "
+        "including those inherited through group membership "
         "(this is the V2 equivalent of list_access(username=X) for V1), "
         "(2) for each binding extract the role UUID, "
         "(3) call get_role(role_uuid=...) or list_role_access(role_uuid=...) to inspect "
         "the role's permissions, (4) compare against the required permissions to identify "
         "what is granted and what is missing. "
+        "TIP: For a quick yes/no check, use check_user_permission instead — it auto-detects "
+        "V1/V2 and does the full resolution automatically. "
         "Returns: {meta: {count}, links, data: [{uuid, role, resource, subject, ...}]}. "
         "Calls: GET /api/v2/role-bindings/"
     ),
@@ -873,6 +879,7 @@ def list_role_bindings(
     subject_id: str = "",
     granted_subject_type: str = "",
     granted_subject_id: str = "",
+    granted_subject_principal_user_id: str = "",
 ) -> str:
     """List role bindings by delegating to RoleBindingViewSet."""
     query_params: dict[str, str] = {
@@ -893,6 +900,8 @@ def list_role_bindings(
         query_params["granted_subject_type"] = granted_subject_type
     if granted_subject_id:
         query_params["granted_subject_id"] = granted_subject_id
+    if granted_subject_principal_user_id:
+        query_params["granted_subject.principal.user_id"] = granted_subject_principal_user_id
 
     path = reverse("v2_management:role-bindings-list")
     return _call_view(request, _role_binding_list_view, path, query_params)
@@ -951,17 +960,19 @@ def _permission_matches(granted_permission: str, requested_permission: str) -> b
 
 @register_tool(
     description=(
-        "Check whether a specific user has a specific permission (V1 only). Returns true/false "
-        "with the matched permission and resource definitions if granted. "
+        "Check whether a specific user has a specific permission. Returns true/false "
+        "with the matched permission details. Automatically detects whether the organization "
+        "is V1 or V2 and uses the appropriate access resolution method: "
+        "V1 uses the access endpoint; V2 resolves role bindings and inspects role permissions. "
         "The permission format is 'application:resource_type:verb' (e.g., "
         "'cost-management:cost_model:write'). Supports wildcard matching. "
         "Requires org admin or rbac:principal:read permission to check another user. "
-        "ACCESS RESOLUTION: This is the fastest way to answer 'Can user X do Y?' in V1. "
-        "For V2 applications, use list_role_bindings — see its ACCESS RESOLUTION section "
-        "for the step-by-step workflow to find what permissions a user has or is missing. "
-        "Returns: {allowed: bool, username, permission, matched_permission, resource_definitions} "
+        "ACCESS RESOLUTION: This is the fastest way to answer 'Can user X do Y?' — "
+        "it works for both V1 and V2 organizations automatically. "
+        "Returns: {allowed: bool, username, permission, matched_permission, ...} "
         "or {allowed: false, hint: str}. "
-        "Calls: GET /api/v1/access/?username=X&application=Y (internally)"
+        "V1 calls: GET /api/v1/access/?username=X&application=Y (internally). "
+        "V2 resolves: role bindings → roles → permissions (internally)."
     ),
     requires_auth=True,
 )
@@ -971,7 +982,7 @@ def check_user_permission(
     username: str,
     permission: str,
 ) -> str:
-    """Check if a user has a specific permission by delegating to AccessView."""
+    """Check if a user has a specific permission by delegating to AccessView (V1) or role bindings (V2)."""
     parts = permission.split(":")
     if len(parts) != 3:
         return json.dumps(
@@ -981,7 +992,92 @@ def check_user_permission(
             }
         )
 
-    application = parts[0]
+    tenant = getattr(request, "tenant", None)
+    if not tenant or not is_v2_write_activated(tenant):
+        return _check_user_permission_v1(request, username, permission)
+
+    from management.principal.model import Principal
+
+    principal = Principal.objects.filter(username=username, tenant=tenant).first()
+    if not principal:
+        return json.dumps(
+            {
+                "allowed": False,
+                "username": username,
+                "permission": permission,
+                "org_version": "v2",
+                "hint": f"User '{username}' not found in this organization.",
+            }
+        )
+
+    bindings_path = reverse("v2_management:role-bindings-list")
+    raw = _call_view(
+        request,
+        _role_binding_list_view,
+        bindings_path,
+        {
+            "granted_subject_type": "user",
+            "granted_subject_id": str(principal.uuid),
+            "limit": "1000",
+        },
+    )
+    bindings_data = json.loads(raw)
+    bindings = bindings_data.get("data", [])
+
+    if not bindings:
+        return json.dumps(
+            {
+                "allowed": False,
+                "username": username,
+                "permission": permission,
+                "org_version": "v2",
+                "total_bindings_checked": 0,
+                "hint": f"User '{username}' has no role bindings in this V2 organization. "
+                f"Use list_role_bindings(granted_subject_type='user', "
+                f"granted_subject_id='{principal.uuid}') to see all role bindings.",
+            }
+        )
+
+    role_uuids = {b["role"]["id"] for b in bindings if b.get("role", {}).get("id")}
+
+    for role_uuid in role_uuids:
+        role_path = reverse("v2_management:roles-detail", kwargs={"uuid": role_uuid})
+        role_raw = _call_view(request, _role_v2_detail_view, role_path, {}, uuid=role_uuid)
+        role_data = json.loads(role_raw)
+
+        for perm in role_data.get("permissions", []):
+            perm_str = f"{perm['application']}:{perm['resource_type']}:{perm['operation']}"
+            if _permission_matches(perm_str, permission):
+                return json.dumps(
+                    {
+                        "allowed": True,
+                        "username": username,
+                        "permission": permission,
+                        "matched_permission": perm_str,
+                        "role_name": role_data.get("name"),
+                        "role_uuid": str(role_uuid),
+                        "org_version": "v2",
+                    }
+                )
+
+    return json.dumps(
+        {
+            "allowed": False,
+            "username": username,
+            "permission": permission,
+            "org_version": "v2",
+            "total_roles_checked": len(role_uuids),
+            "hint": f"User '{username}' does not have permission '{permission}' in this V2 organization. "
+            f"Use list_role_bindings(granted_subject_type='user', "
+            f"granted_subject_id='{principal.uuid}') to see all role bindings, "
+            f"or search_roles(permission='{permission}') to find which roles grant this permission.",
+        }
+    )
+
+
+def _check_user_permission_v1(request: HttpRequest, username: str, permission: str) -> str:
+    """Check user permission using V1 access endpoint."""
+    application = permission.split(":")[0]
     query_params: dict[str, str] = {
         "application": application,
         "username": username,
@@ -1025,6 +1121,7 @@ def check_user_permission(
                 }
             )
 
+    application = permission.split(":")[0]
     return json.dumps(
         {
             "allowed": False,
