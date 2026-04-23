@@ -336,6 +336,9 @@ def _create_single_platform_role(access_type, scope, policy_service, public_tena
 def _seed_v2_role_from_v1(v1_role, display_name, description, public_tenant, platform_roles, resource_service):
     """Create or update V2 role from V1 role during seeding."""
     try:
+        # Calculate scope before creating/updating the role so we can persist it
+        scope = resource_service.scope_for_role(v1_role)
+
         v2_role, v2_created = SeededRoleV2.objects.update_or_create(
             uuid=v1_role.uuid,
             defaults={
@@ -343,18 +346,18 @@ def _seed_v2_role_from_v1(v1_role, display_name, description, public_tenant, pla
                 "description": description,
                 "tenant": public_tenant,
                 "v1_source": v1_role,
+                "scope": scope.value,
             },
         )
         if v2_created:
-            logger.info("Created V2 system role %s.", display_name)
+            logger.info("Created V2 system role %s with scope %s.", display_name, scope.name)
         else:
-            logger.info("Updated V2 system role %s.", display_name)
+            logger.info("Updated V2 system role %s with scope %s.", display_name, scope.name)
         v2_role.permissions.clear()
         v1_permissions = [access.permission for access in v1_role.access.all()]
         if v1_permissions:
             v2_role.permissions.set(v1_permissions)
             logger.info("Added %d permissions to V2 role %s.", len(v1_permissions), display_name)
-        scope = resource_service.scope_for_role(v1_role)
 
         # Clear parents first since scope may have changed since previous seeding
         v2_role.parents.clear()
