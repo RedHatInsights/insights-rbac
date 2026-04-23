@@ -1538,3 +1538,97 @@ class MCPToolDescriptionOverrideTests(MCPToolTestMixin, IdentityRequest):
         tools = response.json()["result"]["tools"]
         principals_tool = next(t for t in tools if t["name"] == "list_principals")
         self.assertIn("List principals", principals_tool["description"])
+
+
+class MCPToolDescriptionEndpointTests(MCPToolTestMixin, IdentityRequest):
+    """Test the internal endpoint for managing MCP tool description overrides."""
+
+    def setUp(self):
+        """Set up."""
+        super().setUp()
+        self.base_url = "/_private/api/utils/mcp_tool_descriptions/"
+        self.client = APIClient()
+        internal_context = self._create_request_context(self.customer_data, self.user_data, is_internal=True)
+        self.internal_headers = internal_context["request"].META
+
+    def tearDown(self):
+        """Clean up any Redis overrides."""
+        from management.mcp_views import _delete_description_override, _get_all_description_overrides
+
+        for tool_name in _get_all_description_overrides():
+            _delete_description_override(tool_name)
+        super().tearDown()
+
+    def test_list_descriptions_returns_all_tools(self):
+        """GET list returns all registered tools with default descriptions."""
+        response = self.client.get(self.base_url, **self.internal_headers)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        tool_names = [t["tool_name"] for t in data["tools"]]
+        self.assertIn("hello", tool_names)
+        self.assertIn("list_principals", tool_names)
+        hello_tool = next(t for t in data["tools"] if t["tool_name"] == "hello")
+        self.assertIsNotNone(hello_tool["default_description"])
+        self.assertIsNone(hello_tool["override_description"])
+        self.assertEqual(hello_tool["active_description"], hello_tool["default_description"])
+
+    def test_get_single_tool_description(self):
+        """GET single tool returns its default description."""
+        response = self.client.get(f"{self.base_url}hello/", **self.internal_headers)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["tool_name"], "hello")
+        self.assertIsNone(data["override_description"])
+        self.assertIn("RBAC service", data["default_description"])
+
+    def test_set_description_override(self):
+        """PUT sets description override for a tool."""
+        new_desc = "Custom hello description for testing"
+        response = self.client.put(
+            f"{self.base_url}hello/",
+            data=json.dumps({"description": new_desc}),
+            content_type="application/json",
+            **self.internal_headers,
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["tool_name"], "hello")
+        self.assertEqual(data["override_description"], new_desc)
+
+    def test_delete_override_reverts_to_default(self):
+        """DELETE removes override and reverts to default description."""
+        from management.mcp_views import _set_description_override
+
+        _set_description_override("hello", "temporary override")
+
+        response = self.client.delete(f"{self.base_url}hello/", **self.internal_headers)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIsNone(data["override_description"])
+
+        response = self.client.get(f"{self.base_url}hello/", **self.internal_headers)
+        data = response.json()
+        self.assertIsNone(data["override_description"])
+
+    def test_unknown_tool_returns_404(self):
+        """PUT/DELETE/GET for unknown tool returns 404."""
+        response = self.client.get(f"{self.base_url}nonexistent_tool/", **self.internal_headers)
+        self.assertEqual(response.status_code, 404)
+
+        response = self.client.put(
+            f"{self.base_url}nonexistent_tool/",
+            data=json.dumps({"description": "test"}),
+            content_type="application/json",
+            **self.internal_headers,
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_put_without_description_returns_400(self):
+        """PUT without description field returns 400."""
+        response = self.client.put(
+            f"{self.base_url}hello/",
+            data=json.dumps({}),
+            content_type="application/json",
+            **self.internal_headers,
+        )
+        self.assertEqual(response.status_code, 400)
