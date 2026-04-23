@@ -59,10 +59,11 @@ class RoleV2(TenantAwareModel):
     permissions = models.ManyToManyField(Permission, related_name="v2_roles")
     children = models.ManyToManyField("self", related_name="parents", symmetrical=False)
     v1_source = models.ForeignKey(Role, null=True, blank=True, related_name="v2_roles", on_delete=models.CASCADE)
-    # Scope tracks the permission-derived binding scope for seeded roles (1=DEFAULT, 2=ROOT, 3=TENANT).
-    # This is persisted to enable scope change detection when the global permission-to-scope mapping
-    # changes. Null for custom roles and platform roles (which don't have a permission-derived scope).
-    scope = models.IntegerField(null=True, blank=True)
+    # last_seed_scope tracks the permission-derived binding scope for seeded roles at last seeding
+    # (1=DEFAULT, 2=ROOT, 3=TENANT). This is persisted to enable scope change detection when the
+    # global permission-to-scope mapping changes. Null for custom roles and platform roles
+    # (which don't have a permission-derived scope).
+    last_seed_scope = models.IntegerField(null=True, blank=True)
     created = models.DateTimeField(default=timezone.now)
     modified = AutoDateTimeField(default=timezone.now)
 
