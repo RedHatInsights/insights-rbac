@@ -6,7 +6,7 @@ from django.db import migrations, models
 class Migration(migrations.Migration):
 
     dependencies = [
-        ("management", "0083_alter_rolebindinggroup_group_and_more"),
+        ("management", "0087_alter_extrolerelation_ext_id_alter_exttenant_name"),
     ]
 
     operations = [
