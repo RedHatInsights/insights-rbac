@@ -20,13 +20,13 @@ import json
 from unittest.mock import patch
 
 from django.test import override_settings
+from management.mcp_views import ToolConfig, _permission_matches
+from management.models import Access, Group, Permission, Policy, Principal, Role
 from rest_framework import status
 from rest_framework.test import APIClient
+from tests.identity_request import IdentityRequest
 
 from api.models import Tenant
-from management.mcp_views import ToolConfig
-from management.models import Access, Group, Permission, Policy, Principal, Role
-from tests.identity_request import IdentityRequest
 
 
 class MCPToolTestMixin:
@@ -641,6 +641,7 @@ class MCPViewTests(MCPToolTestMixin, IdentityRequest):
             "list_permissions",
             "list_permission_options",
             "list_audit_logs",
+            "search_roles",
             "list_roles",
             "get_role",
             "list_role_access",
@@ -654,6 +655,7 @@ class MCPViewTests(MCPToolTestMixin, IdentityRequest):
             "get_workspace",
             "list_role_bindings",
             "list_role_bindings_by_subject",
+            "check_user_permission",
         ]
         for tool in expected_tools:
             self.assertIn(tool, tool_names, f"Tool '{tool}' missing from tools/list")
@@ -1065,6 +1067,168 @@ class MCPViewV2ToolsTests(MCPToolTestMixin, IdentityRequest):
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+
+class PermissionMatchesTests(IdentityRequest):
+    """Unit tests for the _permission_matches helper function."""
+
+    def test_exact_match(self):
+        """Positive: exact permission match returns True."""
+        self.assertTrue(_permission_matches("cost-management:cost_model:write", "cost-management:cost_model:write"))
+
+    def test_wildcard_all(self):
+        """Positive: full wildcard matches any permission in the same app."""
+        self.assertTrue(_permission_matches("cost-management:*:*", "cost-management:cost_model:write"))
+
+    def test_wildcard_verb(self):
+        """Positive: verb wildcard matches any verb."""
+        self.assertTrue(_permission_matches("cost-management:cost_model:*", "cost-management:cost_model:write"))
+
+    def test_mismatch_verb(self):
+        """Negative: different verb does not match."""
+        self.assertFalse(_permission_matches("cost-management:cost_model:read", "cost-management:cost_model:write"))
+
+    def test_mismatch_app(self):
+        """Negative: different application does not match."""
+        self.assertFalse(_permission_matches("inventory:hosts:read", "cost-management:hosts:read"))
+
+    def test_malformed_granted(self):
+        """Negative: malformed granted permission returns False."""
+        self.assertFalse(_permission_matches("invalid-format", "cost-management:cost_model:write"))
+
+    def test_malformed_requested(self):
+        """Negative: malformed requested permission returns False."""
+        self.assertFalse(_permission_matches("cost-management:cost_model:write", "invalid"))
+
+
+@override_settings(BYPASS_BOP_VERIFICATION=True)
+class MCPCheckUserPermissionTests(MCPToolTestMixin, IdentityRequest):
+    """Tests for the check_user_permission MCP tool."""
+
+    def setUp(self):
+        """Set up check_user_permission tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.test_username = self.user_data["username"]
+        self.principal = Principal.objects.create(username=self.test_username, tenant=self.tenant)
+
+        role = Role.objects.create(name="test_role", tenant=self.tenant)
+        perm = Permission.objects.create(
+            application="rbac",
+            resource_type="roles",
+            verb="read",
+            permission="rbac:roles:read",
+            tenant=self.tenant,
+        )
+        Access.objects.create(permission=perm, role=role, tenant=self.tenant)
+        group = Group.objects.create(name="test_group", tenant=self.tenant)
+        group.principals.add(self.principal)
+        policy = Policy.objects.create(name="test_policy", group=group, tenant=self.tenant)
+        policy.roles.add(role)
+
+    def tearDown(self):
+        """Tear down check_user_permission tests."""
+        Policy.objects.all().delete()
+        Access.objects.all().delete()
+        Role.objects.all().delete()
+        Permission.objects.all().delete()
+        Group.objects.all().delete()
+        Principal.objects.all().delete()
+        super().tearDown()
+
+    def test_invalid_permission_format(self):
+        """Negative: invalid permission format returns error."""
+        response = self._call_tool("check_user_permission", {"username": self.test_username, "permission": "invalid"})
+
+        self.assertEqual(response.status_code, 200)
+        tool_output = self._get_tool_output(response)
+        self.assertIn("error", tool_output)
+        self.assertIn("application:resource_type:verb", tool_output["error"])
+
+    def test_permission_allowed(self):
+        """Positive: check_user_permission returns allowed=True when user has permission."""
+        response = self._call_tool(
+            "check_user_permission", {"username": self.test_username, "permission": "rbac:roles:read"}
+        )
+
+        self.assertEqual(response.status_code, 200)
+        tool_output = self._get_tool_output(response)
+        self.assertTrue(tool_output["allowed"])
+        self.assertEqual(tool_output["username"], self.test_username)
+        self.assertEqual(tool_output["matched_permission"], "rbac:roles:read")
+
+    def test_permission_denied(self):
+        """Negative: check_user_permission returns allowed=False when user lacks permission."""
+        response = self._call_tool(
+            "check_user_permission", {"username": self.test_username, "permission": "rbac:roles:write"}
+        )
+
+        self.assertEqual(response.status_code, 200)
+        tool_output = self._get_tool_output(response)
+        self.assertFalse(tool_output["allowed"])
+        self.assertIn("hint", tool_output)
+
+    def test_without_auth_returns_error(self):
+        """Permission: check_user_permission without auth returns auth error."""
+        response = self._call_tool(
+            "check_user_permission",
+            {"username": self.test_username, "permission": "rbac:roles:read"},
+            use_auth=False,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+
+class MCPSearchRolesTests(MCPToolTestMixin, IdentityRequest):
+    """Tests for the search_roles MCP tool."""
+
+    def setUp(self):
+        """Set up search_roles tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+
+    def tearDown(self):
+        """Tear down search_roles tests."""
+        Role.objects.all().delete()
+        super().tearDown()
+
+    def test_search_roles_success(self):
+        """Positive: search_roles returns role data."""
+        Role.objects.create(name="test_v1_role", tenant=self.tenant)
+        response = self._call_tool("search_roles")
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertIn("meta", tool_output)
+        self.assertIn("data", tool_output)
+
+    def test_search_roles_filter_by_name(self):
+        """Positive: search_roles filters by name."""
+        Role.objects.create(name="Patch Reviewer", tenant=self.tenant)
+        Role.objects.create(name="Other Role", tenant=self.tenant)
+        response = self._call_tool("search_roles", {"name": "Patch Reviewer"})
+
+        self.assertEqual(response.status_code, 200)
+        tool_output = self._get_tool_output(response)
+        self.assertTrue(tool_output["meta"]["count"] >= 1)
+        for role in tool_output["data"]:
+            self.assertIn("Patch Reviewer", role["name"])
+
+    def test_search_roles_without_auth_returns_error(self):
+        """Permission: search_roles without auth returns auth error."""
+        response = self._call_tool("search_roles", use_auth=False)
+
+        self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertIn("error", data)
         self.assertEqual(data["error"]["code"], -32000)
