@@ -25,7 +25,7 @@ from rest_framework.test import APIClient
 
 from api.models import Tenant
 from management.mcp_views import ToolConfig
-from management.models import Access, Group, Permission, Policy, Principal, Role
+from management.models import Access, AuditLog, Group, Permission, Policy, Principal, Role
 from tests.identity_request import IdentityRequest
 
 
@@ -746,6 +746,158 @@ class MCPViewTests(MCPToolTestMixin, IdentityRequest):
         data = response.json()
         self.assertIn("error", data)
         self.assertEqual(data["error"]["code"], -32000)
+
+    def test_list_audit_logs_filter_by_principal_username(self):
+        """Positive: list_audit_logs filters by principal_username."""
+        AuditLog.objects.create(
+            principal_username="jdoe",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.ADD,
+            description="role added to group",
+            tenant=self.tenant,
+        )
+        AuditLog.objects.create(
+            principal_username="other_user",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.ADD,
+            description="other action",
+            tenant=self.tenant,
+        )
+
+        response = self._call_tool("list_audit_logs", {"principal_username": "jdoe"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(len(tool_output["data"]), 1)
+        self.assertEqual(tool_output["data"][0]["principal_username"], "jdoe")
+
+    def test_list_audit_logs_filter_by_resource_type(self):
+        """Positive: list_audit_logs filters by resource_type."""
+        AuditLog.objects.create(
+            principal_username="user1",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.ADD,
+            description="group action",
+            tenant=self.tenant,
+        )
+        AuditLog.objects.create(
+            principal_username="user1",
+            resource_type=AuditLog.ROLE,
+            action=AuditLog.CREATE,
+            description="role action",
+            tenant=self.tenant,
+        )
+
+        response = self._call_tool("list_audit_logs", {"resource_type": "group"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(len(tool_output["data"]), 1)
+        self.assertEqual(tool_output["data"][0]["resource_type"], "group")
+
+    def test_list_audit_logs_filter_by_action(self):
+        """Positive: list_audit_logs filters by action."""
+        AuditLog.objects.create(
+            principal_username="user1",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.ADD,
+            description="add action",
+            tenant=self.tenant,
+        )
+        AuditLog.objects.create(
+            principal_username="user1",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.DELETE,
+            description="delete action",
+            tenant=self.tenant,
+        )
+
+        response = self._call_tool("list_audit_logs", {"action": "add"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(len(tool_output["data"]), 1)
+        self.assertEqual(tool_output["data"][0]["action"], "add")
+
+    def test_list_audit_logs_include_authorization(self):
+        """Positive: list_audit_logs with include_authorization returns role and permission."""
+        # Create audit log entry
+        AuditLog.objects.create(
+            principal_username=self.principal.username,
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.ADD,
+            description="Vulnerability administrator role added to group Contractors",
+            tenant=self.tenant,
+        )
+
+        # Set up authorization chain: principal -> group -> policy -> role -> access -> permission
+        role = Role.objects.create(name="User Access administrator", tenant=self.tenant)
+        perm = Permission.objects.create(
+            application="rbac",
+            resource_type="group",
+            verb="write",
+            permission="rbac:group:write",
+            tenant=self.tenant,
+        )
+        Access.objects.create(permission=perm, role=role, tenant=self.tenant)
+        group = Group.objects.create(name="Access Governance", tenant=self.tenant)
+        group.principals.add(self.principal)
+        policy = Policy.objects.create(name="auth_policy", group=group, tenant=self.tenant)
+        policy.roles.add(role)
+
+        response = self._call_tool("list_audit_logs", {"include_authorization": True})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(len(tool_output["data"]), 1)
+        entry = tool_output["data"][0]
+        self.assertIn("authorized_by", entry)
+        self.assertEqual(entry["authorized_by"]["role"], "User Access administrator")
+        self.assertEqual(entry["authorized_by"]["via_group"], "Access Governance")
+        self.assertEqual(entry["authorized_by"]["permission"], "rbac:group:write")
+
+    def test_list_audit_logs_include_authorization_org_admin(self):
+        """Positive: list_audit_logs shows org_admin bypasses RBAC checks."""
+        # Create org admin principal
+        org_admin = Principal.objects.create(username="org_admin_user", tenant=self.tenant)
+        org_admin.is_org_admin = True
+        org_admin.save()
+
+        AuditLog.objects.create(
+            principal_username="org_admin_user",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.ADD,
+            description="admin action",
+            tenant=self.tenant,
+        )
+
+        response = self._call_tool("list_audit_logs", {"include_authorization": True})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        entry = tool_output["data"][0]
+        self.assertIn("authorized_by", entry)
+        self.assertEqual(entry["authorized_by"]["role"], "Org Admin")
+        self.assertTrue(entry["authorized_by"]["is_org_admin"])
+
+    def test_list_audit_logs_include_authorization_user_not_found(self):
+        """Positive: list_audit_logs handles deleted/unknown users."""
+        AuditLog.objects.create(
+            principal_username="deleted_user",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.ADD,
+            description="action by deleted user",
+            tenant=self.tenant,
+        )
+
+        response = self._call_tool("list_audit_logs", {"include_authorization": True})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        entry = tool_output["data"][0]
+        self.assertIsNone(entry["authorized_by"])
+        self.assertIn("note", entry)
+        self.assertIn("deleted_user", entry["note"])
 
     # --- list_groups / get_group / list_group_principals ---
 
