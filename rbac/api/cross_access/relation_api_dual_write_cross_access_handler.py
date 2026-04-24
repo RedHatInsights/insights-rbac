@@ -154,6 +154,7 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
             replicator=_LocalReplicator(self),
             principal_source=str(self._source_key()),
             allow_external_subjects=True,
+            skip_scope_validation=True,
         )
 
     def _add_car_roles_v1(self, roles: set[Role]):
