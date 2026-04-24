@@ -326,6 +326,27 @@ def scopes_for_resource_type(resource_type: str) -> set[Scope]:
     return {scope for scope, rt in SCOPE_RESOURCE_TYPE.items() if rt == resource_type}
 
 
+def scope_for_resource(resource_type: str, resource_id: str, tenant: Tenant) -> Scope | None:
+    """Return the single expected Scope for a (resource_type, resource_id) pair, or None if unknown.
+
+    * ``tenant`` -> ``Scope.TENANT``
+    * ``workspace`` with the root workspace -> ``Scope.ROOT``
+    * ``workspace`` with any other workspace -> ``Scope.DEFAULT``
+    * anything else -> ``None``
+    """
+    if resource_type == "tenant":
+        return Scope.TENANT
+    if resource_type == "workspace":
+        try:
+            workspace = Workspace.objects.get(id=resource_id, tenant=tenant)
+        except Workspace.DoesNotExist:
+            return None
+        if workspace.type == Workspace.Types.ROOT:
+            return Scope.ROOT
+        return Scope.DEFAULT
+    return None
+
+
 """
 A global ImplicitResourceService configured using Django Settings.
 
