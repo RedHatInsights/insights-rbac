@@ -180,7 +180,7 @@ class V2TenantBootstrapService:
             return self._bootstrap_tenant(tenant)
 
         if force:
-            self._replicate_bootstrap(tenant, lock_result.tenant_mapping)
+            self._replicate_bootstraps([(tenant, lock_result.tenant_mapping)], bulk=False)
 
         return BootstrappedTenant(tenant=tenant, mapping=lock_result.tenant_mapping)
 
@@ -470,64 +470,28 @@ class V2TenantBootstrapService:
         return bootstrapped_tenants[0]
 
     def _bootstrap_tenant(self, tenant: Tenant) -> BootstrappedTenant:
-        bootstrapped_tenants, relationships = self._bootstrap_tenants_no_replicate([tenant])
+        bootstrapped_tenants = self._bootstrap_tenants([tenant], bulk=False)
+
         assert len(bootstrapped_tenants) == 1
+        return bootstrapped_tenants[0]
 
-        bootstrapped_tenant = bootstrapped_tenants[0]
-        assert bootstrapped_tenant.default_workspace is not None
+    # Here, and in various other functions, we accept a "bulk" parameter to decide what event to use, rather than using
+    # separate functions for bulk and non-bulk bootstrapping. This is to ensure that we don't accidentally let the
+    # bulk and non-bulk paths diverge (as we have done in the past).
 
-        self._replicator.replicate(
-            ReplicationEvent(
-                event_type=ReplicationEventType.BOOTSTRAP_TENANT,
-                info={"org_id": tenant.org_id, "default_workspace_id": str(bootstrapped_tenant.default_workspace.id)},
-                partition_key=PartitionKey.byEnvironment(),
-                add=relationships,
-            )
-        )
-
-        return bootstrapped_tenant
-
-    def _replicate_bootstrap(self, tenant: Tenant, mapping: TenantMapping):
-        """Replicate the bootstrapping of a tenant."""
-        built_in_workspaces = Workspace.objects.built_in(tenant=tenant)
-        root = next(ws for ws in built_in_workspaces if ws.type == Workspace.Types.ROOT)
-        default = next(ws for ws in built_in_workspaces if ws.type == Workspace.Types.DEFAULT)
-
-        relationships = []
-
-        relationships.extend(self._built_in_hierarchy_tuples(default.id, root.id, tenant.org_id))
-
-        relationships.extend(
-            self._bootstrap_default_access(
-                tenant,
-                mapping,
-                TenantScopeResources.for_models(
-                    tenant=tenant,
-                    root_workspace=root,
-                    default_workspace=default,
-                ),
-            )
-        )
-
-        self._replicator.replicate(
-            ReplicationEvent(
-                event_type=ReplicationEventType.BOOTSTRAP_TENANT,
-                info={"org_id": tenant.org_id, "forced": True},
-                partition_key=PartitionKey.byEnvironment(),
-                add=relationships,
-            )
-        )
-
-    def _replicate_bootstraps(self, tenants_with_mappings: list[tuple[Tenant, TenantMapping]]):
+    def _replicate_bootstraps(self, tenants_with_mappings: list[tuple[Tenant, TenantMapping]], bulk: bool = True):
         """Replicate the bootstrapping of multiple tenants efficiently."""
+        if not bulk and len(tenants_with_mappings) != 1:
+            raise ValueError(
+                f"Bulk replication is required except for exactly one tenant; got: {tenants_with_mappings}"
+            )
+
         if not tenants_with_mappings:
             return
 
-        tenant_ids = [t.id for t, _ in tenants_with_mappings]
-
         # Bulk query all workspaces for all tenants at once
         all_workspaces = Workspace.objects.filter(
-            tenant_id__in=tenant_ids, type__in=[Workspace.Types.ROOT, Workspace.Types.DEFAULT]
+            tenant__in=[t for t, _ in tenants_with_mappings], type__in=[Workspace.Types.ROOT, Workspace.Types.DEFAULT]
         )
 
         # Group workspaces by tenant_id for fast lookup
@@ -541,16 +505,19 @@ class V2TenantBootstrapService:
         all_relationships = []
 
         for tenant, mapping in tenants_with_mappings:
-            tenant_workspaces = workspaces_by_tenant.get(tenant.id, {})
+            tenant_workspaces = workspaces_by_tenant.get(tenant.id)
+
+            if tenant_workspaces is None:
+                raise RuntimeError(f"Found no built-in workspace for tenant with pk={tenant.pk}")
+
             root = tenant_workspaces.get(Workspace.Types.ROOT)
             default = tenant_workspaces.get(Workspace.Types.DEFAULT)
 
-            if not root or not default:
-                logger.warning(
-                    f"Missing workspaces for tenant {tenant.org_id} during bulk re-replication. "
+            if root is None or default is None:
+                raise RuntimeError(
+                    f"Missing workspaces for tenant with pk={tenant.pk} during bulk re-replication. "
                     f"Has root: {bool(root)}, has default: {bool(default)}"
                 )
-                continue
 
             all_relationships.extend(self._built_in_hierarchy_tuples(default.id, root.id, tenant.org_id))
 
@@ -566,18 +533,11 @@ class V2TenantBootstrapService:
                 )
             )
 
-        # Single bulk replication event for all tenants
-        self._replicator.replicate(
-            ReplicationEvent(
-                event_type=ReplicationEventType.BULK_BOOTSTRAP_TENANT,
-                info={
-                    "num_tenants": len(tenants_with_mappings),
-                    "first_org_id": tenants_with_mappings[0][0].org_id if tenants_with_mappings else None,
-                    "forced": True,
-                },
-                partition_key=PartitionKey.byEnvironment(),
-                add=all_relationships,
-            )
+        self._send_bootstrap_event(
+            tenants=[t for t, _ in tenants_with_mappings],
+            relationships=all_relationships,
+            bulk=bulk,
+            forced=True,
         )
 
     def _query_with_default_groups(self, query_set: QuerySet) -> QuerySet:
@@ -615,10 +575,10 @@ class V2TenantBootstrapService:
         account_number_by_org_id: dict[str, Optional[str]],
         bulk: bool,
     ) -> list[BootstrappedTenant]:
+        """Bootstrap list of tenants, used by import_bulk_users."""
         if not bulk and len(org_ids) != 1:
             raise ValueError("Bulk bootstrapping is required unless exactly one org_id is present.")
 
-        """Bootstrap list of tenants, used by import_bulk_users."""
         # Fetch existing tenants
         existing_tenants: dict[str, Tenant] = {
             tenant.org_id: tenant for tenant in Tenant.objects.filter(org_id__in=org_ids)
@@ -669,17 +629,12 @@ class V2TenantBootstrapService:
 
         return bootstrapped_list
 
-    def _bootstrap_tenants(self, tenants: list[Tenant]) -> list[BootstrappedTenant]:
-        bootstrapped, relationships = self._bootstrap_tenants_no_replicate(tenants)
+    def _bootstrap_tenants(self, tenants: list[Tenant], bulk: bool = True) -> list[BootstrappedTenant]:
+        if not bulk and len(tenants) != 1:
+            raise RuntimeError(f"Bulk bootstrapping is required unless exactly one tenant is present, got: {tenants}")
 
-        self._replicator.replicate(
-            ReplicationEvent(
-                event_type=ReplicationEventType.BULK_BOOTSTRAP_TENANT,
-                info={"num_tenants": len(tenants), "first_org_id": tenants[0].org_id if tenants else None},
-                partition_key=PartitionKey.byEnvironment(),
-                add=relationships,
-            )
-        )
+        bootstrapped, relationships = self._bootstrap_tenants_no_replicate(tenants)
+        self._send_bootstrap_event(tenants=tenants, relationships=relationships, bulk=bulk)
 
         return bootstrapped
 
@@ -743,6 +698,41 @@ class V2TenantBootstrapService:
             )
 
         return bootstrapped_tenants, relationships
+
+    def _send_bootstrap_event(
+        self, tenants: list[Tenant], relationships: list[RelationTuple], *, bulk: bool, forced: bool = False
+    ):
+        """
+        Replicate the relationships for bootstrapping the provided tenants.
+
+        If bulk is false, then exactly one tenant must be provided, and the non-bulk ReplicationEventType will be used.
+        """
+        if not bulk and len(tenants) != 1:
+            raise ValueError(f"Expected bulk replication except for exactly one tenant, but got: {tenants}")
+
+        if (len(tenants) == 0) != (len(relationships) == 0):
+            raise AssertionError(
+                f"Expected relationships to be empty iff tenants is empty, but got: " f"{tenants=}, {relationships=}"
+            )
+
+        if bulk:
+            event_type = ReplicationEventType.BULK_BOOTSTRAP_TENANT
+            info = {"num_tenants": len(tenants), "first_org_id": tenants[0].org_id if tenants else None}
+        else:
+            event_type = ReplicationEventType.BOOTSTRAP_TENANT
+            info = {"org_id": tenants[0].org_id}
+
+        if forced:
+            info["forced"] = True
+
+        self._replicator.replicate(
+            ReplicationEvent(
+                event_type=event_type,
+                info=info,
+                partition_key=PartitionKey.byEnvironment(),
+                add=relationships,
+            )
+        )
 
     def _default_group_tuple_edits(self, user: User, mapping) -> tuple[list[RelationTuple], list[RelationTuple]]:
         """Get the tuples to add and remove for a user."""
