@@ -320,6 +320,13 @@ SCOPE_RESOURCE_TYPE: dict[Scope, str] = {
 }
 """Maps each Scope to the resource_type string it binds to."""
 
+SCOPE_DISPLAY_NAME: dict[Scope, str] = {
+    Scope.DEFAULT: "Default Workspace",
+    Scope.ROOT: "Root Workspace",
+    Scope.TENANT: "Organization",
+}
+"""User-facing label for each Scope (avoids exposing internal 'tenant' terminology)."""
+
 
 def scopes_for_resource_type(resource_type: str) -> set[Scope]:
     """Return all Scope values that map to the given resource_type."""

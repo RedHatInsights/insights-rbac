@@ -222,6 +222,57 @@ class RoleV2ServiceTests(IdentityRequest):
         self.assertIn("Duplicate Name", str(cm.exception))
         self.assertEqual(cm.exception.name, "Duplicate Name")
 
+    def test_create_role_with_mixed_scope_permissions_raises_error(self):
+        """Creating a role with permissions from different scopes is rejected."""
+        from management.permission.scope_service import ImplicitResourceService
+        from management.role.v2_exceptions import InvalidRolePermissionsError
+
+        scope_service = ImplicitResourceService(
+            tenant_scope_permissions=["tenant_app:*:*"],
+            root_scope_permissions=["root_app:*:*"],
+        )
+        Permission.objects.create(permission="tenant_app:res:read", tenant=self.tenant)
+        Permission.objects.create(permission="root_app:res:read", tenant=self.tenant)
+
+        with patch("management.role.v2_service.default_implicit_resource_service", scope_service):
+            with self.assertRaises(InvalidRolePermissionsError) as ctx:
+                self.service.create(
+                    name="Mixed Scope Role",
+                    description="Should fail",
+                    permission_data=[
+                        {"application": "tenant_app", "resource_type": "res", "operation": "read"},
+                        {"application": "root_app", "resource_type": "res", "operation": "read"},
+                    ],
+                    tenant=self.tenant,
+                )
+            msg = str(ctx.exception)
+            self.assertIn("same scope", msg)
+            self.assertIn("tenant_app:res:read", msg)
+            self.assertIn("root_app:res:read", msg)
+
+    def test_create_role_with_same_scope_permissions_succeeds(self):
+        """Creating a role where all permissions share the same scope succeeds."""
+        from management.permission.scope_service import ImplicitResourceService
+
+        scope_service = ImplicitResourceService(
+            tenant_scope_permissions=["tenant_app:*:*"],
+            root_scope_permissions=[],
+        )
+        Permission.objects.create(permission="tenant_app:res:read", tenant=self.tenant)
+        Permission.objects.create(permission="tenant_app:res:write", tenant=self.tenant)
+
+        with patch("management.role.v2_service.default_implicit_resource_service", scope_service):
+            role = self.service.create(
+                name="Same Scope Role",
+                description="Should pass",
+                permission_data=[
+                    {"application": "tenant_app", "resource_type": "res", "operation": "read"},
+                    {"application": "tenant_app", "resource_type": "res", "operation": "write"},
+                ],
+                tenant=self.tenant,
+            )
+        self.assertEqual(role.permissions.count(), 2)
+
     def test_create_role_generates_uuid(self):
         """Test that creating a role auto-generates a UUID."""
         permission_data = [
