@@ -873,30 +873,6 @@ class MCPViewTests(MCPToolTestMixin, IdentityRequest):
         self.assertEqual(entry["authorized_by"]["via_group"], "Access Governance")
         self.assertEqual(entry["authorized_by"]["permission"], "rbac:group:write")
 
-    def test_list_audit_logs_include_authorization_org_admin(self):
-        """Positive: list_audit_logs shows org_admin bypasses RBAC checks."""
-        # Create org admin principal
-        org_admin = Principal.objects.create(username="org_admin_user", tenant=self.tenant)
-        org_admin.is_org_admin = True
-        org_admin.save()
-
-        AuditLog.objects.create(
-            principal_username="org_admin_user",
-            resource_type=AuditLog.GROUP,
-            action=AuditLog.ADD,
-            description="admin action",
-            tenant=self.tenant,
-        )
-
-        response = self._call_tool("list_audit_logs", {"include_authorization": True})
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        tool_output = self._get_tool_output(response)
-        entry = tool_output["data"][0]
-        self.assertIn("authorized_by", entry)
-        self.assertEqual(entry["authorized_by"]["role"], "Org Admin")
-        self.assertTrue(entry["authorized_by"]["is_org_admin"])
-
     def test_list_audit_logs_include_authorization_user_not_found(self):
         """Positive: list_audit_logs handles deleted/unknown users."""
         AuditLog.objects.create(

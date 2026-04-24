@@ -567,15 +567,6 @@ def _find_authorizing_role(username: str, tenant: Any, required_perms: list[str]
     if not principal:
         return None
 
-    is_org_admin = getattr(principal, "is_org_admin", False) or getattr(principal, "admin", False)
-    if is_org_admin:
-        return {
-            "role": "Org Admin",
-            "via_group": None,
-            "permission": "org_admin (bypasses all RBAC checks)",
-            "is_org_admin": True,
-        }
-
     # Single query: get all permissions the user has with their role/group context
     access_entries = (
         Access.objects.filter(
@@ -602,7 +593,6 @@ def _find_authorizing_role(username: str, tenant: Any, required_perms: list[str]
                 "role": entry["role__display_name"] or entry["role__name"],
                 "via_group": entry["role__policies__group__name"],
                 "permission": granted_perm,
-                "is_org_admin": False,
             }
         # Check wildcard match
         for required in required_perms:
@@ -611,7 +601,6 @@ def _find_authorizing_role(username: str, tenant: Any, required_perms: list[str]
                     "role": entry["role__display_name"] or entry["role__name"],
                     "via_group": entry["role__policies__group__name"],
                     "permission": granted_perm,
-                    "is_org_admin": False,
                 }
 
     return None
