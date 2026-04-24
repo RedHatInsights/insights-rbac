@@ -817,6 +817,24 @@ class RoleV2ServiceListResourceTypeTests(IdentityRequest):
         super().setUp()
         self.service = RoleV2Service(tenant=self.tenant)
 
+        self._root_ws, _ = Workspace.objects.get_or_create(
+            tenant=self.tenant,
+            type=Workspace.Types.ROOT,
+            defaults={
+                "name": Workspace.SpecialNames.ROOT,
+                "description": Workspace.SpecialDescriptions.ROOT,
+            },
+        )
+        self._default_ws, _ = Workspace.objects.get_or_create(
+            tenant=self.tenant,
+            type=Workspace.Types.DEFAULT,
+            defaults={
+                "name": Workspace.SpecialNames.DEFAULT,
+                "description": Workspace.SpecialDescriptions.DEFAULT,
+                "parent": self._root_ws,
+            },
+        )
+
         scope_service = ImplicitResourceService(
             tenant_scope_permissions=["tenant_app:*:*"],
             root_scope_permissions=["root_app:*:*"],
@@ -861,11 +879,11 @@ class RoleV2ServiceListResourceTypeTests(IdentityRequest):
         names = set(queryset.values_list("name", flat=True))
         self.assertEqual(names, {"tenant_role", "mixed_role"})
 
-    def test_list_resource_type_workspace_returns_workspace_scoped_roles(self):
-        """Roles whose highest scope is DEFAULT or ROOT should be returned for resource_type=workspace."""
+    def test_list_resource_type_workspace_returns_default_scoped_roles_only(self):
+        """resource_type=workspace without resource_id returns only DEFAULT-scoped roles."""
         queryset = self.service.list({"resource_type": "workspace"})
         names = set(queryset.values_list("name", flat=True))
-        self.assertEqual(names, {"default_role", "root_role"})
+        self.assertEqual(names, {"default_role"})
 
     def test_list_resource_type_workspace_excludes_mixed_role(self):
         """A role with both default and tenant permissions has highest scope TENANT and should not appear for workspace."""
@@ -894,3 +912,32 @@ class RoleV2ServiceListResourceTypeTests(IdentityRequest):
         """Combined filters that contradict each other return empty."""
         queryset = self.service.list({"resource_type": "workspace", "name": "tenant_role"})
         self.assertEqual(queryset.count(), 0)
+
+    def test_list_resource_type_workspace_with_root_resource_id_returns_root_scoped_only(self):
+        """resource_type=workspace with the root workspace id returns only ROOT-scoped roles."""
+        queryset = self.service.list({"resource_type": "workspace", "resource_id": self._root_ws.id})
+        names = set(queryset.values_list("name", flat=True))
+        self.assertEqual(names, {"root_role"})
+
+    def test_list_resource_type_workspace_with_default_resource_id_returns_default_scoped_only(self):
+        """resource_type=workspace with the default workspace id returns only DEFAULT-scoped roles."""
+        queryset = self.service.list({"resource_type": "workspace", "resource_id": self._default_ws.id})
+        names = set(queryset.values_list("name", flat=True))
+        self.assertEqual(names, {"default_role"})
+
+    def test_list_resource_type_workspace_with_nonexistent_resource_id_returns_empty(self):
+        """Unknown workspace id yields no roles for resource_type=workspace."""
+        queryset = self.service.list({"resource_type": "workspace", "resource_id": uuid.uuid4()})
+        self.assertEqual(queryset.count(), 0)
+
+    def test_list_resource_type_workspace_with_standard_resource_id_returns_default_scoped_only(self):
+        """A non-root (e.g. standard) workspace id lists the same as default: DEFAULT-scoped roles only."""
+        child = Workspace.objects.create(
+            name="Sub WS",
+            tenant=self.tenant,
+            type=Workspace.Types.STANDARD,
+            parent=self._default_ws,
+        )
+        queryset = self.service.list({"resource_type": "workspace", "resource_id": child.id})
+        names = set(queryset.values_list("name", flat=True))
+        self.assertEqual(names, {"default_role"})
