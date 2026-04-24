@@ -2602,3 +2602,74 @@ def migrate_custom_v2_roles_to_tenant(request):
     except Exception as e:
         logger.exception("migrate_custom_v2_roles_to_tenant failed", exc_info=True)
         return JsonResponse({"detail": str(e)}, status=500)
+
+
+@require_http_methods(["GET", "PUT", "DELETE"])
+def mcp_tool_descriptions(request, tool_name=None):
+    """Manage MCP tool description overrides stored in Redis.
+
+    GET  /_private/api/utils/mcp_tool_descriptions/           → list all overrides
+    GET  /_private/api/utils/mcp_tool_descriptions/<name>/    → get override for one tool
+    PUT  /_private/api/utils/mcp_tool_descriptions/<name>/    → set override
+    DELETE /_private/api/utils/mcp_tool_descriptions/<name>/  → remove override (revert to default)
+    """
+    from management.mcp_views import (
+        _TOOL_CONFIG,
+        _delete_description_override,
+        _get_all_description_overrides,
+        _get_description_override,
+        _get_tools,
+        _set_description_override,
+    )
+
+    if request.method == "GET" and tool_name is None:
+        overrides = _get_all_description_overrides()
+        defaults = {tool.name: tool.description or "" for tool in _get_tools()}
+        tools = []
+        for name, default_desc in sorted(defaults.items()):
+            override = overrides.get(name)
+            tools.append(
+                {
+                    "tool_name": name,
+                    "default_description": default_desc,
+                    "override_description": override,
+                    "active_description": override if override is not None else default_desc,
+                }
+            )
+        return JsonResponse({"tools": tools}, status=200)
+
+    if tool_name is None:
+        return JsonResponse({"detail": "tool_name is required for PUT/DELETE"}, status=400)
+
+    if tool_name not in _TOOL_CONFIG:
+        return JsonResponse({"detail": f"Unknown tool: {tool_name}"}, status=404)
+
+    if request.method == "GET":
+        override = _get_description_override(tool_name)
+        default_desc = next((t.description or "" for t in _get_tools() if t.name == tool_name), "")
+        return JsonResponse(
+            {
+                "tool_name": tool_name,
+                "default_description": default_desc,
+                "override_description": override,
+                "active_description": override if override is not None else default_desc,
+            },
+            status=200,
+        )
+
+    if request.method == "PUT":
+        body = load_request_body(request)
+        description = body.get("description")
+        if not description:
+            return JsonResponse({"detail": "Missing required field: description"}, status=400)
+        _set_description_override(tool_name, description)
+        logger.info("mcp: description override set for tool=%s", tool_name)
+        return JsonResponse({"tool_name": tool_name, "override_description": description}, status=200)
+
+    if request.method == "DELETE":
+        _delete_description_override(tool_name)
+        logger.info("mcp: description override removed for tool=%s", tool_name)
+        default_desc = next((t.description or "" for t in _get_tools() if t.name == tool_name), "")
+        return JsonResponse(
+            {"tool_name": tool_name, "override_description": None, "active_description": default_desc}, status=200
+        )
