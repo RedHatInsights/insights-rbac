@@ -29,6 +29,7 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEvent,
     ReplicationEventType,
     WorkspaceEvent,
+    WorkspaceEventStream,
 )
 from management.role.relation_api_dual_write_handler import BaseRelationApiDualWriteHandler
 from migration_tool.utils import create_relationship
@@ -106,7 +107,8 @@ class RelationApiDualWriteWorkspaceHandler(BaseRelationApiDualWriteHandler):
                         workspace=WorkspaceEventSerializer(self.workspace).data,
                         event_type=self.event_type,
                         partition_key=PartitionKey.byEnvironment(),
-                    )
+                    ),
+                    WorkspaceEventStream.STANDARD,
                 )
         except OperationalError:
             logger.warning(
