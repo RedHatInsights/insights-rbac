@@ -124,6 +124,12 @@ urlpatterns = [
         "api/utils/migrate_custom_v2_roles_to_tenant/",
         views.migrate_custom_v2_roles_to_tenant,
     ),
+    path("api/utils/mcp_tool_descriptions/", views.mcp_tool_descriptions, name="mcp-tool-descriptions-list"),
+    path(
+        "api/utils/mcp_tool_descriptions/<str:tool_name>/",
+        views.mcp_tool_descriptions,
+        name="mcp-tool-descriptions-detail",
+    ),
 ]
 
 urlpatterns.extend(integration_urlpatterns)
