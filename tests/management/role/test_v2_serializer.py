@@ -371,6 +371,19 @@ class RoleV2ListSerializerTests(IdentityRequest):
         self.assertTrue(serializer.is_valid(), serializer.errors)
         self.assertEqual(serializer.validated_data["fields"], set(RoleV2ResponseSerializer.Meta.fields))
 
+    def test_valid_resource_id_as_uuid(self):
+        """resource_id is parsed to uuid.UUID when valid."""
+        uid = "550e8400-e29b-41d4-a716-446655440000"
+        serializer = RoleV2ListSerializer(data={"resource_type": "workspace", "resource_id": uid})
+        self.assertTrue(serializer.is_valid(), serializer.errors)
+        self.assertEqual(str(serializer.validated_data["resource_id"]), uid)
+
+    def test_invalid_resource_id_returns_error(self):
+        """Non-UUID resource_id is rejected."""
+        serializer = RoleV2ListSerializer(data={"resource_type": "workspace", "resource_id": "not-a-uuid"})
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("resource_id", serializer.errors)
+
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)
 class RoleV2RequestSerializerTests(IdentityRequest):

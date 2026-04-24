@@ -27,6 +27,7 @@ from django.db import IntegrityError
 from django.db.models import QuerySet
 from management.atomic_transactions import atomic
 from management.exceptions import NotFoundError, RequiredFieldError
+from management.models import Workspace
 from management.permission.exceptions import InvalidPermissionDataError
 from management.permission.model import PermissionValue
 from management.permission.scope_service import Scope, permission_scope_cache, scopes_for_resource_type
@@ -256,7 +257,7 @@ class RoleV2Service:
 
         resource_type = params.get("resource_type")
         if resource_type:
-            queryset = self._filter_by_resource_type(queryset, resource_type)
+            queryset = self._filter_by_resource_type(queryset, resource_type, resource_id=params.get("resource_id"))
 
         name = params.get("name")
         if name:
@@ -264,8 +265,15 @@ class RoleV2Service:
 
         return queryset
 
-    def _filter_by_resource_type(self, queryset: QuerySet, resource_type: str) -> QuerySet:
+    def _filter_by_resource_type(
+        self, queryset: QuerySet, resource_type: str, resource_id: Optional[uuid.UUID] = None
+    ) -> QuerySet:
         """Filter roles to those whose highest permission scope maps to resource_type.
+
+        For ``resource_type=workspace``:
+        - With no ``resource_id``: only DEFAULT-scoped roles (default workspace and custom workspaces).
+        - With ``resource_id`` the root workspace UUID: only ROOT-scoped roles.
+        - With any other workspace UUID: only DEFAULT-scoped roles.
 
         Uses DB-level filtering with cached Permission-ID-to-Scope mappings to
         avoid loading all roles and their permissions into Python memory.
@@ -273,6 +281,19 @@ class RoleV2Service:
         matching_scopes = scopes_for_resource_type(resource_type)
         if not matching_scopes:
             return queryset.none()
+
+        if resource_type == "workspace":
+            if resource_id is not None:
+                try:
+                    workspace = Workspace.objects.get(id=resource_id, tenant=self.tenant)
+                except Workspace.DoesNotExist:
+                    return queryset.none()
+                if workspace.type == Workspace.Types.ROOT:
+                    matching_scopes = {Scope.ROOT}
+                else:
+                    matching_scopes = {Scope.DEFAULT}
+            else:
+                matching_scopes = {Scope.DEFAULT}
 
         higher_non_matching = {s for s in (set(Scope) - matching_scopes) if s > max(matching_scopes)}
 
