@@ -16,6 +16,8 @@
 #
 """Serializers for RoleV2 API."""
 
+import uuid
+
 from django.utils.translation import gettext as _
 from management.exceptions import RequiredFieldError
 from management.role.v2_exceptions import (
@@ -180,6 +182,15 @@ class RoleV2ListSerializer(serializers.Serializer):
     def validate_fields(self, value):
         """Parse, validate, and resolve fields parameter into a set of field names."""
         return validate_fields_parameter(value, RoleV2Service.DEFAULT_LIST_FIELDS)
+
+    def validate_resource_id(self, value):
+        """Return a UUID (or None if omitted/blank) for workspace resource filtering."""
+        if value in (None, ""):
+            return None
+        try:
+            return uuid.UUID(str(value).strip())
+        except ValueError as e:
+            raise serializers.ValidationError(_("Enter a valid UUID.")) from e
 
     def validate(self, data):
         """Cross-field validation: resource_id requires resource_type."""
