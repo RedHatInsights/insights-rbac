@@ -18,11 +18,13 @@
 
 from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEventType, WorkspaceEvent
 from management.workspace.model import Workspace
-from management.workspace.serializer import WorkspaceEventSerializer
 
 
 def make_workspace_event(workspace: Workspace, event_type: ReplicationEventType):
     """Create a WorkspaceEvent with the provided workspace and event type."""
+    # To avoid circular dependency.
+    from management.workspace.serializer import WorkspaceEventSerializer
+
     if event_type not in (
         ReplicationEventType.CREATE_WORKSPACE,
         ReplicationEventType.UPDATE_WORKSPACE,
