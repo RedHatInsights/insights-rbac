@@ -30,7 +30,7 @@ repos:
   hooks:
   - id: gitleaks
 -   repo: https://github.com/python-openapi/openapi-spec-validator
-    rev: 0.8.4
+    rev: 0.8.5
     hooks:
     -   id: openapi-spec-validator
         files: ^(docs/source/specs/|rbac/internal/specs/).*\.(yaml|yml|json)$
