@@ -27,10 +27,14 @@ from django.db import IntegrityError
 from django.db.models import QuerySet
 from management.atomic_transactions import atomic
 from management.exceptions import NotFoundError, RequiredFieldError
-from management.models import Workspace
 from management.permission.exceptions import InvalidPermissionDataError
 from management.permission.model import PermissionValue
-from management.permission.scope_service import Scope, permission_scope_cache, scopes_for_resource_type
+from management.permission.scope_service import (
+    Scope,
+    permission_scope_cache,
+    scope_for_resource,
+    scopes_for_resource_type,
+)
 from management.permission.service import PermissionService
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
@@ -284,14 +288,11 @@ class RoleV2Service:
 
         if resource_type == "workspace":
             if resource_id is not None:
-                try:
-                    workspace = Workspace.objects.get(id=resource_id, tenant=self.tenant)
-                except Workspace.DoesNotExist:
+                assert self.tenant is not None
+                resolved = scope_for_resource(resource_type, str(resource_id), self.tenant)
+                if resolved is None:
                     return queryset.none()
-                if workspace.type == Workspace.Types.ROOT:
-                    matching_scopes = {Scope.ROOT}
-                else:
-                    matching_scopes = {Scope.DEFAULT}
+                matching_scopes = {resolved}
             else:
                 matching_scopes = {Scope.DEFAULT}
 
