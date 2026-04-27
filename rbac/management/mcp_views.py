@@ -428,7 +428,9 @@ def list_permissions(
         "or group_name (searches description for a specific group - USE THIS to narrow results). "
         "IMPORTANT: Always set group_name when investigating a specific group to avoid scanning all 100+ entries. "
         "Example: list_audit_logs(resource_type='group', action='add', group_name='<group-name>') "
-        "Set include_authorization=true to also see which role/permission authorized each action. "
+        "Set include_authorization=true to enrich each entry with the role and permission that authorized "
+        "the action (e.g., 'User Access administrator' role via 'Access Governance' group grants 'rbac:group:write'). "
+        "NOTE: Authorization shows actor's CURRENT role/permission — may differ from time of change. "
         "Order by: 'created', 'principal_username', 'resource_type', 'action' (prefix with '-' to reverse)."
     ),
     requires_auth=True,
