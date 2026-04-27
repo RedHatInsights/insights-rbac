@@ -1257,25 +1257,22 @@ class V2RoleSeedingTests(IdentityRequest):
         # Mock the migration function
         with patch("management.role.definer._migrate_bindings_for_scope_change") as mock_migrate:
             # Change the scope for this role's permissions
-            role_permissions = list(non_default_role.access.values_list("permission__permission", flat=True))
+            role_permissions = list(non_default_role.access.select_related("permission"))
             self.assertGreater(len(role_permissions), 0, f"Role {non_default_role.name} should have permissions")
-            if role_permissions:
-                permission_pattern = f"{role_permissions[0].split(':')[0]}:*:*"
+            permission_pattern = f"{role_permissions[0].permission.application}:*:*"
 
-                # Re-seed with the permission now in ROOT scope
-                with self.settings(ROOT_SCOPE_PERMISSIONS=permission_pattern, TENANT_SCOPE_PERMISSIONS=""):
-                    seed_roles()
+            # Re-seed with the permission now in ROOT scope
+            with self.settings(ROOT_SCOPE_PERMISSIONS=permission_pattern, TENANT_SCOPE_PERMISSIONS=""):
+                seed_roles()
 
-                # Verify that migration was NOT called for the non-default role
-                # (though it may be called for other default roles with same permission pattern)
-                for call in mock_migrate.call_args_list:
-                    role_arg = call[0][0]
-                    self.assertNotEqual(
-                        role_arg,
-                        non_default_role,
-                        f"Migration should not be called for non-default role {non_default_role.name} "
-                        "because it has no automatic bindings to migrate",
-                    )
+            # Verify that migration WAS called for the non-default role
+            # Non-default system roles may have manual bindings that need to be migrated
+            migration_called_for_role = any(call[0][0] == non_default_role for call in mock_migrate.call_args_list)
+            self.assertTrue(
+                migration_called_for_role,
+                f"Migration should be called for non-default role {non_default_role.name} "
+                "to update any manual bindings to the correct scope",
+            )
 
     def test_v2_role_permissions_updated_when_v1_changes(self):
         """Test that V2 role permissions are updated when V1 role permissions change."""

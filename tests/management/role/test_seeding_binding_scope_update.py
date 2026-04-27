@@ -24,7 +24,7 @@ from management.models import Access, Permission, Workspace
 from management.permission.scope_service import Scope
 from management.role.definer import (
     seed_roles,
-    _determine_old_scope,
+    _determine_old_scopes,
     _log_scope_change_and_migrate,
 )
 from management.role.model import Role
@@ -132,10 +132,10 @@ class SystemRoleBindingScopeUpdateTests(IdentityRequest):
 
         # Verify it was called with correct arguments
         call_args = test_role_calls[0][0]
-        role_arg, old_scope_arg, new_scope_arg = call_args
+        role_arg, old_scopes_arg, new_scope_arg = call_args
 
         self.assertEqual(role_arg, test_role, "Migration should be called for the test role")
-        self.assertEqual(old_scope_arg, Scope.DEFAULT, "Old scope should be DEFAULT")
+        self.assertEqual(old_scopes_arg, {Scope.DEFAULT}, "Old scopes should be {DEFAULT}")
         self.assertEqual(new_scope_arg, Scope.TENANT, "New scope should be TENANT")
 
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
@@ -173,14 +173,25 @@ class SystemRoleBindingScopeUpdateTests(IdentityRequest):
         # Verify initial binding at DEFAULT workspace
         v2_role = SeededRoleV2.objects.get(uuid=test_role.uuid)
 
-        # Find bindings for this workspace at the default workspace
+        # Find bindings for this role at the default workspace
+        # We need to filter specifically for bindings related to our group to avoid counting
+        # default access bindings (platform_default/admin_default automatic bindings)
         initial_bindings = self.tuples.find_tuples(
             all_of(
                 resource("rbac", "workspace", str(self.default_workspace.id)),
                 relation("binding"),
             )
+        ).traverse_subject(
+            all_of(
+                subject_type("rbac", "group", "member"),
+                subject("rbac", "group", str(group.uuid), "member"),
+            )
         )
-        self.assertGreater(len(initial_bindings), 0, "Should have binding at default workspace initially")
+        self.assertGreater(
+            len(initial_bindings),
+            0,
+            f"Should have binding at default workspace for group {group.uuid} initially",
+        )
 
         # Change scope to TENANT
         with self.settings(
@@ -196,132 +207,120 @@ class SystemRoleBindingScopeUpdateTests(IdentityRequest):
                 resource("rbac", "tenant", tenant_resource_id),
                 relation("binding"),
             )
+        ).traverse_subject(
+            all_of(
+                subject_type("rbac", "group", "member"),
+                subject("rbac", "group", str(group.uuid), "member"),
+            )
         )
-        self.assertGreater(len(tenant_bindings), 0, "Should have binding at tenant after migration")
+        self.assertGreater(
+            len(tenant_bindings),
+            0,
+            f"Should have binding at tenant for group {group.uuid} after migration",
+        )
 
-    def test_determine_old_scope_returns_none_for_new_role(self):
-        """Test that _determine_old_scope returns None when there's no existing V2 role."""
-        result = _determine_old_scope(None, {})
-        self.assertIsNone(result, "Should return None for new role")
+    def test_determine_old_scopes_returns_empty_for_new_role(self):
+        """Test that _determine_old_scopes returns empty set when there's no existing V1 role."""
+        result = _determine_old_scopes(None)
+        self.assertEqual(result, set(), "Should return empty set for None role")
 
-    def test_determine_old_scope_returns_none_for_role_without_parents(self):
-        """Test that _determine_old_scope returns None when role has no parent relationships and no permissions."""
-        # Create a mock V2 role with no parents and no permissions
-        mock_role = MagicMock()
-        mock_role.parents.values_list.return_value = []
-        mock_role.permissions.values_list.return_value = []
-        result = _determine_old_scope(mock_role, {})
-        self.assertIsNone(result, "Should return None for role without parents or permissions")
+    def test_determine_old_scopes_returns_empty_for_role_without_bindings(self):
+        """Test that _determine_old_scopes returns empty set when role has no bindings in V1 tenants."""
+        # Create a role with no bindings
+        test_role = Role.objects.create(
+            name="Test Role No Bindings",
+            tenant=self.public_tenant,
+            system=True,
+        )
+        result = _determine_old_scopes(test_role)
+        self.assertEqual(result, set(), "Should return empty set for role without bindings")
 
-    def test_determine_old_scope_detects_scope_from_parents(self):
-        """Test that _determine_old_scope correctly identifies scope from parent relationships."""
-        # Use actual seeded roles to test scope detection
+    def test_determine_old_scopes_detects_scope_from_bindings(self):
+        """Test that _determine_old_scopes correctly identifies scopes from actual bindings."""
+        # Seed roles to create bindings
         seed_group()
         seed_roles()
 
-        from management.role.definer import _seed_platform_roles
+        # Find a seeded role that should have bindings
+        v1_role = Role.objects.filter(
+            system=True,
+            tenant=self.public_tenant,
+            platform_default=True,
+        ).first()
 
-        platform_roles = _seed_platform_roles()
+        if v1_role:
+            # Create a group and assign the role to create bindings
+            group = Group.objects.create(name="Test Scope Detection", tenant=self.tenant, system=False)
+            add_roles(group, [v1_role.uuid], self.tenant)
 
-        # Find a seeded role that should have platform_default
-        v2_roles = SeededRoleV2.objects.filter(v1_source__platform_default=True, v1_source__tenant=self.public_tenant)
+            detected_scopes = _determine_old_scopes(v1_role)
 
-        if v2_roles.exists():
-            v2_role = v2_roles.first()
-            detected_scope = _determine_old_scope(v2_role, platform_roles)
-
-            # Verify it detected a valid scope (DEFAULT, TENANT, or ROOT)
-            self.assertIn(
-                detected_scope,
-                [Scope.DEFAULT, Scope.TENANT, Scope.ROOT],
-                f"Should detect a valid scope, got {detected_scope}",
+            # Should have at least one scope detected (the role should have bindings somewhere)
+            self.assertGreater(
+                len(detected_scopes),
+                0,
+                f"Should detect at least one scope for role with bindings, got {detected_scopes}",
             )
+
+            # All detected scopes should be valid
+            for scope in detected_scopes:
+                self.assertIn(
+                    scope,
+                    [Scope.DEFAULT, Scope.TENANT, Scope.ROOT],
+                    f"All scopes should be valid, got {scope}",
+                )
         else:
             self.skipTest("No platform_default seeded roles found to test with")
 
-    def test_determine_old_scope_detects_admin_scope_from_parents(self):
-        """Test that _determine_old_scope correctly identifies scope from admin parent relationships."""
-        # Use actual seeded roles to test scope detection
+    def test_determine_old_scopes_detects_admin_scope_from_bindings(self):
+        """Test that _determine_old_scopes correctly identifies scopes from admin role bindings."""
+        # Seed roles to create bindings
         seed_group()
         seed_roles()
-
-        from management.role.definer import _seed_platform_roles
-
-        platform_roles = _seed_platform_roles()
 
         # Find a seeded role that has admin_default
-        v2_roles = SeededRoleV2.objects.filter(v1_source__admin_default=True, v1_source__tenant=self.public_tenant)
+        v1_role = Role.objects.filter(
+            system=True,
+            admin_default=True,
+            tenant=self.public_tenant,
+        ).first()
 
-        if v2_roles.exists():
-            v2_role = v2_roles.first()
-            detected_scope = _determine_old_scope(v2_role, platform_roles)
+        if v1_role:
+            # Create a group and assign the role to create bindings
+            group = Group.objects.create(name="Test Admin Scope Detection", tenant=self.tenant, system=False)
+            add_roles(group, [v1_role.uuid], self.tenant)
 
-            # Verify it detected a valid scope
-            self.assertIn(
-                detected_scope,
-                [Scope.DEFAULT, Scope.TENANT, Scope.ROOT],
-                f"Should detect a valid scope from admin parent, got {detected_scope}",
+            detected_scopes = _determine_old_scopes(v1_role)
+
+            # Should have at least one scope detected
+            self.assertGreater(
+                len(detected_scopes),
+                0,
+                f"Should detect at least one scope for admin role with bindings, got {detected_scopes}",
             )
+
+            # All detected scopes should be valid
+            for scope in detected_scopes:
+                self.assertIn(
+                    scope,
+                    [Scope.DEFAULT, Scope.TENANT, Scope.ROOT],
+                    f"All scopes should be valid, got {scope}",
+                )
         else:
             self.skipTest("No admin_default seeded roles found to test with")
-
-    def test_determine_old_scope_calculates_from_permissions_when_no_parents(self):
-        """Test that _determine_old_scope falls back to calculating from permissions when role has no parents."""
-        from management.permission.scope_service import ImplicitResourceService
-        from management.role.definer import _seed_platform_roles
-
-        # Seed roles to set up platform roles
-        seed_group()
-        seed_roles()
-
-        platform_roles = _seed_platform_roles()
-        resource_service = ImplicitResourceService.from_settings()
-
-        # Find a non-default system role (no platform parents)
-        non_default_role = (
-            Role.objects.public_tenant_only()
-            .filter(platform_default=False, admin_default=False, system=True, access__isnull=False)
-            .distinct()
-            .first()
-        )
-
-        if not non_default_role:
-            self.skipTest("No non-default system roles with permissions found in test data")
-
-        # Get its V2 equivalent (should have no platform parents)
-        v2_role = SeededRoleV2.objects.filter(uuid=non_default_role.uuid).first()
-        self.assertIsNotNone(v2_role, "V2 role should exist for the non-default role")
-
-        # Verify it has no platform parents
-        parent_count = v2_role.parents.count()
-        self.assertEqual(parent_count, 0, "Non-default role should have no platform parents")
-
-        # Now try to determine old scope - should calculate from permissions
-        detected_scope = _determine_old_scope(v2_role, platform_roles, resource_service)
-
-        # Should be able to determine scope from permissions even without parents
-        self.assertIsNotNone(
-            detected_scope,
-            f"Should be able to calculate scope from permissions for {non_default_role.name}",
-        )
-        self.assertIn(
-            detected_scope,
-            [Scope.DEFAULT, Scope.TENANT, Scope.ROOT],
-            f"Should detect a valid scope from permissions, got {detected_scope}",
-        )
 
     @patch("management.role.definer._migrate_bindings_for_scope_change")
     def test_log_scope_change_and_migrate_does_nothing_when_scopes_equal(self, mock_migrate):
         """Test that no migration is triggered when old and new scopes are the same."""
         role = MagicMock()
-        _log_scope_change_and_migrate(role, "Test Role", Scope.DEFAULT, Scope.DEFAULT)
+        _log_scope_change_and_migrate(role, "Test Role", {Scope.DEFAULT}, Scope.DEFAULT)
         mock_migrate.assert_not_called()
 
     @patch("management.role.definer._migrate_bindings_for_scope_change")
-    def test_log_scope_change_and_migrate_does_nothing_when_old_scope_none(self, mock_migrate):
-        """Test that no migration is triggered when old_scope is None (new role)."""
+    def test_log_scope_change_and_migrate_does_nothing_when_old_scopes_empty(self, mock_migrate):
+        """Test that no migration is triggered when old_scopes is empty (no existing bindings)."""
         role = MagicMock()
-        _log_scope_change_and_migrate(role, "Test Role", None, Scope.DEFAULT)
+        _log_scope_change_and_migrate(role, "Test Role", set(), Scope.DEFAULT)
         mock_migrate.assert_not_called()
 
     @patch("management.role.definer._migrate_bindings_for_scope_change")
@@ -329,5 +328,5 @@ class SystemRoleBindingScopeUpdateTests(IdentityRequest):
         """Test that migration is triggered when scopes differ."""
         role = MagicMock()
         role.name = "Test Role"
-        _log_scope_change_and_migrate(role, "Test Role", Scope.DEFAULT, Scope.TENANT)
-        mock_migrate.assert_called_once_with(role, Scope.DEFAULT, Scope.TENANT)
+        _log_scope_change_and_migrate(role, "Test Role", {Scope.DEFAULT}, Scope.TENANT)
+        mock_migrate.assert_called_once_with(role, {Scope.DEFAULT}, Scope.TENANT)
