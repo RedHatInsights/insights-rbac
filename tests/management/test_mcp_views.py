@@ -17,15 +17,14 @@
 """Test the MCP views via _private/_a2s/ path."""
 
 import json
-from unittest.mock import patch
-
 from importlib import reload
+from unittest.mock import patch
 
 from django.test import override_settings
 from django.urls import clear_url_caches
 from django.utils import timezone
-from management.mcp_views import ToolConfig, _permission_matches
-from management.models import Access, Group, Permission, Policy, Principal, Role
+from management.mcp_views import ApiVersion, ToolConfig, _TOOL_CONFIG, _permission_matches
+from management.models import Access, AuditLog, Group, Permission, Policy, Principal, Role
 from management.role.v2_model import RoleV2
 from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
 from management.tenant_mapping.model import TenantMapping
@@ -636,8 +635,8 @@ class MCPViewTests(MCPToolTestMixin, IdentityRequest):
 
     # --- New read-only tools tests ---
 
-    def test_tools_list_includes_all_new_tools(self):
-        """Positive: tools/list includes all newly added read-only tools."""
+    def test_tools_list_includes_non_v2_tools(self):
+        """Positive: tools/list includes all non-V2-only tools when V2 is disabled."""
         body = {"jsonrpc": "2.0", "method": "tools/list", "id": 2, "params": {}}
         response = self.client.post(self.url, data=json.dumps(body), content_type="application/json", **self.headers)
 
@@ -650,7 +649,6 @@ class MCPViewTests(MCPToolTestMixin, IdentityRequest):
             "list_permission_options",
             "list_audit_logs",
             "search_roles",
-            "list_roles",
             "get_role",
             "list_role_access",
             "list_groups",
@@ -661,12 +659,21 @@ class MCPViewTests(MCPToolTestMixin, IdentityRequest):
             "get_cross_account_request",
             "list_workspaces",
             "get_workspace",
-            "list_role_bindings",
-            "list_role_bindings_by_subject",
             "check_user_permission",
         ]
         for tool in expected_tools:
             self.assertIn(tool, tool_names, f"Tool '{tool}' missing from tools/list")
+
+    def test_tools_list_excludes_v2_only_tools_when_v2_disabled(self):
+        """Negative: V2-only tools are hidden when V2_APIS_ENABLED=False."""
+        body = {"jsonrpc": "2.0", "method": "tools/list", "id": 2, "params": {}}
+        response = self.client.post(self.url, data=json.dumps(body), content_type="application/json", **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_names = [t["name"] for t in response.json()["result"]["tools"]]
+        v2_only_tools = [name for name, cfg in _TOOL_CONFIG.items() if cfg.api_version == ApiVersion.V2]
+        for tool in v2_only_tools:
+            self.assertNotIn(tool, tool_names, f"V2-only tool '{tool}' should be hidden")
 
     # --- get_status ---
 
@@ -756,6 +763,191 @@ class MCPViewTests(MCPToolTestMixin, IdentityRequest):
         data = response.json()
         self.assertIn("error", data)
         self.assertEqual(data["error"]["code"], -32000)
+
+    def test_list_audit_logs_filter_by_principal_username(self):
+        """Positive: list_audit_logs filters by principal_username."""
+        AuditLog.objects.create(
+            principal_username="jdoe",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.ADD,
+            description="role added to group",
+            tenant=self.tenant,
+        )
+        AuditLog.objects.create(
+            principal_username="other_user",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.ADD,
+            description="other action",
+            tenant=self.tenant,
+        )
+
+        response = self._call_tool("list_audit_logs", {"principal_username": "jdoe"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(len(tool_output["data"]), 1)
+        self.assertEqual(tool_output["data"][0]["principal_username"], "jdoe")
+
+    def test_list_audit_logs_filter_by_resource_type(self):
+        """Positive: list_audit_logs filters by resource_type."""
+        AuditLog.objects.create(
+            principal_username="user1",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.ADD,
+            description="group action",
+            tenant=self.tenant,
+        )
+        AuditLog.objects.create(
+            principal_username="user1",
+            resource_type=AuditLog.ROLE,
+            action=AuditLog.CREATE,
+            description="role action",
+            tenant=self.tenant,
+        )
+
+        response = self._call_tool("list_audit_logs", {"resource_type": "group"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(len(tool_output["data"]), 1)
+        self.assertEqual(tool_output["data"][0]["resource_type"], "group")
+
+    def test_list_audit_logs_filter_by_action(self):
+        """Positive: list_audit_logs filters by action."""
+        AuditLog.objects.create(
+            principal_username="user1",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.ADD,
+            description="add action",
+            tenant=self.tenant,
+        )
+        AuditLog.objects.create(
+            principal_username="user1",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.DELETE,
+            description="delete action",
+            tenant=self.tenant,
+        )
+
+        response = self._call_tool("list_audit_logs", {"action": "add"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(len(tool_output["data"]), 1)
+        self.assertEqual(tool_output["data"][0]["action"], "add")
+
+    @patch(
+        "management.mcp_views.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": [{"is_org_admin": False}]},
+    )
+    def test_list_audit_logs_include_authorization(self, mock_proxy):
+        """Positive: list_audit_logs with include_authorization returns role and permission."""
+        # Create audit log entry
+        AuditLog.objects.create(
+            principal_username=self.principal.username,
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.ADD,
+            description="Vulnerability administrator role added to group Contractors",
+            tenant=self.tenant,
+        )
+
+        # Set up authorization chain: principal -> group -> policy -> role -> access -> permission
+        role = Role.objects.create(name="User Access administrator", tenant=self.tenant)
+        perm = Permission.objects.create(
+            application="rbac",
+            resource_type="group",
+            verb="write",
+            permission="rbac:group:write",
+            tenant=self.tenant,
+        )
+        Access.objects.create(permission=perm, role=role, tenant=self.tenant)
+        group = Group.objects.create(name="Access Governance", tenant=self.tenant)
+        group.principals.add(self.principal)
+        policy = Policy.objects.create(name="auth_policy", group=group, tenant=self.tenant)
+        policy.roles.add(role)
+
+        response = self._call_tool("list_audit_logs", {"include_authorization": True})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(len(tool_output["data"]), 1)
+        entry = tool_output["data"][0]
+        self.assertIn("authorized_by", entry)
+        self.assertEqual(entry["authorized_by"]["role"], "User Access administrator")
+        self.assertEqual(entry["authorized_by"]["via_group"], "Access Governance")
+        self.assertEqual(entry["authorized_by"]["permission"], "rbac:group:write")
+
+    @patch(
+        "management.mcp_views.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": []},
+    )
+    def test_list_audit_logs_include_authorization_user_not_found(self, mock_proxy):
+        """Positive: list_audit_logs handles deleted/unknown users."""
+        AuditLog.objects.create(
+            principal_username="deleted_user",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.ADD,
+            description="action by deleted user",
+            tenant=self.tenant,
+        )
+
+        response = self._call_tool("list_audit_logs", {"include_authorization": True})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        entry = tool_output["data"][0]
+        self.assertIsNone(entry["authorized_by"])
+        self.assertIn("note", entry)
+        self.assertIn("deleted_user", entry["note"])
+
+    @patch(
+        "management.mcp_views.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": [{"is_org_admin": True}]},
+    )
+    def test_list_audit_logs_include_authorization_org_admin(self, mock_proxy):
+        """Positive: list_audit_logs shows org admin bypasses RBAC checks."""
+        AuditLog.objects.create(
+            principal_username="org_admin_user",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.ADD,
+            description="action by org admin",
+            tenant=self.tenant,
+        )
+
+        response = self._call_tool("list_audit_logs", {"include_authorization": True})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        entry = tool_output["data"][0]
+        self.assertIsNotNone(entry["authorized_by"])
+        self.assertEqual(entry["authorized_by"]["role"], "Org Admin")
+        self.assertIn("bypasses all RBAC", entry["authorized_by"]["permission"])
+
+    def test_list_audit_logs_invalid_order_by(self):
+        """Negative: list_audit_logs with invalid order_by returns error."""
+        response = self._call_tool("list_audit_logs", {"order_by": "invalid_field"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertIn("error", tool_output)
+        self.assertIn("Invalid order_by", tool_output["error"])
+
+    def test_list_audit_logs_empty_page_returns_total_count(self):
+        """Positive: list_audit_logs returns total count even when offset is past end."""
+        AuditLog.objects.create(
+            principal_username="user1",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.ADD,
+            description="test entry",
+            tenant=self.tenant,
+        )
+
+        response = self._call_tool("list_audit_logs", {"offset": 1000, "limit": 10})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(len(tool_output["data"]), 0)
+        self.assertEqual(tool_output["meta"]["count"], 1)
 
     # --- list_groups / get_group / list_group_principals ---
 
@@ -976,6 +1168,8 @@ class MCPViewV2ToolsTests(MCPToolTestMixin, IdentityRequest):
 
     def setUp(self):
         """Set up the MCP V2 tool tests."""
+        reload(urls)
+        clear_url_caches()
         super().setUp()
         self.url = "/_private/_a2s/mcp/"
         self.client = APIClient()
@@ -998,27 +1192,17 @@ class MCPViewV2ToolsTests(MCPToolTestMixin, IdentityRequest):
         Principal.objects.all().delete()
         super().tearDown()
 
-    # --- list_roles / get_role ---
+    # --- V2 gating: tools/list includes V2-only tools ---
 
-    def test_list_roles_success(self):
-        """Positive: list_roles returns role data."""
-        response = self._call_tool("list_roles")
-
-        self.assertEqual(response.status_code, status.HTTP_200_OK)
-        data = response.json()
-        self.assertFalse(data["result"]["isError"])
-        tool_output = self._get_tool_output(response)
-        self.assertIn("meta", tool_output)
-        self.assertIn("data", tool_output)
-
-    def test_list_roles_without_auth_returns_error(self):
-        """Permission: list_roles without auth returns auth error."""
-        response = self._call_tool("list_roles", use_auth=False)
+    def test_tools_list_includes_v2_only_tools_when_v2_enabled(self):
+        """Positive: V2-only tools are visible when V2_APIS_ENABLED=True."""
+        body = {"jsonrpc": "2.0", "method": "tools/list", "id": 2, "params": {}}
+        response = self.client.post(self.url, data=json.dumps(body), content_type="application/json", **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        data = response.json()
-        self.assertIn("error", data)
-        self.assertEqual(data["error"]["code"], -32000)
+        tool_names = [t["name"] for t in response.json()["result"]["tools"]]
+        self.assertIn("list_role_bindings", tool_names)
+        self.assertIn("list_role_bindings_by_subject", tool_names)
 
     # --- list_workspaces / get_workspace ---
 
@@ -1195,7 +1379,7 @@ class MCPCheckUserPermissionTests(MCPToolTestMixin, IdentityRequest):
 
 
 class MCPSearchRolesTests(MCPToolTestMixin, IdentityRequest):
-    """Tests for the search_roles MCP tool."""
+    """Tests for the unified search_roles MCP tool (V1 path)."""
 
     def setUp(self):
         """Set up search_roles tests."""
@@ -1208,8 +1392,8 @@ class MCPSearchRolesTests(MCPToolTestMixin, IdentityRequest):
         Role.objects.all().delete()
         super().tearDown()
 
-    def test_search_roles_success(self):
-        """Positive: search_roles returns role data."""
+    def test_search_roles_v1_success(self):
+        """Positive: search_roles on V1 org returns role data with org_version=v1."""
         Role.objects.create(name="test_v1_role", tenant=self.tenant)
         response = self._call_tool("search_roles")
 
@@ -1219,9 +1403,10 @@ class MCPSearchRolesTests(MCPToolTestMixin, IdentityRequest):
         tool_output = self._get_tool_output(response)
         self.assertIn("meta", tool_output)
         self.assertIn("data", tool_output)
+        self.assertEqual(tool_output["org_version"], "v1")
 
-    def test_search_roles_filter_by_name(self):
-        """Positive: search_roles filters by name."""
+    def test_search_roles_v1_filter_by_name(self):
+        """Positive: search_roles on V1 org filters by name."""
         Role.objects.create(name="Patch Reviewer", tenant=self.tenant)
         Role.objects.create(name="Other Role", tenant=self.tenant)
         response = self._call_tool("search_roles", {"name": "Patch Reviewer"})
@@ -1231,6 +1416,7 @@ class MCPSearchRolesTests(MCPToolTestMixin, IdentityRequest):
         self.assertTrue(tool_output["meta"]["count"] >= 1)
         for role in tool_output["data"]:
             self.assertIn("Patch Reviewer", role["name"])
+        self.assertEqual(tool_output["org_version"], "v1")
 
     def test_search_roles_without_auth_returns_error(self):
         """Permission: search_roles without auth returns auth error."""
@@ -1512,3 +1698,324 @@ class MCPCheckUserPermissionV2Tests(MCPToolTestMixin, IdentityRequest):
         self.assertTrue(tool_output["allowed"])
         self.assertEqual(tool_output["matched_permission"], "vulnerability:vulnerability:*")
         self.assertEqual(tool_output["org_version"], "v2")
+
+
+@override_settings(BYPASS_BOP_VERIFICATION=True, V2_APIS_ENABLED=True)
+class MCPUnifiedSearchRolesV2Tests(MCPToolTestMixin, IdentityRequest):
+    """Tests for the unified search_roles MCP tool routing to V2."""
+
+    def setUp(self):
+        """Set up V2 search_roles tests."""
+        reload(urls)
+        clear_url_caches()
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.get_kessel_principal_id",
+                return_value="localhost/test-user-id",
+            )
+        )
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.WorkspaceInventoryAccessChecker.check_resource_access",
+                return_value=True,
+            )
+        )
+        TenantMapping.objects.create(tenant=self.tenant, v2_write_activated_at=timezone.now())
+
+    def tearDown(self):
+        """Tear down V2 search_roles tests."""
+        RoleV2.objects.all().delete()
+        TenantMapping.objects.all().delete()
+        super().tearDown()
+
+    def test_search_roles_v2_success(self):
+        """Positive: search_roles on V2 org returns role data with org_version=v2."""
+        RoleV2.objects.create(name="V2 Custom Role", tenant=self.tenant, type=RoleV2.Types.CUSTOM)
+        response = self._call_tool("search_roles")
+
+        self.assertEqual(response.status_code, 200)
+        tool_output = self._get_tool_output(response)
+        self.assertIn("meta", tool_output)
+        self.assertIn("data", tool_output)
+        self.assertEqual(tool_output["org_version"], "v2")
+
+    def test_search_roles_v2_filter_by_name(self):
+        """Positive: search_roles on V2 org filters by name."""
+        RoleV2.objects.create(name="Cost Reader", tenant=self.tenant, type=RoleV2.Types.CUSTOM)
+        RoleV2.objects.create(name="Other V2 Role", tenant=self.tenant, type=RoleV2.Types.CUSTOM)
+        response = self._call_tool("search_roles", {"name": "Cost Reader"})
+
+        self.assertEqual(response.status_code, 200)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["org_version"], "v2")
+        role_names = [r["name"] for r in tool_output["data"]]
+        self.assertIn("Cost Reader", role_names)
+
+
+@override_settings(BYPASS_BOP_VERIFICATION=True, V2_APIS_ENABLED=True)
+class MCPUnifiedGetRoleTests(MCPToolTestMixin, IdentityRequest):
+    """Tests for the unified get_role MCP tool routing to V1 and V2."""
+
+    def setUp(self):
+        """Set up get_role tests."""
+        reload(urls)
+        clear_url_caches()
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.get_kessel_principal_id",
+                return_value="localhost/test-user-id",
+            )
+        )
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.WorkspaceInventoryAccessChecker.check_resource_access",
+                return_value=True,
+            )
+        )
+
+    def tearDown(self):
+        """Tear down get_role tests."""
+        RoleV2.objects.all().delete()
+        Permission.objects.all().delete()
+        TenantMapping.objects.all().delete()
+        Role.objects.all().delete()
+        super().tearDown()
+
+    def test_get_role_v1_returns_role_with_permissions(self):
+        """Positive: get_role on V1 org returns role details with permissions and org_version=v1."""
+        perm = Permission.objects.create(
+            application="cost-management",
+            resource_type="cost_model",
+            verb="read",
+            permission="cost-management:cost_model:read",
+            tenant=self.tenant,
+        )
+        role = Role.objects.create(name="Cost Reader V1", tenant=self.tenant)
+        access = Access.objects.create(role=role, permission=perm, tenant=self.tenant)
+        Policy.objects.create(name="auto_policy", group=None, tenant=self.tenant).roles.add(role)
+
+        response = self._call_tool("get_role", {"role_uuid": str(role.uuid)})
+
+        self.assertEqual(response.status_code, 200)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["uuid"], str(role.uuid))
+        self.assertEqual(tool_output["org_version"], "v1")
+        self.assertIn("permissions", tool_output)
+
+        access.delete()
+        perm.delete()
+
+    def test_get_role_v2_returns_role_with_permissions(self):
+        """Positive: get_role on V2 org returns role details with permissions and org_version=v2."""
+        TenantMapping.objects.create(tenant=self.tenant, v2_write_activated_at=timezone.now())
+
+        perm = Permission.objects.create(
+            application="vulnerability",
+            resource_type="vulnerability",
+            verb="read",
+            permission="vulnerability:vulnerability:read",
+            tenant=self.tenant,
+        )
+        role = RoleV2.objects.create(name="Vuln Reader V2", tenant=self.tenant)
+        role.permissions.add(perm)
+
+        response = self._call_tool("get_role", {"role_uuid": str(role.uuid)})
+
+        self.assertEqual(response.status_code, 200)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["id"], str(role.uuid))
+        self.assertEqual(tool_output["org_version"], "v2")
+        self.assertIn("permissions", tool_output)
+
+
+class MCPDeploymentGatingTests(MCPToolTestMixin, IdentityRequest):
+    """Tests for deployment-level V2 tool gating."""
+
+    def setUp(self):
+        """Set up gating tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+
+    def test_calling_v2_tool_when_v2_disabled_returns_error(self):
+        """Negative: calling a V2-only tool when V2 is disabled returns a clear error."""
+        response = self._call_tool("list_role_bindings")
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertIn("V2 APIs", data["error"]["message"])
+
+    def test_api_version_classification(self):
+        """Verify all tools have an api_version set."""
+        for tool_name, config in _TOOL_CONFIG.items():
+            self.assertIn(
+                config.api_version,
+                (ApiVersion.UNIFIED, ApiVersion.COMMON, ApiVersion.V1, ApiVersion.V2, ApiVersion.UNVERSIONED),
+                f"Tool '{tool_name}' has unexpected api_version: {config.api_version}",
+            )
+
+    def test_unified_tools_are_always_listed(self):
+        """Positive: unified tools appear in tools/list regardless of V2 setting."""
+        body = {"jsonrpc": "2.0", "method": "tools/list", "id": 2, "params": {}}
+        response = self.client.post(self.url, data=json.dumps(body), content_type="application/json", **self.headers)
+
+        tool_names = [t["name"] for t in response.json()["result"]["tools"]]
+        self.assertIn("search_roles", tool_names)
+        self.assertIn("get_role", tool_names)
+        self.assertIn("check_user_permission", tool_names)
+
+
+class MCPToolDescriptionOverrideTests(MCPToolTestMixin, IdentityRequest):
+    """Test that Redis-backed description overrides are applied in tools/list."""
+
+    def setUp(self):
+        """Set up."""
+        super().setUp()
+        self.mcp_url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+
+    @patch(
+        "management.mcp_views._get_all_description_overrides",
+        return_value={"hello": "Overridden description for MCP"},
+    )
+    def test_override_appears_in_tools_list(self, mock_overrides):
+        """After setting an override, tools/list returns the overridden description."""
+        body = {"jsonrpc": "2.0", "method": "tools/list", "id": 2, "params": {}}
+        response = self.client.post(
+            self.mcp_url, data=json.dumps(body), content_type="application/json", **self.headers
+        )
+        self.assertEqual(response.status_code, 200)
+        tools = response.json()["result"]["tools"]
+        hello_tool = next(t for t in tools if t["name"] == "hello")
+        self.assertEqual(hello_tool["description"], "Overridden description for MCP")
+
+    @patch(
+        "management.mcp_views._get_all_description_overrides",
+        return_value={"hello": "custom hello"},
+    )
+    def test_non_overridden_tools_keep_defaults(self, mock_overrides):
+        """Overriding one tool does not affect other tools."""
+        body = {"jsonrpc": "2.0", "method": "tools/list", "id": 2, "params": {}}
+        response = self.client.post(
+            self.mcp_url, data=json.dumps(body), content_type="application/json", **self.headers
+        )
+        tools = response.json()["result"]["tools"]
+        principals_tool = next(t for t in tools if t["name"] == "list_principals")
+        self.assertIn("List principals", principals_tool["description"])
+
+
+class MCPToolDescriptionEndpointTests(MCPToolTestMixin, IdentityRequest):
+    """Test the internal endpoint for managing MCP tool description overrides."""
+
+    def setUp(self):
+        """Set up."""
+        super().setUp()
+        self.base_url = "/_private/api/utils/mcp_tool_descriptions/"
+        self.client = APIClient()
+        internal_context = self._create_request_context(self.customer_data, self.user_data, is_internal=True)
+        self.internal_headers = internal_context["request"].META
+
+        self._override_store = {}
+        patcher_get_all = patch(
+            "management.mcp_views._get_all_description_overrides",
+            side_effect=lambda: dict(self._override_store),
+        )
+        patcher_get = patch(
+            "management.mcp_views._get_description_override",
+            side_effect=lambda name: self._override_store.get(name),
+        )
+        patcher_set = patch(
+            "management.mcp_views._set_description_override",
+            side_effect=lambda name, desc: self._override_store.__setitem__(name, desc),
+        )
+        patcher_delete = patch(
+            "management.mcp_views._delete_description_override",
+            side_effect=lambda name: self._override_store.pop(name, None),
+        )
+        patcher_get_all.start()
+        patcher_get.start()
+        patcher_set.start()
+        patcher_delete.start()
+        self.addCleanup(patcher_get_all.stop)
+        self.addCleanup(patcher_get.stop)
+        self.addCleanup(patcher_set.stop)
+        self.addCleanup(patcher_delete.stop)
+
+    def test_list_descriptions_returns_all_tools(self):
+        """GET list returns all registered tools with default descriptions."""
+        response = self.client.get(self.base_url, **self.internal_headers)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        tool_names = [t["tool_name"] for t in data["tools"]]
+        self.assertIn("hello", tool_names)
+        self.assertIn("list_principals", tool_names)
+        hello_tool = next(t for t in data["tools"] if t["tool_name"] == "hello")
+        self.assertIsNotNone(hello_tool["default_description"])
+        self.assertIsNone(hello_tool["override_description"])
+        self.assertEqual(hello_tool["active_description"], hello_tool["default_description"])
+
+    def test_get_single_tool_description(self):
+        """GET single tool returns its default description."""
+        response = self.client.get(f"{self.base_url}hello/", **self.internal_headers)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["tool_name"], "hello")
+        self.assertIsNone(data["override_description"])
+        self.assertIn("RBAC service", data["default_description"])
+
+    def test_set_description_override(self):
+        """PUT sets description override for a tool."""
+        new_desc = "Custom hello description for testing"
+        response = self.client.put(
+            f"{self.base_url}hello/",
+            data=json.dumps({"description": new_desc}),
+            content_type="application/json",
+            **self.internal_headers,
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["tool_name"], "hello")
+        self.assertEqual(data["override_description"], new_desc)
+
+    def test_delete_override_reverts_to_default(self):
+        """DELETE removes override and reverts to default description."""
+        self._override_store["hello"] = "temporary override"
+
+        response = self.client.delete(f"{self.base_url}hello/", **self.internal_headers)
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIsNone(data["override_description"])
+
+        response = self.client.get(f"{self.base_url}hello/", **self.internal_headers)
+        data = response.json()
+        self.assertIsNone(data["override_description"])
+
+    def test_unknown_tool_returns_404(self):
+        """PUT/DELETE/GET for unknown tool returns 404."""
+        response = self.client.get(f"{self.base_url}nonexistent_tool/", **self.internal_headers)
+        self.assertEqual(response.status_code, 404)
+
+        response = self.client.put(
+            f"{self.base_url}nonexistent_tool/",
+            data=json.dumps({"description": "test"}),
+            content_type="application/json",
+            **self.internal_headers,
+        )
+        self.assertEqual(response.status_code, 404)
+
+    def test_put_without_description_returns_400(self):
+        """PUT without description field returns 400."""
+        response = self.client.put(
+            f"{self.base_url}hello/",
+            data=json.dumps({}),
+            content_type="application/json",
+            **self.internal_headers,
+        )
+        self.assertEqual(response.status_code, 400)

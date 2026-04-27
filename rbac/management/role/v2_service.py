@@ -29,7 +29,14 @@ from management.atomic_transactions import atomic
 from management.exceptions import NotFoundError, RequiredFieldError
 from management.permission.exceptions import InvalidPermissionDataError
 from management.permission.model import PermissionValue
-from management.permission.scope_service import Scope, permission_scope_cache, scopes_for_resource_type
+from management.permission.scope_service import (
+    SCOPE_DISPLAY_NAME,
+    Scope,
+    default_implicit_resource_service,
+    permission_scope_cache,
+    scope_for_resource,
+    scopes_for_resource_type,
+)
 from management.permission.service import PermissionService
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
@@ -113,6 +120,19 @@ class RoleV2Service:
                     "Permissions from migration-excluded applications cannot be used in V2 custom roles: "
                     + ", ".join(bad_apps)
                 )
+
+        perms_by_scope: dict[Scope, list[str]] = {}
+        for p in permissions:
+            scope = default_implicit_resource_service.scope_for_permission(p.permission)
+            perms_by_scope.setdefault(scope, []).append(p.permission)
+        if len(perms_by_scope) > 1:
+            details = "; ".join(
+                f"{SCOPE_DISPLAY_NAME[scope]}: {', '.join(sorted(perms))}"
+                for scope, perms in sorted(perms_by_scope.items())
+            )
+            raise InvalidRolePermissionsError(
+                f"All permissions in a role must belong to the same scope. Found: {details}"
+            )
 
         return permissions
 
@@ -256,7 +276,7 @@ class RoleV2Service:
 
         resource_type = params.get("resource_type")
         if resource_type:
-            queryset = self._filter_by_resource_type(queryset, resource_type)
+            queryset = self._filter_by_resource_type(queryset, resource_type, resource_id=params.get("resource_id"))
 
         name = params.get("name")
         if name:
@@ -264,8 +284,15 @@ class RoleV2Service:
 
         return queryset
 
-    def _filter_by_resource_type(self, queryset: QuerySet, resource_type: str) -> QuerySet:
+    def _filter_by_resource_type(
+        self, queryset: QuerySet, resource_type: str, resource_id: Optional[uuid.UUID] = None
+    ) -> QuerySet:
         """Filter roles to those whose highest permission scope maps to resource_type.
+
+        For ``resource_type=workspace``:
+        - With no ``resource_id``: only DEFAULT-scoped roles (default workspace and custom workspaces).
+        - With ``resource_id`` the root workspace UUID: only ROOT-scoped roles.
+        - With any other workspace UUID: only DEFAULT-scoped roles.
 
         Uses DB-level filtering with cached Permission-ID-to-Scope mappings to
         avoid loading all roles and their permissions into Python memory.
@@ -273,6 +300,16 @@ class RoleV2Service:
         matching_scopes = scopes_for_resource_type(resource_type)
         if not matching_scopes:
             return queryset.none()
+
+        if resource_type == "workspace":
+            if resource_id is not None:
+                assert self.tenant is not None
+                resolved = scope_for_resource(resource_type, str(resource_id), self.tenant)
+                if resolved is None:
+                    return queryset.none()
+                matching_scopes = {resolved}
+            else:
+                matching_scopes = {Scope.DEFAULT}
 
         higher_non_matching = {s for s in (set(Scope) - matching_scopes) if s > max(matching_scopes)}
 

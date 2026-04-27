@@ -320,10 +320,38 @@ SCOPE_RESOURCE_TYPE: dict[Scope, str] = {
 }
 """Maps each Scope to the resource_type string it binds to."""
 
+SCOPE_DISPLAY_NAME: dict[Scope, str] = {
+    Scope.DEFAULT: "Default Workspace",
+    Scope.ROOT: "Root Workspace",
+    Scope.TENANT: "Organization",
+}
+"""User-facing label for each Scope (avoids exposing internal 'tenant' terminology)."""
+
 
 def scopes_for_resource_type(resource_type: str) -> set[Scope]:
     """Return all Scope values that map to the given resource_type."""
     return {scope for scope, rt in SCOPE_RESOURCE_TYPE.items() if rt == resource_type}
+
+
+def scope_for_resource(resource_type: str, resource_id: str, tenant: Tenant) -> Scope | None:
+    """Return the single expected Scope for a (resource_type, resource_id) pair, or None if unknown.
+
+    * ``tenant`` -> ``Scope.TENANT``
+    * ``workspace`` with the root workspace -> ``Scope.ROOT``
+    * ``workspace`` with any other workspace -> ``Scope.DEFAULT``
+    * anything else -> ``None``
+    """
+    if resource_type == "tenant":
+        return Scope.TENANT
+    if resource_type == "workspace":
+        try:
+            workspace = Workspace.objects.get(id=resource_id, tenant=tenant)
+        except Workspace.DoesNotExist:
+            return None
+        if workspace.type == Workspace.Types.ROOT:
+            return Scope.ROOT
+        return Scope.DEFAULT
+    return None
 
 
 """
