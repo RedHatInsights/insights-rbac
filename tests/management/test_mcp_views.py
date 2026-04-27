@@ -949,6 +949,31 @@ class MCPViewTests(MCPToolTestMixin, IdentityRequest):
         self.assertEqual(len(tool_output["data"]), 0)
         self.assertEqual(tool_output["meta"]["count"], 1)
 
+    def test_list_audit_logs_filter_by_group_name(self):
+        """Positive: list_audit_logs filters by group_name in description."""
+        AuditLog.objects.create(
+            principal_username="user1",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.ADD,
+            description="Added role to group: target_group_alpha",
+            tenant=self.tenant,
+        )
+        AuditLog.objects.create(
+            principal_username="user2",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.ADD,
+            description="Added role to group: other_group_beta",
+            tenant=self.tenant,
+        )
+
+        response = self._call_tool("list_audit_logs", {"group_name": "target_group_alpha"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["meta"]["count"], 1)
+        self.assertEqual(len(tool_output["data"]), 1)
+        self.assertIn("target_group_alpha", tool_output["data"][0]["description"])
+
     # --- list_groups / get_group / list_group_principals ---
 
     def test_list_groups_success(self):
@@ -1124,6 +1149,52 @@ class MCPViewTests(MCPToolTestMixin, IdentityRequest):
         data = response.json()
         self.assertIn("error", data)
         self.assertEqual(data["error"]["code"], -32000)
+
+    def test_list_group_roles_by_name(self):
+        """Positive: list_group_roles accepts group_name instead of group_uuid."""
+        group = Group.objects.create(name="group_for_roles_test", tenant=self.tenant)
+        role = Role.objects.create(name="role_alpha", tenant=self.tenant)
+        policy = Policy.objects.create(name="policy_alpha", group=group, tenant=self.tenant)
+        policy.roles.add(role)
+
+        response = self._call_tool("list_group_roles", {"group_name": "group_for_roles_test"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertIn("data", tool_output)
+
+    def test_list_group_roles_by_name_case_insensitive(self):
+        """Positive: list_group_roles group_name lookup is case-insensitive."""
+        group = Group.objects.create(name="Group_With_Mixed_Case", tenant=self.tenant)
+        role = Role.objects.create(name="role_beta", tenant=self.tenant)
+        policy = Policy.objects.create(name="policy_beta", group=group, tenant=self.tenant)
+        policy.roles.add(role)
+
+        response = self._call_tool("list_group_roles", {"group_name": "group_with_mixed_case"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+
+    def test_list_group_roles_missing_both_params_returns_error(self):
+        """Negative: list_group_roles without group_uuid or group_name returns error."""
+        response = self._call_tool("list_group_roles", {})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertIn("error", tool_output)
+        self.assertIn("Either group_uuid or group_name is required", tool_output["error"])
+
+    def test_list_group_roles_group_not_found_returns_error(self):
+        """Negative: list_group_roles with non-existent group_name returns error."""
+        response = self._call_tool("list_group_roles", {"group_name": "nonexistent_group_xyz"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertIn("error", tool_output)
+        self.assertIn("not found", tool_output["error"])
 
     # --- list_role_access ---
 
