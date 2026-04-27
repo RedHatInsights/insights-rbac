@@ -2626,6 +2626,93 @@ class UpdateRoleBindingsForSubjectTests(_ReplicationAssertionsMixin, IdentityReq
         self.assertIn("admin default group", str(context.exception))
         admin_group.delete()
 
+    def test_update_rejects_tenant_scoped_role_on_workspace(self):
+        """Binding a tenant-scoped role to a workspace should fail."""
+        from management.permission.scope_service import ImplicitResourceService
+
+        scope_service = ImplicitResourceService(
+            tenant_scope_permissions=["tenant_app:*:*"],
+            root_scope_permissions=[],
+        )
+
+        tenant_perm = Permission.objects.create(permission="tenant_app:res:read", tenant=self.tenant)
+        tenant_role = RoleV2.objects.create(name="tenant_role", description="Tenant", tenant=self.tenant)
+        tenant_role.permissions.add(tenant_perm)
+
+        with patch("management.role_binding.service.default_implicit_resource_service", scope_service):
+            with self.assertRaises(InvalidFieldError) as ctx:
+                self.service.update_role_bindings_for_subject(
+                    resource_type="workspace",
+                    resource_id=str(self.workspace.id),
+                    subject_type="group",
+                    subject_id=str(self.group.uuid),
+                    role_ids=[str(tenant_role.uuid)],
+                )
+            self.assertIn("not scoped", str(ctx.exception))
+
+    def test_update_rejects_default_scoped_role_on_root_workspace(self):
+        """Binding a default-scoped role to the root workspace should fail."""
+        from management.permission.scope_service import ImplicitResourceService
+
+        scope_service = ImplicitResourceService(
+            tenant_scope_permissions=[],
+            root_scope_permissions=["root_app:*:*"],
+        )
+
+        with patch("management.role_binding.service.default_implicit_resource_service", scope_service):
+            with self.assertRaises(InvalidFieldError) as ctx:
+                self.service.update_role_bindings_for_subject(
+                    resource_type="workspace",
+                    resource_id=str(self.root_workspace.id),
+                    subject_type="group",
+                    subject_id=str(self.group.uuid),
+                    role_ids=[str(self.role1.uuid)],
+                )
+            self.assertIn("not scoped", str(ctx.exception))
+
+    def test_update_rejects_default_scoped_role_on_tenant(self):
+        """Binding a default-scoped role to a tenant resource should fail."""
+        from management.permission.scope_service import ImplicitResourceService
+
+        scope_service = ImplicitResourceService(
+            tenant_scope_permissions=["tenant_app:*:*"],
+            root_scope_permissions=[],
+        )
+
+        with patch("management.role_binding.service.default_implicit_resource_service", scope_service):
+            with self.assertRaises(InvalidFieldError) as ctx:
+                self.service.update_role_bindings_for_subject(
+                    resource_type="tenant",
+                    resource_id=self.tenant.tenant_resource_id(),
+                    subject_type="group",
+                    subject_id=str(self.group.uuid),
+                    role_ids=[str(self.role1.uuid)],
+                )
+            self.assertIn("not scoped", str(ctx.exception))
+
+    def test_update_allows_correctly_scoped_role_on_root_workspace(self):
+        """A root-scoped role should be accepted on the root workspace."""
+        from management.permission.scope_service import ImplicitResourceService
+
+        scope_service = ImplicitResourceService(
+            tenant_scope_permissions=[],
+            root_scope_permissions=["root_app:*:*"],
+        )
+
+        root_perm = Permission.objects.create(permission="root_app:res:read", tenant=self.tenant)
+        root_role = RoleV2.objects.create(name="root_role", description="Root", tenant=self.tenant)
+        root_role.permissions.add(root_perm)
+
+        with patch("management.role_binding.service.default_implicit_resource_service", scope_service):
+            result = self.service.update_role_bindings_for_subject(
+                resource_type="workspace",
+                resource_id=str(self.root_workspace.id),
+                subject_type="group",
+                subject_id=str(self.group.uuid),
+                role_ids=[str(root_role.uuid)],
+            )
+        self.assertEqual({r.uuid for r in result.roles}, {root_role.uuid})
+
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)
 class ReplaceRoleBindingsTests(_ReplicationAssertionsMixin, IdentityRequest):
