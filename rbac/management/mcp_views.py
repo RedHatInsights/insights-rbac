@@ -490,7 +490,11 @@ def list_audit_logs(
     # Enrich with authorization context
     auth_cache: dict[str, dict[str, dict[str, Any] | None]] = {}
     org_admin_cache: dict[str, bool] = {}
-    org_admin_auth = {"role": "Org Admin", "via_group": None, "permission": "(bypasses all RBAC checks)"}
+    org_admin_auth: dict[str, Any] = {
+        "role": "Org Admin",
+        "via_group": None,
+        "permission": "(bypasses all RBAC checks)",
+    }
     results = []
 
     for entry in entries:
@@ -506,6 +510,7 @@ def list_audit_logs(
         if actor not in org_admin_cache:
             org_admin_cache[actor] = _is_org_admin(actor, tenant.org_id)
 
+        auth_info: dict[str, Any] | None
         if org_admin_cache[actor]:
             auth_info = org_admin_auth
         elif cache_key not in auth_cache[actor]:
