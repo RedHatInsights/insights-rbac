@@ -17,15 +17,14 @@
 """Test the MCP views via _private/_a2s/ path."""
 
 import json
-from unittest.mock import patch
-
 from importlib import reload
+from unittest.mock import patch
 
 from django.test import override_settings
 from django.urls import clear_url_caches
 from django.utils import timezone
 from management.mcp_views import ApiVersion, ToolConfig, _TOOL_CONFIG, _permission_matches
-from management.models import Access, Group, Permission, Policy, Principal, Role
+from management.models import Access, AuditLog, Group, Permission, Policy, Principal, Role
 from management.role.v2_model import RoleV2
 from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
 from management.tenant_mapping.model import TenantMapping
@@ -764,6 +763,191 @@ class MCPViewTests(MCPToolTestMixin, IdentityRequest):
         data = response.json()
         self.assertIn("error", data)
         self.assertEqual(data["error"]["code"], -32000)
+
+    def test_list_audit_logs_filter_by_principal_username(self):
+        """Positive: list_audit_logs filters by principal_username."""
+        AuditLog.objects.create(
+            principal_username="jdoe",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.ADD,
+            description="role added to group",
+            tenant=self.tenant,
+        )
+        AuditLog.objects.create(
+            principal_username="other_user",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.ADD,
+            description="other action",
+            tenant=self.tenant,
+        )
+
+        response = self._call_tool("list_audit_logs", {"principal_username": "jdoe"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(len(tool_output["data"]), 1)
+        self.assertEqual(tool_output["data"][0]["principal_username"], "jdoe")
+
+    def test_list_audit_logs_filter_by_resource_type(self):
+        """Positive: list_audit_logs filters by resource_type."""
+        AuditLog.objects.create(
+            principal_username="user1",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.ADD,
+            description="group action",
+            tenant=self.tenant,
+        )
+        AuditLog.objects.create(
+            principal_username="user1",
+            resource_type=AuditLog.ROLE,
+            action=AuditLog.CREATE,
+            description="role action",
+            tenant=self.tenant,
+        )
+
+        response = self._call_tool("list_audit_logs", {"resource_type": "group"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(len(tool_output["data"]), 1)
+        self.assertEqual(tool_output["data"][0]["resource_type"], "group")
+
+    def test_list_audit_logs_filter_by_action(self):
+        """Positive: list_audit_logs filters by action."""
+        AuditLog.objects.create(
+            principal_username="user1",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.ADD,
+            description="add action",
+            tenant=self.tenant,
+        )
+        AuditLog.objects.create(
+            principal_username="user1",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.DELETE,
+            description="delete action",
+            tenant=self.tenant,
+        )
+
+        response = self._call_tool("list_audit_logs", {"action": "add"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(len(tool_output["data"]), 1)
+        self.assertEqual(tool_output["data"][0]["action"], "add")
+
+    @patch(
+        "management.mcp_views.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": [{"is_org_admin": False}]},
+    )
+    def test_list_audit_logs_include_authorization(self, mock_proxy):
+        """Positive: list_audit_logs with include_authorization returns role and permission."""
+        # Create audit log entry
+        AuditLog.objects.create(
+            principal_username=self.principal.username,
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.ADD,
+            description="Vulnerability administrator role added to group Contractors",
+            tenant=self.tenant,
+        )
+
+        # Set up authorization chain: principal -> group -> policy -> role -> access -> permission
+        role = Role.objects.create(name="User Access administrator", tenant=self.tenant)
+        perm = Permission.objects.create(
+            application="rbac",
+            resource_type="group",
+            verb="write",
+            permission="rbac:group:write",
+            tenant=self.tenant,
+        )
+        Access.objects.create(permission=perm, role=role, tenant=self.tenant)
+        group = Group.objects.create(name="Access Governance", tenant=self.tenant)
+        group.principals.add(self.principal)
+        policy = Policy.objects.create(name="auth_policy", group=group, tenant=self.tenant)
+        policy.roles.add(role)
+
+        response = self._call_tool("list_audit_logs", {"include_authorization": True})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(len(tool_output["data"]), 1)
+        entry = tool_output["data"][0]
+        self.assertIn("authorized_by", entry)
+        self.assertEqual(entry["authorized_by"]["role"], "User Access administrator")
+        self.assertEqual(entry["authorized_by"]["via_group"], "Access Governance")
+        self.assertEqual(entry["authorized_by"]["permission"], "rbac:group:write")
+
+    @patch(
+        "management.mcp_views.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": []},
+    )
+    def test_list_audit_logs_include_authorization_user_not_found(self, mock_proxy):
+        """Positive: list_audit_logs handles deleted/unknown users."""
+        AuditLog.objects.create(
+            principal_username="deleted_user",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.ADD,
+            description="action by deleted user",
+            tenant=self.tenant,
+        )
+
+        response = self._call_tool("list_audit_logs", {"include_authorization": True})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        entry = tool_output["data"][0]
+        self.assertIsNone(entry["authorized_by"])
+        self.assertIn("note", entry)
+        self.assertIn("deleted_user", entry["note"])
+
+    @patch(
+        "management.mcp_views.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": [{"is_org_admin": True}]},
+    )
+    def test_list_audit_logs_include_authorization_org_admin(self, mock_proxy):
+        """Positive: list_audit_logs shows org admin bypasses RBAC checks."""
+        AuditLog.objects.create(
+            principal_username="org_admin_user",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.ADD,
+            description="action by org admin",
+            tenant=self.tenant,
+        )
+
+        response = self._call_tool("list_audit_logs", {"include_authorization": True})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        entry = tool_output["data"][0]
+        self.assertIsNotNone(entry["authorized_by"])
+        self.assertEqual(entry["authorized_by"]["role"], "Org Admin")
+        self.assertIn("bypasses all RBAC", entry["authorized_by"]["permission"])
+
+    def test_list_audit_logs_invalid_order_by(self):
+        """Negative: list_audit_logs with invalid order_by returns error."""
+        response = self._call_tool("list_audit_logs", {"order_by": "invalid_field"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertIn("error", tool_output)
+        self.assertIn("Invalid order_by", tool_output["error"])
+
+    def test_list_audit_logs_empty_page_returns_total_count(self):
+        """Positive: list_audit_logs returns total count even when offset is past end."""
+        AuditLog.objects.create(
+            principal_username="user1",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.ADD,
+            description="test entry",
+            tenant=self.tenant,
+        )
+
+        response = self._call_tool("list_audit_logs", {"offset": 1000, "limit": 10})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(len(tool_output["data"]), 0)
+        self.assertEqual(tool_output["meta"]["count"], 1)
 
     # --- list_groups / get_group / list_group_principals ---
 
