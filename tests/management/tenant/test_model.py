@@ -47,30 +47,9 @@ from migration_tool.in_memory_tuples import (
 )
 from migration_tool.models import V2boundresource
 from tests.management.role.test_dual_write import RbacFixture
+from tests.v2_util import WorkspaceCacheReplicator
 
 from api.models import Tenant, User
-
-
-class _WorkspaceCacheReplicator(RelationReplicator):
-    _base_replicator: RelationReplicator
-    _workspace_events: dict[WorkspaceEventStream, list[WorkspaceEvent]]
-
-    def __init__(self, base_replicator: RelationReplicator):
-        self._base_replicator = base_replicator
-        self._workspace_events = {}
-
-    def replicate(self, event: ReplicationEvent):
-        return self._base_replicator.replicate(event)
-
-    def replicate_workspace(self, event: WorkspaceEvent, event_stream: WorkspaceEventStream):
-        self._workspace_events.setdefault(event_stream, []).append(event)
-        return self._base_replicator.replicate_workspace(event, event_stream)
-
-    def workspace_events_for(self, stream: WorkspaceEventStream) -> list[WorkspaceEvent]:
-        return self._workspace_events.get(stream, [])
-
-    def clear_events(self):
-        self._workspace_events = {}
 
 
 class V2TenantBootstrapServiceTest(TestCase):
@@ -78,13 +57,13 @@ class V2TenantBootstrapServiceTest(TestCase):
 
     service: V2TenantBootstrapService
     tuples: InMemoryTuples
-    replicator: _WorkspaceCacheReplicator
+    replicator: WorkspaceCacheReplicator
     fixture: RbacFixture
 
     def setUp(self):
         # Clear any existing state first
         self.tuples = InMemoryTuples()
-        self.replicator = _WorkspaceCacheReplicator(InMemoryRelationReplicator(self.tuples))
+        self.replicator = WorkspaceCacheReplicator(InMemoryRelationReplicator(self.tuples))
         self.service = V2TenantBootstrapService(self.replicator)
         self.fixture = RbacFixture(self.service)
         self.fixture.new_system_role("System Role", ["app1:foo:read"], platform_default=True)
