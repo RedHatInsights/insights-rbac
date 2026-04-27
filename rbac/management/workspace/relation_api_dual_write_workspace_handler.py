@@ -28,10 +28,10 @@ from management.relation_replicator.relation_replicator import (
     RelationReplicator,
     ReplicationEvent,
     ReplicationEventType,
-    WorkspaceEvent,
     WorkspaceEventStream,
 )
 from management.role.relation_api_dual_write_handler import BaseRelationApiDualWriteHandler
+from management.workspace.utils.event import make_workspace_event
 from migration_tool.utils import create_relationship
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -83,9 +83,6 @@ class RelationApiDualWriteWorkspaceHandler(BaseRelationApiDualWriteHandler):
         self._replicate()
 
     def _replicate(self, skip_ws_events: bool = False) -> None:
-        # To avoid Circular Dependency
-        from management.workspace.serializer import WorkspaceEventSerializer
-
         if not self.replication_enabled():
             return
         try:
@@ -101,13 +98,7 @@ class RelationApiDualWriteWorkspaceHandler(BaseRelationApiDualWriteHandler):
                 )
             if not skip_ws_events:
                 self._replicator.replicate_workspace(
-                    WorkspaceEvent(
-                        account_number=self.workspace.tenant.account_id,
-                        org_id=str(self.workspace.tenant.org_id),
-                        workspace=WorkspaceEventSerializer(self.workspace).data,
-                        event_type=self.event_type,
-                        partition_key=PartitionKey.byEnvironment(),
-                    ),
+                    make_workspace_event(workspace=self.workspace, event_type=self.event_type),
                     WorkspaceEventStream.STANDARD,
                 )
         except OperationalError:
