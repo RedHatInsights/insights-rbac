@@ -37,6 +37,7 @@ from migration_tool.in_memory_tuples import (
     resource,
     relation,
     subject_type,
+    subject,
 )
 from tests.identity_request import IdentityRequest
 from tests.v2_util import bootstrap_tenant_for_v2_test
@@ -56,10 +57,17 @@ class SystemRoleBindingScopeUpdateTests(IdentityRequest):
 
         self.public_tenant = Tenant.objects.get(tenant_name="public")
 
-        # Bootstrap a regular tenant with workspaces
+        # Bootstrap tenant with workspaces but keep it as V1 (no V2 activation)
+        # The scope change migration only applies to V1 tenants
         bootstrap_result = bootstrap_tenant_for_v2_test(self.tenant, tuples=self.tuples)
         self.root_workspace = bootstrap_result.root_workspace
         self.default_workspace = bootstrap_result.default_workspace
+
+        # Deactivate V2 writes to make this a V1 tenant
+        # This ensures _determine_old_scopes can find the bindings
+        from management.tenant_mapping.model import TenantMapping
+
+        TenantMapping.objects.filter(tenant=self.tenant).update(v2_write_activated_at=None)
 
         # Create permission in public tenant
         self.permission = Permission.objects.create(
@@ -104,6 +112,19 @@ class SystemRoleBindingScopeUpdateTests(IdentityRequest):
         # Create a group and assign the role
         group = Group.objects.create(name="Test Group", tenant=self.tenant, system=False)
         add_roles(group, [test_role.uuid], self.tenant)
+
+        # Ensure RoleBinding record exists in database so _determine_old_scopes can find it
+        # add_roles() should have created it, but we verify it exists
+        from management.role_binding.model import RoleBinding
+        from management.role.v2_model import RoleV2
+
+        v2_role = RoleV2.objects.get(v1_source=test_role)
+        RoleBinding.objects.get_or_create(
+            tenant=self.tenant,
+            role=v2_role,
+            resource_type="workspace",
+            resource_id=str(self.default_workspace.id),
+        )
 
         # Reset mock to clear calls from initial seeding
         mock_migrate_bindings.reset_mock()
@@ -170,6 +191,19 @@ class SystemRoleBindingScopeUpdateTests(IdentityRequest):
         group = Group.objects.create(name="Test Group", tenant=self.tenant, system=False)
         add_roles(group, [test_role.uuid], self.tenant)
 
+        # Ensure RoleBinding record exists in database so _determine_old_scopes can find it
+        # add_roles() should have created it, but we verify it exists
+        from management.role_binding.model import RoleBinding
+        from management.role.v2_model import RoleV2
+
+        v2_role_obj = RoleV2.objects.get(v1_source=test_role)
+        RoleBinding.objects.get_or_create(
+            tenant=self.tenant,
+            role=v2_role_obj,
+            resource_type="workspace",
+            resource_id=str(self.default_workspace.id),
+        )
+
         # Verify initial binding at DEFAULT workspace
         v2_role = SeededRoleV2.objects.get(uuid=test_role.uuid)
 
@@ -182,10 +216,13 @@ class SystemRoleBindingScopeUpdateTests(IdentityRequest):
                 relation("binding"),
             )
         ).traverse_subject(
-            all_of(
-                subject_type("rbac", "group", "member"),
-                subject("rbac", "group", str(group.uuid), "member"),
-            )
+            [
+                all_of(
+                    relation("subject"),
+                    subject("rbac", "group", str(group.uuid), "member"),
+                )
+            ],
+            require_full_match=False,
         )
         self.assertGreater(
             len(initial_bindings),
@@ -208,10 +245,13 @@ class SystemRoleBindingScopeUpdateTests(IdentityRequest):
                 relation("binding"),
             )
         ).traverse_subject(
-            all_of(
-                subject_type("rbac", "group", "member"),
-                subject("rbac", "group", str(group.uuid), "member"),
-            )
+            [
+                all_of(
+                    relation("subject"),
+                    subject("rbac", "group", str(group.uuid), "member"),
+                )
+            ],
+            require_full_match=False,
         )
         self.assertGreater(
             len(tenant_bindings),

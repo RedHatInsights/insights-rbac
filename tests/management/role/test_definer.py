@@ -1229,11 +1229,13 @@ class V2RoleSeedingTests(IdentityRequest):
         )
 
     def test_non_default_role_scope_change_does_not_trigger_migration(self):
-        """Test that non-default roles (without platform/admin parents) don't trigger migration.
+        """Test that roles without bindings don't trigger migration.
 
-        Non-default roles don't have automatic bindings via default groups, so there's nothing
-        to migrate when their scope changes. Migration only applies to platform_default or
-        admin_default roles.
+        Migration is triggered based on whether a role has actual bindings in V1 tenants,
+        not based on whether it's a default role. Non-default roles typically don't have
+        bindings (since they lack automatic bindings via default groups), so changing their
+        scope doesn't trigger migration. If a non-default role HAD manual bindings, those
+        would be migrated.
         """
         seed_group()
 
@@ -1265,13 +1267,16 @@ class V2RoleSeedingTests(IdentityRequest):
             with self.settings(ROOT_SCOPE_PERMISSIONS=permission_pattern, TENANT_SCOPE_PERMISSIONS=""):
                 seed_roles()
 
-            # Verify that migration WAS called for the non-default role
-            # Non-default system roles may have manual bindings that need to be migrated
+            # Verify that migration was NOT called for the non-default role
+            # Non-default roles without bindings should not trigger migration.
+            # The new _determine_old_scopes checks for actual bindings in V1 tenants.
+            # Since this test doesn't create any bindings for the non-default role,
+            # _determine_old_scopes returns empty set and migration is skipped.
             migration_called_for_role = any(call[0][0] == non_default_role for call in mock_migrate.call_args_list)
-            self.assertTrue(
+            self.assertFalse(
                 migration_called_for_role,
-                f"Migration should be called for non-default role {non_default_role.name} "
-                "to update any manual bindings to the correct scope",
+                f"Migration should NOT be called for non-default role {non_default_role.name} "
+                "because it has no bindings to migrate (only roles with actual bindings need migration)",
             )
 
     def test_v2_role_permissions_updated_when_v1_changes(self):
