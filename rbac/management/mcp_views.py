@@ -41,6 +41,7 @@ from management.group.view import GroupViewSet
 from management.models import Access, AuditLog
 from management.permission.view import PermissionViewSet
 from management.principal.model import Principal
+from management.principal.proxy import PrincipalProxy
 from management.principal.view import PrincipalView
 from management.role.v2_view import RoleV2ViewSet
 from management.role.view import RoleViewSet
@@ -446,6 +447,13 @@ def list_audit_logs(
     include_authorization: bool = False,
 ) -> str:
     """List audit logs with optional authorization context."""
+    valid_order_fields = {"created", "principal_username", "resource_type", "action"}
+    order_field = order_by.lstrip("-")
+    if order_field not in valid_order_fields:
+        return json.dumps(
+            {"error": f"Invalid order_by field '{order_by}'. Valid fields: {', '.join(sorted(valid_order_fields))}"}
+        )
+
     tenant = getattr(request, "tenant", None)
     if not tenant:
         return json.dumps({"error": "No tenant context available"})
@@ -463,7 +471,7 @@ def list_audit_logs(
     entries = list(queryset[offset : offset + limit])  # noqa: E203
 
     if not entries:
-        return json.dumps({"meta": {"count": 0}, "data": []})
+        return json.dumps({"meta": {"count": total_count}, "data": []})
 
     if not include_authorization:
         # Return basic audit log data
@@ -481,6 +489,8 @@ def list_audit_logs(
 
     # Enrich with authorization context
     auth_cache: dict[str, dict[str, dict[str, Any] | None]] = {}
+    org_admin_cache: dict[str, bool] = {}
+    org_admin_auth = {"role": "Org Admin", "via_group": None, "permission": "(bypasses all RBAC checks)"}
     results = []
 
     for entry in entries:
@@ -493,10 +503,16 @@ def list_audit_logs(
         if actor not in auth_cache:
             auth_cache[actor] = {}
 
-        if cache_key not in auth_cache[actor]:
-            auth_cache[actor][cache_key] = _find_authorizing_role(actor, tenant, required_perms)
+        if actor not in org_admin_cache:
+            org_admin_cache[actor] = _is_org_admin(actor, tenant.org_id)
 
-        auth_info = auth_cache[actor][cache_key]
+        if org_admin_cache[actor]:
+            auth_info = org_admin_auth
+        elif cache_key not in auth_cache[actor]:
+            auth_cache[actor][cache_key] = _find_authorizing_role(actor, tenant, required_perms)
+            auth_info = auth_cache[actor][cache_key]
+        else:
+            auth_info = auth_cache[actor][cache_key]
 
         result: dict[str, Any] = {
             "principal_username": actor,
@@ -543,6 +559,15 @@ _REQUIRED_PERMISSIONS: dict[str, dict[str, list[str]]] = {
         "create": ["rbac:role_binding:write"],
         "delete": ["rbac:role_binding:write"],
     },
+    "user": {
+        "add": ["rbac:principal:write"],
+        "remove": ["rbac:principal:write"],
+    },
+    "permission": {
+        "create": ["rbac:role:write"],
+        "edit": ["rbac:role:write"],
+        "delete": ["rbac:role:write"],
+    },
 }
 
 
@@ -552,13 +577,18 @@ def _get_required_permissions(resource_type: str, action: str) -> list[str]:
     return resource_perms.get(action, [f"rbac:{resource_type}:write"])
 
 
-def _permission_satisfies(granted: str, required: str) -> bool:
-    """Check if a granted permission satisfies a required permission (supports wildcards)."""
-    granted_parts = granted.split(":")
-    required_parts = required.split(":")
-    if len(granted_parts) != 3 or len(required_parts) != 3:
-        return False
-    return all(g == "*" or g == r for g, r in zip(granted_parts, required_parts))
+def _is_org_admin(username: str, org_id: str) -> bool:
+    """Check if a user is an org admin by querying BOP."""
+    try:
+        proxy = PrincipalProxy()
+        resp = proxy.request_filtered_principals([username], org_id=org_id, limit=1)
+        if resp.get("status_code") == 200:
+            data = resp.get("data", [])
+            if data and len(data) > 0:
+                return data[0].get("is_org_admin", False)
+    except Exception:
+        logger.debug("mcp: failed to check org admin status for user=%s", username)
+    return False
 
 
 def _find_authorizing_role(username: str, tenant: Any, required_perms: list[str]) -> dict[str, Any] | None:
@@ -596,7 +626,7 @@ def _find_authorizing_role(username: str, tenant: Any, required_perms: list[str]
             }
         # Check wildcard match
         for required in required_perms:
-            if _permission_satisfies(granted_perm, required):
+            if _permission_matches(granted_perm, required):
                 return {
                     "role": entry["role__display_name"] or entry["role__name"],
                     "via_group": entry["role__policies__group__name"],
