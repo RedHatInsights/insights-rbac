@@ -70,6 +70,10 @@ class MCPViewTests(MCPToolTestMixin, IdentityRequest):
 
     def tearDown(self):
         """Tear down MCP view tests."""
+        AuditLog.objects.all().delete()
+        Policy.objects.all().delete()
+        Role.objects.all().delete()
+        Group.objects.all().delete()
         Principal.objects.all().delete()
         super().tearDown()
 
@@ -955,14 +959,14 @@ class MCPViewTests(MCPToolTestMixin, IdentityRequest):
             principal_username="user1",
             resource_type=AuditLog.GROUP,
             action=AuditLog.ADD,
-            description="Added role to group: target_group_alpha",
+            description="role test_role added to group: target_group_alpha",
             tenant=self.tenant,
         )
         AuditLog.objects.create(
             principal_username="user2",
             resource_type=AuditLog.GROUP,
             action=AuditLog.ADD,
-            description="Added role to group: other_group_beta",
+            description="role other_role added to group: other_group_beta",
             tenant=self.tenant,
         )
 
@@ -973,6 +977,31 @@ class MCPViewTests(MCPToolTestMixin, IdentityRequest):
         self.assertEqual(tool_output["meta"]["count"], 1)
         self.assertEqual(len(tool_output["data"]), 1)
         self.assertIn("target_group_alpha", tool_output["data"][0]["description"])
+
+    def test_list_audit_logs_filter_by_role_name(self):
+        """Positive: list_audit_logs filters by role_name in description."""
+        AuditLog.objects.create(
+            principal_username="user1",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.ADD,
+            description="role target_role_alpha added to group: some_group",
+            tenant=self.tenant,
+        )
+        AuditLog.objects.create(
+            principal_username="user2",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.ADD,
+            description="role other_role_beta added to group: some_group",
+            tenant=self.tenant,
+        )
+
+        response = self._call_tool("list_audit_logs", {"role_name": "target_role_alpha"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["meta"]["count"], 1)
+        self.assertEqual(len(tool_output["data"]), 1)
+        self.assertIn("target_role_alpha", tool_output["data"][0]["description"])
 
     # --- list_groups / get_group / list_group_principals ---
 

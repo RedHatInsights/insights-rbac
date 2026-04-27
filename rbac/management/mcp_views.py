@@ -421,17 +421,17 @@ def list_permissions(
 
 @register_tool(
     description=(
-        "List audit log entries showing who made changes to RBAC resources. "
-        "Use this to answer: 'Who added a role to group X?' or 'Who modified group Y?' "
-        "Filter by: principal_username (who made the change), resource_type "
+        "List audit log entries recording RBAC changes for the authenticated organization. "
+        "Each entry records who changed what (principal, resource_type, action). "
+        "Filter by principal_username (who made the change), resource_type "
         "(group/role/role_v2/user/permission/workspace/role_binding), action (add/edit/delete/create/remove), "
-        "or group_name (searches description for a specific group - USE THIS to narrow results). "
-        "IMPORTANT: Always set group_name when investigating a specific group to avoid scanning all 100+ entries. "
-        "Example: list_audit_logs(resource_type='group', action='add', group_name='<group-name>') "
-        "Set include_authorization=true to enrich each entry with the role and permission that authorized "
-        "the action (e.g., 'User Access administrator' role via 'Access Governance' group grants 'rbac:group:write'). "
-        "NOTE: Authorization shows actor's CURRENT role/permission — may differ from time of change. "
-        "Order by: 'created', 'principal_username', 'resource_type', 'action' (prefix with '-' to reverse)."
+        "group_name (filter by group), or role_name (filter by role). "
+        "IMPORTANT: Always set group_name and/or role_name to narrow results (avoids scanning 100+ entries). "
+        "Example: list_audit_logs(resource_type='group', action='add', group_name='Contractors', "
+        "role_name='Vulnerability administrator') "
+        "Set include_authorization=true to see the role/permission that authorized the action. "
+        "Order by: 'created', 'principal_username', 'resource_type', 'action' (prefix with '-' to reverse). "
+        "NOTE: Authorization shows actor's CURRENT role/permission — may differ from time of change."
     ),
     requires_auth=True,
 )
@@ -445,6 +445,7 @@ def list_audit_logs(
     resource_type: str = "",
     action: str = "",
     group_name: str = "",
+    role_name: str = "",
     include_authorization: bool = False,
 ) -> str:
     """List audit logs with optional authorization context."""
@@ -469,6 +470,8 @@ def list_audit_logs(
         queryset = queryset.filter(action=action)
     if group_name:
         queryset = queryset.filter(description__icontains=group_name)
+    if role_name:
+        queryset = queryset.filter(description__icontains=role_name)
 
     total_count = queryset.count()
     entries = list(queryset[offset : offset + limit])  # noqa: E203
@@ -758,7 +761,7 @@ def list_group_roles(
 
     resolved_uuid = group_uuid
     if not resolved_uuid and group_name:
-        group = Group.objects.filter(name__iexact=group_name, tenant=tenant).first()
+        group = Group.objects.filter(name__iexact=group_name, tenant=tenant).only("uuid").first()
         if not group:
             return json.dumps({"error": f"Group '{group_name}' not found"})
         resolved_uuid = str(group.uuid)
