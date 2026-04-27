@@ -38,7 +38,10 @@ from django.views.decorators.csrf import csrf_exempt
 from management.access.view import AccessView
 from management.audit_log.view import AuditLogViewSet
 from management.group.view import GroupViewSet
+from management.models import Access, AuditLog
 from management.permission.view import PermissionViewSet
+from management.principal.model import Principal
+from management.principal.proxy import PrincipalProxy
 from management.principal.view import PrincipalView
 from management.role.v2_view import RoleV2ViewSet
 from management.role.view import RoleViewSet
@@ -424,9 +427,11 @@ def list_permissions(
         "(group/role/role_v2/user/permission/workspace/role_binding), or action (add/edit/delete/create/remove). "
         "TROUBLESHOOTING: To investigate who made a specific RBAC change, filter by resource_type and action. "
         "To see all changes by a specific user, set principal_username. "
+        "Set include_authorization=true to enrich each entry with the role and permission "
+        "that authorized the action (e.g., 'User Access administrator' role via 'Access Governance' "
+        "group grants 'rbac:group:write'). "
         "Order by: 'created', 'principal_username', 'resource_type', 'action' (prefix with '-' to reverse). "
-        "Returns: {meta: {count}, links, data: [{principal_username, description, action, created, ...}]}. "
-        "Calls: GET /api/v1/auditlogs/"
+        "NOTE: Authorization shows actor's CURRENT role/permission — may differ from time of change."
     ),
     requires_auth=True,
 )
@@ -439,21 +444,201 @@ def list_audit_logs(
     principal_username: str = "",
     resource_type: str = "",
     action: str = "",
+    include_authorization: bool = False,
 ) -> str:
-    """List audit logs by delegating to AuditLogViewSet."""
-    query_params: dict[str, str] = {
-        "limit": str(limit),
-        "offset": str(offset),
-        "order_by": order_by,
-    }
+    """List audit logs with optional authorization context."""
+    valid_order_fields = {"created", "principal_username", "resource_type", "action"}
+    order_field = order_by.lstrip("-")
+    if order_field not in valid_order_fields:
+        return json.dumps(
+            {"error": f"Invalid order_by field '{order_by}'. Valid fields: {', '.join(sorted(valid_order_fields))}"}
+        )
+
+    tenant = getattr(request, "tenant", None)
+    if not tenant:
+        return json.dumps({"error": "No tenant context available"})
+
+    queryset = AuditLog.objects.filter(tenant=tenant).order_by(order_by)
+
     if principal_username:
-        query_params["principal_username"] = principal_username
+        queryset = queryset.filter(principal_username__icontains=principal_username)
     if resource_type:
-        query_params["resource_type"] = resource_type
+        queryset = queryset.filter(resource_type=resource_type)
     if action:
-        query_params["action"] = action
-    path = reverse("v1_management:auditlog-list")
-    return _call_view(request, _auditlog_list_view, path, query_params)
+        queryset = queryset.filter(action=action)
+
+    total_count = queryset.count()
+    entries = list(queryset[offset : offset + limit])  # noqa: E203
+
+    if not entries:
+        return json.dumps({"meta": {"count": total_count}, "data": []})
+
+    if not include_authorization:
+        # Return basic audit log data
+        data = [
+            {
+                "principal_username": e.principal_username,
+                "action": e.action,
+                "resource_type": e.resource_type,
+                "description": e.description,
+                "created": e.created.isoformat() if e.created else None,
+            }
+            for e in entries
+        ]
+        return json.dumps({"meta": {"count": total_count}, "data": data}, default=str)
+
+    # Enrich with authorization context
+    auth_cache: dict[str, dict[str, dict[str, Any] | None]] = {}
+    org_admin_cache: dict[str, bool] = {}
+    org_admin_auth: dict[str, Any] = {
+        "role": "Org Admin",
+        "via_group": None,
+        "permission": "(bypasses all RBAC checks)",
+    }
+    results = []
+
+    for entry in entries:
+        actor = entry.principal_username
+        entry_action = entry.action
+        entry_resource = entry.resource_type
+        required_perms = _get_required_permissions(entry_resource, entry_action)
+        cache_key = f"{entry_resource}:{entry_action}"
+
+        if actor not in auth_cache:
+            auth_cache[actor] = {}
+
+        if actor not in org_admin_cache:
+            org_admin_cache[actor] = _is_org_admin(actor, tenant.org_id)
+
+        auth_info: dict[str, Any] | None
+        if org_admin_cache[actor]:
+            auth_info = org_admin_auth
+        elif cache_key not in auth_cache[actor]:
+            auth_cache[actor][cache_key] = _find_authorizing_role(actor, tenant, required_perms)
+            auth_info = auth_cache[actor][cache_key]
+        else:
+            auth_info = auth_cache[actor][cache_key]
+
+        result: dict[str, Any] = {
+            "principal_username": actor,
+            "action": entry_action,
+            "resource_type": entry_resource,
+            "description": entry.description,
+            "created": entry.created.isoformat() if entry.created else None,
+            "authorized_by": auth_info,
+        }
+
+        if not auth_info:
+            result["note"] = f"User '{actor}' not found or no longer has permissions. Required: {required_perms}"
+
+        results.append(result)
+
+    return json.dumps({"meta": {"count": total_count}, "data": results}, default=str)
+
+
+# Permission requirements by resource_type and action
+_REQUIRED_PERMISSIONS: dict[str, dict[str, list[str]]] = {
+    "group": {
+        "create": ["rbac:group:write"],
+        "delete": ["rbac:group:write"],
+        "edit": ["rbac:group:write"],
+        "add": ["rbac:group:write", "rbac:principal:write"],
+        "remove": ["rbac:group:write", "rbac:principal:write"],
+    },
+    "role": {
+        "create": ["rbac:role:write"],
+        "delete": ["rbac:role:write"],
+        "edit": ["rbac:role:write"],
+    },
+    "role_v2": {
+        "create": ["rbac:role:write"],
+        "delete": ["rbac:role:write"],
+        "edit": ["rbac:role:write"],
+    },
+    "workspace": {
+        "create": ["rbac:workspace:write"],
+        "delete": ["rbac:workspace:write"],
+        "edit": ["rbac:workspace:write"],
+    },
+    "role_binding": {
+        "create": ["rbac:role_binding:write"],
+        "delete": ["rbac:role_binding:write"],
+    },
+    "user": {
+        "add": ["rbac:principal:write"],
+        "remove": ["rbac:principal:write"],
+    },
+    "permission": {
+        "create": ["rbac:role:write"],
+        "edit": ["rbac:role:write"],
+        "delete": ["rbac:role:write"],
+    },
+}
+
+
+def _get_required_permissions(resource_type: str, action: str) -> list[str]:
+    """Get the permissions required for a given resource_type and action."""
+    resource_perms = _REQUIRED_PERMISSIONS.get(resource_type, {})
+    return resource_perms.get(action, [f"rbac:{resource_type}:write"])
+
+
+def _is_org_admin(username: str, org_id: str) -> bool:
+    """Check if a user is an org admin by querying BOP."""
+    try:
+        proxy = PrincipalProxy()
+        resp = proxy.request_filtered_principals([username], org_id=org_id, limit=1)
+        if resp.get("status_code") == 200:
+            data = resp.get("data", [])
+            if data and len(data) > 0:
+                return data[0].get("is_org_admin", False)
+    except Exception:
+        logger.debug("mcp: failed to check org admin status for user=%s", username)
+    return False
+
+
+def _find_authorizing_role(username: str, tenant: Any, required_perms: list[str]) -> dict[str, Any] | None:
+    """Find the role and permission that authorized an action."""
+    principal = Principal.objects.filter(username=username, tenant=tenant).first()
+    if not principal:
+        return None
+
+    # Single query: get all permissions the user has with their role/group context
+    access_entries = (
+        Access.objects.filter(
+            role__policies__group__principals=principal,
+            role__policies__group__tenant=tenant,
+        )
+        .select_related("permission", "role")
+        .values(
+            "permission__permission",
+            "role__name",
+            "role__display_name",
+            "role__policies__group__name",
+        )
+    )
+
+    # Build required permission set for fast lookup
+    required_set = set(required_perms)
+
+    for entry in access_entries:
+        granted_perm = entry["permission__permission"]
+        # Check exact match first (fast path)
+        if granted_perm in required_set:
+            return {
+                "role": entry["role__display_name"] or entry["role__name"],
+                "via_group": entry["role__policies__group__name"],
+                "permission": granted_perm,
+            }
+        # Check wildcard match
+        for required in required_perms:
+            if _permission_matches(granted_perm, required):
+                return {
+                    "role": entry["role__display_name"] or entry["role__name"],
+                    "via_group": entry["role__policies__group__name"],
+                    "permission": granted_perm,
+                }
+
+    return None
 
 
 @register_tool(
