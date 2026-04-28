@@ -74,12 +74,12 @@ class RelationApiDualWriteWorkspaceHandler(BaseRelationApiDualWriteHandler):
         self.generate_relations_to_update_workspace(previous_parent)
         self._replicate(skip_ws_events=skip_ws_events)
 
-    def replicate_deleted_workspace(self, skip_ws_events: bool = False):
+    def replicate_deleted_workspace(self):
         """Replicate deleted principals into group."""
         if not self.replication_enabled():
             return
         self.generate_relations_to_remove_workspace()
-        self._replicate(skip_ws_events=skip_ws_events)
+        self._replicate()
 
     def _replicate(self, skip_ws_events: bool = False) -> None:
         # To avoid Circular Dependency
