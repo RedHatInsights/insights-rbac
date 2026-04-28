@@ -431,7 +431,13 @@ def list_permissions(
         "role_name='Vulnerability administrator') "
         "Set include_authorization=true to see the role/permission that authorized the action. "
         "Order by: 'created', 'principal_username', 'resource_type', 'action' (prefix with '-' to reverse). "
-        "NOTE: Authorization shows actor's CURRENT role/permission — may differ from time of change."
+        "NOTE: Authorization shows actor's CURRENT role/permission — may differ from time of change. "
+        "RESPONSE FORMAT: When summarizing audit log entries, include the action, resource type, who performed it "
+        "(principal_username), the date and time (formatted as '14 April at 9:32 AM', not numeric like "
+        "'2025-04-14T09:32:15'), and the description field. When include_authorization=true, also state the "
+        "role name (authorized_by.role), "
+        "group name (authorized_by.via_group), and specific permission (authorized_by.permission) that "
+        "authorized the action."
     ),
     requires_auth=True,
 )
