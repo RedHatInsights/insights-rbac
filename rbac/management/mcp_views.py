@@ -730,10 +730,12 @@ def list_permission_options(
 
 @register_tool(
     description=(
-        "List roles assigned to a specific group. Provide either group_uuid OR group_name. "
+        "List roles assigned to a specific group. Provide either group_uuid OR group_name "
+        "(if both are provided, group_uuid takes precedence). "
         "Use group_name for convenience (case-insensitive lookup). "
         "Example: list_group_roles(group_name='<group-name>') to see roles assigned to that group. "
         "Filter results by role_name, role_description, role_display_name, or role_system. "
+        "Set exclude='true' to list roles NOT in the group. "
         "Order by: 'name', 'display_name', 'modified', 'policyCount' (prefix with '-' to reverse). "
         "Returns: {meta: {count}, links, data: [{uuid, name, description, system, ...}]}."
     ),

@@ -1193,6 +1193,8 @@ class MCPViewTests(MCPToolTestMixin, IdentityRequest):
         self.assertFalse(data["result"]["isError"])
         tool_output = self._get_tool_output(response)
         self.assertIn("data", tool_output)
+        self.assertEqual(tool_output["meta"]["count"], 1)
+        self.assertEqual(tool_output["data"][0]["name"], "role_alpha")
 
     def test_list_group_roles_by_name_case_insensitive(self):
         """Positive: list_group_roles group_name lookup is case-insensitive."""
@@ -1206,6 +1208,9 @@ class MCPViewTests(MCPToolTestMixin, IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         data = response.json()
         self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["meta"]["count"], 1)
+        self.assertEqual(tool_output["data"][0]["name"], "role_beta")
 
     def test_list_group_roles_missing_both_params_returns_error(self):
         """Negative: list_group_roles without group_uuid or group_name returns error."""
