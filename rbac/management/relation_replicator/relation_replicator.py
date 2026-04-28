@@ -217,7 +217,7 @@ class AggregateTypes(str, Enum):
 
 class WorkspaceEventStream(Enum):
     """
-    The class that a WorkspoceEvent belongs to.
+    The class that a WorkspaceEvent belongs to.
 
     As opposed to PartitionKey (which, for Kafka replicators, represents a partition within the same topic),
     different WorkspaceEventClasses represent entirely different Kafka topics.

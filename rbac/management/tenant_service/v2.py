@@ -760,9 +760,12 @@ class V2TenantBootstrapService:
 
         if (len(replication_entries) == 0) != (len(relationships) == 0):
             raise AssertionError(
-                f"Expected relationships to be empty iff nothing to replicate, but got: "
+                f"Expected relationships to be empty if and only if nothing to replicate, but got: "
                 f"{replication_entries=}, {relationships=}"
             )
+
+        if len(replication_entries) == 0:
+            return
 
         if bulk:
             event_type = ReplicationEventType.BULK_BOOTSTRAP_TENANT

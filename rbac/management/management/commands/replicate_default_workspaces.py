@@ -1,4 +1,4 @@
-"""Command to handle tenant bootstrapping."""
+"""Command to replicate existing default workspaces."""
 
 from django.core.management import BaseCommand, CommandError
 from internal.migrations.replicate_default_workspaces import replicate_default_workspaces
