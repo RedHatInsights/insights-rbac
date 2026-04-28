@@ -27,6 +27,9 @@ def _do_replicate_batch(replicator: RelationReplicator, raw_workspaces: list[Wor
     )
 
     for workspace in workspaces:
+        # It's okay to use the BULK stream here because default workspaces cannot currently (as of 2026-04-28) be
+        # modified or deleted, so there's no race condition. At worst, we will replicate a default workspace that's
+        # already been replicated, but HBI will just ignore it in that case.
         replicator.replicate_workspace(
             make_workspace_event(workspace=workspace, event_type=ReplicationEventType.CREATE_WORKSPACE),
             WorkspaceEventStream.BULK,
