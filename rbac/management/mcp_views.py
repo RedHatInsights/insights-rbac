@@ -38,7 +38,7 @@ from django.views.decorators.csrf import csrf_exempt
 from management.access.view import AccessView
 from management.audit_log.view import AuditLogViewSet
 from management.group.view import GroupViewSet
-from management.models import Access, AuditLog
+from management.models import Access, AuditLog, Group
 from management.permission.view import PermissionViewSet
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
@@ -424,12 +424,12 @@ def list_permissions(
         "List audit log entries recording RBAC changes for the authenticated organization. "
         "Each entry records who changed what (principal, resource_type, action). "
         "Filter by principal_username (who made the change), resource_type "
-        "(group/role/role_v2/user/permission/workspace/role_binding), or action (add/edit/delete/create/remove). "
-        "TROUBLESHOOTING: To investigate who made a specific RBAC change, filter by resource_type and action. "
-        "To see all changes by a specific user, set principal_username. "
-        "Set include_authorization=true to enrich each entry with the role and permission "
-        "that authorized the action (e.g., 'User Access administrator' role via 'Access Governance' "
-        "group grants 'rbac:group:write'). "
+        "(group/role/role_v2/user/permission/workspace/role_binding), action (add/edit/delete/create/remove), "
+        "group_name (filter by group), or role_name (filter by role). "
+        "IMPORTANT: Always set group_name and/or role_name to narrow results (avoids scanning 100+ entries). "
+        "Example: list_audit_logs(resource_type='group', action='add', group_name='Contractors', "
+        "role_name='Vulnerability administrator') "
+        "Set include_authorization=true to see the role/permission that authorized the action. "
         "Order by: 'created', 'principal_username', 'resource_type', 'action' (prefix with '-' to reverse). "
         "NOTE: Authorization shows actor's CURRENT role/permission — may differ from time of change."
     ),
@@ -444,6 +444,8 @@ def list_audit_logs(
     principal_username: str = "",
     resource_type: str = "",
     action: str = "",
+    group_name: str = "",
+    role_name: str = "",
     include_authorization: bool = False,
 ) -> str:
     """List audit logs with optional authorization context."""
@@ -466,6 +468,10 @@ def list_audit_logs(
         queryset = queryset.filter(resource_type=resource_type)
     if action:
         queryset = queryset.filter(action=action)
+    if group_name:
+        queryset = queryset.filter(description__icontains=group_name)
+    if role_name:
+        queryset = queryset.filter(description__icontains=role_name)
 
     total_count = queryset.count()
     entries = list(queryset[offset : offset + limit])  # noqa: E203
@@ -724,12 +730,14 @@ def list_permission_options(
 
 @register_tool(
     description=(
-        "List roles assigned to a specific group. Shows which roles are associated with the group "
-        "through policies. Filter by role_name, role_description, role_display_name, or role_system (boolean). "
-        "Order by: 'name', 'display_name', 'modified', 'policyCount' (prefix with '-' to reverse). "
+        "List roles assigned to a specific group. Provide either group_uuid OR group_name "
+        "(if both are provided, group_uuid takes precedence). "
+        "Use group_name for convenience (case-insensitive lookup). "
+        "Example: list_group_roles(group_name='<group-name>') to see roles assigned to that group. "
+        "Filter results by role_name, role_description, role_display_name, or role_system. "
         "Set exclude='true' to list roles NOT in the group. "
-        "Returns: {meta: {count}, links, data: [{uuid, name, description, system, platform_default, ...}]}. "
-        "Calls: GET /api/v1/groups/{uuid}/roles/"
+        "Order by: 'name', 'display_name', 'modified', 'policyCount' (prefix with '-' to reverse). "
+        "Returns: {meta: {count}, links, data: [{uuid, name, description, system, ...}]}."
     ),
     requires_auth=True,
     api_version=ApiVersion.V1,
@@ -737,7 +745,8 @@ def list_permission_options(
 def list_group_roles(
     request: HttpRequest,
     *,
-    group_uuid: str,
+    group_uuid: str = "",
+    group_name: str = "",
     limit: int = 10,
     offset: int = 0,
     order_by: str = "",
@@ -748,6 +757,20 @@ def list_group_roles(
     exclude: str = "false",
 ) -> str:
     """List roles for a group by delegating to GroupViewSet.roles."""
+    tenant = getattr(request, "tenant", None)
+    if not tenant:
+        return json.dumps({"error": "No tenant context available"})
+
+    resolved_uuid = group_uuid
+    if not resolved_uuid and group_name:
+        group = Group.objects.filter(name__iexact=group_name, tenant=tenant).only("uuid").first()
+        if not group:
+            return json.dumps({"error": f"Group '{group_name}' not found"})
+        resolved_uuid = str(group.uuid)
+
+    if not resolved_uuid:
+        return json.dumps({"error": "Either group_uuid or group_name is required"})
+
     query_params: dict[str, str] = {
         "limit": str(limit),
         "offset": str(offset),
@@ -765,8 +788,8 @@ def list_group_roles(
     if exclude != "false":
         query_params["exclude"] = exclude
 
-    path = reverse("v1_management:group-roles", kwargs={"uuid": group_uuid})
-    return _call_view(request, _group_roles_view, path, query_params, uuid=group_uuid)
+    path = reverse("v1_management:group-roles", kwargs={"uuid": resolved_uuid})
+    return _call_view(request, _group_roles_view, path, query_params, uuid=resolved_uuid)
 
 
 @register_tool(
