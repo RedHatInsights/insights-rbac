@@ -30,7 +30,9 @@ from management.exceptions import NotFoundError, RequiredFieldError
 from management.permission.exceptions import InvalidPermissionDataError
 from management.permission.model import PermissionValue
 from management.permission.scope_service import (
+    SCOPE_DISPLAY_NAME,
     Scope,
+    default_implicit_resource_service,
     permission_scope_cache,
     scope_for_resource,
     scopes_for_resource_type,
@@ -118,6 +120,19 @@ class RoleV2Service:
                     "Permissions from migration-excluded applications cannot be used in V2 custom roles: "
                     + ", ".join(bad_apps)
                 )
+
+        perms_by_scope: dict[Scope, list[str]] = {}
+        for p in permissions:
+            scope = default_implicit_resource_service.scope_for_permission(p.permission)
+            perms_by_scope.setdefault(scope, []).append(p.permission)
+        if len(perms_by_scope) > 1:
+            details = "; ".join(
+                f"{SCOPE_DISPLAY_NAME[scope]}: {', '.join(sorted(perms))}"
+                for scope, perms in sorted(perms_by_scope.items())
+            )
+            raise InvalidRolePermissionsError(
+                f"All permissions in a role must belong to the same scope. Found: {details}"
+            )
 
         return permissions
 

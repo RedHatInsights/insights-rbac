@@ -28,7 +28,12 @@ from management.atomic_transactions import atomic
 from management.exceptions import InvalidFieldError, NotFoundError, RequiredFieldError
 from management.group.model import Group
 from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
-from management.permission.scope_service import Scope, default_implicit_resource_service, scope_for_resource
+from management.permission.scope_service import (
+    SCOPE_DISPLAY_NAME,
+    Scope,
+    default_implicit_resource_service,
+    scope_for_resource,
+)
 from management.principal.model import Principal
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
@@ -1133,7 +1138,7 @@ class RoleBindingService:
                 mismatched.append(f"{role.name} ({role.uuid})")
 
         if mismatched:
-            scope_label = expected.name.lower()
+            scope_label = SCOPE_DISPLAY_NAME[expected]
             raise InvalidFieldError(
                 "roles",
                 f"The following roles are not scoped for this resource ({scope_label}): {', '.join(mismatched)}",
