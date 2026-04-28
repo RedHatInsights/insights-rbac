@@ -1859,6 +1859,29 @@ class MCPUnifiedSearchRolesV2Tests(MCPToolTestMixin, IdentityRequest):
         role_names = [r["name"] for r in tool_output["data"]]
         self.assertIn("Cost Reader", role_names)
 
+    def test_search_roles_v2_filter_by_permission(self):
+        """Positive: search_roles on V2 org filters by permission."""
+        perm = Permission.objects.create(
+            application="inventory",
+            resource_type="hosts",
+            verb="read",
+            permission="inventory:hosts:read",
+            tenant=self.tenant,
+        )
+        matching_role = RoleV2.objects.create(name="Host Reader", tenant=self.tenant, type=RoleV2.Types.CUSTOM)
+        matching_role.permissions.add(perm)
+
+        RoleV2.objects.create(name="Empty Role", tenant=self.tenant, type=RoleV2.Types.CUSTOM)
+
+        response = self._call_tool("search_roles", {"permission": "inventory:hosts:read"})
+
+        self.assertEqual(response.status_code, 200)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["org_version"], "v2")
+        role_names = [r["name"] for r in tool_output["data"]]
+        self.assertIn("Host Reader", role_names)
+        self.assertNotIn("Empty Role", role_names)
+
 
 @override_settings(BYPASS_BOP_VERIFICATION=True, V2_APIS_ENABLED=True)
 class MCPUnifiedGetRoleTests(MCPToolTestMixin, IdentityRequest):
