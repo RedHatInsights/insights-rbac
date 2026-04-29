@@ -272,6 +272,7 @@ class WorkspaceServiceUpdateTests(WorkspaceServiceTestBase):
             self.assertEqual(event.account_number, self.tenant.account_id)
             self.assertEqual(str(event.partition_key), str(PartitionKey.byEnvironment()))
             self.assertEqual(event.workspace["id"], str(updated_instance.id))
+            self.assertEqual(event.workspace["type"], Workspace.Types.DEFAULT.value)
             self.assertEqual(event.workspace["name"], updated_instance.name)
 
         self.assertEqual(len(self.replicator.workspace_events_for(WorkspaceEventStream.BULK)), 0)
