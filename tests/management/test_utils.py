@@ -23,6 +23,7 @@ from management.models import Access, Group, Permission, Principal, Policy, Role
 from management.principal.view import VALID_PRINCIPAL_TYPE_VALUE
 from management.utils import (
     access_for_principal,
+    get_principal_for_auth,
     get_principal_from_request,
     groups_for_principal,
     policies_for_principal,
@@ -413,6 +414,104 @@ class UtilsTests(IdentityRequest):
         created_principal = Principal.objects.get(username=username)
         self.assertEqual(created_principal.type, "user")
         self.assertEqual(created_principal.username, username)
+
+    @mock.patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": False,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "other_user",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_get_principal_from_request_for_auth_ignores_query_param(self, mock_request_principals):
+        """Test that for_auth=True ignores the username query parameter."""
+        Principal.objects.create(username="other_user", tenant=self.tenant, user_id="other-uid")
+        self.principal.user_id = "principal-a-uid"
+        self.principal.save()
+
+        request = mock.Mock()
+        request.tenant = self.tenant
+        request.user = User()
+        request.user.username = self.principal.username
+        request.query_params = {"username": "other_user"}
+
+        result = get_principal_from_request(request=request, for_auth=True)
+        self.assertEqual(result.username, self.principal.username)
+        mock_request_principals.assert_not_called()
+
+    @mock.patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": False,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "other_user",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_get_principal_for_auth_helper(self, mock_request_principals):
+        """Test that get_principal_for_auth helper ignores the username query parameter."""
+        Principal.objects.create(username="other_user", tenant=self.tenant, user_id="other-uid")
+        self.principal.user_id = "principal-a-uid"
+        self.principal.save()
+
+        request = mock.Mock()
+        request.tenant = self.tenant
+        request.user = User()
+        request.user.username = self.principal.username
+        request.query_params = {"username": "other_user"}
+
+        result = get_principal_for_auth(request)
+        self.assertEqual(result.username, self.principal.username)
+        mock_request_principals.assert_not_called()
+
+    @mock.patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": False,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "other_user",
+                    "account_number": "1111111",
+                    "is_active": True,
+                }
+            ],
+        },
+    )
+    def test_get_principal_from_request_default_uses_query_param(self, mock_request_principals):
+        """Test that default behavior still uses the username query parameter."""
+        Principal.objects.create(username="other_user", tenant=self.tenant, user_id="other-uid")
+
+        request = mock.Mock()
+        request.tenant = self.tenant
+        request.user = User()
+        request.user.username = self.principal.username
+        request.user.admin = True
+        request.query_params = {"username": "other_user"}
+
+        result = get_principal_from_request(request=request)
+        mock_request_principals.assert_called_once()
+        self.assertEqual(result.username, "other_user")
 
     def test_validate_and_get_key_success(self):
         """Test we can validate the query param value."""
