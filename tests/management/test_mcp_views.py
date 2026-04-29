@@ -2124,3 +2124,324 @@ class MCPToolDescriptionEndpointTests(MCPToolTestMixin, IdentityRequest):
             **self.internal_headers,
         )
         self.assertEqual(response.status_code, 400)
+
+
+@override_settings(BYPASS_BOP_VERIFICATION=True)
+class MCPGetUserStateTests(MCPToolTestMixin, IdentityRequest):
+    """Tests for the get_user_state MCP tool."""
+
+    def setUp(self):
+        """Set up get_user_state tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.test_username = self.user_data["username"]
+        self.principal = Principal.objects.create(username=self.test_username, tenant=self.tenant)
+
+        # Create a group and add the principal
+        self.group = Group.objects.create(name="Wilson Project", description="Test project group", tenant=self.tenant)
+        self.group.principals.add(self.principal)
+
+        # Create a role with permissions
+        self.role = Role.objects.create(
+            name="Project Contributor", display_name="Project Contributor", tenant=self.tenant
+        )
+        self.permission = Permission.objects.create(
+            application="project",
+            resource_type="tasks",
+            verb="write",
+            permission="project:tasks:write",
+            tenant=self.tenant,
+        )
+        self.access = Access.objects.create(permission=self.permission, role=self.role, tenant=self.tenant)
+
+        # Assign role to group via policy
+        self.policy = Policy.objects.create(name="project_policy", group=self.group, tenant=self.tenant)
+        self.policy.roles.add(self.role)
+
+        # Create audit log entries for actions BY the user (with resource_uuid for exact matching)
+        AuditLog.objects.create(
+            principal_username=self.test_username,
+            resource_type=AuditLog.GROUP,
+            resource_uuid=self.group.uuid,
+            action=AuditLog.ADD,
+            description="Added jsmith to Wilson Project",
+            tenant=self.tenant,
+        )
+        AuditLog.objects.create(
+            principal_username=self.test_username,
+            resource_type=AuditLog.GROUP,
+            resource_uuid=self.group.uuid,
+            action=AuditLog.REMOVE,
+            description="Removed old_user from Wilson Project",
+            tenant=self.tenant,
+        )
+
+    def tearDown(self):
+        """Tear down get_user_state tests."""
+        AuditLog.objects.all().delete()
+        Policy.objects.all().delete()
+        Access.objects.all().delete()
+        Role.objects.all().delete()
+        Permission.objects.all().delete()
+        Group.objects.all().delete()
+        Principal.objects.all().delete()
+        super().tearDown()
+
+    def test_get_user_state_success(self):
+        """Positive: get_user_state returns comprehensive user state."""
+        response = self._call_tool("get_user_state", {"username": self.test_username})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+
+        # Verify basic structure
+        self.assertEqual(tool_output["username"], self.test_username)
+        self.assertEqual(tool_output["org_version"], "v1")
+        self.assertIn("groups", tool_output)
+        self.assertIn("access", tool_output)
+        self.assertIn("user_actions", tool_output)
+        self.assertIn("summary", tool_output)
+
+    def test_get_user_state_includes_groups(self):
+        """Positive: get_user_state includes user's groups with roles."""
+        response = self._call_tool("get_user_state", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["summary"]["group_count"], 1)
+        self.assertEqual(len(tool_output["groups"]), 1)
+
+        group = tool_output["groups"][0]
+        self.assertEqual(group["name"], "Wilson Project")
+        self.assertEqual(group["description"], "Test project group")
+        self.assertIn("roles", group)
+        self.assertEqual(len(group["roles"]), 1)
+        self.assertEqual(group["roles"][0]["name"], "Project Contributor")
+
+    def test_get_user_state_includes_access(self):
+        """Positive: get_user_state includes user's access permissions."""
+        response = self._call_tool("get_user_state", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+        self.assertGreater(len(tool_output["access"]), 0)
+
+        # Find the permission we created
+        permissions = [a["permission"] for a in tool_output["access"]]
+        self.assertIn("project:tasks:write", permissions)
+
+    def test_get_user_state_includes_user_actions(self):
+        """Positive: get_user_state includes actions performed BY the user."""
+        response = self._call_tool("get_user_state", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+        user_actions = tool_output["user_actions"]
+
+        self.assertEqual(user_actions["total_count"], 2)
+        self.assertIn("by_group", user_actions)
+        self.assertIn("Wilson Project", user_actions["by_group"])
+        self.assertEqual(len(user_actions["by_group"]["Wilson Project"]), 2)
+        self.assertIn("by_type", user_actions)
+        self.assertIn("group:add", user_actions["by_type"])
+        self.assertIn("group:remove", user_actions["by_type"])
+
+    def test_get_user_state_summary(self):
+        """Positive: get_user_state returns correct summary counts."""
+        response = self._call_tool("get_user_state", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+        summary = tool_output["summary"]
+
+        self.assertEqual(summary["group_count"], 1)
+        self.assertGreaterEqual(summary["permission_count"], 1)
+        self.assertEqual(summary["actions_by_user"], 2)
+
+    def test_get_user_state_user_not_found(self):
+        """Negative: get_user_state returns error for non-existent user."""
+        response = self._call_tool("get_user_state", {"username": "nonexistent_user"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+
+        self.assertIn("error", tool_output)
+        self.assertIn("not found", tool_output["error"])
+        self.assertIn("hint", tool_output)
+
+    def test_get_user_state_without_auth_returns_error(self):
+        """Permission: get_user_state without auth returns auth error."""
+        response = self._call_tool("get_user_state", {"username": self.test_username}, use_auth=False)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    def test_get_user_state_without_group_roles(self):
+        """Positive: get_user_state with include_group_roles=false omits roles."""
+        response = self._call_tool(
+            "get_user_state",
+            {"username": self.test_username, "include_group_roles": False},
+        )
+
+        tool_output = self._get_tool_output(response)
+        group = tool_output["groups"][0]
+        self.assertNotIn("roles", group)
+        self.assertNotIn("role_count", group)
+
+    def test_get_user_state_without_permissions(self):
+        """Positive: get_user_state with include_permissions=false omits access."""
+        response = self._call_tool(
+            "get_user_state",
+            {"username": self.test_username, "include_permissions": False},
+        )
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(len(tool_output["access"]), 0)
+        self.assertEqual(tool_output["summary"]["permission_count"], 0)
+
+    def test_get_user_state_audit_log_limit(self):
+        """Positive: get_user_state respects audit_log_limit parameter."""
+        # Add more audit log entries with resource_uuid for exact matching
+        for i in range(5):
+            AuditLog.objects.create(
+                principal_username=self.test_username,
+                resource_type=AuditLog.GROUP,
+                resource_uuid=self.group.uuid,
+                action=AuditLog.ADD,
+                description=f"Added user{i} to Wilson Project",
+                tenant=self.tenant,
+            )
+
+        response = self._call_tool(
+            "get_user_state",
+            {"username": self.test_username, "audit_log_limit": 3},
+        )
+
+        tool_output = self._get_tool_output(response)
+        # recent should be limited to 3
+        self.assertLessEqual(len(tool_output["user_actions"]["recent"]), 3)
+
+    def test_get_user_state_multiple_groups(self):
+        """Positive: get_user_state handles user in multiple groups."""
+        # Create another group
+        group2 = Group.objects.create(name="Platform Default", tenant=self.tenant)
+        group2.principals.add(self.principal)
+
+        response = self._call_tool("get_user_state", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["summary"]["group_count"], 2)
+        group_names = [g["name"] for g in tool_output["groups"]]
+        self.assertIn("Wilson Project", group_names)
+        self.assertIn("Platform Default", group_names)
+
+    def test_get_user_state_includes_hints(self):
+        """Positive: get_user_state includes helpful hints for further investigation."""
+        response = self._call_tool("get_user_state", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+        self.assertIn("hints", tool_output)
+        self.assertIn("check_specific_permission", tool_output["hints"])
+        self.assertIn("view_audit_details", tool_output["hints"])
+        self.assertIn("trace_role_permissions", tool_output["hints"])
+
+
+@override_settings(BYPASS_BOP_VERIFICATION=True, V2_APIS_ENABLED=True)
+class MCPGetUserStateV2Tests(MCPToolTestMixin, IdentityRequest):
+    """Tests for get_user_state on V2 organizations."""
+
+    def setUp(self):
+        """Set up V2 get_user_state tests."""
+        reload(urls)
+        clear_url_caches()
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.test_username = self.user_data["username"]
+        self.principal = Principal.objects.create(username=self.test_username, tenant=self.tenant)
+
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.get_kessel_principal_id",
+                return_value="localhost/test-user-id",
+            )
+        )
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.WorkspaceInventoryAccessChecker.check_resource_access",
+                return_value=True,
+            )
+        )
+
+        # Activate V2 for this tenant
+        TenantMapping.objects.create(tenant=self.tenant, v2_write_activated_at=timezone.now())
+
+        # Create a group and add the principal
+        self.group = Group.objects.create(name="V2 Test Group", tenant=self.tenant)
+        self.group.principals.add(self.principal)
+
+        # Create V2 role with permission
+        self.v2_perm = Permission.objects.create(
+            application="inventory",
+            resource_type="hosts",
+            verb="read",
+            permission="inventory:hosts:read",
+            tenant=self.tenant,
+        )
+        self.v2_role = RoleV2.objects.create(name="Host Reader", tenant=self.tenant)
+        self.v2_role.permissions.add(self.v2_perm)
+
+        # Create role binding
+        self.binding = RoleBinding.objects.create(
+            tenant=self.tenant,
+            role=self.v2_role,
+            resource_type="workspace",
+            resource_id="root-workspace-id",
+        )
+        RoleBindingPrincipal.objects.create(binding=self.binding, principal=self.principal, source="direct")
+
+    def tearDown(self):
+        """Tear down V2 get_user_state tests."""
+        RoleBindingPrincipal.objects.all().delete()
+        RoleBindingGroup.objects.all().delete()
+        RoleBinding.objects.all().delete()
+        RoleV2.objects.all().delete()
+        Permission.objects.all().delete()
+        TenantMapping.objects.all().delete()
+        Group.objects.all().delete()
+        Principal.objects.all().delete()
+        super().tearDown()
+
+    def test_get_user_state_v2_returns_org_version(self):
+        """Positive: get_user_state on V2 org returns org_version=v2."""
+        response = self._call_tool("get_user_state", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["org_version"], "v2")
+
+    def test_get_user_state_v2_includes_role_binding_permissions(self):
+        """Positive: get_user_state on V2 org includes permissions from role bindings."""
+        response = self._call_tool("get_user_state", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+        self.assertGreater(len(tool_output["access"]), 0)
+
+        # Find the V2 permission
+        permissions = [a["permission"] for a in tool_output["access"]]
+        self.assertIn("inventory:hosts:read", permissions)
+
+        # Verify role info is included
+        access_entry = next(a for a in tool_output["access"] if a["permission"] == "inventory:hosts:read")
+        self.assertEqual(access_entry["role_name"], "Host Reader")
+
+    def test_get_user_state_v2_includes_resource_scope(self):
+        """Positive: get_user_state on V2 org includes resource scope in access."""
+        response = self._call_tool("get_user_state", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+        access_entry = next(a for a in tool_output["access"] if a["permission"] == "inventory:hosts:read")
+
+        self.assertIn("resource_scope", access_entry)
+        self.assertEqual(access_entry["resource_scope"]["type"], "workspace")
+        self.assertEqual(access_entry["resource_scope"]["id"], "root-workspace-id")
