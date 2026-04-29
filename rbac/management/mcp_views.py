@@ -29,6 +29,7 @@ from functools import lru_cache, wraps
 from typing import Any, Callable
 
 from django.conf import settings
+from django.db.models import Q
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.test import RequestFactory
 from django.urls import reverse
@@ -1493,6 +1494,9 @@ def get_user_state(
     audit_log_limit: int = 10,
 ) -> str:
     """Get comprehensive RBAC state for a user including groups, access, and audit activity."""
+    # Clamp audit_log_limit to prevent expensive queries
+    audit_log_limit = min(max(audit_log_limit, 1), 100)
+
     tenant = getattr(request, "tenant", None)
     if not tenant:
         return json.dumps({"error": "No tenant context available"})
@@ -1524,24 +1528,56 @@ def get_user_state(
         },
     }
 
-    # Get groups the user belongs to
-    groups = Group.objects.filter(principals=principal, tenant=tenant).order_by("name")
-    group_data = []
-    all_group_names = []
+    # Get groups the user belongs to with prefetched policies and roles
+    groups = (
+        Group.objects.filter(principals=principal, tenant=tenant).prefetch_related("policies__roles").order_by("name")
+    )
+    group_list = list(groups)
+    all_group_names = [g.name for g in group_list]
 
-    for group in groups:
+    # Batch fetch audit activity for all groups (avoids N+1 queries)
+    group_activity_map: dict[str, list[dict[str, Any]]] = {name: [] for name in all_group_names}
+    if all_group_names:
+        # Build OR filter for all group names
+        group_filter = Q()
+        for name in all_group_names:
+            group_filter |= Q(description__icontains=name)
+
+        all_activity = (
+            AuditLog.objects.filter(tenant=tenant)
+            .filter(group_filter)
+            .order_by("-created")[: audit_log_limit * len(all_group_names)]
+        )
+
+        # Distribute activity to groups (match longest group name first to avoid partial matches)
+        sorted_names = sorted(all_group_names, key=len, reverse=True)
+        for entry in all_activity:
+            desc_lower = (entry.description or "").lower()
+            for group_name in sorted_names:
+                if group_name.lower() in desc_lower and len(group_activity_map[group_name]) < audit_log_limit:
+                    group_activity_map[group_name].append(
+                        {
+                            "action": entry.action,
+                            "resource_type": entry.resource_type,
+                            "principal_username": entry.principal_username,
+                            "description": entry.description,
+                            "created": entry.created.isoformat() if entry.created else None,
+                        }
+                    )
+                    break
+
+    group_data = []
+    for group in group_list:
         group_info: dict[str, Any] = {
             "uuid": str(group.uuid),
             "name": group.name,
             "description": group.description or "",
         }
-        all_group_names.append(group.name)
 
-        # Get roles for each group if requested
+        # Get roles for each group if requested (using prefetched data)
         if include_group_roles:
             roles_in_group = []
-            policies = group.policies.prefetch_related("roles").all()
-            for policy in policies:
+            for policy in group.policies.all():
                 for role in policy.roles.all():
                     roles_in_group.append(
                         {
@@ -1554,20 +1590,8 @@ def get_user_state(
             group_info["roles"] = roles_in_group
             group_info["role_count"] = len(roles_in_group)
 
-        # Get recent audit activity for this group
-        recent_activity = AuditLog.objects.filter(tenant=tenant, description__icontains=group.name).order_by(
-            "-created"
-        )[:audit_log_limit]
-        group_info["recent_activity"] = [
-            {
-                "action": entry.action,
-                "resource_type": entry.resource_type,
-                "principal_username": entry.principal_username,
-                "description": entry.description,
-                "created": entry.created.isoformat() if entry.created else None,
-            }
-            for entry in recent_activity
-        ]
+        # Get recent audit activity for this group from pre-fetched map
+        group_info["recent_activity"] = group_activity_map.get(group.name, [])
         group_info["recent_activity_count"] = len(group_info["recent_activity"])
 
         group_data.append(group_info)
@@ -1668,7 +1692,7 @@ def _get_user_access_v1(request: HttpRequest, username: str) -> list[dict[str, A
         data = json.loads(raw)
         return data.get("data", [])
     except Exception:
-        logger.debug("mcp: failed to get V1 access for user=%s", username)
+        logger.warning("mcp: failed to get V1 access for user=%s", username, exc_info=True)
         return []
 
 
