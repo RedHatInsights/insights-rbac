@@ -61,7 +61,7 @@ def replicate_default_workspaces(replicator: Optional[RelationReplicator] = None
     actual_count = 0
     error = False
 
-    for raw_batch in itertools.batched(query, 500):
+    for raw_batch in itertools.batched(query.iterator(), 500):
         try:
             actual_count += _do_replicate_batch(replicator, list(raw_batch))
             logger.info(f"Replicated {actual_count}/~{expected_count} default workspaces.")
