@@ -129,6 +129,7 @@ urlpatterns = [
         views.mcp_tool_descriptions,
         name="mcp-tool-descriptions-detail",
     ),
+    path("api/utils/replicate_default_workspaces/", views.replicate_default_workspaces),
 ]
 
 urlpatterns.extend(integration_urlpatterns)

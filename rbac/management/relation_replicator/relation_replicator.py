@@ -212,6 +212,29 @@ class AggregateTypes(str, Enum):
 
     RELATIONS = "relations-replication-event"
     WORKSPACE = "workspace"
+    WORKSPACE_BULK = "workspace-bulk"
+
+
+class WorkspaceEventStream(Enum):
+    """
+    The class that a WorkspaceEvent belongs to.
+
+    As opposed to PartitionKey (which, for Kafka replicators, represents a partition within the same topic),
+    different WorkspaceEventClasses represent entirely different Kafka topics.
+    """
+
+    STANDARD = "standard"
+    BULK = "bulk"
+
+    def aggregate_type(self) -> AggregateTypes:
+        """Get the AggregateType that should be used for this stream in a Kafka replicator."""
+        if self == WorkspaceEventStream.STANDARD:
+            return AggregateTypes.WORKSPACE
+
+        if self == WorkspaceEventStream.BULK:
+            return AggregateTypes.WORKSPACE_BULK
+
+        raise AssertionError(f"Unexpected WorkspaceEventClass: {self!r}")
 
 
 class RelationReplicator(ABC):
@@ -222,7 +245,7 @@ class RelationReplicator(ABC):
         """Replicate the given event to Kessel Relations."""
         pass
 
-    def replicate_workspace(self, event: WorkspaceEvent):
+    def replicate_workspace(self, event: WorkspaceEvent, event_stream: WorkspaceEventStream):
         """Replicate the given workspace event to Kessel Relations."""
         pass
 
