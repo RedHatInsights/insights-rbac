@@ -2159,10 +2159,11 @@ class MCPGetUserStateTests(MCPToolTestMixin, IdentityRequest):
         self.policy = Policy.objects.create(name="project_policy", group=self.group, tenant=self.tenant)
         self.policy.roles.add(self.role)
 
-        # Create audit log entries for actions BY the user
+        # Create audit log entries for actions BY the user (with resource_uuid for exact matching)
         AuditLog.objects.create(
             principal_username=self.test_username,
             resource_type=AuditLog.GROUP,
+            resource_uuid=self.group.uuid,
             action=AuditLog.ADD,
             description="Added jsmith to Wilson Project",
             tenant=self.tenant,
@@ -2170,6 +2171,7 @@ class MCPGetUserStateTests(MCPToolTestMixin, IdentityRequest):
         AuditLog.objects.create(
             principal_username=self.test_username,
             resource_type=AuditLog.GROUP,
+            resource_uuid=self.group.uuid,
             action=AuditLog.REMOVE,
             description="Removed old_user from Wilson Project",
             tenant=self.tenant,
@@ -2300,11 +2302,12 @@ class MCPGetUserStateTests(MCPToolTestMixin, IdentityRequest):
 
     def test_get_user_state_audit_log_limit(self):
         """Positive: get_user_state respects audit_log_limit parameter."""
-        # Add more audit log entries
+        # Add more audit log entries with resource_uuid for exact matching
         for i in range(5):
             AuditLog.objects.create(
                 principal_username=self.test_username,
                 resource_type=AuditLog.GROUP,
+                resource_uuid=self.group.uuid,
                 action=AuditLog.ADD,
                 description=f"Added user{i} to Wilson Project",
                 tenant=self.tenant,

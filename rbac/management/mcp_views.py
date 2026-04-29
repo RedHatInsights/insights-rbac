@@ -29,7 +29,6 @@ from functools import lru_cache, wraps
 from typing import Any, Callable
 
 from django.conf import settings
-from django.db.models import Q
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.test import RequestFactory
 from django.urls import reverse
@@ -1536,35 +1535,32 @@ def get_user_state(
     all_group_names = [g.name for g in group_list]
 
     # Batch fetch audit activity for all groups (avoids N+1 queries)
+    # Use exact UUID matching via resource_uuid field for reliable group identification
+    group_uuid_to_name: dict[str, str] = {str(g.uuid): g.name for g in group_list}
     group_activity_map: dict[str, list[dict[str, Any]]] = {name: [] for name in all_group_names}
-    if all_group_names:
-        # Build OR filter for all group names
-        group_filter = Q()
-        for name in all_group_names:
-            group_filter |= Q(description__icontains=name)
 
-        all_activity = (
-            AuditLog.objects.filter(tenant=tenant)
-            .filter(group_filter)
-            .order_by("-created")[: audit_log_limit * len(all_group_names)]
-        )
+    if group_list:
+        group_uuids = [g.uuid for g in group_list]
 
-        # Distribute activity to groups (match longest group name first to avoid partial matches)
-        sorted_names = sorted(all_group_names, key=len, reverse=True)
+        all_activity = AuditLog.objects.filter(
+            tenant=tenant,
+            resource_type=AuditLog.GROUP,
+            resource_uuid__in=group_uuids,
+        ).order_by("-created")[: audit_log_limit * len(group_list)]
+
+        # Map entries to groups by exact UUID match
         for entry in all_activity:
-            desc_lower = (entry.description or "").lower()
-            for group_name in sorted_names:
-                if group_name.lower() in desc_lower and len(group_activity_map[group_name]) < audit_log_limit:
-                    group_activity_map[group_name].append(
-                        {
-                            "action": entry.action,
-                            "resource_type": entry.resource_type,
-                            "principal_username": entry.principal_username,
-                            "description": entry.description,
-                            "created": entry.created.isoformat() if entry.created else None,
-                        }
-                    )
-                    break
+            group_name = group_uuid_to_name.get(str(entry.resource_uuid))
+            if group_name and len(group_activity_map[group_name]) < audit_log_limit:
+                group_activity_map[group_name].append(
+                    {
+                        "action": entry.action,
+                        "resource_type": entry.resource_type,
+                        "principal_username": entry.principal_username,
+                        "description": entry.description,
+                        "created": entry.created.isoformat() if entry.created else None,
+                    }
+                )
 
     group_data = []
     for group in group_list:
@@ -1616,24 +1612,22 @@ def get_user_state(
         "-created"
     )[: audit_log_limit * 2]
 
-    # Group user actions by target group
+    # Group user actions by target group using exact UUID matching
     user_actions_by_group: dict[str, list[dict[str, Any]]] = {}
     user_action_counts: dict[str, int] = {}
 
     for entry in user_performed_actions:
-        # Find which group this action relates to
-        target_group = None
-        for group_name in all_group_names:
-            if group_name.lower() in (entry.description or "").lower():
-                target_group = group_name
-                break
-
         action_info = {
             "action": entry.action,
             "resource_type": entry.resource_type,
             "description": entry.description,
             "created": entry.created.isoformat() if entry.created else None,
         }
+
+        # Match group by exact UUID if this is a group action
+        target_group = None
+        if entry.resource_type == AuditLog.GROUP and entry.resource_uuid:
+            target_group = group_uuid_to_name.get(str(entry.resource_uuid))
 
         if target_group:
             if target_group not in user_actions_by_group:
@@ -1679,21 +1673,53 @@ def get_user_state(
 
 
 def _get_user_access_v1(request: HttpRequest, username: str) -> list[dict[str, Any]]:
-    """Get user's access permissions using V1 API."""
-    # Query all access entries for this user across all applications
-    query_params: dict[str, str] = {
-        "username": username,
-        "limit": "1000",
-    }
+    """Get user's access permissions using V1 API.
+
+    The access endpoint requires an application filter, so we first get distinct
+    applications the user has access to, then query each.
+    """
+    tenant = getattr(request, "tenant", None)
+    if not tenant:
+        return []
+
+    principal = Principal.objects.filter(username=username, tenant=tenant).first()
+    if not principal:
+        return []
+
+    # Get distinct applications the user has access to
+    applications = (
+        Access.objects.filter(
+            role__policies__group__principals=principal,
+            role__policies__group__tenant=tenant,
+        )
+        .values_list("permission__application", flat=True)
+        .distinct()
+    )
+
+    access_list: list[dict[str, Any]] = []
+    seen_permissions: set[str] = set()
     path = reverse("v1_management:access")
 
-    try:
-        raw = _call_view(request, _access_view, path, query_params)
-        data = json.loads(raw)
-        return data.get("data", [])
-    except Exception:
-        logger.warning("mcp: failed to get V1 access for user=%s", username, exc_info=True)
-        return []
+    for app in applications:
+        if not app:
+            continue
+        query_params: dict[str, str] = {
+            "application": app,
+            "username": username,
+            "limit": "1000",
+        }
+        try:
+            raw = _call_view(request, _access_view, path, query_params)
+            data = json.loads(raw)
+            for entry in data.get("data", []):
+                perm = entry.get("permission", "")
+                if perm and perm not in seen_permissions:
+                    seen_permissions.add(perm)
+                    access_list.append(entry)
+        except Exception:
+            logger.warning("mcp: failed to get V1 access for user=%s app=%s", username, app, exc_info=True)
+
+    return access_list
 
 
 def _get_user_access_v2(request: HttpRequest, principal: Principal, tenant: Any) -> list[dict[str, Any]]:
