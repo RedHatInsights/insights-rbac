@@ -18,15 +18,32 @@
 
 from collections import deque
 from dataclasses import dataclass
-from unittest.mock import Mock, call, patch
+from unittest.mock import Mock
+from unittest.mock import patch
 
+from django.conf import settings
 from django.test import TestCase
+from django.test.utils import override_settings
+from rest_framework import serializers
 
+from api.models import Tenant
 from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
-from management.role.v2_model import RoleV2, CustomRoleV2, PlatformRoleV2
+from management.models import Access, BindingMapping, Group, Permission, Policy, ResourceDefinition, Role, Workspace
+from management.relation_replicator.relation_replicator import ReplicationEventType
+from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
+from management.role.v2_model import RoleV2, CustomRoleV2
 from management.role_binding.model import RoleBinding
 from management.role_binding.service import RoleBindingService
 from management.tenant_mapping.v2_activation import ensure_v2_write_activated
+from management.workspace.service import WorkspaceService
+from migration_tool.in_memory_tuples import (
+    InMemoryTuples,
+    InMemoryRelationReplicator,
+    all_of,
+    relation,
+    subject_type,
+    resource,
+)
 from tests.management.role.test_dual_write import RbacFixture
 from tests.util import assert_v2_tuples_consistent
 from tests.v2_util import bootstrap_tenant_for_v2_test, seed_v2_role_from_v1
@@ -133,45 +150,6 @@ class WorkspaceServiceTest(TestCase):
         executed_sql_calls = [args[0] for args, _ in mock_cursor.execute.call_args_list]
         self.assertTrue(any("LISTEN" in str(c) for c in executed_sql_calls))
         self.assertTrue(any("UNLISTEN" in str(c) for c in executed_sql_calls))
-
-
-#
-# Copyright 2025 Red Hat, Inc.
-#
-# This program is free software: you can redistribute it and/or modify
-# it under the terms of the GNU Affero General Public License as
-# published by the Free Software Foundation, either version 3 of the
-# License, or (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful,
-# but WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-# GNU Affero General Public License for more details.
-#
-# You should have received a copy of the GNU Affero General Public License
-# along with this program.  If not, see <https://www.gnu.org/licenses/>.
-#
-from unittest.mock import patch
-
-from django.test import TestCase
-from rest_framework import serializers
-from api.models import Tenant
-from management.models import Access, BindingMapping, Group, Permission, Policy, ResourceDefinition, Role, Workspace
-from management.relation_replicator.relation_replicator import ReplicationEventType
-from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
-from management.workspace.service import WorkspaceService
-from django.conf import settings
-from django.core.exceptions import ValidationError
-from django.test.utils import override_settings
-
-from migration_tool.in_memory_tuples import (
-    InMemoryTuples,
-    InMemoryRelationReplicator,
-    all_of,
-    relation,
-    subject_type,
-    resource,
-)
 
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)
