@@ -179,10 +179,3 @@ class RelationApiDualWriteWorkspaceHandler(BaseRelationApiDualWriteHandler):
             return
         # Remove parent relationship
         self.relations_to_remove.append(self._get_workspace_relationship(self.workspace, self.workspace.parent))
-
-    def replicate(self):
-        """Replicate generated relations."""
-        if not self.replication_enabled():
-            return
-
-        self._replicate()
