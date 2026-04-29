@@ -432,8 +432,8 @@ class UtilsTests(IdentityRequest):
             ],
         },
     )
-    def test_get_principal_from_request_for_auth_ignores_query_param(self, mock_request_principals):
-        """Test that for_auth=True ignores the username query parameter."""
+    def test_get_principal_from_request_ignore_username_query_param(self, mock_request_principals):
+        """Test that ignore_username_query_param=True ignores the username query parameter."""
         Principal.objects.create(username="other_user", tenant=self.tenant, user_id="other-uid")
         self.principal.user_id = "principal-a-uid"
         self.principal.save()
@@ -444,7 +444,7 @@ class UtilsTests(IdentityRequest):
         request.user.username = self.principal.username
         request.query_params = {"username": "other_user"}
 
-        result = get_principal_from_request(request=request, for_auth=True)
+        result = get_principal_from_request(request=request, ignore_username_query_param=True)
         self.assertEqual(result.username, self.principal.username)
         mock_request_principals.assert_not_called()
 

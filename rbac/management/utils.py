@@ -266,13 +266,14 @@ def build_system_user_from_token(request, token_validator: TokenValidator) -> Op
         return None
 
 
-def get_principal_from_request(request, *, for_auth=False):
+def get_principal_from_request(request, *, ignore_username_query_param=False):
     """Obtain principal from the request object.
 
     Args:
         request: The HTTP request object
-        for_auth: If True, ignore username query parameter and always use request.user.username.
-                 This should be True for authorization checks to prevent privilege confusion.
+        ignore_username_query_param: If True, ignore the username query parameter and always
+                                     use request.user.username. This should be True for
+                                     authorization checks to prevent privilege confusion.
 
     Returns:
         Principal object for the resolved username
@@ -281,7 +282,7 @@ def get_principal_from_request(request, *, for_auth=False):
     username = current_user
     from_query = False
 
-    if not for_auth:
+    if not ignore_username_query_param:
         qs_user = request.query_params.get(USERNAME_KEY)
         if qs_user and not PRINCIPAL_PERMISSION_INSTANCE.has_permission(request=request, view=None):
             raise PermissionDenied()
@@ -305,7 +306,7 @@ def get_principal_for_auth(request):
     Returns:
         Principal object for the authenticated user
     """
-    return get_principal_from_request(request, for_auth=True)
+    return get_principal_from_request(request, ignore_username_query_param=True)
 
 
 def get_principal(
