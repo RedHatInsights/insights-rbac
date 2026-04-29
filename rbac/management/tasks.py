@@ -18,9 +18,12 @@
 
 from __future__ import absolute_import, unicode_literals
 
+import logging
+import time
 from typing import Optional
 
 from celery import shared_task
+from django.conf import settings
 from django.core.management import call_command
 from internal.migrations.remove_deleted_workspace_bindings import remove_deleted_workspace_bindings
 from internal.migrations.remove_orphan_relations import cleanup_tenant_orphan_bindings
@@ -31,12 +34,18 @@ from internal.utils import (
     replicate_missing_binding_tuples,
 )
 from management.health.healthcheck import redis_health
+from management.inventory_checker.inventory_api_check import WorkspaceRelationInventoryChecker
 from management.principal.cleaner import (
     clean_tenants_principals,
     process_principal_events_from_umb,
 )
+from management.workspace.model import Workspace
 from migration_tool.migrate import migrate_data
 from migration_tool.migrate_binding_scope import migrate_all_role_bindings
+
+from api.models import Tenant
+
+logger = logging.getLogger(__name__)
 
 
 @shared_task
@@ -163,3 +172,132 @@ def expire_orphaned_cross_account_requests_in_worker():
 def remove_deleted_workspace_bindings_in_worker():
     """Celery task to remove role bindings that reference deleted workspaces."""
     return remove_deleted_workspace_bindings()
+
+
+@shared_task
+def run_kessel_parity_checks_in_worker():
+    """
+    Celery task to run Kessel-RBAC parity checks for configured tenants.
+
+    Returns:
+        dict: Summary statistics with checks performed, passed, and failed counts.
+    """
+    org_ids_str = settings.PARITY_CHECK_ORG_IDS
+    org_ids = [org_id.strip() for org_id in org_ids_str.split(",") if org_id.strip()]
+    # Deduplicate org_ids while preserving order to avoid redundant work and double-counting
+    org_ids = list(dict.fromkeys(org_ids))
+
+    if not org_ids:
+        logger.info("PARITY_CHECK_ORG_IDS not configured, skipping parity checks")
+        return {"message": "No org_ids configured"}
+
+    logger.info(f"Starting Kessel parity checks for {len(org_ids)} org(s): {org_ids}")
+
+    stats = {
+        "total_tenants": 0,
+        "total_workspace_pairs_checked": 0,
+        "passed_tenants": 0,
+        "failed_tenants": 0,
+        "tenants_not_found": 0,
+        "tenants_checked": [],
+    }
+    tenant_durations = []
+
+    checker = WorkspaceRelationInventoryChecker()
+
+    # Bulk fetch all tenants to avoid N+1 queries
+    tenants = {t.org_id: t for t in Tenant.objects.filter(org_id__in=org_ids)}
+
+    for org_id in org_ids:
+        tenant = tenants.get(org_id)
+        if not tenant:
+            logger.warning(f"Tenant not found for org_id: {org_id}")
+            stats["tenants_not_found"] += 1
+            continue
+
+        try:
+            tenant_start = time.monotonic()
+            logger.info(f"Running parity check for tenant {org_id}")
+            stats["total_tenants"] += 1
+
+            workspaces = (
+                Workspace.objects.filter(tenant=tenant)
+                .exclude(type=Workspace.Types.ROOT)
+                .values_list("id", "parent_id")
+            )
+
+            workspace_pairs = [(str(w_id), str(parent_id)) for (w_id, parent_id) in workspaces if parent_id]
+            pairs_count = len(workspace_pairs)
+
+            workspace_check_passed = True
+            if workspace_pairs:
+                logger.info(f"Checking {pairs_count} workspace parent relations for tenant {org_id}")
+                workspace_check_passed = checker.check_workspace_descendants(workspace_pairs)
+            else:
+                # No pairs means no default workspace with a parent — this is unexpected and should be flagged
+                logger.warning(f"No workspace pairs to check for tenant {org_id} — missing default workspace?")
+                workspace_check_passed = False
+
+            stats["total_workspace_pairs_checked"] += pairs_count
+
+            if workspace_check_passed:
+                stats["passed_tenants"] += 1
+                logger.info(f"Parity check PASSED for tenant {org_id}")
+            else:
+                stats["failed_tenants"] += 1
+                logger.warning(f"Parity check FAILED for tenant {org_id}")
+
+            tenant_elapsed = time.monotonic() - tenant_start
+            tenant_durations.append(tenant_elapsed)
+            logger.info(f"Tenant {org_id} parity check took {tenant_elapsed:.3f}s")
+
+            stats["tenants_checked"].append(
+                {
+                    "org_id": org_id,
+                    "workspace_pairs_checked": pairs_count,
+                    "passed": workspace_check_passed,
+                    "duration_seconds": round(tenant_elapsed, 3),
+                }
+            )
+
+        except Exception as e:
+            tenant_elapsed = time.monotonic() - tenant_start
+            tenant_durations.append(tenant_elapsed)
+            logger.error(f"Error checking parity for tenant {org_id}: {e}", exc_info=True)
+            stats["failed_tenants"] += 1
+            stats["tenants_checked"].append(
+                {
+                    "org_id": org_id,
+                    "workspace_pairs_checked": 0,
+                    "passed": False,
+                    "error": str(e),
+                    "duration_seconds": round(tenant_elapsed, 3),
+                }
+            )
+
+    # Compute timing percentiles
+    timing_stats = {}
+    if tenant_durations:
+        sorted_durations = sorted(tenant_durations)
+        n = len(sorted_durations)
+        timing_stats = {
+            "avg_seconds": round(sum(sorted_durations) / n, 3),
+            "p95_seconds": round(sorted_durations[min(int(n * 0.95), n - 1)], 3),
+            "p99_seconds": round(sorted_durations[min(int(n * 0.99), n - 1)], 3),
+        }
+        logger.info(
+            f"Timing: avg={timing_stats['avg_seconds']}s "
+            f"p95={timing_stats['p95_seconds']}s "
+            f"p99={timing_stats['p99_seconds']}s"
+        )
+
+    logger.info(
+        f"Parity check complete. Checked: {stats['total_tenants']}, "
+        f"Passed: {stats['passed_tenants']}, "
+        f"Failed: {stats['failed_tenants']}, "
+        f"Not Found: {stats['tenants_not_found']}, "
+        f"Total workspace pairs: {stats['total_workspace_pairs_checked']}"
+    )
+
+    stats["timing"] = timing_stats
+    return stats
