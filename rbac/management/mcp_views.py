@@ -857,7 +857,7 @@ def search_roles(
     """Search roles, auto-detecting V1/V2 and delegating to the appropriate view."""
     tenant = getattr(request, "tenant", None)
     if tenant and is_v2_write_activated(tenant):
-        return _search_roles_v2(request, limit, offset, name, resource_type, order_by)
+        return _search_roles_v2(request, limit, offset, name, resource_type, permission, order_by)
     return _search_roles_v1(request, limit, offset, name, display_name, permission, application, system, order_by)
 
 
@@ -903,6 +903,7 @@ def _search_roles_v2(
     offset: int,
     name: str,
     resource_type: str,
+    permission: str,
     order_by: str,
 ) -> str:
     """Search roles using V2 API."""
@@ -914,6 +915,8 @@ def _search_roles_v2(
         query_params["name"] = name
     if resource_type:
         query_params["resource_type"] = resource_type
+    if permission:
+        query_params["permission"] = permission
     if order_by:
         query_params["order_by"] = order_by
 

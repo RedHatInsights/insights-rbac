@@ -282,6 +282,12 @@ class RoleV2Service:
         if name:
             queryset = queryset.named(name)
 
+        permission = params.get("permission")
+        if permission:
+            permission_values = [p.strip() for p in permission.split(",") if p.strip()]
+            if permission_values:
+                queryset = queryset.filter(permissions__permission__in=permission_values).distinct()
+
         return queryset
 
     def _filter_by_resource_type(
