@@ -415,13 +415,14 @@ class WorkspaceService:
                 raise serializers.ValidationError("Can't update the 'parent_id' on a workspace directly")
             setattr(instance, attr, value)
 
-        # Skip Workspace Events for DEFAULT workspaces
-        skip_ws_events = instance.type == Workspace.Types.DEFAULT
+        # Previously, we didn't replicate the creation of default workspaces, so we have to create them before
+        # updating them.
+        force_create = instance.type == Workspace.Types.DEFAULT
 
         try:
             instance.save()
             dual_write_handler = self._dual_write_handler(instance, ReplicationEventType.UPDATE_WORKSPACE)
-            dual_write_handler.replicate_updated_workspace(instance.parent, skip_ws_events)
+            dual_write_handler.replicate_updated_workspace(instance.parent, force_create=force_create)
         except ValidationError as e:
             message = e.message_dict
             if hasattr(e, "error_dict") and "__all__" in e.error_dict:

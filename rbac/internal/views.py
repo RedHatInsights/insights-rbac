@@ -94,6 +94,7 @@ from management.tasks import (
     migrate_data_in_worker,
     remove_deleted_workspace_bindings_in_worker,
     remove_unassigned_system_binding_mappings_in_worker,
+    replicate_default_workspaces_in_worker,
     run_migrations_in_worker,
     run_ocm_performance_in_worker,
     run_seeds_in_worker,
@@ -2572,3 +2573,28 @@ def mcp_tool_descriptions(request, tool_name=None):
         return JsonResponse(
             {"tool_name": tool_name, "override_description": None, "active_description": default_desc}, status=200
         )
+
+
+@require_http_methods(["POST"])
+def replicate_default_workspaces(request):
+    """Replicate existing default workspaces.
+
+    POST /_private/api/utils/replicate_default_workspaces/?limit=<limit>
+
+    Replicates existing default workspaces to the outbox using the BULK WorkspaceEventStream.
+
+    If limit is passed, only the specified number of workspaces are replicated. Otherwise, all default workspaces
+    are replicated.
+
+    Returns:
+        JSON response indicating the task has been queued
+    """
+    raw_limit = request.GET.get("limit")
+    limit = int(raw_limit) if raw_limit is not None else None
+
+    try:
+        replicate_default_workspaces_in_worker.delay(limit=limit)
+        return JsonResponse({"message": "Replication enqueued in background worker."}, status=202)
+    except Exception as e:
+        logger.exception("Error replicating default workspaces", exc_info=True)
+        return JsonResponse({"detail": f"Error replicating default workspaces: {str(e)}"}, status=500)

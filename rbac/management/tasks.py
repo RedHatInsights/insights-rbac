@@ -24,6 +24,7 @@ from celery import shared_task
 from django.core.management import call_command
 from internal.migrations.remove_deleted_workspace_bindings import remove_deleted_workspace_bindings
 from internal.migrations.remove_orphan_relations import cleanup_tenant_orphan_bindings
+from internal.migrations.replicate_default_workspaces import replicate_default_workspaces
 from internal.utils import (
     clean_invalid_workspace_resource_definitions,
     expire_orphaned_cross_account_requests,
@@ -163,3 +164,9 @@ def expire_orphaned_cross_account_requests_in_worker():
 def remove_deleted_workspace_bindings_in_worker():
     """Celery task to remove role bindings that reference deleted workspaces."""
     return remove_deleted_workspace_bindings()
+
+
+@shared_task
+def replicate_default_workspaces_in_worker(limit: Optional[int] = None):
+    """Celery task to replicate default workspaces."""
+    return replicate_default_workspaces(limit=limit)
