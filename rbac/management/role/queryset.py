@@ -19,7 +19,7 @@
 import re
 
 from django.db import models
-from django.db.models import Count, Q
+from django.db.models import Count, Exists, OuterRef, Q
 
 
 def _glob_to_regex(pattern: str) -> str:
@@ -76,10 +76,21 @@ class RoleV2QuerySet(models.QuerySet):
         """Exclude roles that include any permission from a migration-excluded application.
 
         Uses cached permission PKs; see ``v2_role_excluded_application_permission_ids_cache``.
+
+        Implemented with ``EXISTS`` on the M2M through table so PostgreSQL does not need a
+        wide join + ``DISTINCT`` (which can dominate latency on list/cursor queries).
         """
+        from management.role.v2_model import RoleV2
         from management.role.v2_role_scope import v2_role_excluded_application_permission_ids_cache
 
         perm_ids = v2_role_excluded_application_permission_ids_cache.permission_ids()
         if not perm_ids:
             return self
-        return self.exclude(permissions__id__in=perm_ids).distinct()
+        through = RoleV2.permissions.through
+        has_excluded_permission = Exists(
+            through.objects.filter(
+                rolev2_id=OuterRef("pk"),
+                permission_id__in=perm_ids,
+            )
+        )
+        return self.filter(~has_excluded_permission)
