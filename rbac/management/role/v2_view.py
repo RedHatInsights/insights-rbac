@@ -17,6 +17,7 @@
 """View for RoleV2 management."""
 
 import logging
+import time
 
 from management.atomic_transactions import atomic_block
 from management.audit_log.model import AuditLog
@@ -41,6 +42,8 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from api.common.pagination import V2CursorPagination
+
+logger = logging.getLogger(__name__)
 
 
 class RoleV2CursorPagination(V2CursorPagination):
@@ -108,21 +111,58 @@ class RoleV2ViewSet(AtomicOperationsMixin, BaseV2ViewSet):
 
     def list(self, request, *args, **kwargs):
         """Get a list of roles."""
+        timings: dict[str, float] = {}
+        total_start = time.perf_counter()
+
+        def _mark(key: str, start: float) -> None:
+            timings[key] = time.perf_counter() - start
+
+        t_validate = time.perf_counter()
         input_serializer = RoleV2ListSerializer(data=request.query_params, context={"request": request})
         input_serializer.is_valid(raise_exception=True)
         validated_params = input_serializer.validated_data
+        _mark("validate_params", t_validate)
 
+        t_queryset = time.perf_counter()
         service = RoleV2Service(tenant=request.tenant)
         queryset = service.list(validated_params)
+        _mark("build_queryset", t_queryset)
 
         context = {
             "request": request,
             "fields": validated_params.get("fields"),
         }
 
+        t_page = time.perf_counter()
         page = self.paginate_queryset(queryset)
+        _mark("paginate_queryset", t_page)
+
         serializer = RoleV2ResponseSerializer(page, many=True, context=context)
-        return self.get_paginated_response(serializer.data)
+
+        t_ser = time.perf_counter()
+        data = serializer.data
+        _mark("serialize", t_ser)
+
+        t_resp = time.perf_counter()
+        response = self.get_paginated_response(data)
+        _mark("build_response", t_resp)
+
+        timings["total_after_permission"] = time.perf_counter() - total_start
+        page_len = len(page) if page is not None else 0
+        tenant = getattr(request, "tenant", None)
+        logger.info(
+            "role_v2_api timing (roles_list): %s",
+            {
+                "phase": "roles_list",
+                "timings_ms": {k: round(v * 1000, 2) for k, v in timings.items()},
+                "result_count": page_len,
+                "limit_query": request.query_params.get("limit"),
+                "tenant_pk": getattr(tenant, "pk", None),
+                "org_id": getattr(tenant, "org_id", None),
+            },
+        )
+
+        return response
 
     def perform_atomic_create(self, request, *args, **kwargs):
         """Create a role and return the full response representation."""
