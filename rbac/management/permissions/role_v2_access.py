@@ -18,6 +18,7 @@
 """Role V2 access permissions using Kessel Inventory API."""
 
 import logging
+import time
 
 from management.permissions.workspace_inventory_access import (
     WorkspaceInventoryAccessChecker,
@@ -79,9 +80,24 @@ class RoleV2KesselAccessPermission(permissions.BasePermission):
 
         relation = self._get_relation(view)
         checker = WorkspaceInventoryAccessChecker()
-        return checker.check_resource_access(
+        t0 = time.perf_counter()
+        allowed = checker.check_resource_access(
             resource_type=self.RESOURCE_TYPE,
             resource_id=org_resource_id,
             principal_id=principal_id,
             relation=relation,
         )
+        inventory_ms = (time.perf_counter() - t0) * 1000
+        logger.info(
+            "role_v2_api timing (kessel_permission): %s",
+            {
+                "phase": "inventory_check_permission",
+                "inventory_check_ms": round(inventory_ms, 2),
+                "action": getattr(view, "action", None),
+                "relation": relation,
+                "tenant_pk": getattr(tenant, "pk", None),
+                "org_id": getattr(tenant, "org_id", None),
+                "allowed": allowed,
+            },
+        )
+        return allowed

@@ -17,13 +17,21 @@
 """Test the MCP views via _private/_a2s/ path."""
 
 import json
+import time
 from importlib import reload
 from unittest.mock import patch
 
 from django.test import override_settings
 from django.urls import clear_url_caches
 from django.utils import timezone
-from management.mcp_views import ApiVersion, ToolConfig, _TOOL_CONFIG, _permission_matches
+from management.mcp_views import (
+    ApiVersion,
+    ToolConfig,
+    ToolTimeoutError,
+    _TOOL_CONFIG,
+    _execute_with_timeout,
+    _permission_matches,
+)
 from management.models import Access, AuditLog, Group, Permission, Policy, Principal, Role
 from management.role.v2_model import RoleV2
 from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
@@ -1859,6 +1867,29 @@ class MCPUnifiedSearchRolesV2Tests(MCPToolTestMixin, IdentityRequest):
         role_names = [r["name"] for r in tool_output["data"]]
         self.assertIn("Cost Reader", role_names)
 
+    def test_search_roles_v2_filter_by_permission(self):
+        """Positive: search_roles on V2 org filters by permission."""
+        perm = Permission.objects.create(
+            application="inventory",
+            resource_type="hosts",
+            verb="read",
+            permission="inventory:hosts:read",
+            tenant=self.tenant,
+        )
+        matching_role = RoleV2.objects.create(name="Host Reader", tenant=self.tenant, type=RoleV2.Types.CUSTOM)
+        matching_role.permissions.add(perm)
+
+        RoleV2.objects.create(name="Empty Role", tenant=self.tenant, type=RoleV2.Types.CUSTOM)
+
+        response = self._call_tool("search_roles", {"permission": "inventory:hosts:read"})
+
+        self.assertEqual(response.status_code, 200)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["org_version"], "v2")
+        role_names = [r["name"] for r in tool_output["data"]]
+        self.assertIn("Host Reader", role_names)
+        self.assertNotIn("Empty Role", role_names)
+
 
 @override_settings(BYPASS_BOP_VERIFICATION=True, V2_APIS_ENABLED=True)
 class MCPUnifiedGetRoleTests(MCPToolTestMixin, IdentityRequest):
@@ -2124,3 +2155,116 @@ class MCPToolDescriptionEndpointTests(MCPToolTestMixin, IdentityRequest):
             **self.internal_headers,
         )
         self.assertEqual(response.status_code, 400)
+
+
+class MCPTimeoutTests(MCPToolTestMixin, IdentityRequest):
+    """Test MCP tool execution timeout behavior."""
+
+    def setUp(self):
+        """Set up timeout tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+
+    # --- _execute_with_timeout unit tests ---
+
+    def test_execute_with_timeout_returns_result(self):
+        """Positive: Fast function returns its result within timeout."""
+        result = _execute_with_timeout(lambda: "ok", timeout=5)
+        self.assertEqual(result, "ok")
+
+    def test_execute_with_timeout_passes_args(self):
+        """Positive: Arguments are forwarded to the function."""
+        result = _execute_with_timeout(lambda x, y: x + y, 5, 3, 4)
+        self.assertEqual(result, 7)
+
+    def test_execute_with_timeout_passes_kwargs(self):
+        """Positive: Keyword arguments are forwarded to the function."""
+        result = _execute_with_timeout(lambda name="world": f"hello {name}", 5, name="test")
+        self.assertEqual(result, "hello test")
+
+    def test_execute_with_timeout_raises_on_slow_function(self):
+        """Negative: Slow function raises ToolTimeoutError."""
+        with self.assertRaises(ToolTimeoutError):
+            _execute_with_timeout(lambda: time.sleep(0.5), timeout=0.1)
+
+    def test_execute_with_timeout_propagates_exceptions(self):
+        """Negative: Exceptions from the function propagate unchanged."""
+
+        def raise_value_error():
+            raise ValueError("test error")
+
+        with self.assertRaises(ValueError):
+            _execute_with_timeout(raise_value_error, timeout=5)
+
+    # --- Integration tests via MCP endpoint ---
+
+    @override_settings(MCP_TOOL_TIMEOUT_SECONDS=0.1)
+    @patch("management.mcp_views._TOOL_CONFIG")
+    def test_tool_call_returns_timeout_error(self, mock_config):
+        """Negative: Slow tool returns JSON-RPC timeout error."""
+        mock_config.get.return_value = ToolConfig(
+            fn=lambda: time.sleep(0.5),
+            requires_auth=False,
+            passes_request=False,
+        )
+        response = self._call_tool("slow_tool")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32603)
+        self.assertEqual(data["error"]["message"], "Tool execution timed out after 0.1s")
+
+    @override_settings(MCP_TOOL_TIMEOUT_SECONDS=0.1)
+    @patch("management.mcp_views._TOOL_CONFIG")
+    def test_tool_call_timeout_with_passes_request(self, mock_config):
+        """Negative: Slow tool with passes_request=True also times out correctly."""
+        mock_config.get.return_value = ToolConfig(
+            fn=lambda request: time.sleep(0.5),
+            requires_auth=False,
+            passes_request=True,
+        )
+        response = self._call_tool("slow_auth_tool")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32603)
+        self.assertIn("timed out", data["error"]["message"])
+
+    @override_settings(MCP_TOOL_TIMEOUT_SECONDS=0.1)
+    @patch("management.mcp_views._TOOL_CONFIG")
+    def test_timeout_records_prometheus_metric(self, mock_config):
+        """Positive: Timeout records metric with status='timeout'."""
+        mock_config.get.return_value = ToolConfig(
+            fn=lambda: time.sleep(0.5),
+            requires_auth=False,
+            passes_request=False,
+        )
+
+        with patch("management.mcp_views._record_metric") as mock_metric:
+            self._call_tool("slow_tool")
+            mock_metric.assert_called_once()
+            args = mock_metric.call_args[0]
+            self.assertEqual(args[0], "slow_tool")
+            self.assertEqual(args[1], "timeout")
+
+    def test_hello_skips_timeout_tracking(self):
+        """Edge case: hello tool still works and skips metric tracking."""
+        response = self._call_tool("hello")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("result", data)
+        self.assertFalse(data["result"]["isError"])
+
+    @override_settings(MCP_TOOL_TIMEOUT_SECONDS=30)
+    def test_default_timeout_allows_normal_tools(self):
+        """Positive: Normal tools complete within default timeout."""
+        response = self._call_tool("hello")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("result", data)
+        self.assertFalse(data["result"]["isError"])

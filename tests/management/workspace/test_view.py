@@ -1315,6 +1315,110 @@ class WorkspaceTestsCreateUpdateDelete(TransactionalWorkspaceViewTests):
         self.assertEqual(response_message.get("name"), wsB.name)
         self.assertEqual(response_message.get("parent_id"), str(wsA.id))
 
+    def test_create_workspace_invalid_name_characters(self):
+        """Test that create rejects names with disallowed characters."""
+        client = APIClient()
+        url = reverse("v2_management:workspace-list")
+        for invalid_name in ["ws@name", "ws#name", "ws!name", "ws.name", "ws/name", "ws+name"]:
+            response = client.post(
+                url,
+                {"name": invalid_name, "parent_id": self.default_workspace.id},
+                format="json",
+                **self.headers,
+            )
+            self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST, f"Expected 400 for '{invalid_name}'")
+
+    def test_create_workspace_valid_name_characters(self):
+        """Test that create accepts names with allowed characters."""
+        client = APIClient()
+        url = reverse("v2_management:workspace-list")
+        valid_names = ["My Workspace", "ws-name", "ws_name", "Workspace 123", "simple"]
+        for valid_name in valid_names:
+            response = client.post(
+                url,
+                {"name": valid_name, "parent_id": self.default_workspace.id},
+                format="json",
+                **self.headers,
+            )
+            self.assertEqual(response.status_code, status.HTTP_201_CREATED, f"Expected 201 for '{valid_name}'")
+
+    def test_update_workspace_invalid_name_characters(self):
+        """Test that PUT rejects a new name with disallowed characters."""
+        workspace = Workspace.objects.create(
+            name="Valid Name",
+            tenant=self.tenant,
+            parent=self.default_workspace,
+            type=Workspace.Types.STANDARD,
+        )
+        client = APIClient()
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": workspace.id})
+        response = client.put(
+            url,
+            {"name": "invalid@name", "parent_id": workspace.parent_id},
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_partial_update_workspace_invalid_name_characters(self):
+        """Test that PATCH rejects a new name with disallowed characters."""
+        workspace = Workspace.objects.create(
+            name="Valid Name",
+            tenant=self.tenant,
+            parent=self.default_workspace,
+            type=Workspace.Types.STANDARD,
+        )
+        client = APIClient()
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": workspace.id})
+        response = client.patch(url, {"name": "bad!name"}, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    def test_update_workspace_legacy_name_unchanged(self):
+        """Test that PUT with an unchanged legacy name (with disallowed chars) succeeds."""
+        workspace = Workspace.objects.create(
+            name="legacy@name",
+            tenant=self.tenant,
+            parent=self.default_workspace,
+            type=Workspace.Types.STANDARD,
+        )
+        client = APIClient()
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": workspace.id})
+        response = client.put(
+            url,
+            {"name": "legacy@name", "description": "updated desc", "parent_id": workspace.parent_id},
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["name"], "legacy@name")
+
+    def test_partial_update_workspace_legacy_name_not_sent(self):
+        """Test that PATCH without name field on a workspace with legacy name succeeds."""
+        workspace = Workspace.objects.create(
+            name="legacy@name",
+            tenant=self.tenant,
+            parent=self.default_workspace,
+            type=Workspace.Types.STANDARD,
+        )
+        client = APIClient()
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": workspace.id})
+        response = client.patch(url, {"description": "updated desc"}, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["name"], "legacy@name")
+
+    def test_update_workspace_legacy_name_changed_to_invalid(self):
+        """Test that changing a legacy name to a different invalid name is rejected."""
+        workspace = Workspace.objects.create(
+            name="legacy@name",
+            tenant=self.tenant,
+            parent=self.default_workspace,
+            type=Workspace.Types.STANDARD,
+        )
+        client = APIClient()
+        url = reverse("v2_management:workspace-detail", kwargs={"pk": workspace.id})
+        response = client.patch(url, {"name": "other@invalid"}, format="json", **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
     def test_update_workspace_invalid_uuid(self):
         """Test that update fails with 400 when workspace id is not a valid UUID."""
         client = APIClient()
