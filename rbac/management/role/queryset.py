@@ -19,7 +19,8 @@
 import re
 
 from django.db import models
-from django.db.models import Count, Exists, OuterRef, Q
+from django.db.models import Count, Exists, IntegerField, OuterRef, Q, Subquery, Value
+from django.db.models.functions import Coalesce
 
 
 def _glob_to_regex(pattern: str) -> str:
@@ -46,7 +47,8 @@ class RoleV2QuerySet(models.QuerySet):
         """Return roles scoped to the given tenant, including seeded roles from the public tenant."""
         from api.models import Tenant
 
-        return self.filter(Q(tenant=tenant) | Q(tenant__tenant_name=Tenant.PUBLIC_TENANT_NAME))
+        public_tenant = Tenant._get_public_tenant()
+        return self.filter(Q(tenant=tenant) | Q(tenant=public_tenant))
 
     def with_fields(self, fields):
         """Apply field-driven eager loading so the serializer never triggers lazy loads.
@@ -55,11 +57,25 @@ class RoleV2QuerySet(models.QuerySet):
             fields: Set of response field names that drive select_related,
                     prefetch_related, and annotations.
         """
+        from management.role.v2_model import RoleV2
+
         qs = self
         if "org_id" in fields:
             qs = qs.select_related("tenant")
         if "permissions_count" in fields:
-            qs = qs.annotate(permissions_count_annotation=Count("permissions", distinct=True))
+            through = RoleV2.permissions.through
+            qs = qs.annotate(
+                permissions_count_annotation=Coalesce(
+                    Subquery(
+                        through.objects.filter(rolev2_id=OuterRef("pk"))
+                        .values("rolev2_id")
+                        .annotate(cnt=Count("permission_id"))
+                        .values("cnt"),
+                        output_field=IntegerField(),
+                    ),
+                    Value(0),
+                )
+            )
         if "permissions" in fields:
             qs = qs.prefetch_related("permissions")
         return qs
