@@ -248,9 +248,9 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
     def _list_by_subject(self, request):
         """List role bindings grouped by subject.
 
-        Required query parameters:
-            - resource_id: Filter by resource ID
-            - resource_type: Filter by resource type
+        Required query parameters (one of):
+            - resource_id + resource_type: Filter by resource
+            - resource.tenant.org_id: Filter by tenant org ID (shorthand)
 
         Optional query parameters:
             - subject_type: Filter by subject type (e.g., 'group')
@@ -262,6 +262,13 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
         input_serializer = RoleBindingInputSerializer(data=request.query_params)
         input_serializer.is_valid(raise_exception=True)
         validated_params = input_serializer.validated_data
+
+        # Convert resource_tenant_org_id to resource_id/resource_type
+        resource_tenant_org_id = validated_params.get("resource_tenant_org_id")
+        if resource_tenant_org_id:
+            resource_id = Tenant.org_id_to_tenant_resource_id(resource_tenant_org_id)
+            resource_type = validated_params.get("resource_type") or "tenant"
+            validated_params = {**validated_params, "resource_id": resource_id, "resource_type": resource_type}
 
         service = RoleBindingService(tenant=request.tenant)
 
