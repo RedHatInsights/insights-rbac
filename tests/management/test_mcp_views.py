@@ -2454,6 +2454,56 @@ class MCPGetUserStateV2Tests(MCPToolTestMixin, IdentityRequest):
         self.assertEqual(access_entry["resource_scope"]["type"], "workspace")
         self.assertEqual(access_entry["resource_scope"]["id"], "root-workspace-id")
 
+    def test_get_user_state_v2_includes_group_based_role_bindings(self):
+        """Positive: get_user_state on V2 org includes permissions from group-based role bindings."""
+        group_perm = Permission.objects.create(
+            application="cost-management",
+            resource_type="cost_model",
+            verb="write",
+            permission="cost-management:cost_model:write",
+            tenant=self.tenant,
+        )
+        group_role = RoleV2.objects.create(name="Cost Manager", tenant=self.tenant)
+        group_role.permissions.add(group_perm)
+
+        group_binding = RoleBinding.objects.create(
+            tenant=self.tenant,
+            role=group_role,
+            resource_type="workspace",
+            resource_id="group-workspace-id",
+        )
+        RoleBindingGroup.objects.create(binding=group_binding, group=self.group)
+
+        response = self._call_tool("get_user_state", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+        permissions = [a["permission"] for a in tool_output["access"]]
+        self.assertIn("cost-management:cost_model:write", permissions)
+
+        access_entry = next(a for a in tool_output["access"] if a["permission"] == "cost-management:cost_model:write")
+        self.assertEqual(access_entry["role_name"], "Cost Manager")
+        self.assertEqual(access_entry["resource_scope"]["type"], "workspace")
+        self.assertEqual(access_entry["resource_scope"]["id"], "group-workspace-id")
+
+    def test_get_user_state_v2_multi_scope_bindings_preserved(self):
+        """Positive: Same permission on different scopes is returned for each scope."""
+        binding_b = RoleBinding.objects.create(
+            tenant=self.tenant,
+            role=self.v2_role,
+            resource_type="workspace",
+            resource_id="workspace-b-id",
+        )
+        RoleBindingPrincipal.objects.create(binding=binding_b, principal=self.principal, source="direct")
+
+        response = self._call_tool("get_user_state", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+        hosts_read_entries = [a for a in tool_output["access"] if a["permission"] == "inventory:hosts:read"]
+        self.assertEqual(len(hosts_read_entries), 2)
+
+        scope_ids = {e["resource_scope"]["id"] for e in hosts_read_entries}
+        self.assertEqual(scope_ids, {"root-workspace-id", "workspace-b-id"})
+
 
 class MCPTimeoutTests(MCPToolTestMixin, IdentityRequest):
     """Test MCP tool execution timeout behavior."""

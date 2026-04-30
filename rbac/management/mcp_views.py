@@ -1524,7 +1524,6 @@ def get_user_state(
         "summary": {
             "group_count": 0,
             "permission_count": 0,
-            "recent_actions": 0,
         },
     }
 
@@ -1726,7 +1725,7 @@ def _get_user_access_v1(request: HttpRequest, username: str) -> list[dict[str, A
 def _get_user_access_v2(request: HttpRequest, principal: Principal, tenant: Any) -> list[dict[str, Any]]:
     """Get user's access permissions using V2 role bindings."""
     access_list: list[dict[str, Any]] = []
-    seen_permissions: set[str] = set()
+    seen_permissions: set[tuple[str, str, str]] = set()
 
     # Get direct role bindings for the principal
     direct_binding_ids = RoleBindingPrincipal.objects.filter(principal=principal).values_list("binding_id", flat=True)
@@ -1752,8 +1751,9 @@ def _get_user_access_v2(request: HttpRequest, principal: Principal, tenant: Any)
 
         for perm in role.permissions.all():
             perm_str = f"{perm.application}:{perm.resource_type}:{perm.verb}"
-            if perm_str not in seen_permissions:
-                seen_permissions.add(perm_str)
+            dedup_key = (perm_str, binding.resource_type, binding.resource_id)
+            if dedup_key not in seen_permissions:
+                seen_permissions.add(dedup_key)
                 access_list.append(
                     {
                         "permission": perm_str,
