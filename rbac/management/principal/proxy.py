@@ -371,10 +371,10 @@ def get_user_id_from_request(request) -> str | None:
     Returns:
         str: The user_id, or None if not found
     """
-    from management.utils import get_principal_from_request
+    from management.utils import get_principal_for_auth
 
     # 1. Try to get from Principal in database
-    principal = get_principal_from_request(request)
+    principal = get_principal_for_auth(request)
     if principal is not None:
         user_id = getattr(principal, "user_id", None)
         if user_id:
