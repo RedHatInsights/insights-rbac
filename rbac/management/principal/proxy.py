@@ -361,7 +361,7 @@ def get_user_id_from_request(request) -> str | None:
     Get user_id from a request using multiple lookup strategies.
 
     Tries to get user_id from (in order of precedence):
-    1. Principal from database (via get_principal_from_request)
+    1. Principal from database (via get_principal_for_auth)
     2. request.user.user_id attached to the request
     3. IT service via PrincipalProxy
 
