@@ -393,6 +393,31 @@ tox -r
 
 ---
 
+## Tool Execution Timeout
+
+All tool calls are subject to a configurable timeout to prevent slow or hanging dependencies from blocking MCP requests indefinitely.
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `MCP_TOOL_TIMEOUT_SECONDS` | `30` | Maximum seconds a tool may execute before being terminated |
+| `MCP_TOOL_MAX_WORKERS` | `10` | Thread pool size for concurrent tool execution |
+
+When a tool exceeds the timeout, the MCP server returns a JSON-RPC error:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "error": {"code": -32603, "message": "Tool execution timed out after 30s"},
+  "id": 3
+}
+```
+
+Timeouts are recorded in the `rbac_mcp_tool_call_total` Prometheus metric with `status="timeout"`.
+
+The timeout uses a module-level `concurrent.futures.ThreadPoolExecutor` (reused across requests) which is safe in multi-threaded WSGI containers (unlike `signal.alarm` which only works on the main thread).
+
+---
+
 ## Error Handling
 
 All errors follow the JSON-RPC 2.0 error response format:
@@ -413,7 +438,7 @@ All errors follow the JSON-RPC 2.0 error response format:
 | `-32600` | Invalid Request | Missing `jsonrpc: "2.0"`, batch requests, non-string method |
 | `-32601` | Method not found | Unknown JSON-RPC method (not `initialize`/`tools/list`/`tools/call`) |
 | `-32602` | Invalid params | Unknown tool name, missing `arguments`, invalid argument types |
-| `-32603` | Internal error | Unhandled exception in tool execution |
+| `-32603` | Internal error | Unhandled exception in tool execution, or tool execution timed out |
 | `-32000` | Authentication required | Auth-required tool called without valid identity |
 
 ---
@@ -427,6 +452,6 @@ All errors follow the JSON-RPC 2.0 error response format:
 | `rbac/rbac/a2s.py` | `is_a2s_path()` helper shared by both middleware classes |
 | `rbac/rbac/middleware.py` | A2S bypass in `IdentityHeaderMiddleware` |
 | `rbac/internal/middleware.py` | A2S bypass in `InternalIdentityHeaderMiddleware` |
-| `rbac/rbac/settings.py` | `A2S_PATH_PREFIX`, `CORS_EXPOSE_HEADERS` settings |
+| `rbac/rbac/settings.py` | `A2S_PATH_PREFIX`, `CORS_EXPOSE_HEADERS`, `MCP_TOOL_TIMEOUT_SECONDS`, `MCP_TOOL_MAX_WORKERS` settings |
 | `rbac/rbac/urls.py` | Top-level URL routing for `/_private/_a2s/` |
 | `tests/management/test_mcp_views.py` | Comprehensive test suite (30+ tests) |
