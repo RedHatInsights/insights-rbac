@@ -215,13 +215,22 @@ class RoleBindingListInputSerializer(RoleBindingInputSerializerMixin, serializer
 
 
 class RoleBindingInputSerializer(serializers.Serializer):
-    """Input serializer for role binding query parameters.
+    """Input serializer for role binding by-subject query parameters.
 
-    Handles validation of query parameters for the role binding API.
+    Handles validation of query parameters for GET /role-bindings/by-subject/.
+    Supports resource.tenant.org_id as an alternative to resource_id + resource_type.
     """
 
-    resource_id = serializers.CharField(required=True, help_text="Filter by resource ID")
-    resource_type = serializers.CharField(required=True, help_text="Filter by resource type")
+    DOTTED_PARAM_MAP = {
+        "resource.tenant.org_id": "resource_tenant_org_id",
+    }
+
+    resource_id = serializers.CharField(required=False, help_text="Filter by resource ID")
+    resource_type = serializers.CharField(required=False, help_text="Filter by resource type")
+    resource_tenant_org_id = serializers.CharField(
+        required=False,
+        help_text="Org ID of the tenant resource to filter by",
+    )
     subject_type = serializers.CharField(required=False, allow_blank=True, help_text="Filter by subject type")
     subject_id = serializers.CharField(required=False, allow_blank=True, help_text="Filter by subject ID (UUID)")
     fields = serializers.CharField(required=False, allow_blank=True, help_text="Control which fields are included")
@@ -234,25 +243,50 @@ class RoleBindingInputSerializer(serializers.Serializer):
     )
 
     def to_internal_value(self, data):
-        """Sanitize input data by stripping NUL bytes before field validation."""
+        """Remap dotted query param keys, then sanitize NUL bytes."""
+        remapped = {key: data[key] for key in data}
+        for dotted, underscored in self.DOTTED_PARAM_MAP.items():
+            if dotted in remapped:
+                remapped[underscored] = remapped.pop(dotted)
         sanitized = {
-            key: value.replace("\x00", "") if isinstance(value, str) else value for key, value in data.items()
+            key: value.replace("\x00", "") if isinstance(value, str) else value for key, value in remapped.items()
         }
         return super().to_internal_value(sanitized)
 
-    def validate_resource_id(self, value):
-        """Validate resource_id is provided."""
-        if not value:
-            raise serializers.ValidationError("resource_id is required to identify the resource for role bindings.")
-        return value
+    def validate(self, attrs):
+        """Cross-field validation for resource params."""
+        attrs = super().validate(attrs)
 
-    def validate_resource_type(self, value):
-        """Validate resource_type is provided."""
-        if not value:
-            raise serializers.ValidationError(
-                "resource_type is required to specify the type of resource (e.g., 'workspace')."
-            )
-        return value
+        resource_tenant_org_id = attrs.get("resource_tenant_org_id")
+        resource_id = attrs.get("resource_id")
+        resource_type = attrs.get("resource_type")
+
+        if resource_tenant_org_id:
+            if resource_id:
+                raise serializers.ValidationError("resource.tenant.org_id cannot be combined with resource_id.")
+            if resource_type and resource_type != "tenant":
+                raise serializers.ValidationError(
+                    "resource_type must be 'tenant' when resource.tenant.org_id is provided."
+                )
+        else:
+            if not resource_id:
+                raise serializers.ValidationError(
+                    {"resource_id": "resource_id is required (or use resource.tenant.org_id)."}
+                )
+            if not resource_id.strip():
+                raise serializers.ValidationError(
+                    {"resource_id": "resource_id is required to identify the resource for role bindings."}
+                )
+            if not resource_type:
+                raise serializers.ValidationError(
+                    {"resource_type": "resource_type is required (or use resource.tenant.org_id)."}
+                )
+            if not resource_type.strip():
+                raise serializers.ValidationError(
+                    {"resource_type": "resource_type is required to specify the type of resource (e.g., 'workspace')."}
+                )
+
+        return attrs
 
     def validate_subject_type(self, value):
         """Return None for empty values."""
@@ -1021,13 +1055,22 @@ class UpdateRoleBindingRequestSerializer(RoleBindingInputSerializerMixin, serial
 
     Inherits from ``RoleBindingInputSerializerMixin`` for shared NUL-byte
     sanitization (``to_internal_value``) and ``validate_fields``.
+    Supports resource.tenant.org_id as an alternative to resource_id + resource_type.
     """
+
+    DOTTED_PARAM_MAP = {
+        "resource.tenant.org_id": "resource_tenant_org_id",
+    }
 
     DEFAULT_FIELDS = "resource(id),subject(id,type),roles(id)"
 
     # Query parameters
-    resource_id = serializers.CharField(required=True, help_text="Resource ID to update bindings for")
-    resource_type = serializers.CharField(required=True, help_text="Resource type (e.g., 'workspace')")
+    resource_id = serializers.CharField(required=False, help_text="Resource ID to update bindings for")
+    resource_type = serializers.CharField(required=False, help_text="Resource type (e.g., 'workspace')")
+    resource_tenant_org_id = serializers.CharField(
+        required=False,
+        help_text="Org ID of the tenant resource to update bindings for",
+    )
     subject_id = serializers.CharField(required=True, help_text="Subject ID (UUID)")
     subject_type = serializers.CharField(required=True, help_text="Subject type (e.g., 'group')")
     fields = serializers.CharField(
@@ -1036,6 +1079,14 @@ class UpdateRoleBindingRequestSerializer(RoleBindingInputSerializerMixin, serial
 
     # Request body
     roles = RoleIdSerializer(many=True, required=True, help_text="Roles to assign")
+
+    def to_internal_value(self, data):
+        """Remap dotted query param keys before NUL-byte sanitization."""
+        remapped = {key: data[key] for key in data}
+        for dotted, underscored in self.DOTTED_PARAM_MAP.items():
+            if dotted in remapped:
+                remapped[underscored] = remapped.pop(dotted)
+        return super().to_internal_value(remapped)
 
     def validate_fields(self, value):
         """Parse and validate fields parameter using by-subject selection."""
@@ -1055,6 +1106,33 @@ class UpdateRoleBindingRequestSerializer(RoleBindingInputSerializerMixin, serial
             raise serializers.ValidationError(f"Unsupported subject type: '{value}'. Supported types: {supported}")
         return value
 
+    def validate(self, attrs):
+        """Cross-field validation for resource params."""
+        attrs = super().validate(attrs)
+
+        resource_tenant_org_id = attrs.get("resource_tenant_org_id")
+        resource_id = attrs.get("resource_id")
+        resource_type = attrs.get("resource_type")
+
+        if resource_tenant_org_id:
+            if resource_id:
+                raise serializers.ValidationError("resource.tenant.org_id cannot be combined with resource_id.")
+            if resource_type and resource_type != "tenant":
+                raise serializers.ValidationError(
+                    "resource_type must be 'tenant' when resource.tenant.org_id is provided."
+                )
+        else:
+            if not resource_id:
+                raise serializers.ValidationError(
+                    {"resource_id": "resource_id is required (or use resource.tenant.org_id)."}
+                )
+            if not resource_type:
+                raise serializers.ValidationError(
+                    {"resource_type": "resource_type is required (or use resource.tenant.org_id)."}
+                )
+
+        return attrs
+
     def save(self):
         """Execute the update via the service layer and return the result.
 
@@ -1067,9 +1145,20 @@ class UpdateRoleBindingRequestSerializer(RoleBindingInputSerializerMixin, serial
         role_ids = [str(role["id"]) for role in validated["roles"]]
         service = RoleBindingService(tenant=tenant)
 
+        # Convert resource_tenant_org_id to resource_id/resource_type
+        resource_tenant_org_id = validated.get("resource_tenant_org_id")
+        if resource_tenant_org_id:
+            from api.models import Tenant
+
+            resource_id = Tenant.org_id_to_tenant_resource_id(resource_tenant_org_id)
+            resource_type = validated.get("resource_type") or "tenant"
+        else:
+            resource_id = validated["resource_id"]
+            resource_type = validated["resource_type"]
+
         return service.update_role_bindings_for_subject(
-            resource_type=validated["resource_type"],
-            resource_id=validated["resource_id"],
+            resource_type=resource_type,
+            resource_id=resource_id,
             subject_type=validated["subject_type"],
             subject_id=validated["subject_id"],
             role_ids=role_ids,
