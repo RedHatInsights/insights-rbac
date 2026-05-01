@@ -160,6 +160,11 @@ class RoleV2ListSerializer(serializers.Serializer):
         allow_blank=True,
         help_text="Filter by role name. Use * as wildcard for partial matching.",
     )
+    permission = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Filter by permission string (e.g. 'app:resource:verb'). Comma-separated for multiple.",
+    )
     resource_type = serializers.CharField(
         required=False, allow_blank=True, help_text="Filter roles by the resource type they are scoped to"
     )
@@ -175,7 +180,11 @@ class RoleV2ListSerializer(serializers.Serializer):
         }
         return super().to_internal_value(sanitized)
 
-    def validate_name(self, value):
+    def validate_name(self, value: str | None) -> str | None:
+        """Return None for empty values."""
+        return value or None
+
+    def validate_permission(self, value: str | None) -> str | None:
         """Return None for empty values."""
         return value or None
 
