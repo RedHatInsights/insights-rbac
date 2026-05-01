@@ -660,6 +660,7 @@ class MCPViewTests(MCPToolTestMixin, IdentityRequest):
             "list_permissions",
             "list_permission_options",
             "list_audit_logs",
+            "get_rbac_recent_changes",
             "search_roles",
             "get_role",
             "list_role_access",
@@ -1010,6 +1011,117 @@ class MCPViewTests(MCPToolTestMixin, IdentityRequest):
         self.assertEqual(tool_output["meta"]["count"], 1)
         self.assertEqual(len(tool_output["data"]), 1)
         self.assertIn("target_role_alpha", tool_output["data"][0]["description"])
+
+    # --- get_rbac_recent_changes ---
+
+    def test_get_rbac_recent_changes_success(self):
+        """Positive: get_rbac_recent_changes returns summary of recent changes."""
+        response = self._call_tool("get_rbac_recent_changes")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertIn("summary", tool_output)
+        self.assertIn("by_resource_type", tool_output)
+        self.assertIn("by_action", tool_output)
+        self.assertIn("by_actor", tool_output)
+        self.assertIn("recent_changes", tool_output)
+
+    def test_get_rbac_recent_changes_without_auth_returns_error(self):
+        """Permission: get_rbac_recent_changes without auth returns auth error."""
+        response = self._call_tool("get_rbac_recent_changes", use_auth=False)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    def test_get_rbac_recent_changes_with_audit_data(self):
+        """Positive: get_rbac_recent_changes groups and summarizes audit data."""
+        AuditLog.objects.create(
+            principal_username="actor1",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.ADD,
+            description="user added to group",
+            tenant=self.tenant,
+        )
+        AuditLog.objects.create(
+            principal_username="actor1",
+            resource_type=AuditLog.ROLE,
+            action=AuditLog.CREATE,
+            description="Created role: test_role",
+            tenant=self.tenant,
+        )
+        AuditLog.objects.create(
+            principal_username="actor2",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.DELETE,
+            description="Deleted group: old_group",
+            tenant=self.tenant,
+        )
+
+        response = self._call_tool("get_rbac_recent_changes", {"days": 7})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["summary"]["total_changes"], 3)
+        self.assertEqual(tool_output["summary"]["unique_actors"], 2)
+        self.assertIn("group", tool_output["by_resource_type"])
+        self.assertIn("role", tool_output["by_resource_type"])
+        self.assertIn("add", tool_output["by_action"])
+        self.assertIn("create", tool_output["by_action"])
+        self.assertIn("delete", tool_output["by_action"])
+
+    def test_get_rbac_recent_changes_days_parameter(self):
+        """Positive: get_rbac_recent_changes respects days parameter."""
+        old_entry = AuditLog.objects.create(
+            principal_username="old_actor",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.ADD,
+            description="old action",
+            tenant=self.tenant,
+        )
+        old_entry.created = timezone.now() - __import__("datetime").timedelta(days=10)
+        old_entry.save()
+
+        AuditLog.objects.create(
+            principal_username="recent_actor",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.ADD,
+            description="recent action",
+            tenant=self.tenant,
+        )
+
+        response = self._call_tool("get_rbac_recent_changes", {"days": 7})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["summary"]["total_changes"], 1)
+        self.assertIn("recent_actor", tool_output["by_actor"])
+        self.assertNotIn("old_actor", tool_output["by_actor"])
+
+    def test_get_rbac_recent_changes_empty_result(self):
+        """Positive: get_rbac_recent_changes returns clean empty state when no changes."""
+        response = self._call_tool("get_rbac_recent_changes", {"days": 1})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["summary"]["total_changes"], 0)
+        self.assertEqual(tool_output["by_resource_type"], {})
+        self.assertEqual(tool_output["by_action"], {})
+
+    def test_get_rbac_recent_changes_clamps_days(self):
+        """Positive: get_rbac_recent_changes clamps days to valid range (1-30)."""
+        response = self._call_tool("get_rbac_recent_changes", {"days": 100})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["summary"]["days_reviewed"], 30)
+
+        response = self._call_tool("get_rbac_recent_changes", {"days": 0})
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["summary"]["days_reviewed"], 1)
 
     # --- list_groups / get_group / list_group_principals ---
 

@@ -345,6 +345,7 @@ def _call_view(
 # │ list_permissions                 │ common    │ GET /api/v1/permissions/                   │
 # │ list_permission_options          │ common    │ GET /api/v1/permissions/options/            │
 # │ list_audit_logs                  │ common    │ GET /api/v1/auditlogs/                     │
+# │ get_rbac_recent_changes               │ common    │ (in-process audit log analysis)            │
 # │ list_groups                      │ common    │ GET /api/v1/groups/                        │
 # │ get_group                        │ common    │ GET /api/v1/groups/{uuid}/                 │
 # │ list_group_principals            │ common    │ GET /api/v1/groups/{uuid}/principals/      │
@@ -1723,6 +1724,101 @@ def _get_user_access_v1(request: HttpRequest, username: str) -> list[dict[str, A
             logger.warning("mcp: failed to get V1 access for user=%s app=%s", username, app, exc_info=True)
 
     return access_list
+
+
+@register_tool(
+    description=(
+        "Get a summary of recent RBAC changes. Returns changes grouped by resource type and action, "
+        "with statistics. Set 'days' (1-30, default 7) to control how far back to look. "
+        "Returns: total change count, changes by resource type (group/role/role_v2/workspace/role_binding), "
+        "changes by action (create/delete/edit/add/remove), top actors with change counts, "
+        "and the 100 most recent changes. "
+        "Use this tool to get an overview of what changed, then use list_audit_logs for details. "
+        "RESPONSE FORMAT: Consolidate by actor. For each actor: '<actor>: <count> <action> actions on "
+        "<resource_type> (<day of week>). <actor> holds <role name if known>.' "
+        "Note patterns like 'Matches expected automation pattern' for service accounts. "
+        "Format dates as day of week (Monday, Tuesday, etc.), not ISO timestamps."
+    ),
+    requires_auth=True,
+)
+def get_rbac_recent_changes(
+    request: HttpRequest,
+    *,
+    days: int = 7,
+) -> str:
+    """Get a summary of recent RBAC changes."""
+    days = min(max(days, 1), 30)
+
+    tenant = getattr(request, "tenant", None)
+    if not tenant:
+        return json.dumps({"error": "No tenant context available"})
+
+    cutoff = datetime.now(timezone.utc) - __import__("datetime").timedelta(days=days)
+
+    entries = AuditLog.objects.filter(tenant=tenant, created__gte=cutoff).order_by("-created")
+
+    total_count = entries.count()
+    if total_count == 0:
+        return json.dumps(
+            {
+                "summary": {
+                    "days_reviewed": days,
+                    "total_changes": 0,
+                    "message": f"No RBAC changes in the last {days} days.",
+                },
+                "by_resource_type": {},
+                "by_action": {},
+                "by_actor": {},
+                "recent_changes": [],
+            }
+        )
+
+    by_resource: dict[str, int] = {}
+    by_action: dict[str, int] = {}
+    by_actor: dict[str, int] = {}
+
+    entry_list = list(entries[:500])
+
+    for entry in entry_list:
+        rt = entry.resource_type
+        by_resource[rt] = by_resource.get(rt, 0) + 1
+
+        act = entry.action
+        by_action[act] = by_action.get(act, 0) + 1
+
+        actor = entry.principal_username
+        by_actor[actor] = by_actor.get(actor, 0) + 1
+
+    recent_changes = [
+        {
+            "actor": entry.principal_username,
+            "action": entry.action,
+            "resource_type": entry.resource_type,
+            "description": entry.description[:200],
+            "created": entry.created.isoformat() if entry.created else None,
+        }
+        for entry in entry_list[:100]
+    ]
+
+    sorted_actors = sorted(by_actor.items(), key=lambda x: x[1], reverse=True)[:10]
+    by_resource_sorted = dict(sorted(by_resource.items(), key=lambda x: x[1], reverse=True))
+    by_action_sorted = dict(sorted(by_action.items(), key=lambda x: x[1], reverse=True))
+
+    result = {
+        "summary": {
+            "days_reviewed": days,
+            "total_changes": total_count,
+            "unique_actors": len(by_actor),
+            "period_start": cutoff.isoformat(),
+            "period_end": datetime.now(timezone.utc).isoformat(),
+        },
+        "by_resource_type": by_resource_sorted,
+        "by_action": by_action_sorted,
+        "by_actor": dict(sorted_actors),
+        "recent_changes": recent_changes,
+    }
+
+    return json.dumps(result, default=str)
 
 
 def _get_user_access_v2(request: HttpRequest, principal: Principal, tenant: Any) -> list[dict[str, Any]]:
