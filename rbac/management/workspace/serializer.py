@@ -17,10 +17,14 @@
 
 """Serializer for workspace management."""
 
+import re
+
 from management.workspace.service import WorkspaceService
 from rest_framework import serializers
 
 from .model import Workspace
+
+WORKSPACE_NAME_REGEX = re.compile(r"^[\w\s-]+$")
 
 
 class WorkspaceSerializer(serializers.ModelSerializer):
@@ -51,6 +55,19 @@ class WorkspaceSerializer(serializers.ModelSerializer):
     @property
     def _service(self) -> WorkspaceService:
         return self.context["view"]._service
+
+    def validate_name(self, value):
+        """Reject names with characters other than letters, numbers, spaces, hyphens, and underscores.
+
+        Existing names are grandfathered: skip validation when the name is unchanged on update.
+        """
+        if self.instance and self.instance.name == value:
+            return value
+        if not WORKSPACE_NAME_REGEX.match(value):
+            raise serializers.ValidationError(
+                "Workspace name may only contain letters, numbers, spaces, hyphens, and underscores."
+            )
+        return value
 
     def validate(self, attrs):
         """Require parent_id in the body for PUT (full update) requests."""
