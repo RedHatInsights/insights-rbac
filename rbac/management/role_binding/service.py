@@ -28,7 +28,12 @@ from management.atomic_transactions import atomic
 from management.exceptions import InvalidFieldError, NotFoundError, RequiredFieldError
 from management.group.model import Group
 from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
-from management.permission.scope_service import Scope
+from management.permission.scope_service import (
+    SCOPE_DISPLAY_NAME,
+    Scope,
+    default_implicit_resource_service,
+    scope_for_resource,
+)
 from management.principal.model import Principal
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
@@ -97,11 +102,13 @@ class RoleBindingService:
         replicator: RelationReplicator | None = None,
         principal_source: str = API_PRINCIPAL_SOURCE,
         allow_external_subjects: bool = False,
+        skip_scope_validation: bool = False,
     ):
         """Initialize the service with a tenant and optional replicator."""
         self.tenant = tenant
         self._principal_source = principal_source
         self._allow_external_subjects = allow_external_subjects
+        self._skip_scope_validation = skip_scope_validation
 
         if settings.REPLICATION_TO_RELATION_ENABLED:
             self._replicator = replicator if replicator is not None else OutboxReplicator()
@@ -296,6 +303,9 @@ class RoleBindingService:
 
         for resource_type, resource_id in {(r.resource_type, r.resource_id) for r in requests}:
             self._validate_resource(resource_type, resource_id)
+
+        for req in requests:
+            self._validate_role_scopes([roles_by_uuid[req.role_id]], req.resource_type, req.resource_id)
 
         access_groups = self._group_by_subject_resource(requests, roles_by_uuid)
         all_tuples_to_add: list[RelationTuple] = []
@@ -1005,6 +1015,7 @@ class RoleBindingService:
         ensure_v2_write_activated(self.tenant)
 
         roles = self._get_roles(role_ids)
+        self._validate_role_scopes(roles, resource_type, resource_id)
 
         subject = Subject.objects.by_type(type=subject_type, id=subject_id)
 
@@ -1095,6 +1106,43 @@ class RoleBindingService:
             raise InvalidFieldError("roles", f"The following roles do not exist: {', '.join(missing)}")
 
         return roles
+
+    def _validate_role_scopes(self, roles: list[RoleV2], resource_type: str, resource_id: str) -> None:
+        """Validate that each role's highest scope matches the target resource.
+
+        Uses ``ImplicitResourceService.highest_scope_for_permissions`` to compute
+        the scope from each role's permission strings.
+
+        Must be called after ``_validate_resource`` which ensures the resource
+        exists. Empty *roles* is valid (means "unbind all") and skips the check.
+
+        Raises:
+            InvalidFieldError: If any role's scope does not match the resource.
+            NotFoundError: If the resource cannot be resolved to a scope (should
+                not happen when ``_validate_resource`` ran first).
+        """
+        if self._skip_scope_validation or not roles:
+            return
+
+        expected = scope_for_resource(resource_type, resource_id, self.tenant)
+        if expected is None:
+            if resource_type in ("workspace", "tenant"):
+                raise NotFoundError(resource_type, resource_id)
+            return
+
+        mismatched: list[str] = []
+        for role in roles:
+            perm_strings = list(role.permissions.values_list("permission", flat=True))
+            role_scope = default_implicit_resource_service.highest_scope_for_permissions(perm_strings)
+            if role_scope != expected:
+                mismatched.append(f"{role.name} ({role.uuid})")
+
+        if mismatched:
+            scope_label = SCOPE_DISPLAY_NAME[expected]
+            raise InvalidFieldError(
+                "roles",
+                f"The following roles are not scoped for this resource ({scope_label}): {', '.join(mismatched)}",
+            )
 
     def _replace_role_bindings(
         self,

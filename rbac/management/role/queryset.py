@@ -19,7 +19,8 @@
 import re
 
 from django.db import models
-from django.db.models import Count, Q
+from django.db.models import Count, Exists, IntegerField, OuterRef, Q, Subquery, Value
+from django.db.models.functions import Coalesce
 
 
 def _glob_to_regex(pattern: str) -> str:
@@ -46,7 +47,8 @@ class RoleV2QuerySet(models.QuerySet):
         """Return roles scoped to the given tenant, including seeded roles from the public tenant."""
         from api.models import Tenant
 
-        return self.filter(Q(tenant=tenant) | Q(tenant__tenant_name=Tenant.PUBLIC_TENANT_NAME))
+        public_tenant = Tenant._get_public_tenant()
+        return self.filter(Q(tenant=tenant) | Q(tenant=public_tenant))
 
     def with_fields(self, fields):
         """Apply field-driven eager loading so the serializer never triggers lazy loads.
@@ -55,11 +57,25 @@ class RoleV2QuerySet(models.QuerySet):
             fields: Set of response field names that drive select_related,
                     prefetch_related, and annotations.
         """
+        from management.role.v2_model import RoleV2
+
         qs = self
         if "org_id" in fields:
             qs = qs.select_related("tenant")
         if "permissions_count" in fields:
-            qs = qs.annotate(permissions_count_annotation=Count("permissions", distinct=True))
+            through = RoleV2.permissions.through
+            qs = qs.annotate(
+                permissions_count_annotation=Coalesce(
+                    Subquery(
+                        through.objects.filter(rolev2_id=OuterRef("pk"))
+                        .values("rolev2_id")
+                        .annotate(cnt=Count("permission_id"))
+                        .values("cnt"),
+                        output_field=IntegerField(),
+                    ),
+                    Value(0),
+                )
+            )
         if "permissions" in fields:
             qs = qs.prefetch_related("permissions")
         return qs
@@ -76,10 +92,21 @@ class RoleV2QuerySet(models.QuerySet):
         """Exclude roles that include any permission from a migration-excluded application.
 
         Uses cached permission PKs; see ``v2_role_excluded_application_permission_ids_cache``.
+
+        Implemented with ``EXISTS`` on the M2M through table so PostgreSQL does not need a
+        wide join + ``DISTINCT`` (which can dominate latency on list/cursor queries).
         """
+        from management.role.v2_model import RoleV2
         from management.role.v2_role_scope import v2_role_excluded_application_permission_ids_cache
 
         perm_ids = v2_role_excluded_application_permission_ids_cache.permission_ids()
         if not perm_ids:
             return self
-        return self.exclude(permissions__id__in=perm_ids).distinct()
+        through = RoleV2.permissions.through
+        has_excluded_permission = Exists(
+            through.objects.filter(
+                rolev2_id=OuterRef("pk"),
+                permission_id__in=perm_ids,
+            )
+        )
+        return self.filter(~has_excluded_permission)

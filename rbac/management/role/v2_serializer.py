@@ -16,6 +16,8 @@
 #
 """Serializers for RoleV2 API."""
 
+import uuid
+
 from django.utils.translation import gettext as _
 from management.exceptions import RequiredFieldError
 from management.role.v2_exceptions import (
@@ -158,6 +160,11 @@ class RoleV2ListSerializer(serializers.Serializer):
         allow_blank=True,
         help_text="Filter by role name. Use * as wildcard for partial matching.",
     )
+    permission = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Filter by permission string (e.g. 'app:resource:verb'). Comma-separated for multiple.",
+    )
     resource_type = serializers.CharField(
         required=False, allow_blank=True, help_text="Filter roles by the resource type they are scoped to"
     )
@@ -173,13 +180,26 @@ class RoleV2ListSerializer(serializers.Serializer):
         }
         return super().to_internal_value(sanitized)
 
-    def validate_name(self, value):
+    def validate_name(self, value: str | None) -> str | None:
+        """Return None for empty values."""
+        return value or None
+
+    def validate_permission(self, value: str | None) -> str | None:
         """Return None for empty values."""
         return value or None
 
     def validate_fields(self, value):
         """Parse, validate, and resolve fields parameter into a set of field names."""
         return validate_fields_parameter(value, RoleV2Service.DEFAULT_LIST_FIELDS)
+
+    def validate_resource_id(self, value):
+        """Return a UUID (or None if omitted/blank) for workspace resource filtering."""
+        if value in (None, ""):
+            return None
+        try:
+            return uuid.UUID(str(value).strip())
+        except ValueError as e:
+            raise serializers.ValidationError(_("Enter a valid UUID.")) from e
 
     def validate(self, data):
         """Cross-field validation: resource_id requires resource_type."""

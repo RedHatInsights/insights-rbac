@@ -107,7 +107,6 @@ urlpatterns = [
     path("api/inventory/check_workspace/<workspace_uuid>/", views.check_workspace_relation),
     path("api/inventory/check_role/<role_uuid>/", views.check_role),
     path("api/inventory/check/", views.check_inventory),
-    path("api/utils/workspace/", views.workspace_removal),
     path("api/utils/kafka_test_message/", views.send_kafka_test_message),
     path("api/utils/migrate_binding_scope/", views.migrate_binding_scope),
     path("api/utils/fix_missing_binding_base_tuples/", views.fix_missing_binding_base_tuples),
@@ -124,6 +123,13 @@ urlpatterns = [
         "api/utils/migrate_custom_v2_roles_to_tenant/",
         views.migrate_custom_v2_roles_to_tenant,
     ),
+    path("api/utils/mcp_tool_descriptions/", views.mcp_tool_descriptions, name="mcp-tool-descriptions-list"),
+    path(
+        "api/utils/mcp_tool_descriptions/<str:tool_name>/",
+        views.mcp_tool_descriptions,
+        name="mcp-tool-descriptions-detail",
+    ),
+    path("api/utils/replicate_default_workspaces/", views.replicate_default_workspaces),
 ]
 
 urlpatterns.extend(integration_urlpatterns)

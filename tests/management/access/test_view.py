@@ -188,8 +188,11 @@ class AccessViewTests(IdentityRequest):
         return role
 
     @override_settings(ROLE_CREATE_ALLOW_LIST="app")
-    def test_get_access_success(self):
+    @patch("management.access.view.is_v2_edit_enabled_for_request", return_value=False)
+    def test_get_access_success(self, _mock_v2):
         """Test that we can obtain the expected access without pagination."""
+        from management.access.view import v1_access_by_v2_org_total
+
         role_name = "roleA"
         response = self.create_role(role_name, headers=self.headers)
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
@@ -204,6 +207,9 @@ class AccessViewTests(IdentityRequest):
         # Test that we can retrieve the principal access
         url = "{}?application={}".format(reverse("v1_management:access"), "app")
         client = APIClient()
+        before = v1_access_by_v2_org_total.labels(
+            org_id=self.customer_data["org_id"], application="app", caller_type="user"
+        )._value.get()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertIsNotNone(response.data.get("data"))
@@ -211,6 +217,10 @@ class AccessViewTests(IdentityRequest):
         self.assertEqual(len(response.data.get("data")), 2)
         self.assertEqual(response.data.get("meta").get("limit"), 2)
         self.assertEqual(self.access_data, response.data.get("data")[0])
+        after = v1_access_by_v2_org_total.labels(
+            org_id=self.customer_data["org_id"], application="app", caller_type="user"
+        )._value.get()
+        self.assertEqual(after, before)
 
         # the platform default permission could also be retrieved
         url = "{}?application={}".format(reverse("v1_management:access"), "default")
@@ -1299,32 +1309,65 @@ class AccessViewTests(IdentityRequest):
         policy.group = self.group
         policy.save()
 
+        from management.access.view import v1_access_by_v2_org_total
+
         client = APIClient()
         url = f"{reverse('v1_management:access')}?application=legacy_app"
+        before = v1_access_by_v2_org_total.labels(
+            org_id=self.customer_data["org_id"], application="legacy_app", caller_type="user"
+        )._value.get()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         permissions = [row["permission"] for row in response.data.get("data", [])]
         self.assertIn("legacy_app:*:*", permissions)
+        after = v1_access_by_v2_org_total.labels(
+            org_id=self.customer_data["org_id"], application="legacy_app", caller_type="user"
+        )._value.get()
+        self.assertEqual(after, before)
 
     @override_settings(V2_MIGRATION_APP_EXCLUDE_LIST=["legacy_app"])
+    @patch("management.access.view.logger")
     @patch("management.access.view.is_v2_edit_enabled_for_request", return_value=True)
-    def test_access_v2_tenant_disallowed_app_rejected(self, _mock_v2):
+    def test_access_v2_tenant_disallowed_app_rejected(self, _mock_v2, mock_log):
         """V2 orgs are rejected when querying an app not in V2_MIGRATION_APP_EXCLUDE_LIST."""
+        from management.access.view import v1_access_by_v2_org_total
+
         client = APIClient()
         url = f"{reverse('v1_management:access')}?application=other_app"
+        before = v1_access_by_v2_org_total.labels(
+            org_id=self.customer_data["org_id"], application="other_app", caller_type="user"
+        )._value.get()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("Disallowed", response.data.get("detail", ""))
+        mock_log.info.assert_called_once()
+        log_msg = mock_log.info.call_args[0][0] % mock_log.info.call_args[0][1:]
+        self.assertIn("result=rejected", log_msg)
+        self.assertIn(str(self.tenant.org_id), log_msg)
+        self.assertIn("other_app", log_msg)
+        after = v1_access_by_v2_org_total.labels(
+            org_id=self.customer_data["org_id"], application="other_app", caller_type="user"
+        )._value.get()
+        self.assertEqual(after, before + 1)
 
     @override_settings(V2_MIGRATION_APP_EXCLUDE_LIST=["legacy_app"])
     @patch("management.access.view.is_v2_edit_enabled_for_request", return_value=True)
     def test_access_v2_tenant_empty_application_rejected(self, _mock_v2):
         """V2 orgs are rejected when application= is empty."""
+        from management.access.view import v1_access_by_v2_org_total
+
         client = APIClient()
         url = f"{reverse('v1_management:access')}?application="
+        before = v1_access_by_v2_org_total.labels(
+            org_id=self.customer_data["org_id"], application="", caller_type="user"
+        )._value.get()
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("must specify", response.data.get("detail", ""))
+        after = v1_access_by_v2_org_total.labels(
+            org_id=self.customer_data["org_id"], application="", caller_type="user"
+        )._value.get()
+        self.assertEqual(after, before + 1)
 
     @override_settings(V2_MIGRATION_APP_EXCLUDE_LIST=["legacy_app"])
     @patch("management.access.view.is_v2_edit_enabled_for_request", return_value=True)
@@ -1335,3 +1378,40 @@ class AccessViewTests(IdentityRequest):
         response = client.get(url, **self.headers)
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
         self.assertIn("other_app", response.data.get("detail", ""))
+
+    @override_settings(V2_MIGRATION_APP_EXCLUDE_LIST=["legacy_app"])
+    @patch("management.access.view.logger")
+    @patch("management.access.view.is_v2_edit_enabled_for_request", return_value=True)
+    def test_access_v2_org_metric_logs_context(self, _mock_v2, mock_logger):
+        """Test that a structured log line is emitted when a v2 org is rejected from v1 /access."""
+        client = APIClient()
+        url = f"{reverse('v1_management:access')}?application=other_app"
+        response = client.get(url, **self.headers, HTTP_USER_AGENT="insights-chrome/1.0")
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        mock_logger.info.assert_called_once()
+        log_msg = mock_logger.info.call_args[0][0] % mock_logger.info.call_args[0][1:]
+        self.assertIn("result=rejected", log_msg)
+        self.assertIn(self.customer_data["org_id"], log_msg)
+        self.assertIn("other_app", log_msg)
+        self.assertIn("caller_type=user", log_msg)
+        self.assertIn("user_id=", log_msg)
+        self.assertIn("request_id=", log_msg)
+        self.assertIn("user_agent=insights-chrome/1.0", log_msg)
+
+    @override_settings(V2_MIGRATION_APP_EXCLUDE_LIST=["legacy_app"])
+    @patch("management.access.view.is_v2_edit_enabled_for_request", return_value=True)
+    def test_access_v2_org_metric_service_account_caller_type(self, _mock_v2):
+        """Test that the metric labels caller_type as service_account for service account requests."""
+        from management.access.view import v1_access_by_v2_org_total
+
+        client = APIClient()
+        url = f"{reverse('v1_management:access')}?application=other_app"
+        before = v1_access_by_v2_org_total.labels(
+            org_id=self.customer_data["org_id"], application="other_app", caller_type="service_account"
+        )._value.get()
+        response = client.get(url, **self.headers_service_account)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        after = v1_access_by_v2_org_total.labels(
+            org_id=self.customer_data["org_id"], application="other_app", caller_type="service_account"
+        )._value.get()
+        self.assertEqual(after, before + 1)
