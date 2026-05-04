@@ -130,6 +130,7 @@ urlpatterns = [
         name="mcp-tool-descriptions-detail",
     ),
     path("api/utils/replicate_default_workspaces/", views.replicate_default_workspaces),
+    path("api/utils/recompute_tenant_role_bindings/<str:org_id>/", views.recompute_tenant_role_bindings),
 ]
 
 urlpatterns.extend(integration_urlpatterns)

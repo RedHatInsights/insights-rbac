@@ -92,6 +92,7 @@ from management.tasks import (
     fix_missing_binding_base_tuples_in_worker,
     migrate_binding_scope_in_worker,
     migrate_data_in_worker,
+    recompute_tenant_role_bindings_in_worker,
     remove_deleted_workspace_bindings_in_worker,
     remove_unassigned_system_binding_mappings_in_worker,
     replicate_default_workspaces_in_worker,
@@ -2598,3 +2599,29 @@ def replicate_default_workspaces(request):
     except Exception as e:
         logger.exception("Error replicating default workspaces", exc_info=True)
         return JsonResponse({"detail": f"Error replicating default workspaces: {str(e)}"}, status=500)
+
+
+@require_http_methods(["POST"])
+def recompute_tenant_role_bindings(request, org_id):
+    """
+    Recompute all role bindings for a tenant.
+
+    POST /_private/api/utils/recompute_tenant_role_bindings/<org_id>/
+
+    This endpoint should be used for V1 tenants that have gotten into an inconsistent V2 state.
+
+    Returns:
+        JSON response indicating the task has been queued
+    """
+    # Validate tenant exists
+    tenant = get_object_or_404(Tenant, org_id=org_id)
+
+    try:
+        recompute_tenant_role_bindings_in_worker.delay(org_id=tenant.org_id)
+        return JsonResponse({"message": "Job enqueued in background worker."}, status=202)
+    except Exception as e:
+        logger.exception(f"Error recomputing role bindings for tenant {org_id}")
+        return JsonResponse(
+            {"detail": f"Error recomputing role bindings for tenant: {str(e)}"},
+            status=500,
+        )
