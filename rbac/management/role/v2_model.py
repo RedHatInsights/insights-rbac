@@ -197,7 +197,7 @@ class RoleV2(TenantAwareModel):
         The role's tenant will be loaded (and thus should be preloaded for bulk operations).
         If cached_permissions is not provided, the permissions from the role are loaded.
         """
-        return CustomRoleV2._permission_and_owner_tuples(role=role, cached_permissions=cached_permissions)
+        return RoleV2._permission_and_owner_tuples(role=role, cached_permissions=cached_permissions)
 
 
 class TypedRoleV2Manager(models.Manager):
