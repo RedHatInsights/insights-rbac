@@ -418,6 +418,7 @@ def _remove_orphaned_custom_role_relations(
             roles_by_id: dict[str, RoleV2] = {
                 str(r.uuid): r
                 for r in RoleV2.objects.filter(uuid__in=custom_role_ids)
+                .select_related("tenant")
                 .prefetch_related("permissions")
                 .select_for_update(of=["self"])
             }
@@ -430,15 +431,7 @@ def _remove_orphaned_custom_role_relations(
                 if local_role is None:
                     expected_relations: set[RelationTuple] = set()
                 else:
-                    expected_relations = {
-                        _as_relation_tuple(role_permission_tuple(role_id=role_id, permission=p.v2_string()))
-                        for p in local_role.permissions.all()
-                    }
-                    tenant_resource_id = local_role.tenant.tenant_resource_id()
-                    if tenant_resource_id:
-                        expected_relations.add(
-                            _as_relation_tuple(role_owner_relationship(local_role.uuid, tenant_resource_id))
-                        )
+                    expected_relations = set(RoleV2.tuples_for_create(local_role))
 
                 orphan_relations = actual_relations - expected_relations
 

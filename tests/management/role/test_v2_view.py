@@ -833,6 +833,58 @@ class RoleV2ViewSetTests(IdentityRequest):
         returned_names = {role["name"] for role in response.data["data"]}
         self.assertEqual(returned_names, {"Test_Role", "test_role"})
 
+    def test_list_roles_with_permission_filter(self):
+        """Test that permission filter returns only roles containing the specified permission."""
+        role_with_perm = RoleV2.objects.create(name="host_reader", tenant=self.tenant)
+        role_with_perm.permissions.add(self.permission2)
+
+        role_without_perm = RoleV2.objects.create(name="no_match_role", tenant=self.tenant)
+        role_without_perm.permissions.add(self.permission4)
+
+        url = f"{self.list_url}&permission=inventory:hosts:read"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        role_names = [r["name"] for r in response.data["data"]]
+        self.assertIn("host_reader", role_names)
+        self.assertNotIn("no_match_role", role_names)
+
+    def test_list_roles_with_permission_filter_multiple(self):
+        """Test that comma-separated permissions return union of matches."""
+        role_a = RoleV2.objects.create(name="host_reader", tenant=self.tenant)
+        role_a.permissions.add(self.permission2)
+
+        role_b = RoleV2.objects.create(name="cost_reader", tenant=self.tenant)
+        role_b.permissions.add(self.permission4)
+
+        url = f"{self.list_url}&permission=inventory:hosts:read,cost:reports:read"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        role_names = [r["name"] for r in response.data["data"]]
+        self.assertIn("host_reader", role_names)
+        self.assertIn("cost_reader", role_names)
+
+    def test_list_roles_with_permission_filter_no_match(self):
+        """Test that a non-existent permission returns empty results."""
+        url = f"{self.list_url}&permission=nonexistent:perm:here"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 0)
+
+    def test_list_roles_with_permission_filter_distinct(self):
+        """Test that a role appears once even when it matches multiple comma-separated permissions."""
+        role = RoleV2.objects.create(name="multi_perm_role", tenant=self.tenant)
+        role.permissions.add(self.permission2, self.permission3)
+
+        url = f"{self.list_url}&permission=inventory:hosts:read,inventory:hosts:write"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        role_names = [r["name"] for r in response.data["data"]]
+        self.assertEqual(role_names.count("multi_perm_role"), 1)
+
     def test_list_roles_with_permissions_field(self):
         """Test that requesting permissions field returns permissions array."""
         url = f"{self.list_url}&fields=id,name,permissions"

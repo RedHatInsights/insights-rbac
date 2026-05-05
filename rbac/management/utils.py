@@ -266,20 +266,47 @@ def build_system_user_from_token(request, token_validator: TokenValidator) -> Op
         return None
 
 
-def get_principal_from_request(request):
-    """Obtain principal from the request object."""
+def get_principal_from_request(request, *, ignore_username_query_param=False):
+    """Obtain principal from the request object.
+
+    Args:
+        request: The HTTP request object
+        ignore_username_query_param: If True, ignore the username query parameter and always
+                                     use request.user.username. This should be True for
+                                     authorization checks to prevent privilege confusion.
+
+    Returns:
+        Principal object for the resolved username
+    """
     current_user = request.user.username
-    qs_user = request.query_params.get(USERNAME_KEY)
     username = current_user
     from_query = False
-    if qs_user and not PRINCIPAL_PERMISSION_INSTANCE.has_permission(request=request, view=None):
-        raise PermissionDenied()
 
-    if qs_user:
-        username = qs_user
-        from_query = True
+    if not ignore_username_query_param:
+        qs_user = request.query_params.get(USERNAME_KEY)
+        if qs_user and not PRINCIPAL_PERMISSION_INSTANCE.has_permission(request=request, view=None):
+            raise PermissionDenied()
+        if qs_user:
+            username = qs_user
+            from_query = True
 
-    return get_principal(username, request, verify_principal=bool(qs_user), from_query=from_query)
+    return get_principal(username, request, verify_principal=from_query, from_query=from_query)
+
+
+def get_principal_for_auth(request):
+    """Get principal from request for authorization purposes.
+
+    This helper ensures the principal is resolved from the authenticated user
+    (request.user.username) and never from a query parameter, preventing
+    privilege confusion in authorization checks.
+
+    Args:
+        request: The HTTP request object
+
+    Returns:
+        Principal object for the authenticated user
+    """
+    return get_principal_from_request(request, ignore_username_query_param=True)
 
 
 def get_principal(

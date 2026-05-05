@@ -4,14 +4,18 @@ from api.models import Tenant
 from management.group.platform import GlobalPolicyIdService
 from management.models import Permission, Role
 from management.relation_replicator.noop_replicator import NoopReplicator
+from management.relation_replicator.relation_replicator import (
+    RelationReplicator,
+    WorkspaceEventStream,
+    WorkspaceEvent,
+    ReplicationEvent,
+)
 from management.role.v2_model import SeededRoleV2
 from management.tenant_service import V2TenantBootstrapService
 from management.tenant_service.tenant_service import BootstrappedTenant
+from migration_tool import in_memory_tuples
 from migration_tool.in_memory_tuples import (
-    resource,
     all_of,
-    relation,
-    resource_type,
     InMemoryTuples,
     InMemoryRelationReplicator,
 )
@@ -45,13 +49,27 @@ def make_read_tuples_mock(tuples: InMemoryTuples) -> Callable[[str, str, str, st
     def read_tuples_fn(resource_type_name, resource_id, relation_name, subject_type_name, subject_id):
         """Mock function to read tuples from InMemoryTuples."""
         # Build a filter based on the provided parameters
-        filters = [resource_type("rbac", resource_type_name)]
+        filters = []
+
+        if not resource_type_name and not subject_type_name:
+            raise ValueError("At least one of resource_type_name and subject_type_name must be provided")
+
+        if resource_type_name:
+            filters.append(in_memory_tuples.resource_type("rbac", resource_type_name))
 
         if resource_id:
-            filters.append(resource("rbac", resource_type_name, resource_id))
+            filters.append(in_memory_tuples.resource_id(resource_id))
 
         if relation_name:
-            filters.append(relation(relation_name))
+            filters.append(in_memory_tuples.relation(relation_name))
+
+        if subject_type_name:
+            # Note that SpiceDB does not filter based on the subject relation unless it's explicitly provided (which
+            # we do not do here or in the actual lookup).
+            filters.append(in_memory_tuples.subject_type("rbac", subject_type_name, any_relation=True))
+
+        if subject_id:
+            filters.append(in_memory_tuples.subject_id(subject_id))
 
         found_tuples = tuples.find_tuples(all_of(*filters))
 
@@ -59,12 +77,6 @@ def make_read_tuples_mock(tuples: InMemoryTuples) -> Callable[[str, str, str, st
         # Format: {"tuple": {"resource": {...}, "relation": "...", "subject": {...}}, ...}
         result = []
         for t in found_tuples:
-            # Filter by subject type and id if provided
-            if subject_type_name and t.subject.subject.type.name != subject_type_name:
-                continue
-            if subject_id and t.subject.subject.id != subject_id:
-                continue
-
             subject_dict = {
                 "subject": {
                     "type": {
@@ -108,3 +120,25 @@ def bootstrap_tenant_for_v2_test(tenant: Tenant, tuples: Optional[InMemoryTuples
 
     replicator = InMemoryRelationReplicator(tuples) if tuples is not None else NoopReplicator()
     return V2TenantBootstrapService(replicator=replicator).bootstrap_tenant(tenant, force=True)
+
+
+class WorkspaceCacheReplicator(RelationReplicator):
+    _base_replicator: RelationReplicator
+    _workspace_events: dict[WorkspaceEventStream, list[WorkspaceEvent]]
+
+    def __init__(self, base_replicator: RelationReplicator):
+        self._base_replicator = base_replicator
+        self._workspace_events = {}
+
+    def replicate(self, event: ReplicationEvent):
+        return self._base_replicator.replicate(event)
+
+    def replicate_workspace(self, event: WorkspaceEvent, event_stream: WorkspaceEventStream):
+        self._workspace_events.setdefault(event_stream, []).append(event)
+        return self._base_replicator.replicate_workspace(event, event_stream)
+
+    def workspace_events_for(self, stream: WorkspaceEventStream) -> list[WorkspaceEvent]:
+        return self._workspace_events.get(stream, [])
+
+    def clear_events(self):
+        self._workspace_events = {}
