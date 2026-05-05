@@ -2,7 +2,7 @@ import itertools
 import logging
 from typing import Optional
 
-from django.db.models import Q, UUIDField, TextField, F
+from django.db.models import Q, UUIDField, F
 from django.db.models.functions import Cast
 from django.db.models.lookups import In
 
