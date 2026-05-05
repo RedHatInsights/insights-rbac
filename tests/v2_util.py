@@ -51,6 +51,9 @@ def make_read_tuples_mock(tuples: InMemoryTuples) -> Callable[[str, str, str, st
         # Build a filter based on the provided parameters
         filters = []
 
+        if not resource_type_name and not subject_type_name:
+            raise ValueError("At least one of resource_type_name and subject_type_name must be provided")
+
         if resource_type_name:
             filters.append(in_memory_tuples.resource_type("rbac", resource_type_name))
 
