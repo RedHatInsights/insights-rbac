@@ -4,6 +4,12 @@ from api.models import Tenant
 from management.group.platform import GlobalPolicyIdService
 from management.models import Permission, Role
 from management.relation_replicator.noop_replicator import NoopReplicator
+from management.relation_replicator.relation_replicator import (
+    RelationReplicator,
+    WorkspaceEventStream,
+    WorkspaceEvent,
+    ReplicationEvent,
+)
 from management.role.v2_model import SeededRoleV2
 from management.tenant_service import V2TenantBootstrapService
 from management.tenant_service.tenant_service import BootstrappedTenant
@@ -108,3 +114,25 @@ def bootstrap_tenant_for_v2_test(tenant: Tenant, tuples: Optional[InMemoryTuples
 
     replicator = InMemoryRelationReplicator(tuples) if tuples is not None else NoopReplicator()
     return V2TenantBootstrapService(replicator=replicator).bootstrap_tenant(tenant, force=True)
+
+
+class WorkspaceCacheReplicator(RelationReplicator):
+    _base_replicator: RelationReplicator
+    _workspace_events: dict[WorkspaceEventStream, list[WorkspaceEvent]]
+
+    def __init__(self, base_replicator: RelationReplicator):
+        self._base_replicator = base_replicator
+        self._workspace_events = {}
+
+    def replicate(self, event: ReplicationEvent):
+        return self._base_replicator.replicate(event)
+
+    def replicate_workspace(self, event: WorkspaceEvent, event_stream: WorkspaceEventStream):
+        self._workspace_events.setdefault(event_stream, []).append(event)
+        return self._base_replicator.replicate_workspace(event, event_stream)
+
+    def workspace_events_for(self, stream: WorkspaceEventStream) -> list[WorkspaceEvent]:
+        return self._workspace_events.get(stream, [])
+
+    def clear_events(self):
+        self._workspace_events = {}

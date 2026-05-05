@@ -1238,6 +1238,21 @@ objects:
               cpu: 50m
               memory: 512Mi
           env: *common_env_vars
+      - name: replicate-default-workspaces
+        podSpec:
+          image: ${IMAGE}:${IMAGE_TAG}
+          command:
+            - /opt/rbac/rbac/manage.py
+            - replicate-default-workspaces
+            - "--all"
+          resources:
+            limits:
+              cpu: 300m
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 512Mi
+          env: *common_env_vars
 - apiVersion: v1
   kind: ConfigMap
   metadata:
@@ -1551,10 +1566,6 @@ parameters:
 - description: Enable sending out notification events (typo variant used by service deployer)
   name: NOTIFICATONS_ENABLED
   value: 'False'
-- name: TENANT_TRANSLATOR_HOST
-  required: true
-- name: TENANT_TRANSLATOR_PORT
-  value: '8892'
 - name: GUNICORN_WORKER_MULTIPLIER
   value: '2'
 - name: GUNICORN_THREAD_LIMIT

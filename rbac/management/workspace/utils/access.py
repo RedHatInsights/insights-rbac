@@ -30,7 +30,7 @@ from management.permissions.workspace_inventory_access import (
 )
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
-from management.utils import get_principal_from_request, roles_for_principal
+from management.utils import get_principal_for_auth, get_principal_from_request, roles_for_principal
 from rest_framework.serializers import ValidationError
 
 from rbac import settings
@@ -271,7 +271,7 @@ def is_user_allowed_v2(request, required_operation, target_workspace):
 
         # Try to get user_id from principal, request.user, or IT service API
         with record_timing(timings, "get_principal_id"):
-            principal = get_principal_from_request(request)
+            principal = get_principal_for_auth(request)
             if principal is not None and principal.user_id is not None:
                 user_id = principal.user_id
             elif (user_id := getattr(request.user, "user_id", None)) is not None:

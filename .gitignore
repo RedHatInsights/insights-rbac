@@ -141,6 +141,9 @@ rbac/management/principal/umb_certs/
 # ai
 .claude
 
+# git worktrees
+.worktrees/
+
 # direnv
 .envrc
 

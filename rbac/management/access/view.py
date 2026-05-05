@@ -17,6 +17,8 @@
 
 """View for principal access."""
 
+import logging
+
 from django.db.models import Prefetch
 from management.cache import AccessCache
 from management.models import Access, ResourceDefinition
@@ -30,15 +32,47 @@ from management.utils import (
     validate_and_get_key,
     validate_key,
 )
+from prometheus_client import Counter
 from rest_framework import status
 from rest_framework.response import Response
 from rest_framework.settings import api_settings
 from rest_framework.views import APIView
 
+logger = logging.getLogger(__name__)
+
+v1_access_by_v2_org_total = Counter(
+    "rbac_v1_access_v2_org_total",
+    "Tracks v1 /access calls made by orgs that have been v2-enabled.",
+    ["org_id", "application", "caller_type"],
+)
+
 ORDER_FIELD = "order_by"
 VALID_ORDER_VALUES = ["application", "resource_type", "verb", "-application", "-resource_type", "-verb"]
 STATUS_KEY = "status"
 VALID_STATUS_VALUE = ["enabled", "disabled", "all"]
+
+
+def _record_v2_org_v1_access_rejected(request):
+    """Increment Prometheus counter and log context when a v2-enabled org's v1 /access call is rejected."""
+    app_param = request.query_params.get(APPLICATION_KEY, "")
+    caller_type = "service_account" if request.user.is_service_account else "user"
+    v1_access_by_v2_org_total.labels(
+        org_id=request.user.org_id,
+        application=app_param,
+        caller_type=caller_type,
+    ).inc()
+    logger.info(
+        "V2 org called v1 /access/ endpoint: org_id=%s application=%s caller_type=%s "
+        "user_id=%s client_id=%s is_org_admin=%s request_id=%s user_agent=%s result=rejected",
+        request.user.org_id,
+        app_param,
+        caller_type,
+        request.user.user_id,
+        request.user.client_id if request.user.is_service_account else None,
+        request.user.admin,
+        getattr(request, "req_id", None),
+        request.headers.get("user-agent"),
+    )
 
 
 def validate_v2_application_param(request):
@@ -164,6 +198,7 @@ class AccessView(APIView):
 
         v2_error = validate_v2_application_param(request)
         if v2_error is not None:
+            _record_v2_org_v1_access_rejected(request)
             return v2_error
 
         principal = get_principal_from_request(request)

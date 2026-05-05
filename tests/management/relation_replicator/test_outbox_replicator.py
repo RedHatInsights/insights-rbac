@@ -20,10 +20,26 @@ import logging
 from unittest.mock import ANY
 from uuid import uuid4
 from django.test import TestCase, override_settings
-from management.relation_replicator.outbox_replicator import InMemoryLog, OutboxReplicator, OutboxWAL
-from management.relation_replicator.relation_replicator import PartitionKey, ReplicationEvent, ReplicationEventType
+
+from api.models import Tenant
+from management.relation_replicator.outbox_replicator import (
+    InMemoryLog,
+    OutboxReplicator,
+    OutboxWAL,
+    WorkspaceEventPayload,
+)
+from management.relation_replicator.relation_replicator import (
+    PartitionKey,
+    ReplicationEvent,
+    ReplicationEventType,
+    WorkspaceEvent,
+    WorkspaceEventStream,
+)
+from management.workspace.serializer import WorkspaceEventSerializer
 from migration_tool.utils import create_relationship
 from prometheus_client import REGISTRY
+
+from tests.v2_util import bootstrap_tenant_for_v2_test
 
 
 @override_settings(
@@ -471,6 +487,46 @@ class OutboxReplicatorTest(TestCase):
         error_message = str(context.exception)
         self.assertIn("duplicate relationships", error_message)
         self.assertIn("role_binding", error_message)
+
+    def _do_test_workspace_event_for_stream(self, stream: WorkspaceEventStream, aggregate_type: str):
+        tenant = Tenant.objects.create(tenant_name="some tenant", org_id="some_org", account_id="some_acct")
+        bootstrap_result = bootstrap_tenant_for_v2_test(tenant)
+
+        workspace_data = WorkspaceEventSerializer(bootstrap_result.default_workspace).data
+
+        self.replicator.replicate_workspace(
+            WorkspaceEvent(
+                org_id=tenant.org_id,
+                account_number=tenant.account_id,
+                workspace=workspace_data,
+                event_type=ReplicationEventType.CREATE_WORKSPACE,
+                partition_key=PartitionKey.byEnvironment(),
+            ),
+            stream,
+        )
+
+        self.assertEqual(len(self.log), 1)
+        event = self.log.first()
+
+        self.assertEqual(event.aggregatetype, aggregate_type)
+        self.assertEqual(event.aggregateid, str(PartitionKey.byEnvironment()))
+        self.assertEqual(event.event_type, ReplicationEventType.CREATE_WORKSPACE)
+
+        self.assertEqual(
+            event.payload,
+            WorkspaceEventPayload(
+                org_id=tenant.org_id,
+                account_number=tenant.account_id,
+                workspace=workspace_data,
+                operation="create",
+            ),
+        )
+
+    def test_workspace_event(self):
+        self._do_test_workspace_event_for_stream(WorkspaceEventStream.STANDARD, "workspace")
+
+    def test_workspace_bulk_event(self):
+        self._do_test_workspace_event_for_stream(WorkspaceEventStream.BULK, "workspace-bulk")
 
 
 class OutboxReplicatorPrometheusTest(TestCase):

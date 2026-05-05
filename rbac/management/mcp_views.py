@@ -18,6 +18,7 @@
 """MCP endpoint for RBAC using Anthropic MCP Python SDK for tool registration and schema generation."""
 
 import asyncio
+import concurrent.futures
 import inspect
 import json
 import logging
@@ -28,6 +29,7 @@ from datetime import datetime, timezone
 from functools import lru_cache, wraps
 from typing import Any, Callable
 
+from django.conf import settings
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.test import RequestFactory
 from django.urls import reverse
@@ -36,15 +38,22 @@ from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from management.access.view import AccessView
 from management.audit_log.view import AuditLogViewSet
+from management.cache import _connection_pool
 from management.group.view import GroupViewSet
+from management.models import Access, AuditLog, Group
 from management.permission.view import PermissionViewSet
+from management.principal.model import Principal
+from management.principal.proxy import PrincipalProxy
 from management.principal.view import PrincipalView
 from management.role.v2_view import RoleV2ViewSet
 from management.role.view import RoleViewSet
+from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
 from management.role_binding.view import RoleBindingViewSet
+from management.tenant_mapping.v2_activation import is_v2_write_activated
 from management.workspace.view import WorkspaceViewSet
 from mcp.server.fastmcp import FastMCP
 from prometheus_client import Counter, Histogram
+from redis import Redis, exceptions as redis_exceptions
 
 from api.common import RH_IDENTITY_HEADER
 from api.cross_access.view import CrossAccountRequestViewSet
@@ -59,6 +68,8 @@ _permission_list_view = PermissionViewSet.as_view({"get": "list"})
 _permission_options_view = PermissionViewSet.as_view({"get": "options"})
 _auditlog_list_view = AuditLogViewSet.as_view({"get": "list"})
 _role_access_view = RoleViewSet.as_view({"get": "access"})
+_role_v1_list_view = RoleViewSet.as_view({"get": "list"})
+_role_v1_detail_view = RoleViewSet.as_view({"get": "retrieve"})
 _role_v2_list_view = RoleV2ViewSet.as_view({"get": "list"})
 _role_v2_detail_view = RoleV2ViewSet.as_view({"get": "retrieve"})
 _group_list_view = GroupViewSet.as_view({"get": "list"})
@@ -96,6 +107,47 @@ _request_factory = RequestFactory()
 # beyond the identity header (which is always forwarded).
 _FORWARDED_HEADERS = ("HTTP_X_REQUEST_ID", "HTTP_X_RH_INSIGHTS_REQUEST_ID")
 
+# --- Tool description overrides (Redis-backed, no restart needed) ---
+
+_REDIS_DESC_PREFIX = "mcp:desc:"
+
+
+def _get_redis():
+    """Get a Redis connection using the shared connection pool from management.cache."""
+    return Redis(connection_pool=_connection_pool, ssl=settings.REDIS_SSL)
+
+
+def _get_description_override(tool_name: str) -> str | None:
+    try:
+        value = _get_redis().get(f"{_REDIS_DESC_PREFIX}{tool_name}")
+        return value.decode() if value else None
+    except redis_exceptions.RedisError:
+        logger.debug("mcp: redis unavailable for description override, tool=%s", tool_name)
+        return None
+
+
+def _set_description_override(tool_name: str, description: str) -> None:
+    _get_redis().set(f"{_REDIS_DESC_PREFIX}{tool_name}", description)
+
+
+def _delete_description_override(tool_name: str) -> None:
+    _get_redis().delete(f"{_REDIS_DESC_PREFIX}{tool_name}")
+
+
+def _get_all_description_overrides() -> dict[str, str]:
+    try:
+        r = _get_redis()
+        keys = r.keys(f"{_REDIS_DESC_PREFIX}*")
+        if not keys:
+            return {}
+        values = r.mget(keys)
+        prefix_len = len(_REDIS_DESC_PREFIX)
+        return {k.decode()[prefix_len:]: v.decode() for k, v in zip(keys, values) if v is not None}
+    except redis_exceptions.RedisError:
+        logger.debug("mcp: redis unavailable for description overrides")
+        return {}
+
+
 # --- MCP Server setup using the Anthropic MCP Python SDK ---
 
 mcp = FastMCP("RBAC")
@@ -108,6 +160,16 @@ mcp = FastMCP("RBAC")
 # stub functions and a manual config dict.
 
 
+class ApiVersion:
+    """API version classification for MCP tools."""
+
+    UNIFIED = "unified"
+    COMMON = "common"
+    V1 = "v1"
+    V2 = "v2"
+    UNVERSIONED = "unversioned"
+
+
 @dataclass(frozen=True)
 class ToolConfig:
     """Configuration for an MCP tool."""
@@ -115,6 +177,7 @@ class ToolConfig:
     fn: Callable[..., str]
     requires_auth: bool = False
     passes_request: bool = False
+    api_version: str = ApiVersion.COMMON
 
 
 _TOOL_CONFIG: dict[str, ToolConfig] = {}
@@ -124,6 +187,7 @@ def register_tool(
     *,
     description: str,
     requires_auth: bool = False,
+    api_version: str = ApiVersion.COMMON,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Register a tool with both FastMCP and _TOOL_CONFIG.
 
@@ -144,6 +208,7 @@ def register_tool(
             fn=fn,
             requires_auth=requires_auth,
             passes_request=passes_request,
+            api_version=api_version,
         )
 
         if passes_request:
@@ -199,6 +264,7 @@ def _clone_request(source: HttpRequest, path: str, **kwargs: Any) -> HttpRequest
         "the current server date in UTC. No authentication required. "
         "Use this to verify MCP connectivity."
     ),
+    api_version=ApiVersion.UNVERSIONED,
 )
 def hello(message: str = "Hello, World!") -> str:
     """Respond to a greeting — no authentication required."""
@@ -210,8 +276,12 @@ def hello(message: str = "Hello, World!") -> str:
     description=(
         "List principals (users) for the authenticated organization. "
         "Supports pagination (limit/offset), sorting (asc/desc), and filtering by status "
-        "(enabled/disabled/all). Set username_only='true' to return only usernames. "
-        "Returns: {meta: {count}, links, data: [{username, email, first_name, last_name, ...}]}. "
+        "(enabled/disabled/all). Set 'usernames' (comma-separated) to look up specific users. "
+        "Set 'match_criteria' to 'exact' (default) or 'partial' for username matching. "
+        "Set username_only='true' to return only usernames. "
+        "TROUBLESHOOTING: To confirm a user exists and check their org admin status, call "
+        "list_principals(usernames='<user>', match_criteria='exact'). "
+        "Returns: {meta: {count}, links, data: [{username, email, first_name, last_name, is_org_admin, ...}]}. "
         "Calls: GET /api/v1/principals/"
     ),
     requires_auth=True,
@@ -224,6 +294,8 @@ def list_principals(
     sort_order: str = "asc",
     status: str = "enabled",
     username_only: str = "false",
+    usernames: str = "",
+    match_criteria: str = "",
 ) -> str:
     """List principals by delegating to PrincipalView."""
     query_params: dict[str, str] = {
@@ -233,6 +305,10 @@ def list_principals(
         "status": status,
         "username_only": username_only,
     }
+    if usernames:
+        query_params["usernames"] = usernames
+    if match_criteria:
+        query_params["match_criteria"] = match_criteria
 
     path = reverse("v1_management:principals")
     return _call_view(request, _principal_view, path, query_params)
@@ -260,30 +336,35 @@ def _call_view(
     return response.content.decode()
 
 
-# ┌─────────────────────────────────┬────────────────────────────────────────────┐
-# │ MCP Tool                        │ API Endpoint                               │
-# ├─────────────────────────────────┼────────────────────────────────────────────┤
-# │ hello                           │ (none — in-process greeting)               │
-# │ list_principals                 │ GET /api/v1/principals/                    │
-# │ get_status                      │ GET /api/v1/status/                        │
-# │ list_permissions                │ GET /api/v1/permissions/                   │
-# │ list_permission_options         │ GET /api/v1/permissions/options/            │
-# │ list_audit_logs                 │ GET /api/v1/auditlogs/                     │
-# │ list_access                     │ GET /api/v1/access/                        │
-# │ list_roles                      │ GET /api/v2/roles/                         │
-# │ get_role                        │ GET /api/v2/roles/{uuid}/                  │
-# │ list_role_access                │ GET /api/v1/roles/{uuid}/access/           │
-# │ list_groups                     │ GET /api/v1/groups/                        │
-# │ get_group                       │ GET /api/v1/groups/{uuid}/                 │
-# │ list_group_principals           │ GET /api/v1/groups/{uuid}/principals/      │
-# │ list_group_roles                │ GET /api/v1/groups/{uuid}/roles/           │
-# │ list_cross_account_requests     │ GET /api/v1/cross-account-requests/        │
-# │ get_cross_account_request       │ GET /api/v1/cross-account-requests/{id}/   │
-# │ list_workspaces                 │ GET /api/v2/workspaces/                    │
-# │ get_workspace                   │ GET /api/v2/workspaces/{uuid}/             │
-# │ list_role_bindings              │ GET /api/v2/role-bindings/                 │
-# │ list_role_bindings_by_subject   │ GET /api/v2/role-bindings/by-subject/      │
-# └─────────────────────────────────┴────────────────────────────────────────────┘
+# ┌──────────────────────────────────┬───────────┬────────────────────────────────────────────┐
+# │ MCP Tool                         │ Version   │ API Endpoint                               │
+# ├──────────────────────────────────┼───────────┼────────────────────────────────────────────┤
+# │ hello                            │ unver.    │ (none — in-process greeting)               │
+# │ get_status                       │ unver.    │ GET /api/v1/status/                        │
+# │ list_principals                  │ common    │ GET /api/v1/principals/                    │
+# │ list_permissions                 │ common    │ GET /api/v1/permissions/                   │
+# │ list_permission_options          │ common    │ GET /api/v1/permissions/options/            │
+# │ list_audit_logs                  │ common    │ GET /api/v1/auditlogs/                     │
+# │ get_rbac_recent_changes               │ common    │ (in-process audit log analysis)            │
+# │ list_groups                      │ common    │ GET /api/v1/groups/                        │
+# │ get_group                        │ common    │ GET /api/v1/groups/{uuid}/                 │
+# │ list_group_principals            │ common    │ GET /api/v1/groups/{uuid}/principals/      │
+# │ list_cross_account_requests      │ common    │ GET /api/v1/cross-account-requests/        │
+# │ get_cross_account_request        │ common    │ GET /api/v1/cross-account-requests/{id}/   │
+# │ list_workspaces                  │ common    │ GET /api/v2/workspaces/                    │
+# │ get_workspace                    │ common    │ GET /api/v2/workspaces/{uuid}/             │
+# │ search_roles                     │ unified   │ V1: GET /api/v1/roles/                     │
+# │                                  │           │ V2: GET /api/v2/roles/                     │
+# │ get_role                         │ unified   │ V1: GET /api/v1/roles/{uuid}/ + /access/   │
+# │                                  │           │ V2: GET /api/v2/roles/{uuid}/              │
+# │ check_user_permission            │ unified   │ V1: GET /api/v1/access/                    │
+# │                                  │           │ V2: role-bindings → roles                  │
+# │ list_access                      │ v1        │ GET /api/v1/access/                        │
+# │ list_group_roles                 │ v1        │ GET /api/v1/groups/{uuid}/roles/           │
+# │ list_role_access                 │ v1        │ GET /api/v1/roles/{uuid}/access/           │
+# │ list_role_bindings               │ v2        │ GET /api/v2/role-bindings/                 │
+# │ list_role_bindings_by_subject    │ v2        │ GET /api/v2/role-bindings/by-subject/      │
+# └──────────────────────────────────┴───────────┴────────────────────────────────────────────┘
 
 
 @register_tool(
@@ -292,6 +373,7 @@ def _call_view(
         "platform info, Python version and loaded modules. No authentication required. "
         "Calls: GET /api/v1/status/"
     ),
+    api_version=ApiVersion.UNVERSIONED,
 )
 def get_status(request: HttpRequest) -> str:
     """Return server status by delegating to the status view."""
@@ -341,9 +423,21 @@ def list_permissions(
     description=(
         "List audit log entries recording RBAC changes for the authenticated organization. "
         "Each entry records who changed what (principal, resource_type, action). "
+        "Filter by principal_username (who made the change), resource_type "
+        "(group/role/role_v2/user/permission/workspace/role_binding), action (add/edit/delete/create/remove), "
+        "group_name (filter by group), or role_name (filter by role). "
+        "IMPORTANT: Always set group_name and/or role_name to narrow results (avoids scanning 100+ entries). "
+        "Example: list_audit_logs(resource_type='group', action='add', group_name='Contractors', "
+        "role_name='Vulnerability administrator') "
+        "Set include_authorization=true to see the role/permission that authorized the action. "
         "Order by: 'created', 'principal_username', 'resource_type', 'action' (prefix with '-' to reverse). "
-        "Returns: {meta: {count}, links, data: [{principal_username, description, action, created, ...}]}. "
-        "Calls: GET /api/v1/auditlogs/"
+        "NOTE: Authorization shows actor's CURRENT role/permission — may differ from time of change. "
+        "RESPONSE FORMAT: When summarizing audit log entries, include the action, resource type, who performed it "
+        "(principal_username), the date and time (formatted as '14 April at 9:32 AM', not numeric like "
+        "'2025-04-14T09:32:15'), and the description field. When include_authorization=true, also state the "
+        "role name (authorized_by.role), "
+        "group name (authorized_by.via_group), and specific permission (authorized_by.permission) that "
+        "authorized the action."
     ),
     requires_auth=True,
 )
@@ -353,32 +447,234 @@ def list_audit_logs(
     limit: int = 10,
     offset: int = 0,
     order_by: str = "-created",
+    principal_username: str = "",
+    resource_type: str = "",
+    action: str = "",
+    group_name: str = "",
+    role_name: str = "",
+    include_authorization: bool = False,
 ) -> str:
-    """List audit logs by delegating to AuditLogViewSet."""
-    query_params: dict[str, str] = {
-        "limit": str(limit),
-        "offset": str(offset),
-        "order_by": order_by,
+    """List audit logs with optional authorization context."""
+    valid_order_fields = {"created", "principal_username", "resource_type", "action"}
+    order_field = order_by.lstrip("-")
+    if order_field not in valid_order_fields:
+        return json.dumps(
+            {"error": f"Invalid order_by field '{order_by}'. Valid fields: {', '.join(sorted(valid_order_fields))}"}
+        )
+
+    tenant = getattr(request, "tenant", None)
+    if not tenant:
+        return json.dumps({"error": "No tenant context available"})
+
+    queryset = AuditLog.objects.filter(tenant=tenant).order_by(order_by)
+
+    if principal_username:
+        queryset = queryset.filter(principal_username__icontains=principal_username)
+    if resource_type:
+        queryset = queryset.filter(resource_type=resource_type)
+    if action:
+        queryset = queryset.filter(action=action)
+    if group_name:
+        queryset = queryset.filter(description__icontains=group_name)
+    if role_name:
+        queryset = queryset.filter(description__icontains=role_name)
+
+    total_count = queryset.count()
+    entries = list(queryset[offset : offset + limit])  # noqa: E203
+
+    if not entries:
+        return json.dumps({"meta": {"count": total_count}, "data": []})
+
+    if not include_authorization:
+        # Return basic audit log data
+        data = [
+            {
+                "principal_username": e.principal_username,
+                "action": e.action,
+                "resource_type": e.resource_type,
+                "description": e.description,
+                "created": e.created.isoformat() if e.created else None,
+            }
+            for e in entries
+        ]
+        return json.dumps({"meta": {"count": total_count}, "data": data}, default=str)
+
+    # Enrich with authorization context
+    auth_cache: dict[str, dict[str, dict[str, Any] | None]] = {}
+    org_admin_cache: dict[str, bool] = {}
+    org_admin_auth: dict[str, Any] = {
+        "role": "Org Admin",
+        "via_group": None,
+        "permission": "(bypasses all RBAC checks)",
     }
-    path = reverse("v1_management:auditlog-list")
-    return _call_view(request, _auditlog_list_view, path, query_params)
+    results = []
+
+    for entry in entries:
+        actor = entry.principal_username
+        entry_action = entry.action
+        entry_resource = entry.resource_type
+        required_perms = _get_required_permissions(entry_resource, entry_action)
+        cache_key = f"{entry_resource}:{entry_action}"
+
+        if actor not in auth_cache:
+            auth_cache[actor] = {}
+
+        if actor not in org_admin_cache:
+            org_admin_cache[actor] = _is_org_admin(actor, tenant.org_id)
+
+        auth_info: dict[str, Any] | None
+        if org_admin_cache[actor]:
+            auth_info = org_admin_auth
+        elif cache_key not in auth_cache[actor]:
+            auth_cache[actor][cache_key] = _find_authorizing_role(actor, tenant, required_perms)
+            auth_info = auth_cache[actor][cache_key]
+        else:
+            auth_info = auth_cache[actor][cache_key]
+
+        result: dict[str, Any] = {
+            "principal_username": actor,
+            "action": entry_action,
+            "resource_type": entry_resource,
+            "description": entry.description,
+            "created": entry.created.isoformat() if entry.created else None,
+            "authorized_by": auth_info,
+        }
+
+        if not auth_info:
+            result["note"] = f"User '{actor}' not found or no longer has permissions. Required: {required_perms}"
+
+        results.append(result)
+
+    return json.dumps({"meta": {"count": total_count}, "data": results}, default=str)
+
+
+# Permission requirements by resource_type and action
+_REQUIRED_PERMISSIONS: dict[str, dict[str, list[str]]] = {
+    "group": {
+        "create": ["rbac:group:write"],
+        "delete": ["rbac:group:write"],
+        "edit": ["rbac:group:write"],
+        "add": ["rbac:group:write", "rbac:principal:write"],
+        "remove": ["rbac:group:write", "rbac:principal:write"],
+    },
+    "role": {
+        "create": ["rbac:role:write"],
+        "delete": ["rbac:role:write"],
+        "edit": ["rbac:role:write"],
+    },
+    "role_v2": {
+        "create": ["rbac:role:write"],
+        "delete": ["rbac:role:write"],
+        "edit": ["rbac:role:write"],
+    },
+    "workspace": {
+        "create": ["rbac:workspace:write"],
+        "delete": ["rbac:workspace:write"],
+        "edit": ["rbac:workspace:write"],
+    },
+    "role_binding": {
+        "create": ["rbac:role_binding:write"],
+        "delete": ["rbac:role_binding:write"],
+    },
+    "user": {
+        "add": ["rbac:principal:write"],
+        "remove": ["rbac:principal:write"],
+    },
+    "permission": {
+        "create": ["rbac:role:write"],
+        "edit": ["rbac:role:write"],
+        "delete": ["rbac:role:write"],
+    },
+}
+
+
+def _get_required_permissions(resource_type: str, action: str) -> list[str]:
+    """Get the permissions required for a given resource_type and action."""
+    resource_perms = _REQUIRED_PERMISSIONS.get(resource_type, {})
+    return resource_perms.get(action, [f"rbac:{resource_type}:write"])
+
+
+def _is_org_admin(username: str, org_id: str) -> bool:
+    """Check if a user is an org admin by querying BOP."""
+    try:
+        proxy = PrincipalProxy()
+        resp = proxy.request_filtered_principals([username], org_id=org_id, limit=1)
+        if resp.get("status_code") == 200:
+            data = resp.get("data", [])
+            if data and len(data) > 0:
+                return data[0].get("is_org_admin", False)
+    except Exception:
+        logger.debug("mcp: failed to check org admin status for user=%s", username)
+    return False
+
+
+def _find_authorizing_role(username: str, tenant: Any, required_perms: list[str]) -> dict[str, Any] | None:
+    """Find the role and permission that authorized an action."""
+    principal = Principal.objects.filter(username=username, tenant=tenant).first()
+    if not principal:
+        return None
+
+    # Single query: get all permissions the user has with their role/group context
+    access_entries = (
+        Access.objects.filter(
+            role__policies__group__principals=principal,
+            role__policies__group__tenant=tenant,
+        )
+        .select_related("permission", "role")
+        .values(
+            "permission__permission",
+            "role__name",
+            "role__display_name",
+            "role__policies__group__name",
+        )
+    )
+
+    # Build required permission set for fast lookup
+    required_set = set(required_perms)
+
+    for entry in access_entries:
+        granted_perm = entry["permission__permission"]
+        # Check exact match first (fast path)
+        if granted_perm in required_set:
+            return {
+                "role": entry["role__display_name"] or entry["role__name"],
+                "via_group": entry["role__policies__group__name"],
+                "permission": granted_perm,
+            }
+        # Check wildcard match
+        for required in required_perms:
+            if _permission_matches(granted_perm, required):
+                return {
+                    "role": entry["role__display_name"] or entry["role__name"],
+                    "via_group": entry["role__policies__group__name"],
+                    "permission": granted_perm,
+                }
+
+    return None
 
 
 @register_tool(
     description=(
-        "List access permissions for the currently authenticated principal. Shows what the caller "
-        "is allowed to do, filtered by application (required). Each entry is a permission string "
+        "List access permissions for a principal (V1 API only). By default shows access for the "
+        "currently authenticated user. Set 'username' to query another user's access (requires "
+        "org admin or rbac:principal:read permission). Each entry is a permission string "
         "with optional resource definitions that further constrain it. "
+        "IMPORTANT: This is a V1-only endpoint. For V2 organizations, this returns only legacy "
+        "V1 access and does NOT include V2 role binding permissions. For V2 orgs, use "
+        "check_user_permission (which auto-detects V1/V2) or list_role_bindings with "
+        "granted_subject_type='principal' and granted_subject_principal_user_id='<username>'. "
         "Order by: 'application', 'resource_type', 'verb' (prefix with '-' to reverse). "
         "Returns: {meta: {count}, links, data: [{permission, resourceDefinitions: [...]}]}. "
         "Calls: GET /api/v1/access/"
     ),
     requires_auth=True,
+    api_version=ApiVersion.V1,
 )
 def list_access(
     request: HttpRequest,
     *,
     application: str,
+    username: str = "",
     limit: int = 10,
     offset: int = 0,
     order_by: str = "",
@@ -391,6 +687,8 @@ def list_access(
         "offset": str(offset),
         "status": status,
     }
+    if username:
+        query_params["username"] = username
     if order_by:
         query_params["order_by"] = order_by
 
@@ -438,19 +736,23 @@ def list_permission_options(
 
 @register_tool(
     description=(
-        "List roles assigned to a specific group. Shows which roles are associated with the group "
-        "through policies. Filter by role_name, role_description, role_display_name, or role_system (boolean). "
-        "Order by: 'name', 'display_name', 'modified', 'policyCount' (prefix with '-' to reverse). "
+        "List roles assigned to a specific group. Provide either group_uuid OR group_name "
+        "(if both are provided, group_uuid takes precedence). "
+        "Use group_name for convenience (case-insensitive lookup). "
+        "Example: list_group_roles(group_name='<group-name>') to see roles assigned to that group. "
+        "Filter results by role_name, role_description, role_display_name, or role_system. "
         "Set exclude='true' to list roles NOT in the group. "
-        "Returns: {meta: {count}, links, data: [{uuid, name, description, system, platform_default, ...}]}. "
-        "Calls: GET /api/v1/groups/{uuid}/roles/"
+        "Order by: 'name', 'display_name', 'modified', 'policyCount' (prefix with '-' to reverse). "
+        "Returns: {meta: {count}, links, data: [{uuid, name, description, system, ...}]}."
     ),
     requires_auth=True,
+    api_version=ApiVersion.V1,
 )
 def list_group_roles(
     request: HttpRequest,
     *,
-    group_uuid: str,
+    group_uuid: str = "",
+    group_name: str = "",
     limit: int = 10,
     offset: int = 0,
     order_by: str = "",
@@ -461,6 +763,20 @@ def list_group_roles(
     exclude: str = "false",
 ) -> str:
     """List roles for a group by delegating to GroupViewSet.roles."""
+    tenant = getattr(request, "tenant", None)
+    if not tenant:
+        return json.dumps({"error": "No tenant context available"})
+
+    resolved_uuid = group_uuid
+    if not resolved_uuid and group_name:
+        group = Group.objects.filter(name__iexact=group_name, tenant=tenant).only("uuid").first()
+        if not group:
+            return json.dumps({"error": f"Group '{group_name}' not found"})
+        resolved_uuid = str(group.uuid)
+
+    if not resolved_uuid:
+        return json.dumps({"error": "Either group_uuid or group_name is required"})
+
     query_params: dict[str, str] = {
         "limit": str(limit),
         "offset": str(offset),
@@ -478,8 +794,8 @@ def list_group_roles(
     if exclude != "false":
         query_params["exclude"] = exclude
 
-    path = reverse("v1_management:group-roles", kwargs={"uuid": group_uuid})
-    return _call_view(request, _group_roles_view, path, query_params, uuid=group_uuid)
+    path = reverse("v1_management:group-roles", kwargs={"uuid": resolved_uuid})
+    return _call_view(request, _group_roles_view, path, query_params, uuid=resolved_uuid)
 
 
 @register_tool(
@@ -490,6 +806,7 @@ def list_group_roles(
         "Calls: GET /api/v1/roles/{uuid}/access/"
     ),
     requires_auth=True,
+    api_version=ApiVersion.V1,
 )
 def list_role_access(
     request: HttpRequest,
@@ -509,54 +826,158 @@ def list_role_access(
 
 @register_tool(
     description=(
-        "List roles using the V2 API. Roles define sets of permissions that can be bound to "
-        "subjects via role bindings. Order by: 'name', '-name', 'last_modified', '-last_modified'. "
-        "Returns: {meta: {count}, links, data: [{uuid, name, description, permissions, ...}]}. "
-        "Calls: GET /api/v2/roles/"
+        "Search and filter roles by name, permission, application, or other criteria. "
+        "Automatically detects whether the organization uses V1 or V2 and routes accordingly. "
+        "Best tool for answering 'which role grants permission X?' or 'find role named Y'. "
+        "TROUBLESHOOTING: To find a role by name, call search_roles(name='<role_name>'). "
+        "To find which roles grant a specific permission, call "
+        "search_roles(permission='<app>:<resource>:<verb>'). Accepts comma-separated permissions. "
+        "To see all roles for an application, call search_roles(application='<app>'). "
+        "V2 orgs support name with '*' wildcards (e.g., name='Cost*') and resource_type filter. "
+        "V1 orgs additionally support display_name, system flag filters. "
+        "Returns: {meta: {count}, links, data: [{uuid, name, description, ...}], org_version: 'v1'|'v2'}."
     ),
     requires_auth=True,
+    api_version=ApiVersion.UNIFIED,
 )
-def list_roles(
+def search_roles(
     request: HttpRequest,
     *,
     limit: int = 10,
     offset: int = 0,
+    name: str = "",
+    display_name: str = "",
+    permission: str = "",
+    application: str = "",
+    system: str = "",
+    resource_type: str = "",
     order_by: str = "",
 ) -> str:
-    """List V2 roles by delegating to RoleV2ViewSet."""
+    """Search roles, auto-detecting V1/V2 and delegating to the appropriate view."""
+    tenant = getattr(request, "tenant", None)
+    if tenant and is_v2_write_activated(tenant):
+        return _search_roles_v2(request, limit, offset, name, resource_type, permission, order_by)
+    return _search_roles_v1(request, limit, offset, name, display_name, permission, application, system, order_by)
+
+
+def _search_roles_v1(
+    request: HttpRequest,
+    limit: int,
+    offset: int,
+    name: str,
+    display_name: str,
+    permission: str,
+    application: str,
+    system: str,
+    order_by: str,
+) -> str:
+    """Search roles using V1 API."""
     query_params: dict[str, str] = {
         "limit": str(limit),
         "offset": str(offset),
     }
+    if name:
+        query_params["name"] = name
+    if display_name:
+        query_params["display_name"] = display_name
+    if permission:
+        query_params["permission"] = permission
+    if application:
+        query_params["application"] = application
+    if system:
+        query_params["system"] = system
     if order_by:
         query_params["order_by"] = order_by
+
+    path = reverse("v1_management:role-list")
+    raw = _call_view(request, _role_v1_list_view, path, query_params)
+    result = json.loads(raw)
+    result["org_version"] = "v1"
+    return json.dumps(result)
+
+
+def _search_roles_v2(
+    request: HttpRequest,
+    limit: int,
+    offset: int,
+    name: str,
+    resource_type: str,
+    permission: str,
+    order_by: str,
+) -> str:
+    """Search roles using V2 API."""
+    query_params: dict[str, str] = {
+        "limit": str(limit),
+        "offset": str(offset),
+    }
+    if name:
+        query_params["name"] = name
+    if resource_type:
+        query_params["resource_type"] = resource_type
+    if permission:
+        query_params["permission"] = permission
+    if order_by:
+        query_params["order_by"] = order_by
+
     path = reverse("v2_management:roles-list")
-    return _call_view(request, _role_v2_list_view, path, query_params)
+    raw = _call_view(request, _role_v2_list_view, path, query_params)
+    result = json.loads(raw)
+    result["org_version"] = "v2"
+    return json.dumps(result)
 
 
 @register_tool(
     description=(
-        "Get details of a specific role by UUID using the V2 API. Returns the role's name, "
-        "description, and the list of permissions it grants. "
-        "Returns: {uuid, name, description, permissions: [{application, resource_type, verb}]}. "
-        "Calls: GET /api/v2/roles/{uuid}/"
+        "Get details of a specific role by UUID, including its permissions. "
+        "Automatically detects whether the organization uses V1 or V2 and routes accordingly. "
+        "Returns: {uuid, name, description, permissions: [...], org_version: 'v1'|'v2'}."
     ),
     requires_auth=True,
+    api_version=ApiVersion.UNIFIED,
 )
 def get_role(
     request: HttpRequest,
     *,
     role_uuid: str,
 ) -> str:
-    """Get a single V2 role by delegating to RoleV2ViewSet."""
+    """Get a single role, auto-detecting V1/V2 and delegating to the appropriate view."""
+    tenant = getattr(request, "tenant", None)
+    if tenant and is_v2_write_activated(tenant):
+        return _get_role_v2(request, role_uuid)
+    return _get_role_v1(request, role_uuid)
+
+
+def _get_role_v1(request: HttpRequest, role_uuid: str) -> str:
+    """Get role details using V1 API (retrieve + access)."""
+    detail_path = reverse("v1_management:role-detail", kwargs={"uuid": role_uuid})
+    detail_raw = _call_view(request, _role_v1_detail_view, detail_path, {}, uuid=role_uuid)
+    result = json.loads(detail_raw)
+
+    access_path = reverse("v1_management:role-access", kwargs={"uuid": role_uuid})
+    access_raw = _call_view(request, _role_access_view, access_path, {"limit": "1000"}, uuid=role_uuid)
+    access_data = json.loads(access_raw)
+
+    result["permissions"] = access_data.get("data", [])
+    result["org_version"] = "v1"
+    return json.dumps(result)
+
+
+def _get_role_v2(request: HttpRequest, role_uuid: str) -> str:
+    """Get role details using V2 API."""
     path = reverse("v2_management:roles-detail", kwargs={"uuid": role_uuid})
-    return _call_view(request, _role_v2_detail_view, path, {}, uuid=role_uuid)
+    raw = _call_view(request, _role_v2_detail_view, path, {}, uuid=role_uuid)
+    result = json.loads(raw)
+    result["org_version"] = "v2"
+    return json.dumps(result)
 
 
 @register_tool(
     description=(
         "List groups for the authenticated organization. Groups are collections of principals "
-        "that can be assigned roles via policies. Filter by name (partial match). "
+        "that can be assigned roles via policies. Filter by name (partial match), username "
+        "(groups a specific user belongs to), or role_names (groups that have a specific role assigned). "
+        "TROUBLESHOOTING: To find which groups a user belongs to, call list_groups(username='<user>'). "
+        "To find groups with a specific role, call list_groups(role_names='<role_name>'). "
         "Order by: 'name', '-name', 'modified', '-modified', 'principalCount', '-principalCount', "
         "'policyCount', '-policyCount'. "
         "Returns: {meta: {count}, links, data: [{uuid, name, description, principalCount, ...}]}. "
@@ -570,6 +991,8 @@ def list_groups(
     limit: int = 10,
     offset: int = 0,
     name: str = "",
+    username: str = "",
+    role_names: str = "",
     order_by: str = "",
 ) -> str:
     """List groups by delegating to GroupViewSet."""
@@ -579,6 +1002,10 @@ def list_groups(
     }
     if name:
         query_params["name"] = name
+    if username:
+        query_params["username"] = username
+    if role_names:
+        query_params["role_names"] = role_names
     if order_by:
         query_params["order_by"] = order_by
 
@@ -636,9 +1063,14 @@ def list_group_principals(
 
 @register_tool(
     description=(
-        "List cross-account access requests. These allow users from one org to request "
-        "temporary access to another org's resources. Filter by status (pending/approved/denied/expired/cancelled), "
-        "org_id, or approved_only. Order by: 'request_id', 'start_date', 'end_date', 'created', 'modified', "
+        "List cross-account access requests. These allow users from one org (e.g. Red Hat TAMs) "
+        "to request temporary access to another org's resources. "
+        "Set query_by='target_org' (default) to see requests INTO your org, or "
+        "query_by='user_id' to see requests you made to other orgs. "
+        "Filter by status (pending/approved/denied/expired/cancelled), org_id, or approved_only. "
+        "TROUBLESHOOTING: To see who from Red Hat currently has access to your org, call "
+        "list_cross_account_requests(query_by='target_org', status='approved'). "
+        "Order by: 'request_id', 'start_date', 'end_date', 'created', 'modified', "
         "'status' (prefix with '-' to reverse). "
         "Returns: {meta: {count}, links, data: [{request_id, target_account, status, start_date, end_date, ...}]}. "
         "Calls: GET /api/v1/cross-account-requests/"
@@ -650,6 +1082,7 @@ def list_cross_account_requests(
     *,
     limit: int = 10,
     offset: int = 0,
+    query_by: str = "",
     status: str = "",
     org_id: str = "",
     approved_only: str = "",
@@ -660,6 +1093,8 @@ def list_cross_account_requests(
         "limit": str(limit),
         "offset": str(offset),
     }
+    if query_by:
+        query_params["query_by"] = query_by
     if status:
         query_params["status"] = status
     if org_id:
@@ -750,10 +1185,22 @@ def get_workspace(
         "List role bindings for the authenticated organization (V2 API). A role binding assigns "
         "a role to a subject (user/group) within a resource scope (e.g. workspace). "
         "Filter by role_id, resource_type, resource_id, subject_type, or subject_id. "
+        "ACCESS RESOLUTION: To find what permissions a user has (or which are missing) in V2, "
+        "(1) call list_role_bindings(granted_subject_type='principal', "
+        "granted_subject_principal_user_id='<username>') to find all effective bindings "
+        "including those inherited through group membership "
+        "(this is the V2 equivalent of list_access(username=X) for V1), "
+        "(2) for each binding extract the role UUID, "
+        "(3) call get_role(role_uuid=...) or list_role_access(role_uuid=...) to inspect "
+        "the role's permissions, (4) compare against the required permissions to identify "
+        "what is granted and what is missing. "
+        "TIP: For a quick yes/no check, use check_user_permission instead — it auto-detects "
+        "V1/V2 and does the full resolution automatically. "
         "Returns: {meta: {count}, links, data: [{uuid, role, resource, subject, ...}]}. "
         "Calls: GET /api/v2/role-bindings/"
     ),
     requires_auth=True,
+    api_version=ApiVersion.V2,
 )
 def list_role_bindings(
     request: HttpRequest,
@@ -765,6 +1212,9 @@ def list_role_bindings(
     resource_id: str = "",
     subject_type: str = "",
     subject_id: str = "",
+    granted_subject_type: str = "",
+    granted_subject_id: str = "",
+    granted_subject_principal_user_id: str = "",
 ) -> str:
     """List role bindings by delegating to RoleBindingViewSet."""
     query_params: dict[str, str] = {
@@ -781,6 +1231,12 @@ def list_role_bindings(
         query_params["subject_type"] = subject_type
     if subject_id:
         query_params["subject_id"] = subject_id
+    if granted_subject_type:
+        query_params["granted_subject_type"] = granted_subject_type
+    if granted_subject_id:
+        query_params["granted_subject_id"] = granted_subject_id
+    if granted_subject_principal_user_id:
+        query_params["granted_subject.principal.user_id"] = granted_subject_principal_user_id
 
     path = reverse("v2_management:role-bindings-list")
     return _call_view(request, _role_binding_list_view, path, query_params)
@@ -795,6 +1251,7 @@ def list_role_bindings(
         "Calls: GET /api/v2/role-bindings/by-subject/"
     ),
     requires_auth=True,
+    api_version=ApiVersion.V2,
 )
 def list_role_bindings_by_subject(
     request: HttpRequest,
@@ -820,6 +1277,598 @@ def list_role_bindings_by_subject(
 
     path = reverse("v2_management:role-bindings-by-subject")
     return _call_view(request, _role_binding_by_subject_view, path, query_params)
+
+
+def _permission_matches(granted_permission: str, requested_permission: str) -> bool:
+    """Check if a granted permission matches a requested permission, supporting wildcards.
+
+    Supports exact match and wildcard patterns in the granted permission:
+    - "app:resource:verb" matches "app:resource:verb" (exact)
+    - "app:*:*" matches "app:resource:verb" (wildcard resource and verb)
+    - "app:resource:*" matches "app:resource:verb" (wildcard verb)
+    """
+    granted_parts = granted_permission.split(":")
+    requested_parts = requested_permission.split(":")
+    if len(granted_parts) != 3 or len(requested_parts) != 3:
+        return False
+    return all(g == "*" or g == r for g, r in zip(granted_parts, requested_parts))
+
+
+@register_tool(
+    description=(
+        "Check whether a specific user has a specific permission. Returns true/false "
+        "with the matched permission details. Automatically detects whether the organization "
+        "is V1 or V2 and uses the appropriate access resolution method: "
+        "V1 uses the access endpoint; V2 resolves role bindings and inspects role permissions. "
+        "The permission format is 'application:resource_type:verb' (e.g., "
+        "'cost-management:cost_model:write'). Supports wildcard matching. "
+        "Requires org admin or rbac:principal:read permission to check another user. "
+        "ACCESS RESOLUTION: This is the fastest way to answer 'Can user X do Y?' — "
+        "it works for both V1 and V2 organizations automatically. "
+        "Returns: {allowed: bool, username, permission, matched_permission, ...} "
+        "or {allowed: false, hint: str}. "
+        "V1 calls: GET /api/v1/access/?username=X&application=Y (internally). "
+        "V2 resolves: role bindings → roles → permissions (internally)."
+    ),
+    requires_auth=True,
+    api_version=ApiVersion.UNIFIED,
+)
+def check_user_permission(
+    request: HttpRequest,
+    *,
+    username: str,
+    permission: str,
+) -> str:
+    """Check if a user has a specific permission by delegating to AccessView (V1) or role bindings (V2)."""
+    parts = permission.split(":")
+    if len(parts) != 3:
+        return json.dumps(
+            {
+                "error": "Permission must be in format 'application:resource_type:verb'. "
+                "Example: 'cost-management:cost_model:write'"
+            }
+        )
+
+    tenant = getattr(request, "tenant", None)
+    if not tenant or not is_v2_write_activated(tenant):
+        return _check_user_permission_v1(request, username, permission)
+
+    principal = Principal.objects.filter(username=username, tenant=tenant).first()
+    if not principal:
+        return json.dumps(
+            {
+                "allowed": False,
+                "username": username,
+                "permission": permission,
+                "org_version": "v2",
+                "hint": f"User '{username}' not found in this organization.",
+            }
+        )
+
+    bindings_path = reverse("v2_management:role-bindings-list")
+    raw = _call_view(
+        request,
+        _role_binding_list_view,
+        bindings_path,
+        {
+            "granted_subject_type": "user",
+            "granted_subject_id": str(principal.uuid),
+            "limit": "1000",
+        },
+    )
+    bindings_data = json.loads(raw)
+    bindings = bindings_data.get("data", [])
+
+    if not bindings:
+        return json.dumps(
+            {
+                "allowed": False,
+                "username": username,
+                "permission": permission,
+                "org_version": "v2",
+                "total_bindings_checked": 0,
+                "hint": f"User '{username}' has no role bindings in this V2 organization. "
+                f"Use list_role_bindings(granted_subject_type='user', "
+                f"granted_subject_id='{principal.uuid}') to see all role bindings.",
+            }
+        )
+
+    role_uuids = {b["role"]["id"] for b in bindings if b.get("role", {}).get("id")}
+
+    for role_uuid in role_uuids:
+        role_path = reverse("v2_management:roles-detail", kwargs={"uuid": role_uuid})
+        role_raw = _call_view(request, _role_v2_detail_view, role_path, {}, uuid=role_uuid)
+        role_data = json.loads(role_raw)
+
+        for perm in role_data.get("permissions", []):
+            perm_str = f"{perm['application']}:{perm['resource_type']}:{perm['operation']}"
+            if _permission_matches(perm_str, permission):
+                return json.dumps(
+                    {
+                        "allowed": True,
+                        "username": username,
+                        "permission": permission,
+                        "matched_permission": perm_str,
+                        "role_name": role_data.get("name"),
+                        "role_uuid": str(role_uuid),
+                        "org_version": "v2",
+                    }
+                )
+
+    return json.dumps(
+        {
+            "allowed": False,
+            "username": username,
+            "permission": permission,
+            "org_version": "v2",
+            "total_roles_checked": len(role_uuids),
+            "hint": f"User '{username}' does not have permission '{permission}' in this V2 organization. "
+            f"Use list_role_bindings(granted_subject_type='user', "
+            f"granted_subject_id='{principal.uuid}') to see all role bindings, "
+            f"or search_roles(name='*') to browse available roles.",
+        }
+    )
+
+
+def _check_user_permission_v1(request: HttpRequest, username: str, permission: str) -> str:
+    """Check user permission using V1 access endpoint."""
+    application = permission.split(":")[0]
+    query_params: dict[str, str] = {
+        "application": application,
+        "username": username,
+        "limit": "1000",
+    }
+    path = reverse("v1_management:access")
+
+    try:
+        raw = _call_view(request, _access_view, path, query_params)
+    except Exception as e:
+        return json.dumps(
+            {
+                "error": f"Failed to check permissions: {e}",
+                "hint": "Requires org admin or rbac:principal:read permission to check another user.",
+            }
+        )
+
+    data = json.loads(raw)
+
+    if "detail" in data:
+        return json.dumps(
+            {
+                "allowed": False,
+                "error": data["detail"],
+                "hint": "Requires org admin or rbac:principal:read permission to check another user.",
+            }
+        )
+
+    access_list = data.get("data", [])
+
+    for entry in access_list:
+        entry_permission = entry.get("permission", "")
+        if _permission_matches(entry_permission, permission):
+            return json.dumps(
+                {
+                    "allowed": True,
+                    "username": username,
+                    "permission": permission,
+                    "matched_permission": entry_permission,
+                    "resource_definitions": entry.get("resourceDefinitions", []),
+                }
+            )
+
+    application = permission.split(":")[0]
+    return json.dumps(
+        {
+            "allowed": False,
+            "username": username,
+            "permission": permission,
+            "total_permissions_checked": len(access_list),
+            "hint": f"User '{username}' does not have permission '{permission}'. "
+            f"Use list_access(username='{username}', application='{application}') to see all "
+            f"permissions, or list_groups(username='{username}') to trace the group/role chain.",
+        }
+    )
+
+
+@register_tool(
+    description=(
+        "Get comprehensive state for a specific user, returning all RBAC information in one call. "
+        "This is the best tool for understanding a user's complete RBAC picture. "
+        "Returns: (1) groups the user belongs to with roles assigned to each, "
+        "(2) all permissions/access the user has (auto-detects V1/V2), "
+        "(3) recent audit log activity ON the groups (by anyone), "
+        "(4) actions performed BY the user with breakdown by group and action type. "
+        "Supports both V1 and V2 organizations automatically. "
+        "Use this instead of calling list_groups + list_access + list_audit_logs separately. "
+        "RESPONSE FORMAT: Summarize as 'Member of: <groups>. Effective access: <role names>. "
+        "Audit log: <N> actions performed by user on <groups> (action types).'. "
+        "Returns: {username, org_version, groups: [{name, roles, recent_activity}], "
+        "access: [{permission, role_name, ...}], user_actions: {total_count, by_group, by_type, recent}, "
+        "summary: {group_count, permission_count, actions_by_user, recent_actions_on_groups}}."
+    ),
+    requires_auth=True,
+    api_version=ApiVersion.UNIFIED,
+)
+def get_user_state(
+    request: HttpRequest,
+    *,
+    username: str,
+    include_group_roles: bool = True,
+    include_permissions: bool = True,
+    audit_log_limit: int = 10,
+) -> str:
+    """Get comprehensive RBAC state for a user including groups, access, and audit activity."""
+    # Clamp audit_log_limit to prevent expensive queries
+    audit_log_limit = min(max(audit_log_limit, 1), 100)
+
+    tenant = getattr(request, "tenant", None)
+    if not tenant:
+        return json.dumps({"error": "No tenant context available"})
+
+    # Determine V1/V2 mode
+    is_v2 = tenant and is_v2_write_activated(tenant)
+    org_version = "v2" if is_v2 else "v1"
+
+    # Check if user exists
+    principal = Principal.objects.filter(username=username, tenant=tenant).first()
+    if not principal:
+        return json.dumps(
+            {
+                "error": f"User '{username}' not found in this organization",
+                "org_version": org_version,
+                "hint": "Use list_principals(usernames='<user>', match_criteria='exact') to verify the user exists.",
+            }
+        )
+
+    result: dict[str, Any] = {
+        "username": username,
+        "org_version": org_version,
+        "groups": [],
+        "access": [],
+        "summary": {
+            "group_count": 0,
+            "permission_count": 0,
+        },
+    }
+
+    # Get groups the user belongs to with prefetched policies and roles
+    groups = (
+        Group.objects.filter(principals=principal, tenant=tenant).prefetch_related("policies__roles").order_by("name")
+    )
+    group_list = list(groups)
+    all_group_names = [g.name for g in group_list]
+
+    # Batch fetch audit activity for all groups (avoids N+1 queries)
+    # Use exact UUID matching via resource_uuid field for reliable group identification
+    group_uuid_to_name: dict[str, str] = {str(g.uuid): g.name for g in group_list}
+    group_activity_map: dict[str, list[dict[str, Any]]] = {name: [] for name in all_group_names}
+
+    if group_list:
+        group_uuids = [g.uuid for g in group_list]
+
+        all_activity = AuditLog.objects.filter(
+            tenant=tenant,
+            resource_type=AuditLog.GROUP,
+            resource_uuid__in=group_uuids,
+        ).order_by("-created")[: audit_log_limit * len(group_list)]
+
+        # Map entries to groups by exact UUID match
+        for entry in all_activity:
+            group_name = group_uuid_to_name.get(str(entry.resource_uuid))
+            if group_name and len(group_activity_map[group_name]) < audit_log_limit:
+                group_activity_map[group_name].append(
+                    {
+                        "action": entry.action,
+                        "resource_type": entry.resource_type,
+                        "principal_username": entry.principal_username,
+                        "description": entry.description,
+                        "created": entry.created.isoformat() if entry.created else None,
+                    }
+                )
+
+    group_data = []
+    for group in group_list:
+        group_info: dict[str, Any] = {
+            "uuid": str(group.uuid),
+            "name": group.name,
+            "description": group.description or "",
+        }
+
+        # Get roles for each group if requested (using prefetched data)
+        if include_group_roles:
+            roles_in_group = []
+            for policy in group.policies.all():
+                for role in policy.roles.all():
+                    roles_in_group.append(
+                        {
+                            "uuid": str(role.uuid),
+                            "name": role.name,
+                            "display_name": role.display_name or role.name,
+                            "system": getattr(role, "system", False),
+                        }
+                    )
+            group_info["roles"] = roles_in_group
+            group_info["role_count"] = len(roles_in_group)
+
+        # Get recent audit activity for this group from pre-fetched map
+        group_info["recent_activity"] = group_activity_map.get(group.name, [])
+        group_info["recent_activity_count"] = len(group_info["recent_activity"])
+
+        group_data.append(group_info)
+
+    result["groups"] = group_data
+    result["summary"]["group_count"] = len(group_data)
+
+    # Get access/permissions for the user
+    if include_permissions:
+        if is_v2:
+            result["access"] = _get_user_access_v2(request, principal, tenant)
+        else:
+            result["access"] = _get_user_access_v1(request, username)
+
+    result["summary"]["permission_count"] = len(result["access"])
+
+    # Get actions performed BY this user (across all groups they're in)
+    user_performed_actions = AuditLog.objects.filter(
+        tenant=tenant,
+        principal_username=username,
+    ).order_by(
+        "-created"
+    )[: audit_log_limit * 2]
+
+    # Group user actions by target group using exact UUID matching
+    user_actions_by_group: dict[str, list[dict[str, Any]]] = {}
+    user_action_counts: dict[str, int] = {}
+
+    for entry in user_performed_actions:
+        action_info = {
+            "action": entry.action,
+            "resource_type": entry.resource_type,
+            "description": entry.description,
+            "created": entry.created.isoformat() if entry.created else None,
+        }
+
+        # Match group by exact UUID if this is a group action
+        target_group = None
+        if entry.resource_type == AuditLog.GROUP and entry.resource_uuid:
+            target_group = group_uuid_to_name.get(str(entry.resource_uuid))
+
+        if target_group:
+            if target_group not in user_actions_by_group:
+                user_actions_by_group[target_group] = []
+            user_actions_by_group[target_group].append(action_info)
+
+        # Count by action type
+        action_key = f"{entry.resource_type}:{entry.action}"
+        user_action_counts[action_key] = user_action_counts.get(action_key, 0) + 1
+
+    result["user_actions"] = {
+        "total_count": len(user_performed_actions),
+        "by_group": user_actions_by_group,
+        "by_type": user_action_counts,
+        "recent": [
+            {
+                "action": entry.action,
+                "resource_type": entry.resource_type,
+                "description": entry.description,
+                "created": entry.created.isoformat() if entry.created else None,
+            }
+            for entry in user_performed_actions[:audit_log_limit]
+        ],
+    }
+
+    # Get total recent activity count across all groups (actions on the groups)
+    total_activity = 0
+    for g in result["groups"]:
+        total_activity += g.get("recent_activity_count", 0)
+    result["summary"]["recent_actions_on_groups"] = total_activity
+    result["summary"]["actions_by_user"] = len(user_performed_actions)
+
+    # Add hints for deeper investigation
+    result["hints"] = {
+        "check_specific_permission": (
+            f"Use check_user_permission(username='{username}', permission='app:resource:verb') to verify"
+        ),
+        "view_audit_details": "Use list_audit_logs(group_name='<group>', include_authorization=True) for details",
+        "trace_role_permissions": "Use get_role(role_uuid='<uuid>') to see all permissions granted by a role",
+    }
+
+    return json.dumps(result, default=str)
+
+
+def _get_user_access_v1(request: HttpRequest, username: str) -> list[dict[str, Any]]:
+    """Get user's access permissions using V1 API.
+
+    The access endpoint requires an application filter, so we first get distinct
+    applications the user has access to, then query each.
+    """
+    tenant = getattr(request, "tenant", None)
+    if not tenant:
+        return []
+
+    principal = Principal.objects.filter(username=username, tenant=tenant).first()
+    if not principal:
+        return []
+
+    # Get distinct applications the user has access to
+    applications = (
+        Access.objects.filter(
+            role__policies__group__principals=principal,
+            role__policies__group__tenant=tenant,
+        )
+        .values_list("permission__application", flat=True)
+        .distinct()
+    )
+
+    access_list: list[dict[str, Any]] = []
+    seen_permissions: set[str] = set()
+    path = reverse("v1_management:access")
+
+    for app in applications:
+        if not app:
+            continue
+        query_params: dict[str, str] = {
+            "application": app,
+            "username": username,
+            "limit": "1000",
+        }
+        try:
+            raw = _call_view(request, _access_view, path, query_params)
+            data = json.loads(raw)
+            for entry in data.get("data", []):
+                perm = entry.get("permission", "")
+                if perm and perm not in seen_permissions:
+                    seen_permissions.add(perm)
+                    access_list.append(entry)
+        except Exception:
+            logger.warning("mcp: failed to get V1 access for user=%s app=%s", username, app, exc_info=True)
+
+    return access_list
+
+
+@register_tool(
+    description=(
+        "Get a summary of recent RBAC changes. Returns changes grouped by resource type and action, "
+        "with statistics. Set 'days' (1-30, default 7) to control how far back to look. "
+        "Returns: total change count, changes by resource type (group/role/role_v2/workspace/role_binding), "
+        "changes by action (create/delete/edit/add/remove), top actors with change counts, "
+        "and the 100 most recent changes. "
+        "Use this tool to get an overview of what changed, then use list_audit_logs for details. "
+        "RESPONSE FORMAT: Consolidate by actor. For each actor: '<actor>: <count> <action> actions on "
+        "<resource_type> (<day of week>). <actor> holds <role name if known>.' "
+        "Note patterns like 'Matches expected automation pattern' for service accounts. "
+        "Format dates as day of week (Monday, Tuesday, etc.), not ISO timestamps."
+    ),
+    requires_auth=True,
+)
+def get_rbac_recent_changes(
+    request: HttpRequest,
+    *,
+    days: int = 7,
+) -> str:
+    """Get a summary of recent RBAC changes."""
+    days = min(max(days, 1), 30)
+
+    tenant = getattr(request, "tenant", None)
+    if not tenant:
+        return json.dumps({"error": "No tenant context available"})
+
+    cutoff = datetime.now(timezone.utc) - __import__("datetime").timedelta(days=days)
+
+    entries = AuditLog.objects.filter(tenant=tenant, created__gte=cutoff).order_by("-created")
+
+    total_count = entries.count()
+    if total_count == 0:
+        return json.dumps(
+            {
+                "summary": {
+                    "days_reviewed": days,
+                    "total_changes": 0,
+                    "message": f"No RBAC changes in the last {days} days.",
+                },
+                "by_resource_type": {},
+                "by_action": {},
+                "by_actor": {},
+                "recent_changes": [],
+            }
+        )
+
+    by_resource: dict[str, int] = {}
+    by_action: dict[str, int] = {}
+    by_actor: dict[str, int] = {}
+
+    entry_list = list(entries[:500])
+
+    for entry in entry_list:
+        rt = entry.resource_type
+        by_resource[rt] = by_resource.get(rt, 0) + 1
+
+        act = entry.action
+        by_action[act] = by_action.get(act, 0) + 1
+
+        actor = entry.principal_username
+        by_actor[actor] = by_actor.get(actor, 0) + 1
+
+    recent_changes = [
+        {
+            "actor": entry.principal_username,
+            "action": entry.action,
+            "resource_type": entry.resource_type,
+            "description": entry.description[:200],
+            "created": entry.created.isoformat() if entry.created else None,
+        }
+        for entry in entry_list[:100]
+    ]
+
+    sorted_actors = sorted(by_actor.items(), key=lambda x: x[1], reverse=True)[:10]
+    by_resource_sorted = dict(sorted(by_resource.items(), key=lambda x: x[1], reverse=True))
+    by_action_sorted = dict(sorted(by_action.items(), key=lambda x: x[1], reverse=True))
+
+    result = {
+        "summary": {
+            "days_reviewed": days,
+            "total_changes": total_count,
+            "unique_actors": len(by_actor),
+            "period_start": cutoff.isoformat(),
+            "period_end": datetime.now(timezone.utc).isoformat(),
+        },
+        "by_resource_type": by_resource_sorted,
+        "by_action": by_action_sorted,
+        "by_actor": dict(sorted_actors),
+        "recent_changes": recent_changes,
+    }
+
+    return json.dumps(result, default=str)
+
+
+def _get_user_access_v2(request: HttpRequest, principal: Principal, tenant: Any) -> list[dict[str, Any]]:
+    """Get user's access permissions using V2 role bindings."""
+    access_list: list[dict[str, Any]] = []
+    seen_permissions: set[tuple[str, str, str]] = set()
+
+    # Get direct role bindings for the principal
+    direct_binding_ids = RoleBindingPrincipal.objects.filter(principal=principal).values_list("binding_id", flat=True)
+
+    # Get group-based role bindings
+    user_groups = principal.group.filter(tenant=tenant)
+    group_binding_ids = RoleBindingGroup.objects.filter(group__in=user_groups).values_list("binding_id", flat=True)
+
+    # Combine all binding IDs
+    all_binding_ids = set(direct_binding_ids) | set(group_binding_ids)
+
+    # Get all bindings with their roles and permissions
+    bindings = (
+        RoleBinding.objects.filter(id__in=all_binding_ids, tenant=tenant)
+        .select_related("role")
+        .prefetch_related("role__permissions")
+    )
+
+    for binding in bindings:
+        role = binding.role
+        if not role:
+            continue
+
+        for perm in role.permissions.all():
+            perm_str = f"{perm.application}:{perm.resource_type}:{perm.verb}"
+            dedup_key = (perm_str, binding.resource_type, binding.resource_id)
+            if dedup_key not in seen_permissions:
+                seen_permissions.add(dedup_key)
+                access_list.append(
+                    {
+                        "permission": perm_str,
+                        "application": perm.application,
+                        "resource_type": perm.resource_type,
+                        "verb": perm.verb,
+                        "role_name": role.name,
+                        "role_uuid": str(role.uuid),
+                        "resource_scope": {
+                            "type": binding.resource_type,
+                            "id": binding.resource_id,
+                        },
+                    }
+                )
+
+    return access_list
 
 
 # --- JSON-RPC parsing ---
@@ -972,15 +2021,23 @@ def _get_tools() -> list[Any]:
     return asyncio.run(mcp.list_tools())
 
 
+def _is_v2_available() -> bool:
+    """Check whether V2 API routes are mounted."""
+    return getattr(settings, "V2_APIS_ENABLED", False)
+
+
 def _handle_tools_list(request: HttpRequest, request_id: Any, params: dict[str, Any]) -> JsonResponse:
     """Handle MCP tools/list request using FastMCP's registered tools."""
+    v2_available = _is_v2_available()
+    overrides = _get_all_description_overrides()
     tools_data = [
         {
             "name": tool.name,
-            "description": tool.description or "",
+            "description": overrides.get(tool.name, tool.description or ""),
             "inputSchema": tool.inputSchema,
         }
         for tool in _get_tools()
+        if v2_available or _TOOL_CONFIG.get(tool.name, ToolConfig(fn=lambda: "")).api_version != ApiVersion.V2
     ]
     return _success_response(request_id, {"tools": tools_data})
 
@@ -992,6 +2049,37 @@ def _normalize_tool_result(result: Any) -> str:
     return json.dumps(result, default=str)
 
 
+class ToolTimeoutError(Exception):
+    """Raised when a tool exceeds its execution timeout.
+
+    Distinct from the built-in TimeoutError so that _handle_tools_call can
+    distinguish infrastructure timeouts from TimeoutError raised by the
+    tool itself (e.g. from ``requests`` or other libraries).
+    """
+
+
+_MCP_TOOL_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
+    max_workers=settings.MCP_TOOL_MAX_WORKERS,
+    thread_name_prefix="mcp-tool",
+)
+
+
+def _execute_with_timeout(fn: Callable[..., Any], timeout: int, *args: Any, **kwargs: Any) -> Any:
+    """Execute a tool function with a timeout.
+
+    Uses the module-level ThreadPoolExecutor so threads are reused across
+    calls instead of creating a new executor per request.
+
+    Raises ToolTimeoutError if the function does not complete within the
+    given timeout (seconds).
+    """
+    future = _MCP_TOOL_EXECUTOR.submit(fn, *args, **kwargs)
+    try:
+        return future.result(timeout=timeout)
+    except concurrent.futures.TimeoutError:
+        raise ToolTimeoutError(f"Tool execution exceeded {timeout}s timeout")
+
+
 def _handle_tools_call(request: HttpRequest, request_id: Any, params: dict[str, Any]) -> JsonResponse:
     """Handle MCP tools/call request.
 
@@ -1001,6 +2089,11 @@ def _handle_tools_call(request: HttpRequest, request_id: Any, params: dict[str, 
 
     Tools that need auth context receive the Django request as the first
     argument, so no thread-local state is needed.
+
+    Tool execution is wrapped in a configurable timeout (MCP_TOOL_TIMEOUT_SECONDS,
+    default 30s) using a ThreadPoolExecutor. On timeout, a JSON-RPC internal
+    error (-32603) is returned and a Prometheus metric with status="timeout"
+    is recorded.
     """
     tool_name: str = params.get("name", "")
     if "arguments" not in params:
@@ -1013,6 +2106,14 @@ def _handle_tools_call(request: HttpRequest, request_id: Any, params: dict[str, 
     if config is None:
         logger.warning("mcp: tools/call unknown tool='%s'", tool_name)
         return _error_response(request_id, -32602, f"Unknown tool: {tool_name}")
+
+    if config.api_version == ApiVersion.V2 and not _is_v2_available():
+        logger.warning("mcp: tools/call tool='%s' rejected, V2 APIs not enabled", tool_name)
+        return _error_response(
+            request_id,
+            -32602,
+            f"Tool '{tool_name}' requires V2 APIs, which are not enabled in this deployment.",
+        )
 
     org_id = getattr(getattr(request, "user", None), "org_id", None)
     logger.info(
@@ -1030,12 +2131,19 @@ def _handle_tools_call(request: HttpRequest, request_id: Any, params: dict[str, 
 
     track = tool_name != "hello"
     start = time.monotonic() if track else 0
+    timeout = getattr(settings, "MCP_TOOL_TIMEOUT_SECONDS", 30)
 
     try:
-        if config.passes_request:
-            result = config.fn(request, **arguments)
+        if timeout > 0:
+            if config.passes_request:
+                result = _execute_with_timeout(config.fn, timeout, request, **arguments)
+            else:
+                result = _execute_with_timeout(config.fn, timeout, **arguments)
         else:
-            result = config.fn(**arguments)
+            if config.passes_request:
+                result = config.fn(request, **arguments)
+            else:
+                result = config.fn(**arguments)
 
         if track:
             duration = time.monotonic() - start
@@ -1044,6 +2152,12 @@ def _handle_tools_call(request: HttpRequest, request_id: Any, params: dict[str, 
 
         content = [{"type": "text", "text": _normalize_tool_result(result)}]
         return _success_response(request_id, {"content": content, "isError": False})
+    except ToolTimeoutError:
+        duration = time.monotonic() - start if track else timeout
+        if track:
+            _record_metric(tool_name, "timeout", duration)
+        logger.error("mcp: tools/call tool='%s' timed out after %ds", tool_name, timeout)
+        return _error_response(request_id, -32603, f"Tool execution timed out after {timeout}s")
     except TypeError as exc:
         if track:
             _record_metric(tool_name, "invalid_params", time.monotonic() - start)
