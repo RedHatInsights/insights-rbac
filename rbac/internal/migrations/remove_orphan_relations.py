@@ -200,20 +200,24 @@ def _collect_remote_relations_for_binding(
 
 def _collect_role_resource_relations(role_id: str, read_tuples_typed: _ReadTuplesTyped) -> list[RelationTuple]:
     """
-    Collect all relations whose resource is rbac/role:<role_id> (permissions, owner, etc.).
-
-    Permission-only reads miss tuples such as ``#owner@rbac/tenant:...`` that V1 dual-write creates
-    alongside permission edges; those must be included when reconciling or removing a deleted role.
+    Collect all known tuples whose resource is rbac/role:<role_id> (permissions and owner).
     """
-    return list(
-        read_tuples_typed(
+    return [
+        *read_tuples_typed(
             resource_type="role",
             resource_id=role_id,
             relation="",
-            subject_type="",
+            subject_type="principal",
+            subject_id="*",
+        ),
+        *read_tuples_typed(
+            resource_type="role",
+            resource_id=role_id,
+            relation="owner",
+            subject_type="tenant",
             subject_id="",
-        )
-    )
+        ),
+    ]
 
 
 @dataclasses.dataclass
