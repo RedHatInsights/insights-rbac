@@ -2005,7 +2005,7 @@ def investigate_group_changes(
         act = entry["action"]
         action_counts[act] = action_counts.get(act, 0) + 1
 
-    result = {
+    result: dict[str, Any] = {
         "group": {
             "uuid": str(group.uuid),
             "name": group.name,
