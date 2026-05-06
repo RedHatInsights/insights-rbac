@@ -1832,13 +1832,7 @@ def get_rbac_recent_changes(
         "involving a specific role (e.g., 'Vulnerability administrator'). Set include_authorization=true "
         "(default) to see what role/permission authorized each action. "
         "RETURNS: {group: {uuid, name, current_roles}, audit_entries: [{actor, action, description, "
-        "created, authorized_by: {role, via_group, permission}}], caveats: [...]}. "
-        "CAVEATS (always communicate these): "
-        "(1) The audit log captures actor, action, resource type, and a description text field. "
-        "It does NOT capture IP address, session ID, or before/after state. "
-        "(2) The audit log API doesn't support date range filtering in query params — 'last week' "
-        "means paginating recent entries and filtering client-side. "
-        "(3) Authorization shows the actor's CURRENT role/permission — may differ from time of change. "
+        "created, authorized_by: {role, via_group, permission}}]}. "
         "RESPONSE FORMAT: State who performed the action, when (formatted as '14 April at 9:32 AM'), "
         "the description, and what authority they had. Example: 'The audit log shows jdoe added the "
         "Vulnerability administrator role to group Contractors on 14 April at 9:32 AM. jdoe currently "
@@ -1862,14 +1856,6 @@ def investigate_group_changes(
     tenant = getattr(request, "tenant", None)
     if not tenant:
         return json.dumps({"error": "No tenant context available"})
-
-    caveats = [
-        "The audit log captures actor, action, resource type, and a description text field. "
-        "It does NOT capture IP address, session ID, or before/after state.",
-        "The audit log API doesn't support date range filtering in query params — 'last week' "
-        "means paginating recent entries and filtering client-side.",
-        "Authorization shows the actor's CURRENT role/permission — may differ from time of change.",
-    ]
 
     # Step 1: Find the group by name
     group = Group.objects.filter(name__iexact=group_name, tenant=tenant).first()
@@ -1943,7 +1929,6 @@ def investigate_group_changes(
                     + (f" with role containing '{role_name}'" if role_name else "")
                     + (f" and action='{action}'" if action else ""),
                 },
-                "caveats": caveats,
             }
         )
 
@@ -2021,7 +2006,6 @@ def investigate_group_changes(
             "actors": list(actors_seen),
             "by_action": action_counts,
         },
-        "caveats": caveats,
         "hints": {
             "actor_details": "Use list_principals(usernames='<actor>', match_criteria='exact') to get actor details",
             "actor_permissions": "Use search_roles(username='<actor>') to see what roles they currently have",

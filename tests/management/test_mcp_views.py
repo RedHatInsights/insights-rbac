@@ -1146,8 +1146,6 @@ class MCPViewTests(MCPToolTestMixin, IdentityRequest):
         self.assertIn("audit_entries", tool_output)
         self.assertEqual(len(tool_output["audit_entries"]), 1)
         self.assertEqual(tool_output["audit_entries"][0]["actor"], "jdoe")
-        self.assertIn("caveats", tool_output)
-        self.assertEqual(len(tool_output["caveats"]), 3)
 
     def test_investigate_group_changes_without_auth_returns_error(self):
         """Permission: investigate_group_changes without auth returns auth error."""
