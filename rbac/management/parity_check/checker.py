@@ -153,19 +153,18 @@ class ParityAccessChecker:
         """
         workspace_ids: set[str] = set()
 
-        # Get workspaces via direct principal role bindings
         direct_bindings = RoleBindingPrincipal.objects.filter(
             principal=principal,
+            binding__tenant=tenant,
             binding__resource_type="workspace",
         ).select_related("binding")
 
         for entry in direct_bindings:
             workspace_ids.add(entry.binding.resource_id)
 
-        # Get workspaces via group membership
-        principal_groups = principal.group.all()
         group_bindings = RoleBindingGroup.objects.filter(
-            group__in=principal_groups,
+            group__principals=principal,
+            binding__tenant=tenant,
             binding__resource_type="workspace",
         ).select_related("binding")
 
