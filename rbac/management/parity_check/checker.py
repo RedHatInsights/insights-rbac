@@ -96,9 +96,15 @@ class ParityAccessChecker:
                 If None, uses PARITY_CHECK_PRINCIPAL_SAMPLE_SIZE setting.
             relation: The relation to check for workspace access (default: workspace_view).
         """
-        self.tenant_sample_size = tenant_sample_size or getattr(settings, "PARITY_CHECK_TENANT_SAMPLE_SIZE", 10)
-        self.principal_sample_size = principal_sample_size or getattr(
-            settings, "PARITY_CHECK_PRINCIPAL_SAMPLE_SIZE", 50
+        self.tenant_sample_size: int = (
+            tenant_sample_size
+            if tenant_sample_size is not None
+            else getattr(settings, "PARITY_CHECK_TENANT_SAMPLE_SIZE", 10)
+        )
+        self.principal_sample_size: int = (
+            principal_sample_size
+            if principal_sample_size is not None
+            else getattr(settings, "PARITY_CHECK_PRINCIPAL_SAMPLE_SIZE", 50)
         )
         self.relation = relation
         self.inventory_checker = WorkspaceInventoryAccessChecker()
