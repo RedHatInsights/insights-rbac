@@ -22,6 +22,7 @@ import concurrent.futures
 import inspect
 import json
 import logging
+import re
 import time
 import uuid
 from dataclasses import dataclass
@@ -1873,8 +1874,13 @@ def investigate_group_changes(
     # Step 1: Find the group by name
     group = Group.objects.filter(name__iexact=group_name, tenant=tenant).first()
     if not group:
-        # Try partial match
+        # Try partial match - first with full name, then with prefix segment
         groups = Group.objects.filter(name__icontains=group_name, tenant=tenant).values("uuid", "name")[:5]
+        if not groups:
+            # Try matching on prefix (first segment split by common delimiters)
+            segments = re.split(r"[-_\s]", group_name)
+            if segments and len(segments[0]) >= 3:
+                groups = Group.objects.filter(name__icontains=segments[0], tenant=tenant).values("uuid", "name")[:5]
         if groups:
             suggestions = [{"uuid": str(g["uuid"]), "name": g["name"]} for g in groups]
             return json.dumps(
