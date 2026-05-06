@@ -343,9 +343,10 @@ def _call_view(
 # │ get_status                       │ unver.    │ GET /api/v1/status/                        │
 # │ list_principals                  │ common    │ GET /api/v1/principals/                    │
 # │ list_permissions                 │ common    │ GET /api/v1/permissions/                   │
-# │ list_permission_options          │ common    │ GET /api/v1/permissions/options/            │
+# │ list_permission_options          │ common    │ GET /api/v1/permissions/options/           │
 # │ list_audit_logs                  │ common    │ GET /api/v1/auditlogs/                     │
-# │ get_rbac_recent_changes               │ common    │ (in-process audit log analysis)            │
+# │ get_rbac_recent_changes          │ common    │ (in-process audit log analysis)            │
+# │ investigate_group_changes        │ common    │ (orchestrates audit log + authorization)   │
 # │ list_groups                      │ common    │ GET /api/v1/groups/                        │
 # │ get_group                        │ common    │ GET /api/v1/groups/{uuid}/                 │
 # │ list_group_principals            │ common    │ GET /api/v1/groups/{uuid}/principals/      │
@@ -1817,6 +1818,226 @@ def get_rbac_recent_changes(
         "by_actor": dict(sorted_actors),
         "recent_changes": recent_changes,
     }
+
+    return json.dumps(result, default=str)
+
+
+@register_tool(
+    description=(
+        "[SCENARIO_SKILL: group_changes] Use this tool when investigating changes to a group. "
+        "Investigate who changed a specific group. Returns audit log entries for the group with "
+        "authorization context for each actor. Best tool for answering 'Who added role X to group Y?' "
+        "or 'Who modified the Contractors group last week?'. "
+        "USAGE: Provide group_name (required). Optionally filter by role_name to find changes "
+        "involving a specific role (e.g., 'Vulnerability administrator'). Set include_authorization=true "
+        "(default) to see what role/permission authorized each action. "
+        "RETURNS: {group: {uuid, name, current_roles}, audit_entries: [{actor, action, description, "
+        "created, authorized_by: {role, via_group, permission}}], caveats: [...]}. "
+        "CAVEATS (always communicate these): "
+        "(1) The audit log captures actor, action, resource type, and a description text field. "
+        "It does NOT capture IP address, session ID, or before/after state. "
+        "(2) The audit log API doesn't support date range filtering in query params — 'last week' "
+        "means paginating recent entries and filtering client-side. "
+        "(3) Authorization shows the actor's CURRENT role/permission — may differ from time of change. "
+        "RESPONSE FORMAT: State who performed the action, when (formatted as '14 April at 9:32 AM'), "
+        "the description, and what authority they had. Example: 'The audit log shows jdoe added the "
+        "Vulnerability administrator role to group Contractors on 14 April at 9:32 AM. jdoe currently "
+        "holds the User Access administrator role via the Access Governance group, which grants "
+        "rbac:group:write.'"
+    ),
+    requires_auth=True,
+)
+def investigate_group_changes(
+    request: HttpRequest,
+    *,
+    group_name: str,
+    role_name: str = "",
+    action: str = "",
+    limit: int = 20,
+    include_authorization: bool = True,
+) -> str:
+    """Investigate changes to a specific group with full authorization context."""
+    limit = min(max(limit, 1), 100)
+
+    tenant = getattr(request, "tenant", None)
+    if not tenant:
+        return json.dumps({"error": "No tenant context available"})
+
+    caveats = [
+        "The audit log captures actor, action, resource type, and a description text field. "
+        "It does NOT capture IP address, session ID, or before/after state.",
+        "The audit log API doesn't support date range filtering in query params — 'last week' "
+        "means paginating recent entries and filtering client-side.",
+        "Authorization shows the actor's CURRENT role/permission — may differ from time of change.",
+    ]
+
+    # Step 1: Find the group by name
+    group = Group.objects.filter(name__iexact=group_name, tenant=tenant).first()
+    if not group:
+        # Try partial match
+        groups = Group.objects.filter(name__icontains=group_name, tenant=tenant).values("uuid", "name")[:5]
+        if groups:
+            suggestions = [{"uuid": str(g["uuid"]), "name": g["name"]} for g in groups]
+            return json.dumps(
+                {
+                    "error": f"Group '{group_name}' not found (exact match)",
+                    "did_you_mean": suggestions,
+                    "hint": "Use the exact group name from the suggestions above.",
+                }
+            )
+        return json.dumps(
+            {
+                "error": f"Group '{group_name}' not found",
+                "hint": "Use list_groups(name='<partial>') to search for groups.",
+            }
+        )
+
+    # Step 2: Get current roles assigned to the group
+    current_roles = []
+    for policy in group.policies.prefetch_related("roles").all():
+        for role in policy.roles.all():
+            current_roles.append(
+                {
+                    "uuid": str(role.uuid),
+                    "name": role.name,
+                    "display_name": role.display_name or role.name,
+                    "system": getattr(role, "system", False),
+                }
+            )
+
+    # Step 3: Query audit logs for this group using exact UUID match
+    queryset = AuditLog.objects.filter(
+        tenant=tenant,
+        resource_type=AuditLog.GROUP,
+        resource_uuid=group.uuid,
+    ).order_by("-created")
+
+    if action:
+        queryset = queryset.filter(action=action)
+
+    if role_name:
+        queryset = queryset.filter(description__icontains=role_name)
+
+    total_count = queryset.count()
+    entries = list(queryset[:limit])
+
+    if not entries:
+        return json.dumps(
+            {
+                "group": {
+                    "uuid": str(group.uuid),
+                    "name": group.name,
+                    "description": group.description or "",
+                    "current_roles": current_roles,
+                    "current_role_count": len(current_roles),
+                },
+                "audit_entries": [],
+                "summary": {
+                    "total_changes_found": 0,
+                    "message": f"No audit log entries found for group '{group_name}'"
+                    + (f" with role containing '{role_name}'" if role_name else "")
+                    + (f" and action='{action}'" if action else ""),
+                },
+                "caveats": caveats,
+            }
+        )
+
+    # Step 4: Build results with optional authorization context
+    auth_cache: dict[str, dict[str, dict[str, Any] | None]] = {}
+    org_admin_cache: dict[str, bool] = {}
+    org_admin_auth: dict[str, Any] = {
+        "role": "Org Admin",
+        "via_group": None,
+        "permission": "(bypasses all RBAC checks)",
+    }
+
+    audit_entries = []
+    actors_seen: set[str] = set()
+
+    for entry in entries:
+        actor = entry.principal_username
+        entry_action = entry.action
+        actors_seen.add(actor)
+
+        result_entry: dict[str, Any] = {
+            "actor": actor,
+            "action": entry_action,
+            "resource_type": entry.resource_type,
+            "description": entry.description,
+            "created": entry.created.isoformat() if entry.created else None,
+        }
+
+        if include_authorization:
+            required_perms = _get_required_permissions(entry.resource_type, entry_action)
+            cache_key = f"{entry.resource_type}:{entry_action}"
+
+            if actor not in auth_cache:
+                auth_cache[actor] = {}
+
+            if actor not in org_admin_cache:
+                org_admin_cache[actor] = _is_org_admin(actor, tenant.org_id)
+
+            auth_info: dict[str, Any] | None
+            if org_admin_cache[actor]:
+                auth_info = org_admin_auth
+            elif cache_key not in auth_cache[actor]:
+                auth_cache[actor][cache_key] = _find_authorizing_role(actor, tenant, required_perms)
+                auth_info = auth_cache[actor][cache_key]
+            else:
+                auth_info = auth_cache[actor][cache_key]
+
+            result_entry["authorized_by"] = auth_info
+            if not auth_info:
+                result_entry["authorization_note"] = (
+                    f"User '{actor}' not found or no longer has permissions. " f"Required: {required_perms}"
+                )
+
+        audit_entries.append(result_entry)
+
+    # Step 5: Build summary statistics
+    action_counts: dict[str, int] = {}
+    for entry in audit_entries:
+        act = entry["action"]
+        action_counts[act] = action_counts.get(act, 0) + 1
+
+    result = {
+        "group": {
+            "uuid": str(group.uuid),
+            "name": group.name,
+            "description": group.description or "",
+            "current_roles": current_roles,
+            "current_role_count": len(current_roles),
+        },
+        "audit_entries": audit_entries,
+        "summary": {
+            "total_changes_found": total_count,
+            "changes_returned": len(audit_entries),
+            "unique_actors": len(actors_seen),
+            "actors": list(actors_seen),
+            "by_action": action_counts,
+        },
+        "caveats": caveats,
+        "hints": {
+            "actor_details": "Use list_principals(usernames='<actor>', match_criteria='exact') to get actor details",
+            "actor_permissions": "Use search_roles(username='<actor>') to see what roles they currently have",
+            "role_details": "Use get_role(role_uuid='<uuid>') to see permissions granted by a role",
+        },
+    }
+
+    # Check if the role mentioned is currently assigned
+    if role_name:
+        role_found = any(
+            role_name.lower() in r["name"].lower() or role_name.lower() in r["display_name"].lower()
+            for r in current_roles
+        )
+        result["role_currently_assigned"] = role_found
+        if role_found:
+            matching_roles = [
+                r
+                for r in current_roles
+                if role_name.lower() in r["name"].lower() or role_name.lower() in r["display_name"].lower()
+            ]
+            result["matching_current_roles"] = matching_roles
 
     return json.dumps(result, default=str)
 
