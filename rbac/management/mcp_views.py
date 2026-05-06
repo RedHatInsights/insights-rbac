@@ -1824,7 +1824,6 @@ def get_rbac_recent_changes(
 
 @register_tool(
     description=(
-        "[SCENARIO_SKILL: group_changes] Use this tool when investigating changes to a group. "
         "Investigate who changed a specific group. Returns audit log entries for the group with "
         "authorization context for each actor. Best tool for answering 'Who added role X to group Y?' "
         "or 'Who modified the Contractors group last week?'. "
