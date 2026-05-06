@@ -660,6 +660,7 @@ class MCPViewTests(MCPToolTestMixin, IdentityRequest):
             "list_permissions",
             "list_permission_options",
             "list_audit_logs",
+            "get_rbac_recent_changes",
             "search_roles",
             "get_role",
             "list_role_access",
@@ -1010,6 +1011,373 @@ class MCPViewTests(MCPToolTestMixin, IdentityRequest):
         self.assertEqual(tool_output["meta"]["count"], 1)
         self.assertEqual(len(tool_output["data"]), 1)
         self.assertIn("target_role_alpha", tool_output["data"][0]["description"])
+
+    # --- get_rbac_recent_changes ---
+
+    def test_get_rbac_recent_changes_success(self):
+        """Positive: get_rbac_recent_changes returns summary of recent changes."""
+        response = self._call_tool("get_rbac_recent_changes")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertIn("summary", tool_output)
+        self.assertIn("by_resource_type", tool_output)
+        self.assertIn("by_action", tool_output)
+        self.assertIn("by_actor", tool_output)
+        self.assertIn("recent_changes", tool_output)
+
+    def test_get_rbac_recent_changes_without_auth_returns_error(self):
+        """Permission: get_rbac_recent_changes without auth returns auth error."""
+        response = self._call_tool("get_rbac_recent_changes", use_auth=False)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    def test_get_rbac_recent_changes_with_audit_data(self):
+        """Positive: get_rbac_recent_changes groups and summarizes audit data."""
+        AuditLog.objects.create(
+            principal_username="actor1",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.ADD,
+            description="user added to group",
+            tenant=self.tenant,
+        )
+        AuditLog.objects.create(
+            principal_username="actor1",
+            resource_type=AuditLog.ROLE,
+            action=AuditLog.CREATE,
+            description="Created role: test_role",
+            tenant=self.tenant,
+        )
+        AuditLog.objects.create(
+            principal_username="actor2",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.DELETE,
+            description="Deleted group: old_group",
+            tenant=self.tenant,
+        )
+
+        response = self._call_tool("get_rbac_recent_changes", {"days": 7})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["summary"]["total_changes"], 3)
+        self.assertEqual(tool_output["summary"]["unique_actors"], 2)
+        self.assertIn("group", tool_output["by_resource_type"])
+        self.assertIn("role", tool_output["by_resource_type"])
+        self.assertIn("add", tool_output["by_action"])
+        self.assertIn("create", tool_output["by_action"])
+        self.assertIn("delete", tool_output["by_action"])
+
+    def test_get_rbac_recent_changes_days_parameter(self):
+        """Positive: get_rbac_recent_changes respects days parameter."""
+        old_entry = AuditLog.objects.create(
+            principal_username="old_actor",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.ADD,
+            description="old action",
+            tenant=self.tenant,
+        )
+        old_entry.created = timezone.now() - __import__("datetime").timedelta(days=10)
+        old_entry.save()
+
+        AuditLog.objects.create(
+            principal_username="recent_actor",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.ADD,
+            description="recent action",
+            tenant=self.tenant,
+        )
+
+        response = self._call_tool("get_rbac_recent_changes", {"days": 7})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["summary"]["total_changes"], 1)
+        self.assertIn("recent_actor", tool_output["by_actor"])
+        self.assertNotIn("old_actor", tool_output["by_actor"])
+
+    def test_get_rbac_recent_changes_empty_result(self):
+        """Positive: get_rbac_recent_changes returns clean empty state when no changes."""
+        response = self._call_tool("get_rbac_recent_changes", {"days": 1})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["summary"]["total_changes"], 0)
+        self.assertEqual(tool_output["by_resource_type"], {})
+        self.assertEqual(tool_output["by_action"], {})
+
+    def test_get_rbac_recent_changes_clamps_days(self):
+        """Positive: get_rbac_recent_changes clamps days to valid range (1-30)."""
+        response = self._call_tool("get_rbac_recent_changes", {"days": 100})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["summary"]["days_reviewed"], 30)
+
+        response = self._call_tool("get_rbac_recent_changes", {"days": 0})
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["summary"]["days_reviewed"], 1)
+
+    # --- investigate_group_changes ---
+
+    def test_investigate_group_changes_success(self):
+        """Positive: investigate_group_changes returns group info and audit entries."""
+        group = Group.objects.create(name="Contractors", tenant=self.tenant)
+        AuditLog.objects.create(
+            principal_username="jdoe",
+            resource_type=AuditLog.GROUP,
+            resource_uuid=group.uuid,
+            action=AuditLog.ADD,
+            description="Vulnerability administrator role added to group Contractors",
+            tenant=self.tenant,
+        )
+
+        response = self._call_tool("investigate_group_changes", {"group_name": "Contractors"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertIn("group", tool_output)
+        self.assertEqual(tool_output["group"]["name"], "Contractors")
+        self.assertIn("audit_entries", tool_output)
+        self.assertEqual(len(tool_output["audit_entries"]), 1)
+        self.assertEqual(tool_output["audit_entries"][0]["actor"], "jdoe")
+
+    def test_investigate_group_changes_without_auth_returns_error(self):
+        """Permission: investigate_group_changes without auth returns auth error."""
+        response = self._call_tool("investigate_group_changes", {"group_name": "Test"}, use_auth=False)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    def test_investigate_group_changes_group_not_found(self):
+        """Negative: investigate_group_changes returns error when group not found."""
+        response = self._call_tool("investigate_group_changes", {"group_name": "NonExistent"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertIn("error", tool_output)
+        self.assertIn("not found", tool_output["error"])
+
+    def test_investigate_group_changes_with_suggestions(self):
+        """Positive: investigate_group_changes suggests similar groups on partial match failure."""
+        Group.objects.create(name="Contractors-East", tenant=self.tenant)
+        Group.objects.create(name="Contractors-West", tenant=self.tenant)
+
+        response = self._call_tool("investigate_group_changes", {"group_name": "Contractors-North"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertIn("error", tool_output)
+        self.assertIn("did_you_mean", tool_output)
+        self.assertEqual(len(tool_output["did_you_mean"]), 2)
+
+    def test_investigate_group_changes_filter_by_role_name(self):
+        """Positive: investigate_group_changes filters by role_name."""
+        group = Group.objects.create(name="TestGroup", tenant=self.tenant)
+        AuditLog.objects.create(
+            principal_username="user1",
+            resource_type=AuditLog.GROUP,
+            resource_uuid=group.uuid,
+            action=AuditLog.ADD,
+            description="Vulnerability administrator role added",
+            tenant=self.tenant,
+        )
+        AuditLog.objects.create(
+            principal_username="user2",
+            resource_type=AuditLog.GROUP,
+            resource_uuid=group.uuid,
+            action=AuditLog.ADD,
+            description="Cost Management reader role added",
+            tenant=self.tenant,
+        )
+
+        response = self._call_tool(
+            "investigate_group_changes",
+            {"group_name": "TestGroup", "role_name": "Vulnerability"},
+        )
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(len(tool_output["audit_entries"]), 1)
+        self.assertIn("Vulnerability", tool_output["audit_entries"][0]["description"])
+
+    def test_investigate_group_changes_filter_by_action(self):
+        """Positive: investigate_group_changes filters by action."""
+        group = Group.objects.create(name="TestGroup", tenant=self.tenant)
+        AuditLog.objects.create(
+            principal_username="user1",
+            resource_type=AuditLog.GROUP,
+            resource_uuid=group.uuid,
+            action=AuditLog.ADD,
+            description="role added",
+            tenant=self.tenant,
+        )
+        AuditLog.objects.create(
+            principal_username="user2",
+            resource_type=AuditLog.GROUP,
+            resource_uuid=group.uuid,
+            action=AuditLog.DELETE,
+            description="role deleted",
+            tenant=self.tenant,
+        )
+
+        response = self._call_tool(
+            "investigate_group_changes",
+            {"group_name": "TestGroup", "action": "add"},
+        )
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(len(tool_output["audit_entries"]), 1)
+        self.assertEqual(tool_output["audit_entries"][0]["action"], "add")
+
+    @patch(
+        "management.mcp_views.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": [{"is_org_admin": False}]},
+    )
+    def test_investigate_group_changes_with_authorization(self, mock_proxy):
+        """Positive: investigate_group_changes includes authorization context."""
+        group = Group.objects.create(name="Contractors", tenant=self.tenant)
+        AuditLog.objects.create(
+            principal_username=self.principal.username,
+            resource_type=AuditLog.GROUP,
+            resource_uuid=group.uuid,
+            action=AuditLog.ADD,
+            description="Vulnerability administrator role added",
+            tenant=self.tenant,
+        )
+
+        # Set up authorization chain
+        role = Role.objects.create(name="User Access administrator", tenant=self.tenant)
+        perm = Permission.objects.create(
+            application="rbac",
+            resource_type="group",
+            verb="write",
+            permission="rbac:group:write",
+            tenant=self.tenant,
+        )
+        Access.objects.create(permission=perm, role=role, tenant=self.tenant)
+        auth_group = Group.objects.create(name="Access Governance", tenant=self.tenant)
+        auth_group.principals.add(self.principal)
+        policy = Policy.objects.create(name="auth_policy", group=auth_group, tenant=self.tenant)
+        policy.roles.add(role)
+
+        response = self._call_tool(
+            "investigate_group_changes",
+            {"group_name": "Contractors", "include_authorization": True},
+        )
+
+        tool_output = self._get_tool_output(response)
+        entry = tool_output["audit_entries"][0]
+        self.assertIn("authorized_by", entry)
+        self.assertEqual(entry["authorized_by"]["role"], "User Access administrator")
+        self.assertEqual(entry["authorized_by"]["via_group"], "Access Governance")
+        self.assertEqual(entry["authorized_by"]["permission"], "rbac:group:write")
+
+    def test_investigate_group_changes_shows_current_roles(self):
+        """Positive: investigate_group_changes includes current roles on the group."""
+        group = Group.objects.create(name="TestGroup", tenant=self.tenant)
+        role = Role.objects.create(name="TestRole", display_name="Test Role Display", tenant=self.tenant)
+        policy = Policy.objects.create(name="test_policy", group=group, tenant=self.tenant)
+        policy.roles.add(role)
+
+        response = self._call_tool("investigate_group_changes", {"group_name": "TestGroup"})
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["group"]["current_role_count"], 1)
+        self.assertEqual(len(tool_output["group"]["current_roles"]), 1)
+        self.assertEqual(tool_output["group"]["current_roles"][0]["name"], "TestRole")
+
+    def test_investigate_group_changes_role_currently_assigned(self):
+        """Positive: investigate_group_changes indicates if queried role is currently assigned."""
+        group = Group.objects.create(name="Contractors", tenant=self.tenant)
+        role = Role.objects.create(
+            name="Vulnerability administrator", display_name="Vulnerability administrator", tenant=self.tenant
+        )
+        policy = Policy.objects.create(name="test_policy", group=group, tenant=self.tenant)
+        policy.roles.add(role)
+
+        AuditLog.objects.create(
+            principal_username="jdoe",
+            resource_type=AuditLog.GROUP,
+            resource_uuid=group.uuid,
+            action=AuditLog.ADD,
+            description="Vulnerability administrator role added",
+            tenant=self.tenant,
+        )
+
+        response = self._call_tool(
+            "investigate_group_changes",
+            {"group_name": "Contractors", "role_name": "Vulnerability"},
+        )
+
+        tool_output = self._get_tool_output(response)
+        self.assertTrue(tool_output["role_currently_assigned"])
+        self.assertEqual(len(tool_output["matching_current_roles"]), 1)
+
+    def test_investigate_group_changes_summary_statistics(self):
+        """Positive: investigate_group_changes returns summary statistics."""
+        group = Group.objects.create(name="TestGroup", tenant=self.tenant)
+        AuditLog.objects.create(
+            principal_username="user1",
+            resource_type=AuditLog.GROUP,
+            resource_uuid=group.uuid,
+            action=AuditLog.ADD,
+            description="action1",
+            tenant=self.tenant,
+        )
+        AuditLog.objects.create(
+            principal_username="user1",
+            resource_type=AuditLog.GROUP,
+            resource_uuid=group.uuid,
+            action=AuditLog.ADD,
+            description="action2",
+            tenant=self.tenant,
+        )
+        AuditLog.objects.create(
+            principal_username="user2",
+            resource_type=AuditLog.GROUP,
+            resource_uuid=group.uuid,
+            action=AuditLog.DELETE,
+            description="action3",
+            tenant=self.tenant,
+        )
+
+        response = self._call_tool("investigate_group_changes", {"group_name": "TestGroup"})
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["summary"]["total_changes_found"], 3)
+        self.assertEqual(tool_output["summary"]["unique_actors"], 2)
+        self.assertIn("user1", tool_output["summary"]["actors"])
+        self.assertIn("user2", tool_output["summary"]["actors"])
+        self.assertEqual(tool_output["summary"]["by_action"]["add"], 2)
+        self.assertEqual(tool_output["summary"]["by_action"]["delete"], 1)
+
+    def test_investigate_group_changes_case_insensitive_group_name(self):
+        """Positive: investigate_group_changes finds group with case-insensitive name."""
+        Group.objects.create(name="Contractors", tenant=self.tenant)
+
+        response = self._call_tool("investigate_group_changes", {"group_name": "contractors"})
+
+        tool_output = self._get_tool_output(response)
+        self.assertIn("group", tool_output)
+        self.assertEqual(tool_output["group"]["name"], "Contractors")
+
+    def test_investigate_group_changes_no_audit_entries(self):
+        """Positive: investigate_group_changes returns empty audit_entries when no changes found."""
+        Group.objects.create(name="NewGroup", tenant=self.tenant)
+
+        response = self._call_tool("investigate_group_changes", {"group_name": "NewGroup"})
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(len(tool_output["audit_entries"]), 0)
+        self.assertEqual(tool_output["summary"]["total_changes_found"], 0)
+        self.assertIn("message", tool_output["summary"])
 
     # --- list_groups / get_group / list_group_principals ---
 
