@@ -1004,12 +1004,16 @@ namespace RoleBindings {
         @doc("Cursor for cursor-based pagination.")
         @query cursor?: Cursor;
 
-        @doc("Filter by resource ID. For workspace: UUID. For tenant: tenant resource ID (format: {domain}/{org_id}).")
+        @doc("Filter by resource ID. For workspace: UUID. For tenant: tenant resource ID (format: {domain}/{org_id}). Required unless resource.tenant.org_id is provided.")
         @example("550e8400-e29b-41d4-a716-446655440001")
-        @query resource_id: string;
-        @doc("Filter by resource type")
+        @query resource_id?: string;
+        @doc("Filter by resource type. Required unless resource.tenant.org_id is provided.")
         @example(ResourceType.workspace)
-        @query resource_type: ResourceType;
+        @query resource_type?: ResourceType;
+
+        @doc("Org ID of the tenant resource to filter by. Cannot be combined with resource_id. When provided, resource_type is implicitly 'tenant'.")
+        @example("12345678")
+        @query("resource.tenant.org_id") resource_tenant_org_id?: string;
         @doc("Filter by binding subject kind: group or user (principal UUID). There is no granted_subject.* on this endpoint.")
         @example(BindingSubjectType.group)
         @query subject_type?: BindingSubjectType;
@@ -1110,13 +1114,17 @@ namespace RoleBindings {
         }
     })
     @put op update(
-        @doc("Identify the resource ID for the set of role bindings to replace. For workspace: UUID. For tenant: tenant resource ID (format: {domain}/{org_id}).")
+        @doc("Identify the resource ID for the set of role bindings to replace. For workspace: UUID. For tenant: tenant resource ID (format: {domain}/{org_id}). Required unless resource.tenant.org_id is provided.")
         @example("550e8400-e29b-41d4-a716-446655440001")
-        @query resource_id: string;
+        @query resource_id?: string;
 
-        @doc("Identify the resource type for the set of role bindings to replace")
+        @doc("Identify the resource type for the set of role bindings to replace. Required unless resource.tenant.org_id is provided.")
         @example(ResourceType.workspace)
-        @query resource_type: ResourceType;
+        @query resource_type?: ResourceType;
+
+        @doc("Org ID of the tenant resource. Cannot be combined with resource_id. When provided, resource_type is implicitly 'tenant'.")
+        @example("12345678")
+        @query("resource.tenant.org_id") resource_tenant_org_id?: string;
 
         @doc("Identify the subject ID for the set of role bindings to replace")
         @example("550e8400-e29b-41d4-a716-446655440004")

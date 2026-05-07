@@ -350,8 +350,8 @@
           {
             "name": "resource_id",
             "in": "query",
-            "required": true,
-            "description": "Filter by resource ID. For workspace: UUID. For tenant: tenant resource ID (format: {domain}/{org_id}).",
+            "required": false,
+            "description": "Filter by resource ID. For workspace: UUID. For tenant: tenant resource ID (format: {domain}/{org_id}). Required unless resource.tenant.org_id is provided.",
             "schema": {
               "type": "string"
             },
@@ -360,10 +360,20 @@
           {
             "name": "resource_type",
             "in": "query",
-            "required": true,
-            "description": "Filter by resource type",
+            "required": false,
+            "description": "Filter by resource type. Required unless resource.tenant.org_id is provided.",
             "schema": {
               "$ref": "#/components/schemas/ResourceType"
+            },
+            "explode": false
+          },
+          {
+            "name": "resource.tenant.org_id",
+            "in": "query",
+            "required": false,
+            "description": "Org ID of the tenant resource to filter by. Cannot be combined with resource_id. When provided, resource_type is implicitly 'tenant'.",
+            "schema": {
+              "type": "string"
             },
             "explode": false
           },
@@ -628,8 +638,8 @@
           {
             "name": "resource_id",
             "in": "query",
-            "required": true,
-            "description": "Identify the resource ID for the set of role bindings to replace. For workspace: UUID. For tenant: tenant resource ID (format: {domain}/{org_id}).",
+            "required": false,
+            "description": "Identify the resource ID for the set of role bindings to replace. For workspace: UUID. For tenant: tenant resource ID (format: {domain}/{org_id}). Required unless resource.tenant.org_id is provided.",
             "schema": {
               "type": "string"
             },
@@ -638,10 +648,20 @@
           {
             "name": "resource_type",
             "in": "query",
-            "required": true,
-            "description": "Identify the resource type for the set of role bindings to replace",
+            "required": false,
+            "description": "Identify the resource type for the set of role bindings to replace. Required unless resource.tenant.org_id is provided.",
             "schema": {
               "$ref": "#/components/schemas/ResourceType"
+            },
+            "explode": false
+          },
+          {
+            "name": "resource.tenant.org_id",
+            "in": "query",
+            "required": false,
+            "description": "Org ID of the tenant resource. Cannot be combined with resource_id. When provided, resource_type is implicitly 'tenant'.",
+            "schema": {
+              "type": "string"
             },
             "explode": false
           },
