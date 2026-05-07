@@ -70,6 +70,13 @@ else:
         "args": [],
     }
 
+if settings.PARITY_CHECK_ENABLED:
+    app.conf.beat_schedule["parity-access-checks"] = {
+        "task": "management.tasks.run_parity_access_checks_in_worker",
+        "schedule": settings.PARITY_CHECK_INTERVAL_SECONDS,
+        "args": [],
+    }
+
 # Load task modules from all registered Django app configs.
 app.autodiscover_tasks()
 
