@@ -3207,7 +3207,8 @@ class MCPInvestigateTamAccessTests(MCPToolTestMixin, IdentityRequest):
         tool_output = self._get_tool_output(response)
         self.assertEqual(len(tool_output["requests"]), 1)
         self.assertIn("days_remaining", tool_output["requests"][0])
-        self.assertEqual(tool_output["requests"][0]["days_remaining"], 6)
+        # Allow 5 or 6 days due to timing between test setup and tool execution
+        self.assertIn(tool_output["requests"][0]["days_remaining"], [5, 6])
 
     @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
     def test_investigate_tam_access_permissions_by_application(self, mock_proxy):

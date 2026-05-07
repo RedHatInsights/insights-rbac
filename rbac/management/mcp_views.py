@@ -1155,13 +1155,11 @@ def investigate_tam_access(
     limit: int = 20,
 ) -> str:
     """Investigate TAM cross-account access by examining approved requests, roles, and permissions."""
-    tenant = getattr(request, "tenant", None)
-    if not tenant:
-        return json.dumps({"error": "No tenant context available"})
-
     org_id = getattr(request.user, "org_id", None)
     if not org_id:
         return json.dumps({"error": "No organization context available"})
+
+    now = datetime.now(timezone.utc)
 
     # Query cross-account requests targeting this org
     queryset = CrossAccountRequest.objects.filter(target_org=org_id).prefetch_related(
@@ -1173,7 +1171,6 @@ def investigate_tam_access(
 
     # For approved requests, only show currently active ones
     if status == "approved":
-        now = datetime.now(timezone.utc)
         queryset = queryset.filter(start_date__lte=now, end_date__gte=now)
 
     queryset = queryset.order_by("-created")[:limit]
@@ -1194,18 +1191,22 @@ def investigate_tam_access(
 
     # Get requester info from BOP for all user_ids
     user_ids = list({car.user_id for car in requests_list})
-    proxy = PrincipalProxy()
-    bop_resp = proxy.request_filtered_principals(
-        user_ids, org_id=None, options={"query_by": "user_id", "return_id": True}
-    )
     user_info_map: dict[str, dict[str, Any]] = {}
-    for principal in bop_resp.get("data", []):
-        user_info_map[str(principal.get("user_id", ""))] = {
-            "first_name": principal.get("first_name", ""),
-            "last_name": principal.get("last_name", ""),
-            "email": principal.get("email", ""),
-            "username": principal.get("username", ""),
-        }
+    try:
+        proxy = PrincipalProxy()
+        bop_resp = proxy.request_filtered_principals(
+            user_ids, org_id=None, options={"query_by": "user_id", "return_id": True}
+        )
+        if bop_resp.get("status_code") == 200:
+            for principal in bop_resp.get("data", []):
+                user_info_map[str(principal.get("user_id", ""))] = {
+                    "first_name": principal.get("first_name", ""),
+                    "last_name": principal.get("last_name", ""),
+                    "email": principal.get("email", ""),
+                    "username": principal.get("username", ""),
+                }
+    except Exception:
+        logger.warning("mcp: failed to fetch requester info from BOP", exc_info=True)
 
     # Filter by requester name/email if provided
     filtered_requests = requests_list
@@ -1237,7 +1238,6 @@ def investigate_tam_access(
         )
 
     # Build detailed response
-    now = datetime.now(timezone.utc)
     results: list[dict[str, Any]] = []
     all_permissions_granted: set[str] = set()
     required_perm_found = False
