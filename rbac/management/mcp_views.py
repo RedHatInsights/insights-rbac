@@ -58,6 +58,7 @@ from redis import Redis, exceptions as redis_exceptions
 
 from api.common import RH_IDENTITY_HEADER
 from api.cross_access.view import CrossAccountRequestViewSet
+from api.models import CrossAccountRequest
 from api.status.view import status as status_view_fn
 
 # Cache view functions — .as_view() returns a new callable each time,
@@ -1127,6 +1128,209 @@ def get_cross_account_request(
     """Get a single cross-account request by delegating to CrossAccountRequestViewSet."""
     path = reverse("v1_api:cross-detail", kwargs={"pk": request_id})
     return _call_view(request, _cross_account_detail_view, path, {}, pk=request_id)
+
+
+@register_tool(
+    description=(
+        "Investigate TAM (Technical Account Manager) cross-account access. Use this when a TAM "
+        "or external user reports they cannot access a feature in your organization's console. "
+        "This tool fetches approved cross-account requests, shows what roles were granted, "
+        "lists all permissions those roles provide, and identifies potential permission gaps. "
+        "SCENARIO: 'TAM Rachel can't see the subscription watch dashboard' → call "
+        "investigate_tam_access(requester_name='Rachel') to see what roles/permissions she has. "
+        "Set 'required_permission' to check if a specific permission is granted (e.g., "
+        "'subscriptions:watch:read'). The tool will report whether that permission is present. "
+        "Returns: {requests: [{request_id, status, end_date, days_remaining, requester_info, "
+        "roles: [{name, permissions: [...]}], permission_summary}], analysis}."
+    ),
+    requires_auth=True,
+)
+def investigate_tam_access(
+    request: HttpRequest,
+    *,
+    requester_name: str = "",
+    requester_email: str = "",
+    status: str = "approved",
+    required_permission: str = "",
+    limit: int = 20,
+) -> str:
+    """Investigate TAM cross-account access by examining approved requests, roles, and permissions."""
+    tenant = getattr(request, "tenant", None)
+    if not tenant:
+        return json.dumps({"error": "No tenant context available"})
+
+    org_id = getattr(request.user, "org_id", None)
+    if not org_id:
+        return json.dumps({"error": "No organization context available"})
+
+    # Query cross-account requests targeting this org
+    queryset = CrossAccountRequest.objects.filter(target_org=org_id).prefetch_related(
+        "roles", "roles__access__permission"
+    )
+
+    if status:
+        queryset = queryset.filter(status=status)
+
+    # For approved requests, only show currently active ones
+    if status == "approved":
+        now = datetime.now(timezone.utc)
+        queryset = queryset.filter(start_date__lte=now, end_date__gte=now)
+
+    queryset = queryset.order_by("-created")[:limit]
+    requests_list = list(queryset)
+
+    if not requests_list:
+        return json.dumps(
+            {
+                "requests": [],
+                "analysis": {
+                    "total_active_requests": 0,
+                    "message": f"No {status} cross-account requests found for this organization.",
+                    "hint": "Use list_cross_account_requests(query_by='target_org', status='pending') "
+                    "to check for pending requests, or status='expired' for expired ones.",
+                },
+            }
+        )
+
+    # Get requester info from BOP for all user_ids
+    user_ids = list({car.user_id for car in requests_list})
+    proxy = PrincipalProxy()
+    bop_resp = proxy.request_filtered_principals(
+        user_ids, org_id=None, options={"query_by": "user_id", "return_id": True}
+    )
+    user_info_map: dict[str, dict[str, Any]] = {}
+    for principal in bop_resp.get("data", []):
+        user_info_map[str(principal.get("user_id", ""))] = {
+            "first_name": principal.get("first_name", ""),
+            "last_name": principal.get("last_name", ""),
+            "email": principal.get("email", ""),
+            "username": principal.get("username", ""),
+        }
+
+    # Filter by requester name/email if provided
+    filtered_requests = requests_list
+    if requester_name or requester_email:
+        filtered_requests = []
+        requester_name_lower = requester_name.lower() if requester_name else ""
+        requester_email_lower = requester_email.lower() if requester_email else ""
+        for car in requests_list:
+            info = user_info_map.get(car.user_id, {})
+            full_name = f"{info.get('first_name', '')} {info.get('last_name', '')}".lower()
+            email = info.get("email", "").lower()
+            if requester_name_lower and requester_name_lower in full_name:
+                filtered_requests.append(car)
+            elif requester_email_lower and requester_email_lower in email:
+                filtered_requests.append(car)
+
+    if not filtered_requests:
+        return json.dumps(
+            {
+                "requests": [],
+                "analysis": {
+                    "total_active_requests": len(requests_list),
+                    "filtered_count": 0,
+                    "message": f"No cross-account requests found matching name='{requester_name}' "
+                    f"or email='{requester_email}'.",
+                    "hint": "Call investigate_tam_access() without filters to see all active requests.",
+                },
+            }
+        )
+
+    # Build detailed response
+    now = datetime.now(timezone.utc)
+    results: list[dict[str, Any]] = []
+    all_permissions_granted: set[str] = set()
+    required_perm_found = False
+    required_perm_role: str | None = None
+
+    for car in filtered_requests:
+        days_remaining = (car.end_date - now).days if car.end_date else None
+        requester_info = user_info_map.get(car.user_id, {"user_id": car.user_id})
+
+        roles_data: list[dict[str, Any]] = []
+        for role in car.roles.all():
+            permissions_list: list[str] = []
+            for access in role.access.all():
+                if access.permission:
+                    perm_str = access.permission.permission
+                    permissions_list.append(perm_str)
+                    all_permissions_granted.add(perm_str)
+                    # Check if this matches the required permission
+                    if required_permission and _permission_matches(perm_str, required_permission):
+                        required_perm_found = True
+                        required_perm_role = role.display_name or role.name
+
+            roles_data.append(
+                {
+                    "uuid": str(role.uuid),
+                    "name": role.name,
+                    "display_name": role.display_name or role.name,
+                    "description": role.description or "",
+                    "system": getattr(role, "system", False),
+                    "permission_count": len(permissions_list),
+                    "permissions": sorted(permissions_list),
+                }
+            )
+
+        results.append(
+            {
+                "request_id": str(car.request_id),
+                "status": car.status,
+                "start_date": car.start_date.strftime("%Y-%m-%d") if car.start_date else None,
+                "end_date": car.end_date.strftime("%Y-%m-%d") if car.end_date else None,
+                "days_remaining": days_remaining,
+                "created": car.created.strftime("%Y-%m-%d") if car.created else None,
+                "requester_info": requester_info,
+                "roles": roles_data,
+                "role_count": len(roles_data),
+                "total_permissions": sum(r["permission_count"] for r in roles_data),
+            }
+        )
+
+    # Group permissions by application for summary
+    perm_by_app: dict[str, list[str]] = {}
+    for perm in all_permissions_granted:
+        parts = perm.split(":")
+        if len(parts) >= 1:
+            app = parts[0]
+            if app not in perm_by_app:
+                perm_by_app[app] = []
+            perm_by_app[app].append(perm)
+
+    # Build analysis
+    analysis: dict[str, Any] = {
+        "total_requests_found": len(results),
+        "unique_permissions_granted": len(all_permissions_granted),
+        "permissions_by_application": {app: sorted(perms) for app, perms in sorted(perm_by_app.items())},
+    }
+
+    if required_permission:
+        if required_perm_found:
+            analysis["required_permission_check"] = {
+                "permission": required_permission,
+                "granted": True,
+                "via_role": required_perm_role,
+            }
+        else:
+            # Try to suggest what permission might be needed
+            required_parts = required_permission.split(":")
+            app = required_parts[0] if len(required_parts) >= 1 else ""
+
+            similar_perms = [p for p in all_permissions_granted if p.startswith(f"{app}:")]
+            analysis["required_permission_check"] = {
+                "permission": required_permission,
+                "granted": False,
+                "similar_permissions_granted": sorted(similar_perms) if similar_perms else [],
+                "hint": f"The permission '{required_permission}' is NOT granted. "
+                + (
+                    f"However, these {app} permissions are granted: {similar_perms}. "
+                    if similar_perms
+                    else f"No {app} permissions are currently granted. "
+                )
+                + "Check with the feature team to confirm what permission is actually required.",
+            }
+
+    return json.dumps({"requests": results, "analysis": analysis}, default=str)
 
 
 @register_tool(

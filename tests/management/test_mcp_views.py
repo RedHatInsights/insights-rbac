@@ -40,7 +40,7 @@ from rest_framework import status
 from rest_framework.test import APIClient
 from tests.identity_request import IdentityRequest
 
-from api.models import Tenant
+from api.models import CrossAccountRequest, Tenant
 from rbac import urls
 
 
@@ -670,6 +670,7 @@ class MCPViewTests(MCPToolTestMixin, IdentityRequest):
             "list_group_roles",
             "list_cross_account_requests",
             "get_cross_account_request",
+            "investigate_tam_access",
             "list_workspaces",
             "get_workspace",
             "check_user_permission",
@@ -3007,3 +3008,214 @@ class MCPTimeoutTests(MCPToolTestMixin, IdentityRequest):
         data = response.json()
         self.assertIn("result", data)
         self.assertFalse(data["result"]["isError"])
+
+
+@override_settings(BYPASS_BOP_VERIFICATION=True)
+class MCPInvestigateTamAccessTests(MCPToolTestMixin, IdentityRequest):
+    """Tests for the investigate_tam_access MCP tool."""
+
+    def setUp(self):
+        """Set up investigate_tam_access tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+
+        # Create a public tenant for system roles
+        self.public_tenant, _ = Tenant.objects.get_or_create(tenant_name="public")
+
+        # Create a system role with permissions
+        self.system_role = Role.objects.create(
+            name="Subscriptions viewer",
+            display_name="Subscriptions viewer",
+            description="View subscription data",
+            system=True,
+            tenant=self.public_tenant,
+        )
+        self.perm = Permission.objects.create(
+            application="subscriptions",
+            resource_type="products",
+            verb="read",
+            permission="subscriptions:products:read",
+            tenant=self.public_tenant,
+        )
+        self.access = Access.objects.create(permission=self.perm, role=self.system_role, tenant=self.public_tenant)
+
+        # Create a cross-account request
+        self.car = CrossAccountRequest.objects.create(
+            target_org=self.customer_data["org_id"],
+            user_id="12345",
+            status="approved",
+            start_date=timezone.now() - timezone.timedelta(days=5),
+            end_date=timezone.now() + timezone.timedelta(days=6),
+        )
+        self.car.roles.add(self.system_role)
+
+    def tearDown(self):
+        """Tear down investigate_tam_access tests."""
+        CrossAccountRequest.objects.all().delete()
+        Access.objects.filter(tenant=self.public_tenant).delete()
+        Permission.objects.filter(tenant=self.public_tenant).delete()
+        Role.objects.filter(tenant=self.public_tenant).delete()
+        super().tearDown()
+
+    def test_investigate_tam_access_success(self):
+        """Positive: investigate_tam_access returns cross-account request data."""
+        response = self._call_tool("investigate_tam_access")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertIn("requests", tool_output)
+        self.assertIn("analysis", tool_output)
+
+    def test_investigate_tam_access_without_auth_returns_error(self):
+        """Permission: investigate_tam_access without auth returns auth error."""
+        response = self._call_tool("investigate_tam_access", use_auth=False)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
+    def test_investigate_tam_access_returns_roles_and_permissions(self, mock_proxy):
+        """Positive: investigate_tam_access returns roles and their permissions."""
+        mock_proxy.return_value = {
+            "status_code": 200,
+            "data": [
+                {
+                    "user_id": "12345",
+                    "first_name": "Rachel",
+                    "last_name": "TAM",
+                    "email": "rachel@redhat.com",
+                    "username": "rtam",
+                }
+            ],
+        }
+
+        response = self._call_tool("investigate_tam_access")
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(len(tool_output["requests"]), 1)
+        request_data = tool_output["requests"][0]
+        self.assertEqual(request_data["status"], "approved")
+        self.assertIn("roles", request_data)
+        self.assertEqual(len(request_data["roles"]), 1)
+        self.assertEqual(request_data["roles"][0]["display_name"], "Subscriptions viewer")
+        self.assertIn("subscriptions:products:read", request_data["roles"][0]["permissions"])
+
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
+    def test_investigate_tam_access_filter_by_name(self, mock_proxy):
+        """Positive: investigate_tam_access filters by requester name."""
+        mock_proxy.return_value = {
+            "status_code": 200,
+            "data": [
+                {
+                    "user_id": "12345",
+                    "first_name": "Rachel",
+                    "last_name": "TAM",
+                    "email": "rachel@redhat.com",
+                    "username": "rtam",
+                }
+            ],
+        }
+
+        response = self._call_tool("investigate_tam_access", {"requester_name": "Rachel"})
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(len(tool_output["requests"]), 1)
+
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
+    def test_investigate_tam_access_filter_by_name_no_match(self, mock_proxy):
+        """Negative: investigate_tam_access returns empty when name doesn't match."""
+        mock_proxy.return_value = {
+            "status_code": 200,
+            "data": [
+                {
+                    "user_id": "12345",
+                    "first_name": "Rachel",
+                    "last_name": "TAM",
+                    "email": "rachel@redhat.com",
+                    "username": "rtam",
+                }
+            ],
+        }
+
+        response = self._call_tool("investigate_tam_access", {"requester_name": "John"})
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(len(tool_output["requests"]), 0)
+        self.assertIn("filtered_count", tool_output["analysis"])
+
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
+    def test_investigate_tam_access_required_permission_found(self, mock_proxy):
+        """Positive: investigate_tam_access identifies when required permission is granted."""
+        mock_proxy.return_value = {"status_code": 200, "data": []}
+
+        response = self._call_tool(
+            "investigate_tam_access",
+            {"required_permission": "subscriptions:products:read"},
+        )
+
+        tool_output = self._get_tool_output(response)
+        self.assertIn("required_permission_check", tool_output["analysis"])
+        self.assertTrue(tool_output["analysis"]["required_permission_check"]["granted"])
+        self.assertEqual(
+            tool_output["analysis"]["required_permission_check"]["via_role"],
+            "Subscriptions viewer",
+        )
+
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
+    def test_investigate_tam_access_required_permission_not_found(self, mock_proxy):
+        """Negative: investigate_tam_access identifies when required permission is NOT granted."""
+        mock_proxy.return_value = {"status_code": 200, "data": []}
+
+        response = self._call_tool(
+            "investigate_tam_access",
+            {"required_permission": "subscriptions:watch:read"},
+        )
+
+        tool_output = self._get_tool_output(response)
+        self.assertIn("required_permission_check", tool_output["analysis"])
+        self.assertFalse(tool_output["analysis"]["required_permission_check"]["granted"])
+        self.assertIn("similar_permissions_granted", tool_output["analysis"]["required_permission_check"])
+        self.assertIn(
+            "subscriptions:products:read",
+            tool_output["analysis"]["required_permission_check"]["similar_permissions_granted"],
+        )
+
+    def test_investigate_tam_access_no_requests(self):
+        """Negative: investigate_tam_access returns empty when no requests exist."""
+        # Delete the test cross-account request
+        self.car.delete()
+
+        response = self._call_tool("investigate_tam_access")
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(len(tool_output["requests"]), 0)
+        self.assertIn("message", tool_output["analysis"])
+        self.assertIn("hint", tool_output["analysis"])
+
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
+    def test_investigate_tam_access_shows_days_remaining(self, mock_proxy):
+        """Positive: investigate_tam_access shows days remaining for approved requests."""
+        mock_proxy.return_value = {"status_code": 200, "data": []}
+
+        response = self._call_tool("investigate_tam_access")
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(len(tool_output["requests"]), 1)
+        self.assertIn("days_remaining", tool_output["requests"][0])
+        self.assertEqual(tool_output["requests"][0]["days_remaining"], 6)
+
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
+    def test_investigate_tam_access_permissions_by_application(self, mock_proxy):
+        """Positive: investigate_tam_access groups permissions by application."""
+        mock_proxy.return_value = {"status_code": 200, "data": []}
+
+        response = self._call_tool("investigate_tam_access")
+
+        tool_output = self._get_tool_output(response)
+        self.assertIn("permissions_by_application", tool_output["analysis"])
+        self.assertIn("subscriptions", tool_output["analysis"]["permissions_by_application"])
