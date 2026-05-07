@@ -1228,6 +1228,57 @@ class V2RoleSeedingTests(IdentityRequest):
             "Non-default role should have no parents",
         )
 
+    def test_non_default_role_scope_change_does_not_trigger_migration(self):
+        """Test that roles without bindings don't trigger migration.
+
+        Migration is triggered based on whether a role has actual bindings in V1 tenants,
+        not based on whether it's a default role. Non-default roles typically don't have
+        bindings (since they lack automatic bindings via default groups), so changing their
+        scope doesn't trigger migration. If a non-default role HAD manual bindings, those
+        would be migrated.
+        """
+        seed_group()
+
+        # First seeding with role in DEFAULT scope
+        with self.settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS=""):
+            seed_roles()
+
+        # Find a non-default role (neither platform_default nor admin_default) that has permissions
+        # Use a filter that ensures we get a role with permissions to test
+        non_default_role = (
+            Role.objects.public_tenant_only()
+            .filter(platform_default=False, admin_default=False, system=True, access__isnull=False)
+            .distinct()
+            .first()
+        )
+        self.assertIsNotNone(
+            non_default_role,
+            "Expected at least one seeded non-default system role with permissions in test data",
+        )
+
+        # Mock the migration function
+        with patch("management.role.definer._migrate_bindings_for_scope_change") as mock_migrate:
+            # Change the scope for this role's permissions
+            role_permissions = list(non_default_role.access.select_related("permission"))
+            self.assertGreater(len(role_permissions), 0, f"Role {non_default_role.name} should have permissions")
+            permission_pattern = f"{role_permissions[0].permission.application}:*:*"
+
+            # Re-seed with the permission now in ROOT scope
+            with self.settings(ROOT_SCOPE_PERMISSIONS=permission_pattern, TENANT_SCOPE_PERMISSIONS=""):
+                seed_roles()
+
+            # Verify that migration was NOT called for the non-default role
+            # Non-default roles without bindings should not trigger migration.
+            # The new _determine_old_scopes checks for actual bindings in V1 tenants.
+            # Since this test doesn't create any bindings for the non-default role,
+            # _determine_old_scopes returns empty set and migration is skipped.
+            migration_called_for_role = any(call[0][0] == non_default_role for call in mock_migrate.call_args_list)
+            self.assertFalse(
+                migration_called_for_role,
+                f"Migration should NOT be called for non-default role {non_default_role.name} "
+                "because it has no bindings to migrate (only roles with actual bindings need migration)",
+            )
+
     def test_v2_role_permissions_updated_when_v1_changes(self):
         """Test that V2 role permissions are updated when V1 role permissions change."""
         seed_group()
