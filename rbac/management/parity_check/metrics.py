@@ -29,7 +29,7 @@ parity_checks_total = Counter(
 parity_discrepancies_total = Counter(
     "rbac_parity_discrepancies_total",
     "Total number of parity discrepancies found between RBAC and PDP",
-    ["discrepancy_type", "org_id"],
+    ["discrepancy_type"],
 )
 
 # Histogram for parity check duration

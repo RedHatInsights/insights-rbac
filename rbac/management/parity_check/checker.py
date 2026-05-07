@@ -115,12 +115,13 @@ class ParityAccessChecker:
 
         tenants = [tm.tenant for tm in tenant_mappings if tm.tenant.org_id is not None]
 
-        if len(tenants) > self.tenant_sample_size:
+        total_count = len(tenants)
+        if total_count > self.tenant_sample_size:
             tenants = random.sample(tenants, self.tenant_sample_size)
             logger.info(
                 "Sampled %d tenants from %d bootstrapped tenants",
                 self.tenant_sample_size,
-                len(tenants),
+                total_count,
             )
 
         return tenants
@@ -292,13 +293,13 @@ class ParityAccessChecker:
             logger.exception(error_msg)
             sentry_sdk.capture_exception(e)
             parity_job_runs_total.labels(status="error").inc()
+            job_result.duration_seconds = time.perf_counter() - job_start_time
+            return job_result
 
         job_result.duration_seconds = time.perf_counter() - job_start_time
 
         # Record job completion
-        if job_result.errors:
-            parity_job_runs_total.labels(status="completed_with_errors").inc()
-        elif job_result.discrepancies:
+        if job_result.discrepancies:
             parity_job_runs_total.labels(status="completed_with_discrepancies").inc()
         else:
             parity_job_runs_total.labels(status="success").inc()
@@ -350,9 +351,7 @@ class ParityAccessChecker:
     def _log_discrepancy(self, result: ParityCheckResult) -> None:
         """Log a discrepancy and record metrics."""
         if result.only_in_rbac:
-            parity_discrepancies_total.labels(discrepancy_type="rbac_only", org_id=result.org_id).inc(
-                len(result.only_in_rbac)
-            )
+            parity_discrepancies_total.labels(discrepancy_type="rbac_only").inc(len(result.only_in_rbac))
 
             # Log for Kibana with structured fields
             logger.warning(
@@ -365,9 +364,7 @@ class ParityAccessChecker:
             )
 
         if result.only_in_pdp:
-            parity_discrepancies_total.labels(discrepancy_type="pdp_only", org_id=result.org_id).inc(
-                len(result.only_in_pdp)
-            )
+            parity_discrepancies_total.labels(discrepancy_type="pdp_only").inc(len(result.only_in_pdp))
 
             # Log for Kibana with structured fields
             logger.warning(
