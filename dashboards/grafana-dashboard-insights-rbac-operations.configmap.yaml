@@ -4947,7 +4947,7 @@ data:
             "options": [],
             "query": "prometheus",
             "refresh": 1,
-            "regex": "/.*crc[s|p].*/",
+            "regex": "/.*(crc|hcc)[s|p].*/",
             "type": "datasource"
           },
           {
@@ -4997,7 +4997,7 @@ data:
       "timezone": "",
       "title": "Operations - Rbac w/CPU",
       "uid": "TjP_nMWMk",
-      "version": 11,
+      "version": 12,
       "weekStart": ""
     }
 kind: ConfigMap

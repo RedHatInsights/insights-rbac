@@ -32,6 +32,7 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEvent,
     ReplicationEventType,
     WorkspaceEvent,
+    WorkspaceEventStream,
 )
 from management.role.model import BindingMapping, Role
 from management.role.v2_model import SeededRoleV2
@@ -54,7 +55,7 @@ class _LocalReplicator(RelationReplicator):
         self._handler.relations_to_remove.extend(event.remove)
         self._handler.relations_to_add.extend(event.add)
 
-    def replicate_workspace(self, event: WorkspaceEvent):
+    def replicate_workspace(self, event: WorkspaceEvent, event_stream: WorkspaceEventStream):
         raise NotImplementedError("workspace events not unsupported")
 
 
@@ -154,6 +155,7 @@ class RelationApiDualWriteCrossAccessHandler(RelationApiDualWriteSubjectHandler)
             replicator=_LocalReplicator(self),
             principal_source=str(self._source_key()),
             allow_external_subjects=True,
+            skip_scope_validation=True,
         )
 
     def _add_car_roles_v1(self, roles: set[Role]):

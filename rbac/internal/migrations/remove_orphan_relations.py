@@ -200,20 +200,24 @@ def _collect_remote_relations_for_binding(
 
 def _collect_role_resource_relations(role_id: str, read_tuples_typed: _ReadTuplesTyped) -> list[RelationTuple]:
     """
-    Collect all relations whose resource is rbac/role:<role_id> (permissions, owner, etc.).
-
-    Permission-only reads miss tuples such as ``#owner@rbac/tenant:...`` that V1 dual-write creates
-    alongside permission edges; those must be included when reconciling or removing a deleted role.
+    Collect all known tuples whose resource is rbac/role:<role_id> (permissions and owner).
     """
-    return list(
-        read_tuples_typed(
+    return [
+        *read_tuples_typed(
             resource_type="role",
             resource_id=role_id,
             relation="",
-            subject_type="",
+            subject_type="principal",
+            subject_id="*",
+        ),
+        *read_tuples_typed(
+            resource_type="role",
+            resource_id=role_id,
+            relation="owner",
+            subject_type="tenant",
             subject_id="",
-        )
-    )
+        ),
+    ]
 
 
 @dataclasses.dataclass
@@ -418,6 +422,7 @@ def _remove_orphaned_custom_role_relations(
             roles_by_id: dict[str, RoleV2] = {
                 str(r.uuid): r
                 for r in RoleV2.objects.filter(uuid__in=custom_role_ids)
+                .select_related("tenant")
                 .prefetch_related("permissions")
                 .select_for_update(of=["self"])
             }
@@ -430,15 +435,7 @@ def _remove_orphaned_custom_role_relations(
                 if local_role is None:
                     expected_relations: set[RelationTuple] = set()
                 else:
-                    expected_relations = {
-                        _as_relation_tuple(role_permission_tuple(role_id=role_id, permission=p.v2_string()))
-                        for p in local_role.permissions.all()
-                    }
-                    tenant_resource_id = local_role.tenant.tenant_resource_id()
-                    if tenant_resource_id:
-                        expected_relations.add(
-                            _as_relation_tuple(role_owner_relationship(local_role.uuid, tenant_resource_id))
-                        )
+                    expected_relations = set(RoleV2.tuples_for_create(local_role))
 
                 orphan_relations = actual_relations - expected_relations
 

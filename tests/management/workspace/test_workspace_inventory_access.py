@@ -1381,13 +1381,13 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch("management.workspace.utils.access.PrincipalProxy")
     @patch(
-        "management.workspace.utils.access.get_principal_from_request",
+        "management.workspace.utils.access.get_principal_for_auth",
         return_value=None,
     )
     def test_workspace_access_with_none_principal_fallback_to_it_service(
         self, mock_get_principal, mock_proxy_class, mock_channel
     ):
-        """Test workspace access when get_principal_from_request returns None, falls back to IT service."""
+        """Test workspace access when get_principal_for_auth returns None, falls back to IT service."""
         # Mock PrincipalProxy to return user_id from IT service
         test_user_id = "it-service-user-456"
         mock_proxy = MagicMock()
@@ -1437,7 +1437,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
     @patch("management.workspace.utils.access.PrincipalProxy")
     @patch(
-        "management.workspace.utils.access.get_principal_from_request",
+        "management.workspace.utils.access.get_principal_for_auth",
         return_value=None,
     )
     def test_workspace_access_with_none_principal_it_service_failure(self, mock_get_principal, mock_proxy_class):
@@ -1474,7 +1474,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
     @patch("management.workspace.utils.access.PrincipalProxy")
     @patch(
-        "management.workspace.utils.access.get_principal_from_request",
+        "management.workspace.utils.access.get_principal_for_auth",
         return_value=None,
     )
     def test_workspace_access_with_none_principal_it_service_empty_response(
@@ -1512,11 +1512,11 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             )
 
     @patch(
-        "management.workspace.utils.access.get_principal_from_request",
+        "management.workspace.utils.access.get_principal_for_auth",
         return_value=None,
     )
     def test_workspace_access_with_none_principal_and_no_username(self, mock_get_principal):
-        """Test workspace access when get_principal_from_request returns None and no username available."""
+        """Test workspace access when get_principal_for_auth returns None and no username available."""
 
         # Create a mock request with no username and no user_id
         mock_request = Mock()
@@ -1536,11 +1536,11 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             mock_logger.warning.assert_called_once_with("No username available from request.user, denying access")
 
     @patch(
-        "management.workspace.utils.access.get_principal_from_request",
+        "management.workspace.utils.access.get_principal_for_auth",
         return_value=None,
     )
     def test_workspace_access_with_none_principal_and_no_org_id(self, mock_get_principal):
-        """Test workspace access when get_principal_from_request returns None and no org_id available."""
+        """Test workspace access when get_principal_for_auth returns None and no org_id available."""
 
         # Create a mock request with username but no org_id or user_id
         mock_request = Mock()
@@ -1563,7 +1563,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch("management.workspace.utils.access.PrincipalProxy")
     @patch(
-        "management.workspace.utils.access.get_principal_from_request",
+        "management.workspace.utils.access.get_principal_for_auth",
         return_value=None,
     )
     def test_workspace_access_with_none_principal_logs_debug_for_it_service(
@@ -2800,7 +2800,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             self.assertFalse(request_proto.HasField("consistency"))
 
     @patch("management.inventory_client.create_client_channel_inventory")
-    @patch("management.workspace.utils.access.get_principal_from_request")
+    @patch("management.workspace.utils.access.get_principal_for_auth")
     def test_is_user_allowed_v2_reloads_tenant_for_fresh_consistency_token(self, mock_get_principal, mock_channel):
         """Test that is_user_allowed_v2 reloads tenant from DB to get the latest consistency token.
 

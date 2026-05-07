@@ -19,7 +19,6 @@
 
 import json
 import logging
-import uuid
 from typing import Optional
 
 import requests
@@ -93,8 +92,10 @@ from management.tasks import (
     fix_missing_binding_base_tuples_in_worker,
     migrate_binding_scope_in_worker,
     migrate_data_in_worker,
+    recompute_tenant_role_bindings_in_worker,
     remove_deleted_workspace_bindings_in_worker,
     remove_unassigned_system_binding_mappings_in_worker,
+    replicate_default_workspaces_in_worker,
     run_migrations_in_worker,
     run_ocm_performance_in_worker,
     run_seeds_in_worker,
@@ -109,7 +110,6 @@ from management.utils import (
     groups_for_principal,
 )
 from management.workspace.model import Workspace
-from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspaceHandler
 from management.workspace.serializer import WorkspaceSerializer
 from migration_tool.in_memory_tuples import InMemoryRelationReplicator, InMemoryTuples
 from rest_framework import status
@@ -2096,105 +2096,6 @@ def check_role(request, role_uuid):
         )
 
 
-@require_http_methods(["GET", "DELETE"])
-def workspace_removal(request):
-    """
-    Get or delete standard workspaces.
-
-    GET /_private/api/utils/workspace/
-        ?detail=false (default) : return count only
-        ?detail=true            : return list of standard workspaces
-
-    DELETE /_private/api/utils/workspace/
-        ?id=<workspace_id>                  : delete a single workspace
-        (no id)                             : delete all standard workspaces
-        ?without_child_only=false (default) : delete all standard workspaces
-        ?without_child_only=true            : delete only standard workspaces without children
-    """
-    query_params = request.GET
-    logger.info(f"Workspace list or removal: {request.method} {request.user.username}")
-
-    if request.method == "DELETE" and not destructive_ok("api"):
-        return HttpResponse("Destructive operations disallowed.", status=403)
-
-    # GET
-    if request.method == "GET":
-        if query_params.get("detail") == "true":
-            workspaces = Workspace.objects.filter(type=Workspace.Types.STANDARD)
-            serialized_ws = WorkspaceSerializer(workspaces, many=True).data
-            # Add tenant id into response
-            for ws_obj, ws_data in zip(workspaces, serialized_ws):
-                ws_data["tenant_id"] = ws_obj.tenant_id
-            payload = {"count": len(serialized_ws), "data": serialized_ws}
-            return JsonResponse(payload, status=200)
-
-        ws_count = Workspace.objects.filter(type=Workspace.Types.STANDARD).count()
-        return HttpResponse(
-            f"{ws_count} standard workspace(s) eligible for removal.", content_type="text/plain", status=200
-        )
-
-    # DELETE
-    # delete 1 standard workspace
-    if ws_id := query_params.get("id"):
-        try:
-            uuid.UUID(str(ws_id))
-        except ValueError:
-            return HttpResponse("Invalid workspace id format.", content_type="text/plain", status=400)
-
-        if not Workspace.objects.filter(type=Workspace.Types.STANDARD, id=ws_id).first():
-            return HttpResponse(
-                f"Standard workspace with id='{ws_id}' not found.", content_type="text/plain", status=404
-            )
-
-        if ws := Workspace.objects.filter(type=Workspace.Types.STANDARD, id=ws_id, children__isnull=True).first():
-            try:
-                with transaction.atomic():
-                    dual_write_handler = RelationApiDualWriteWorkspaceHandler(
-                        ws, ReplicationEventType.DELETE_WORKSPACE
-                    )
-                    dual_write_handler.replicate_deleted_workspace(skip_ws_events=True)
-                    ws.delete()
-                logger.info(f"Deleted workspace id='{ws_id}'")
-                return HttpResponse(f"Workspace with id='{ws_id}' deleted.", content_type="text/plain", status=200)
-            except Exception as e:
-                logger.exception(f"Workspace id='{ws_id}' deletion failed: {e}")
-                return HttpResponse(str(e), status=500)
-
-        return HttpResponse(
-            f"Workspace with id='{ws_id}' cannot be removed because it has child workspace.",
-            content_type="text/plain",
-            status=400,
-        )
-
-    # delete all standard workspaces
-    ws_count = Workspace.objects.filter(type=Workspace.Types.STANDARD).count()
-    try:
-        with transaction.atomic():
-            while True:
-                workspaces = Workspace.objects.filter(type=Workspace.Types.STANDARD, children__isnull=True)
-                ws_without_child_count = workspaces.count()
-                if not workspaces:
-                    break
-                for ws in workspaces:
-                    dual_write_handler = RelationApiDualWriteWorkspaceHandler(
-                        ws, ReplicationEventType.DELETE_WORKSPACE
-                    )
-                    dual_write_handler.replicate_deleted_workspace(skip_ws_events=True)
-                    ws.delete()
-                if query_params.get("without_child_only", "") == "true":
-                    return HttpResponse(
-                        f"{ws_without_child_count} workspace(s) deleted, "
-                        f"another {ws_count - ws_without_child_count} standard workspace(s) exist in database.",
-                        content_type="text/plain",
-                        status=200,
-                    )
-        logger.info("All standard workspaces successfully deleted.")
-        return HttpResponse(f"{ws_count} workspace(s) deleted.", content_type="text/plain", status=200)
-    except Exception as e:
-        logger.exception(f"Bulk workspace deletion failed: {e}")
-        return HttpResponse(str(e), status=500)
-
-
 def send_kafka_test_message(request):
     """Send a test Debezium message to the Kafka consumer topic.
 
@@ -2672,4 +2573,55 @@ def mcp_tool_descriptions(request, tool_name=None):
         default_desc = next((t.description or "" for t in _get_tools() if t.name == tool_name), "")
         return JsonResponse(
             {"tool_name": tool_name, "override_description": None, "active_description": default_desc}, status=200
+        )
+
+
+@require_http_methods(["POST"])
+def replicate_default_workspaces(request):
+    """Replicate existing default workspaces.
+
+    POST /_private/api/utils/replicate_default_workspaces/?limit=<limit>
+
+    Replicates existing default workspaces to the outbox using the BULK WorkspaceEventStream.
+
+    If limit is passed, only the specified number of workspaces are replicated. Otherwise, all default workspaces
+    are replicated.
+
+    Returns:
+        JSON response indicating the task has been queued
+    """
+    raw_limit = request.GET.get("limit")
+    limit = int(raw_limit) if raw_limit is not None else None
+
+    try:
+        replicate_default_workspaces_in_worker.delay(limit=limit)
+        return JsonResponse({"message": "Replication enqueued in background worker."}, status=202)
+    except Exception as e:
+        logger.exception("Error replicating default workspaces", exc_info=True)
+        return JsonResponse({"detail": f"Error replicating default workspaces: {str(e)}"}, status=500)
+
+
+@require_http_methods(["POST"])
+def recompute_tenant_role_bindings(request, org_id):
+    """
+    Recompute all role bindings for a tenant.
+
+    POST /_private/api/utils/recompute_tenant_role_bindings/<org_id>/
+
+    This endpoint should be used for V1 tenants that have gotten into an inconsistent V2 state.
+
+    Returns:
+        JSON response indicating the task has been queued
+    """
+    # Validate tenant exists
+    tenant = get_object_or_404(Tenant, org_id=org_id)
+
+    try:
+        recompute_tenant_role_bindings_in_worker.delay(org_id=tenant.org_id)
+        return JsonResponse({"message": "Job enqueued in background worker."}, status=202)
+    except Exception as e:
+        logger.exception(f"Error recomputing role bindings for tenant {org_id}")
+        return JsonResponse(
+            {"detail": f"Error recomputing role bindings for tenant: {str(e)}"},
+            status=500,
         )

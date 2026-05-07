@@ -18,6 +18,7 @@ from django.test import TestCase
 from unittest.mock import Mock
 from api.models import Tenant
 from management.models import Workspace
+from rest_framework import serializers
 from management.workspace.serializer import (
     WorkspaceAncestrySerializer,
     WorkspaceSerializer,
@@ -103,3 +104,24 @@ class WorkspaceSerializerTest(TestCase):
         expected_data = {"name": self.child.name, "parent_id": str(self.parent.id), "id": str(self.child.id)}
 
         self.assertDictEqual(serializer.data, expected_data)
+
+    def test_validate_name_rejects_special_characters(self):
+        """Test that names with disallowed characters are rejected."""
+        serializer = WorkspaceSerializer()
+        for invalid_name in ["ws@name", "ws#name", "ws!name", "ws.name", "ws/name"]:
+            with self.assertRaises(serializers.ValidationError, msg=f"Expected error for '{invalid_name}'"):
+                serializer.validate_name(invalid_name)
+
+    def test_validate_name_accepts_valid_characters(self):
+        """Test that names with allowed characters are accepted."""
+        serializer = WorkspaceSerializer()
+        for valid_name in ["My Workspace", "ws-name", "ws_name", "Workspace 123", "simple"]:
+            result = serializer.validate_name(valid_name)
+            self.assertEqual(result, valid_name)
+
+    def test_validate_name_allows_unchanged_legacy_name(self):
+        """Test that an unchanged legacy name (with special chars) passes validation."""
+        serializer = WorkspaceSerializer(instance=self.child)
+        self.child.name = "legacy@name"
+        result = serializer.validate_name("legacy@name")
+        self.assertEqual(result, "legacy@name")

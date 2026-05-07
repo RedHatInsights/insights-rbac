@@ -29,7 +29,14 @@ from management.atomic_transactions import atomic
 from management.exceptions import NotFoundError, RequiredFieldError
 from management.permission.exceptions import InvalidPermissionDataError
 from management.permission.model import PermissionValue
-from management.permission.scope_service import Scope, permission_scope_cache, scopes_for_resource_type
+from management.permission.scope_service import (
+    SCOPE_DISPLAY_NAME,
+    Scope,
+    default_implicit_resource_service,
+    permission_scope_cache,
+    scope_for_resource,
+    scopes_for_resource_type,
+)
 from management.permission.service import PermissionService
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
@@ -39,7 +46,6 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEvent,
     ReplicationEventType,
 )
-from management.role.relations import role_owner_relationship
 from management.role.v2_exceptions import (
     CustomRoleRequiredError,
     InvalidRolePermissionsError,
@@ -114,6 +120,19 @@ class RoleV2Service:
                     + ", ".join(bad_apps)
                 )
 
+        perms_by_scope: dict[Scope, list[str]] = {}
+        for p in permissions:
+            scope = default_implicit_resource_service.scope_for_permission(p.permission)
+            perms_by_scope.setdefault(scope, []).append(p.permission)
+        if len(perms_by_scope) > 1:
+            details = "; ".join(
+                f"{SCOPE_DISPLAY_NAME[scope]}: {', '.join(sorted(perms))}"
+                for scope, perms in sorted(perms_by_scope.items())
+            )
+            raise InvalidRolePermissionsError(
+                f"All permissions in a role must belong to the same scope. Found: {details}"
+            )
+
         return permissions
 
     @atomic
@@ -136,11 +155,7 @@ class RoleV2Service:
             role.save()
             role.permissions.set(permissions)
 
-            tuples_to_add, _ = CustomRoleV2.replication_tuples(role, new_permissions=permissions)
-
-            tenant_resource_id = tenant.tenant_resource_id()
-            if tenant_resource_id:
-                tuples_to_add.append(role_owner_relationship(role.uuid, tenant_resource_id))
+            tuples_to_add = RoleV2.tuples_for_create(role=role, cached_permissions=permissions)
 
             self._replicator.replicate(
                 ReplicationEvent(
@@ -209,7 +224,7 @@ class RoleV2Service:
             role.save()
             role.permissions.set(permissions)
 
-            tuples_to_add, tuples_to_remove = CustomRoleV2.replication_tuples(
+            tuples_to_add, tuples_to_remove = RoleV2.tuples_for_update(
                 role, old_permissions=old_permissions, new_permissions=permissions
             )
 
@@ -256,16 +271,29 @@ class RoleV2Service:
 
         resource_type = params.get("resource_type")
         if resource_type:
-            queryset = self._filter_by_resource_type(queryset, resource_type)
+            queryset = self._filter_by_resource_type(queryset, resource_type, resource_id=params.get("resource_id"))
 
         name = params.get("name")
         if name:
             queryset = queryset.named(name)
 
+        permission = params.get("permission")
+        if permission:
+            permission_values = [p.strip() for p in permission.split(",") if p.strip()]
+            if permission_values:
+                queryset = queryset.filter(permissions__permission__in=permission_values).distinct()
+
         return queryset
 
-    def _filter_by_resource_type(self, queryset: QuerySet, resource_type: str) -> QuerySet:
+    def _filter_by_resource_type(
+        self, queryset: QuerySet, resource_type: str, resource_id: Optional[uuid.UUID] = None
+    ) -> QuerySet:
         """Filter roles to those whose highest permission scope maps to resource_type.
+
+        For ``resource_type=workspace``:
+        - With no ``resource_id``: only DEFAULT-scoped roles (default workspace and custom workspaces).
+        - With ``resource_id`` the root workspace UUID: only ROOT-scoped roles.
+        - With any other workspace UUID: only DEFAULT-scoped roles.
 
         Uses DB-level filtering with cached Permission-ID-to-Scope mappings to
         avoid loading all roles and their permissions into Python memory.
@@ -273,6 +301,16 @@ class RoleV2Service:
         matching_scopes = scopes_for_resource_type(resource_type)
         if not matching_scopes:
             return queryset.none()
+
+        if resource_type == "workspace":
+            if resource_id is not None:
+                assert self.tenant is not None
+                resolved = scope_for_resource(resource_type, str(resource_id), self.tenant)
+                if resolved is None:
+                    return queryset.none()
+                matching_scopes = {resolved}
+            else:
+                matching_scopes = {Scope.DEFAULT}
 
         higher_non_matching = {s for s in (set(Scope) - matching_scopes) if s > max(matching_scopes)}
 
@@ -322,6 +360,7 @@ class RoleV2Service:
         # necessarily use SERIALIZABLE transactions.
         roles_to_remove = list(
             CustomRoleV2.objects.filter(pk__in=(r.pk for r in roles))
+            .select_related("tenant")
             .prefetch_related("permissions")
             .select_for_update(of=["self"])
         )
@@ -335,20 +374,7 @@ class RoleV2Service:
             binding_pks_to_remove.append(role_binding.pk)
 
         for role in roles_to_remove:
-            to_add, to_remove = CustomRoleV2.replication_tuples(
-                role=role,
-                old_permissions=list(role.permissions.all()),
-                new_permissions=[],
-            )
-
-            if len(to_add) != 0:
-                raise AssertionError("Relations should not be added while deleting roles.")
-
-            relations_to_remove.extend(to_remove)
-
-            tenant_resource_id = role.tenant.tenant_resource_id()
-            if tenant_resource_id:
-                relations_to_remove.append(role_owner_relationship(role.uuid, tenant_resource_id))
+            relations_to_remove.extend(RoleV2.tuples_for_delete(role=role))
 
         self._replicator.replicate(
             ReplicationEvent(

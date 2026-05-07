@@ -31,7 +31,7 @@ from rest_framework.test import APIClient
 from api.models import Tenant
 from management import v2_urls
 from management.audit_log.model import AuditLog
-from management.models import Permission
+from management.models import Permission, Workspace
 from management.permission.scope_service import ImplicitResourceService, PermissionScopeCache
 from management.relation_replicator.noop_replicator import NoopReplicator
 from management.relation_replicator.outbox_replicator import OutboxReplicator
@@ -44,16 +44,16 @@ from management.utils import PRINCIPAL_CACHE, as_uuid
 from rbac import urls
 from tests.identity_request import IdentityRequest
 from tests.v2_util import bootstrap_tenant_for_v2_test
-from unittest.mock import ANY, patch
 
 CACHE_PATCH_TARGET = "management.role.v2_service.permission_scope_cache"
 
 
-def _scope_cache(tenant_perms="", root_perms=""):
+def _scope_cache(tenant_perms="", root_perms="", default_perms=""):
     """Build a PermissionScopeCache backed by a test ImplicitResourceService."""
     scope_service = ImplicitResourceService(
         tenant_scope_permissions=[p.strip() for p in tenant_perms.split(",") if p.strip()],
         root_scope_permissions=[p.strip() for p in root_perms.split(",") if p.strip()],
+        default_scope_permissions=[p.strip() for p in default_perms.split(",") if p.strip()],
     )
     return PermissionScopeCache(scope_service)
 
@@ -833,6 +833,58 @@ class RoleV2ViewSetTests(IdentityRequest):
         returned_names = {role["name"] for role in response.data["data"]}
         self.assertEqual(returned_names, {"Test_Role", "test_role"})
 
+    def test_list_roles_with_permission_filter(self):
+        """Test that permission filter returns only roles containing the specified permission."""
+        role_with_perm = RoleV2.objects.create(name="host_reader", tenant=self.tenant)
+        role_with_perm.permissions.add(self.permission2)
+
+        role_without_perm = RoleV2.objects.create(name="no_match_role", tenant=self.tenant)
+        role_without_perm.permissions.add(self.permission4)
+
+        url = f"{self.list_url}&permission=inventory:hosts:read"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        role_names = [r["name"] for r in response.data["data"]]
+        self.assertIn("host_reader", role_names)
+        self.assertNotIn("no_match_role", role_names)
+
+    def test_list_roles_with_permission_filter_multiple(self):
+        """Test that comma-separated permissions return union of matches."""
+        role_a = RoleV2.objects.create(name="host_reader", tenant=self.tenant)
+        role_a.permissions.add(self.permission2)
+
+        role_b = RoleV2.objects.create(name="cost_reader", tenant=self.tenant)
+        role_b.permissions.add(self.permission4)
+
+        url = f"{self.list_url}&permission=inventory:hosts:read,cost:reports:read"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        role_names = [r["name"] for r in response.data["data"]]
+        self.assertIn("host_reader", role_names)
+        self.assertIn("cost_reader", role_names)
+
+    def test_list_roles_with_permission_filter_no_match(self):
+        """Test that a non-existent permission returns empty results."""
+        url = f"{self.list_url}&permission=nonexistent:perm:here"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 0)
+
+    def test_list_roles_with_permission_filter_distinct(self):
+        """Test that a role appears once even when it matches multiple comma-separated permissions."""
+        role = RoleV2.objects.create(name="multi_perm_role", tenant=self.tenant)
+        role.permissions.add(self.permission2, self.permission3)
+
+        url = f"{self.list_url}&permission=inventory:hosts:read,inventory:hosts:write"
+        response = self.client.get(url, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        role_names = [r["name"] for r in response.data["data"]]
+        self.assertEqual(role_names.count("multi_perm_role"), 1)
+
     def test_list_roles_with_permissions_field(self):
         """Test that requesting permissions field returns permissions array."""
         url = f"{self.list_url}&fields=id,name,permissions"
@@ -922,7 +974,7 @@ class RoleV2ViewSetTests(IdentityRequest):
 
     @patch(CACHE_PATCH_TARGET, _scope_cache(tenant_perms="tenant_app:*:*", root_perms="root_app:*:*"))
     def test_list_roles_filter_by_resource_type_workspace(self):
-        """Test that resource_type=workspace returns only workspace-scoped roles."""
+        """Test that resource_type=workspace (no resource_id) returns only DEFAULT-scoped roles."""
         tenant_perm = Permission.objects.create(permission="tenant_app:res:read", tenant=self.tenant)
         tenant_role = RoleV2.objects.create(name="tenant_role", description="Tenant", tenant=self.tenant)
         tenant_role.permissions.add(tenant_perm)
@@ -949,6 +1001,59 @@ class RoleV2ViewSetTests(IdentityRequest):
         self.assertNotIn("mixed_role", names)
 
     @patch(CACHE_PATCH_TARGET, _scope_cache(tenant_perms="tenant_app:*:*", root_perms="root_app:*:*"))
+    def test_list_roles_resource_type_workspace_root_resource_id_only_root_scoped(self):
+        """resource_id=root workspace UUID lists only roles whose highest scope is ROOT."""
+        root_perm = Permission.objects.create(permission="root_app:res:read", tenant=self.tenant)
+        def_perm = Permission.objects.create(permission="def_only:res:read", tenant=self.tenant)
+        root_only = RoleV2.objects.create(name="root_only", description="R", tenant=self.tenant)
+        root_only.permissions.add(root_perm)
+        def_only = RoleV2.objects.create(name="def_only", description="D", tenant=self.tenant)
+        def_only.permissions.add(def_perm)
+
+        root = Workspace.objects.root(tenant=self.tenant)
+        url = f"{self.url}?resource_type=workspace&resource_id={root.id}"
+        response = self.client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        names = {r["name"] for r in response.data["data"]}
+        self.assertIn("root_only", names)
+        self.assertNotIn("def_only", names)
+        self.assertNotIn("test_role", names)
+
+    @patch(CACHE_PATCH_TARGET, _scope_cache(tenant_perms="tenant_app:*:*", root_perms="root_app:*:*"))
+    def test_list_roles_resource_type_workspace_default_resource_id_only_default_scoped(self):
+        """resource_id=default (or any non-root) workspace lists only DEFAULT-scoped roles."""
+        root_perm = Permission.objects.create(permission="root_app:res:read", tenant=self.tenant)
+        def_perm = Permission.objects.create(permission="def_for_cmp:res:read", tenant=self.tenant)
+        root_r = RoleV2.objects.create(name="root_scoped", description="R2", tenant=self.tenant)
+        root_r.permissions.add(root_perm)
+        def_r = RoleV2.objects.create(name="def_scoped", description="D2", tenant=self.tenant)
+        def_r.permissions.add(def_perm)
+
+        default_ws = Workspace.objects.default(tenant=self.tenant)
+        url = f"{self.url}?resource_type=workspace&resource_id={default_ws.id}"
+        response = self.client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        names = {r["name"] for r in response.data["data"]}
+        self.assertIn("def_scoped", names)
+        self.assertIn("test_role", names)
+        self.assertNotIn("root_scoped", names)
+
+    def test_list_roles_resource_id_invalid_uuid_returns_400(self):
+        """Invalid resource_id is rejected before listing."""
+        url = f"{self.url}?resource_type=workspace&resource_id=not-a-uuid"
+        response = self.client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch(CACHE_PATCH_TARGET, _scope_cache())
+    def test_list_roles_resource_id_unknown_workspace_returns_empty(self):
+        """resource_id with no matching workspace for the tenant returns an empty list."""
+        unknown = uuid.uuid4()
+        url = f"{self.url}?resource_type=workspace&resource_id={unknown}"
+        response = self.client.get(url, **self.headers)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["data"], [])
+
+    @patch(CACHE_PATCH_TARGET, _scope_cache(tenant_perms="tenant_app:*:*", root_perms="root_app:*:*"))
     def test_list_roles_without_resource_type_returns_all_scopes(self):
         """Test that omitting resource_type returns roles from all scopes."""
         tenant_perm = Permission.objects.create(permission="tenant_app:res:read", tenant=self.tenant)
@@ -964,14 +1069,15 @@ class RoleV2ViewSetTests(IdentityRequest):
 
     def test_list_roles_resource_id_without_resource_type_returns_400(self):
         """Test that providing resource_id without resource_type returns 400."""
-        url = f"{self.url}?resource_id=some-id"
+        url = f"{self.url}?resource_id=00000000-0000-0000-0000-0000000000aa"
         response = self.client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
     def test_list_roles_resource_id_with_resource_type_accepted(self):
-        """Test that providing resource_id with resource_type is accepted."""
-        url = f"{self.url}?resource_type=workspace&resource_id=some-id"
+        """Test that providing a valid resource_id with resource_type is accepted."""
+        root = Workspace.objects.root(tenant=self.tenant)
+        url = f"{self.url}?resource_type=workspace&resource_id={root.id}"
         response = self.client.get(url, **self.headers)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
