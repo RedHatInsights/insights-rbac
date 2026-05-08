@@ -25,11 +25,14 @@ import os
 from core.utils import destructive_ok
 from django.conf import settings
 from django.db import transaction
-from django.db.models import QuerySet
+from django.db.models import Exists, OuterRef, QuerySet
+from django.db.models.fields import UUIDField
+from django.db.models.functions import Cast
 from django.utils import timezone
 from management.atomic_transactions import atomic
 from management.group.definer import seed_group
 from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
+from management.models import Workspace
 from management.notifications.notification_handlers import role_obj_change_notification_handler
 from management.permission.model import Permission
 from management.permission.scope_service import ImplicitResourceService, Scope
@@ -44,6 +47,7 @@ from management.role.relation_api_dual_write_handler import (
     SeedingRelationApiDualWriteHandler,
 )
 from management.role.v2_model import PlatformRoleV2, SeededRoleV2
+from management.role_binding.model import RoleBinding
 from management.tenant_mapping.model import DefaultAccessType
 
 from api.models import Tenant
@@ -70,51 +74,33 @@ def _determine_old_scopes(v1_role):
         return set()
 
     try:
-        from django.db.models import Exists, OuterRef
-        from django.db.models.functions import Cast
-        from django.db.models.fields import UUIDField
-        from management.role_binding.model import RoleBinding
-        from management.models import Workspace
-        from management.permission.scope_service import Scope
+        # Helper to check if bindings exist for a given scope
+        def has_bindings(v1_role, scope):
+            """Check if bindings exist for the given v1_role at the given scope."""
+            queryset = RoleBinding.objects.filter(tenant__tenant_mapping__v2_write_activated_at=None).filter(
+                role__v1_source=v1_role
+            )
 
-        # Helper to check if bindings exist for a given query
-        def has_bindings(queryset):
+            if scope in (Scope.ROOT, Scope.DEFAULT):
+                # For ROOT and DEFAULT scopes, check workspace bindings with specific workspace types
+                workspace_type = Workspace.Types.ROOT if scope == Scope.ROOT else Workspace.Types.DEFAULT
+                queryset = queryset.filter(resource_type="workspace").filter(
+                    Exists(
+                        Workspace.objects.filter(type=workspace_type).filter(
+                            id=Cast(OuterRef("resource_id"), UUIDField())
+                        )
+                    )
+                )
+            else:
+                # For TENANT scope, check tenant bindings
+                queryset = queryset.filter(resource_type="tenant")
+
             return queryset.exists()
 
-        # Check for bindings at DEFAULT workspace (workspace type = DEFAULT)
-        in_default = has_bindings(
-            RoleBinding.objects.filter(resource_type="workspace")
-            .filter(tenant__tenant_mapping__v2_write_activated_at=None)
-            .filter(role__v1_source=v1_role)
-            .filter(
-                Exists(
-                    Workspace.objects.filter(type=Workspace.Types.DEFAULT).filter(
-                        id=Cast(OuterRef("resource_id"), UUIDField())
-                    )
-                )
-            )
-        )
-
-        # Check for bindings at ROOT workspace (workspace type = ROOT)
-        in_root = has_bindings(
-            RoleBinding.objects.filter(resource_type="workspace")
-            .filter(tenant__tenant_mapping__v2_write_activated_at=None)
-            .filter(role__v1_source=v1_role)
-            .filter(
-                Exists(
-                    Workspace.objects.filter(type=Workspace.Types.ROOT).filter(
-                        id=Cast(OuterRef("resource_id"), UUIDField())
-                    )
-                )
-            )
-        )
-
-        # Check for bindings at tenant level
-        in_tenant = has_bindings(
-            RoleBinding.objects.filter(resource_type="tenant")
-            .filter(tenant__tenant_mapping__v2_write_activated_at=None)
-            .filter(role__v1_source=v1_role)
-        )
+        # Check for bindings at each scope
+        in_default = has_bindings(v1_role, Scope.DEFAULT)
+        in_root = has_bindings(v1_role, Scope.ROOT)
+        in_tenant = has_bindings(v1_role, Scope.TENANT)
 
         scopes = set()
 
