@@ -18,6 +18,6 @@ jobs:
 
       - name: json-yaml-validate
         id: json-yaml-validate
-        uses: GrantBirki/json-yaml-validate@v3.2.1 # https://github.com/GrantBirki/json-yaml-validate/
+        uses: GrantBirki/json-yaml-validate@v4.0.0 # https://github.com/GrantBirki/json-yaml-validate/
         with:
           comment: "true" # enable comment mode
