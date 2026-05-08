@@ -51,8 +51,10 @@ def make_read_tuples_mock(tuples: InMemoryTuples) -> Callable[[str, str, str, st
         # Build a filter based on the provided parameters
         filters = []
 
-        if not resource_type_name and not subject_type_name:
-            raise ValueError("At least one of resource_type_name and subject_type_name must be provided")
+        # TODO: replace this check with (not resource_type and not subject_type) if RelationsApiReplicator.read_tuples
+        #  is updated.
+        if not resource_type_name or not subject_type_name:
+            raise ValueError("Both resource_type and subject_type must be provided (due to a Kessel limitation)")
 
         if resource_type_name:
             filters.append(in_memory_tuples.resource_type("rbac", resource_type_name))
