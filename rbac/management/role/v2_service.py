@@ -46,7 +46,6 @@ from management.relation_replicator.relation_replicator import (
     ReplicationEvent,
     ReplicationEventType,
 )
-from management.role.relations import role_owner_relationship
 from management.role.v2_exceptions import (
     CustomRoleRequiredError,
     InvalidRolePermissionsError,
@@ -156,11 +155,7 @@ class RoleV2Service:
             role.save()
             role.permissions.set(permissions)
 
-            tuples_to_add, _ = CustomRoleV2.replication_tuples(role, new_permissions=permissions)
-
-            tenant_resource_id = tenant.tenant_resource_id()
-            if tenant_resource_id:
-                tuples_to_add.append(role_owner_relationship(role.uuid, tenant_resource_id))
+            tuples_to_add = RoleV2.tuples_for_create(role=role, cached_permissions=permissions)
 
             self._replicator.replicate(
                 ReplicationEvent(
@@ -229,7 +224,7 @@ class RoleV2Service:
             role.save()
             role.permissions.set(permissions)
 
-            tuples_to_add, tuples_to_remove = CustomRoleV2.replication_tuples(
+            tuples_to_add, tuples_to_remove = RoleV2.tuples_for_update(
                 role, old_permissions=old_permissions, new_permissions=permissions
             )
 
@@ -365,6 +360,7 @@ class RoleV2Service:
         # necessarily use SERIALIZABLE transactions.
         roles_to_remove = list(
             CustomRoleV2.objects.filter(pk__in=(r.pk for r in roles))
+            .select_related("tenant")
             .prefetch_related("permissions")
             .select_for_update(of=["self"])
         )
@@ -378,20 +374,7 @@ class RoleV2Service:
             binding_pks_to_remove.append(role_binding.pk)
 
         for role in roles_to_remove:
-            to_add, to_remove = CustomRoleV2.replication_tuples(
-                role=role,
-                old_permissions=list(role.permissions.all()),
-                new_permissions=[],
-            )
-
-            if len(to_add) != 0:
-                raise AssertionError("Relations should not be added while deleting roles.")
-
-            relations_to_remove.extend(to_remove)
-
-            tenant_resource_id = role.tenant.tenant_resource_id()
-            if tenant_resource_id:
-                relations_to_remove.append(role_owner_relationship(role.uuid, tenant_resource_id))
+            relations_to_remove.extend(RoleV2.tuples_for_delete(role=role))
 
         self._replicator.replicate(
             ReplicationEvent(

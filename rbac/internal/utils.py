@@ -50,7 +50,7 @@ from management.relation_replicator.relation_replicator import (
 )
 from management.relation_replicator.relations_api_replicator import RelationsApiReplicator
 from management.relation_replicator.types import RelationTuple
-from management.role.v2_model import CustomRoleV2, RoleV2
+from management.role.v2_model import RoleV2
 from management.role_binding.model import RoleBinding, RoleBindingPrincipal
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
 from management.tenant_mapping.v2_activation import (
@@ -498,7 +498,7 @@ def _do_replicate_missing_binding_tuples_batch(tenant_id: int, raw_role_bindings
     role_bindings = list(
         RoleBinding.objects.filter(pk__in=(b.pk for b in raw_role_bindings))
         .exclude(uuid__in=builtin_binding_ids)
-        .select_related("role")
+        .select_related("role", "role__tenant")
         .prefetch_related("group_entries", "principal_entries", "role__permissions")
         .select_for_update(of=["self"])
     )
@@ -542,14 +542,7 @@ def _do_replicate_missing_binding_tuples_batch(tenant_id: int, raw_role_bindings
         # Ensure that we additionally re-replicate the relevant role (if it's a custom role).
         if role_binding.role.type == RoleV2.Types.CUSTOM:
             if role_binding.role.id not in role_tuples_by_role_id:
-                to_add, to_remove = CustomRoleV2.replication_tuples(
-                    role=role_binding.role, new_permissions=list(role_binding.role.permissions.all())
-                )
-
-                if len(to_remove) > 0:
-                    raise AssertionError(f"Should not have relations to remove, but got: {to_remove}")
-
-                role_tuples_by_role_id[role_binding.role.id] = to_add
+                role_tuples_by_role_id[role_binding.role.id] = RoleV2.tuples_for_create(role_binding.role)
 
     replicator = OutboxReplicator()
 

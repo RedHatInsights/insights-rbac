@@ -439,14 +439,18 @@ def relation(relation: str) -> RelationPredicate:
     return TuplePredicate(predicate, f'relation("{relation}")')
 
 
-def subject_type(namespace: str, name: str, relation: Optional[str] = None) -> RelationPredicate:
+def subject_type(
+    namespace: str, name: str, relation: Optional[str] = None, any_relation: bool = False
+) -> RelationPredicate:
     """Return a predicate that is true if the subject type matches the given namespace and name."""
+    if any_relation and (relation is not None):
+        raise ValueError("Cannot both have any_relation set and provide a specific relation")
 
     def predicate(rel: RelationTuple) -> bool:
         return (
             rel.subject.subject.type.namespace == namespace
             and rel.subject.subject.type.name == name
-            and rel.subject.relation == relation
+            and (any_relation or rel.subject.relation == relation)
         )
 
     return TuplePredicate(predicate, f'subject_type("{namespace}", "{name}")')

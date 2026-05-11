@@ -33,7 +33,9 @@ from management.models import (
 )
 from management.principal.model import Principal
 from management.relation_replicator.types import ObjectReference, ObjectType, RelationTuple, SubjectReference
+from management.role.relations import role_owner_relationship
 from management.role_binding.model import RoleBindingPrincipal
+from migration_tool.models import role_permission_tuple
 from tests.identity_request import IdentityRequest
 from tests.v2_util import seed_v2_role_from_v1
 
@@ -518,8 +520,8 @@ class RoleV2QuerySetTests(IdentityRequest):
         self.assertEqual(RoleV2.objects.assignable().count(), 0)
 
 
-class CustomRoleV2ReplicationTupleTests(IdentityRequest):
-    """Tests for CustomRoleV2 relation tuple generation methods."""
+class RoleV2ReplicationTupleTests(IdentityRequest):
+    """Tests for RoleV2 relation tuple generation methods."""
 
     def setUp(self):
         """Set up test data."""
@@ -527,39 +529,26 @@ class CustomRoleV2ReplicationTupleTests(IdentityRequest):
         self.perm_read = Permission.objects.create(permission="app:resource:read", tenant=self.tenant)
         self.perm_write = Permission.objects.create(permission="app:resource:write", tenant=self.tenant)
         self.perm_delete = Permission.objects.create(permission="app:resource:delete", tenant=self.tenant)
-        self.role = CustomRoleV2.objects.create(name="test_role", tenant=self.tenant)
 
-    def tearDown(self):
-        """Tear down."""
-        RoleV2.objects.all().delete()
-        Permission.objects.filter(tenant=self.tenant).delete()
+        self.custom_role = CustomRoleV2.objects.create(name="test_role", tenant=self.tenant)
+        self.seeded_role = SeededRoleV2.objects.create(
+            name="system_role", tenant=Tenant.objects.get(tenant_name="public")
+        )
 
-    def _permission_tuple(self, permission: Permission) -> RelationTuple:
+    def _custom_role_owner_tuple(self) -> RelationTuple:
+        return role_owner_relationship(
+            role_uuid=str(self.custom_role.uuid), tenant_resource_id=self.tenant.tenant_resource_id()
+        )
+
+    def _permission_tuple(self, role: RoleV2, permission: Permission) -> RelationTuple:
         """Build the expected permission tuple for self.role."""
-        return RelationTuple(
-            resource=ObjectReference(type=ObjectType(namespace="rbac", name="role"), id=str(self.role.uuid)),
-            relation=permission.v2_string(),
-            subject=SubjectReference(
-                subject=ObjectReference(type=ObjectType(namespace="rbac", name="principal"), id="*")
-            ),
-        )
+        return role_permission_tuple(role_id=str(role.uuid), permission=permission.v2_string())
 
-    # ── _permission_tuple ─────────────────────────────────────────────
-
-    def test_permission_tuple_returns_exact_tuple(self):
-        """_permission_tuple builds rbac/role:<uuid>#<perm>@rbac/principal:*."""
-        self.assertEqual(
-            CustomRoleV2._permission_tuple(self.role, self.perm_read),
-            self._permission_tuple(self.perm_read),
-        )
-
-    # ── replication_tuples (permission delta) ─────────────────────────
-
-    def test_replication_tuples_computes_permission_diff(self):
-        """replication_tuples returns the exact delta for each role lifecycle operation."""
-        read = self._permission_tuple(self.perm_read)
-        write = self._permission_tuple(self.perm_write)
-        delete = self._permission_tuple(self.perm_delete)
+    def test_tuples_for_update_computes_permission_diff(self):
+        """Test that tuples_for_update correctly computes permission differences."""
+        read = self._permission_tuple(self.custom_role, self.perm_read)
+        write = self._permission_tuple(self.custom_role, self.perm_write)
+        delete = self._permission_tuple(self.custom_role, self.perm_delete)
 
         cases = [
             (
@@ -591,30 +580,51 @@ class CustomRoleV2ReplicationTupleTests(IdentityRequest):
                 {read, write},
             ),
         ]
+
         for label, old, new, expected_add, expected_remove in cases:
             with self.subTest(label):
-                to_add, to_remove = CustomRoleV2.replication_tuples(
-                    self.role, old_permissions=old, new_permissions=new
+                to_add, to_remove = RoleV2.tuples_for_update(
+                    self.custom_role, old_permissions=old, new_permissions=new
                 )
                 self.assertEqual(set(to_add), expected_add)
                 self.assertEqual(set(to_remove), expected_remove)
 
-    # ── replication_tuples (delete with bindings) ─────────────────────
+    def test_tuples_for_custom(self):
+        """Test that creating/deleting a custom role uses both permission tuples and the owner tuple."""
+        self.custom_role.permissions.set([self.perm_read])
 
-    def test_replication_tuples_delete_includes_binding_and_subject_tuples(self):
-        """Deleting a role removes permission tuples and all associated binding tuples."""
-        group = Group.objects.create(name="g1", tenant=self.tenant)
-        principal = Principal.objects.create(tenant=self.tenant, username="u1", user_id="uid1")
-        principal_resource_id = Principal.user_id_to_principal_resource_id(principal.user_id)
+        # These are semantically different, but they have the same behavior for the moment. We test them together for
+        # simplicity.
+        cases = [
+            ("create", RoleV2.tuples_for_create),
+            ("delete", RoleV2.tuples_for_delete),
+        ]
 
-        to_add, to_remove = CustomRoleV2.replication_tuples(
-            self.role,
-            old_permissions=[self.perm_read],
-        )
+        for label, function in cases:
+            with self.subTest(label):
+                self.assertCountEqual(
+                    function(self.custom_role),
+                    {
+                        self._permission_tuple(self.custom_role, self.perm_read),
+                        self._custom_role_owner_tuple(),
+                    },
+                )
 
-        expected_remove = {
-            self._permission_tuple(self.perm_read),
-        }
+    def test_tuples_for_delete_seeded(self):
+        """Test that creating/deleting a seeded role uses only permission tuples."""
+        self.seeded_role.permissions.set([self.perm_read])
 
-        self.assertEqual(set(to_add), set())
-        self.assertEqual(set(to_remove), expected_remove)
+        # Tested together for the reasons given above.
+        cases = [
+            ("create", RoleV2.tuples_for_create),
+            ("delete", RoleV2.tuples_for_delete),
+        ]
+
+        for label, function in cases:
+            with self.subTest(label):
+                self.assertCountEqual(
+                    function(self.seeded_role),
+                    {
+                        self._permission_tuple(self.seeded_role, self.perm_read),
+                    },
+                )

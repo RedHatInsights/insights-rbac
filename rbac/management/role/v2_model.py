@@ -29,9 +29,10 @@ from django.utils import timezone
 from management.exceptions import RequiredFieldError
 from management.models import Permission, Role
 from management.rbac_fields import AutoDateTimeField
-from management.relation_replicator.types import ObjectReference, ObjectType, RelationTuple, SubjectReference
+from management.relation_replicator.types import RelationTuple
 from management.role.queryset import RoleV2QuerySet
-from migration_tool.models import V2role
+from management.role.relations import role_owner_relationship
+from migration_tool.models import V2role, role_permission_tuple
 from rest_framework import serializers
 from uuid_utils.compat import uuid7
 
@@ -113,6 +114,91 @@ class RoleV2(TenantAwareModel):
         """Get the set of V2 strings for the permissions of this role."""
         return set(p.v2_string() for p in self.permissions.all())
 
+    @staticmethod
+    def _permission_tuple(role: "RoleV2", permission: Permission) -> RelationTuple:
+        return role_permission_tuple(role_id=str(role.uuid), permission=permission.v2_string())
+
+    @staticmethod
+    def _permission_and_owner_tuples(role: "RoleV2", cached_permissions: Optional[Iterable[Permission]]):
+        tenant_resource_id = role.tenant.tenant_resource_id()
+
+        if role.type == RoleV2.Types.CUSTOM:
+            if tenant_resource_id is None:
+                raise RuntimeError(
+                    f"Expected custom roles to be created in a tenant with a valid resource ID; "
+                    f"got tenant pk={role.tenant.pk!r}"
+                )
+        else:
+            if tenant_resource_id is not None:
+                raise RuntimeError(
+                    f"Expected non-custom roles to be created in the public tenant "
+                    f"(which doesn't have a valid resource ID); "
+                    f"got tenant pk={role.tenant.pk!r}"
+                )
+
+        if cached_permissions is None:
+            cached_permissions = role.permissions.all()
+
+        tuples = list({RoleV2._permission_tuple(role, p) for p in cached_permissions})
+
+        if tenant_resource_id is not None:
+            tuples.append(role_owner_relationship(role_uuid=str(role.uuid), tenant_resource_id=tenant_resource_id))
+
+        return tuples
+
+    @staticmethod
+    def tuples_for_update(
+        role: "RoleV2",
+        *,
+        old_permissions: Iterable[Permission],
+        new_permissions: Iterable[Permission],
+    ) -> tuple[list[RelationTuple], list[RelationTuple]]:
+        """Get the tuples that should be added and removed when updating a role.
+
+        Args:
+            role: The role being created, updated, or deleted.
+            old_permissions: Permissions before mutation (empty for create).
+            new_permissions: Permissions after mutation (empty for delete).
+
+        Returns:
+            ``(tuples_to_add, tuples_to_remove)`` ready for replication.
+        """
+        old_set = set(old_permissions)
+        new_set = set(new_permissions)
+
+        tuples_to_add = [RoleV2._permission_tuple(role, p) for p in new_set - old_set]
+        tuples_to_remove = [RoleV2._permission_tuple(role, p) for p in old_set - new_set]
+
+        return tuples_to_add, tuples_to_remove
+
+    # Although create and delete happen to use the same tuples currently, they are semantically different operations.
+    # We use separate functions for them in order to be clearer at the call site and to ensure they can diverge in
+    # the future without having to update every call site.
+
+    @staticmethod
+    def tuples_for_create(
+        role: "RoleV2", cached_permissions: Optional[Iterable[Permission]] = None
+    ) -> list[RelationTuple]:
+        """
+        Get the tuples that should be added when creating a role.
+
+        The role's tenant will be loaded (and thus should be preloaded for bulk operations).
+        If cached_permissions is not provided, the permissions from the role are loaded.
+        """
+        return RoleV2._permission_and_owner_tuples(role=role, cached_permissions=cached_permissions)
+
+    @staticmethod
+    def tuples_for_delete(
+        role: "RoleV2", cached_permissions: Optional[Iterable[Permission]] = None
+    ) -> list[RelationTuple]:
+        """
+        Get the tuples that should be removed when deleting a role.
+
+        The role's tenant will be loaded (and thus should be preloaded for bulk operations).
+        If cached_permissions is not provided, the permissions from the role are loaded.
+        """
+        return RoleV2._permission_and_owner_tuples(role=role, cached_permissions=cached_permissions)
+
 
 class TypedRoleV2Manager(models.Manager):
     """Manager for RoleV2 with a specific type."""
@@ -177,49 +263,6 @@ class CustomRoleV2(TypeValidatedRoleV2Mixin, RoleV2):
 
     _expected_type = RoleV2.Types.CUSTOM
     objects = TypedRoleV2Manager(role_type=_expected_type)
-
-    @staticmethod
-    def _permission_tuple(role: "CustomRoleV2", permission: Permission) -> RelationTuple:
-        """Build a single ``rbac/role:<uuid>#<perm>@rbac/principal:*`` tuple."""
-        return RelationTuple(
-            resource=ObjectReference(
-                type=ObjectType(namespace="rbac", name="role"),
-                id=str(role.uuid),
-            ),
-            relation=permission.v2_string(),
-            subject=SubjectReference(
-                subject=ObjectReference(
-                    type=ObjectType(namespace="rbac", name="principal"),
-                    id="*",
-                ),
-            ),
-        )
-
-    @staticmethod
-    def replication_tuples(
-        role: "CustomRoleV2",
-        old_permissions: Iterable[Permission] = (),
-        new_permissions: Iterable[Permission] = (),
-    ) -> tuple[list[RelationTuple], list[RelationTuple]]:
-        """Compute the delta (tuples to add vs. remove) for a role create, update, or delete.
-
-        Pure data transformation -- no DB writes.
-
-        Args:
-            role: The role being created, updated, or deleted.
-            old_permissions: Permissions before mutation (empty for create).
-            new_permissions: Permissions after mutation (empty for delete).
-
-        Returns:
-            ``(tuples_to_add, tuples_to_remove)`` ready for replication.
-        """
-        old_set = set(old_permissions)
-        new_set = set(new_permissions)
-
-        tuples_to_add = [CustomRoleV2._permission_tuple(role, p) for p in new_set - old_set]
-        tuples_to_remove = [CustomRoleV2._permission_tuple(role, p) for p in old_set - new_set]
-
-        return tuples_to_add, tuples_to_remove
 
     def update(self, name: str, description: str):
         """Update the role's mutable attributes."""

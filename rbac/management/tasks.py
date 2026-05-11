@@ -22,6 +22,7 @@ from typing import Optional
 
 from celery import shared_task
 from django.core.management import call_command
+from internal.migrations.recompute_role_bindings import recompute_tenant_role_bindings
 from internal.migrations.remove_deleted_workspace_bindings import remove_deleted_workspace_bindings
 from internal.migrations.remove_orphan_relations import cleanup_tenant_orphan_bindings
 from internal.migrations.replicate_default_workspaces import replicate_default_workspaces
@@ -38,6 +39,8 @@ from management.principal.cleaner import (
 )
 from migration_tool.migrate import migrate_data
 from migration_tool.migrate_binding_scope import migrate_all_role_bindings
+
+from api.models import Tenant
 
 
 @shared_task
@@ -170,3 +173,9 @@ def remove_deleted_workspace_bindings_in_worker():
 def replicate_default_workspaces_in_worker(limit: Optional[int] = None):
     """Celery task to replicate default workspaces."""
     return replicate_default_workspaces(limit=limit)
+
+
+@shared_task
+def recompute_tenant_role_bindings_in_worker(org_id: str):
+    """Celery task to recompute role bindings for tenant."""
+    return recompute_tenant_role_bindings(tenant=Tenant.objects.get(org_id=org_id))

@@ -238,8 +238,8 @@ class RelationsApiReplicator(RelationReplicator):
         subject_type: str = "",
         subject_id: str = "",
         subject_relation: Optional[str] = None,
-        resource_namespace: str = "rbac",
-        subject_namespace: str = "rbac",
+        resource_namespace: Optional[str] = None,
+        subject_namespace: Optional[str] = None,
         pagination_limit: Optional[int] = None,
         continuation_token: Optional[str] = None,
     ) -> list[dict]:
@@ -263,6 +263,16 @@ class RelationsApiReplicator(RelationReplicator):
         """
         if (pagination_limit is None) and (continuation_token is not None):
             raise TypeError("A pagination limit must be provided if a continuation token is.")
+
+        # TODO: replace this check with (not resource_type and not subject_type) if Kessel gets fixed.
+        if not resource_type or not subject_type:
+            raise ValueError("Both resource_type and subject_type must be provided (due to a Kessel limitation)")
+
+        if resource_namespace is None:
+            resource_namespace = "rbac" if resource_type != "" else ""
+
+        if subject_namespace is None:
+            subject_namespace = "rbac" if subject_type != "" else ""
 
         # Get JWT token for authentication
         token = jwt_manager.get_jwt_from_redis()

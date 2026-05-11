@@ -254,7 +254,7 @@ class ReplicateMissingBindingTuplesTest(TestCase):
 
         replicate_missing_binding_tuples()
 
-        self.assertEqual(len(self.tuples), 4)
+        self.assertEqual(len(self.tuples), 5)
 
         self.assertEqual(
             1,
@@ -285,6 +285,17 @@ class ReplicateMissingBindingTuplesTest(TestCase):
                     resource("rbac", "role", str(role.uuid)),
                     relation("rbac_all_all"),
                     subject("rbac", "principal", "*"),
+                )
+            ),
+        )
+
+        self.assertEqual(
+            1,
+            self.tuples.count_tuples(
+                all_of(
+                    resource("rbac", "role", str(role.uuid)),
+                    relation("owner"),
+                    subject("rbac", "tenant", self.tenant.tenant_resource_id()),
                 )
             ),
         )
