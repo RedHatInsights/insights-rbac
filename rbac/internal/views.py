@@ -371,11 +371,7 @@ def get_org_admin(request, org_or_account):
             }
         except requests.exceptions.ConnectionError as conn:
             bop_request_status_count.labels(method="GET", status=500).inc()
-            return HttpResponse(
-                f"Unable to connect for URL {escape(url)} with error: {escape(str(conn))}",
-                status=500,
-                content_type="text/plain",
-            )
+            return HttpResponse(f"Unable to connect for URL {url} with error: {conn}", status=500)
         if response.status_code == status.HTTP_200_OK:
             response_data = {}
             data = resp.get("data", [])
@@ -594,11 +590,7 @@ def run_seeds(request):
                 elif value == "false":
                     args[option] = False
                 else:
-                    return HttpResponse(
-                        f'Valid options for "{escape(option)}": {["true", "false"]}.',
-                        status=400,
-                        content_type="text/plain",
-                    )
+                    return HttpResponse(f'Valid options for "{option}": {["true", "false"]}.', status=400)
 
         if args.get(force_create_option, False) and args.get(force_update_option, False):
             return HttpResponse(
@@ -827,10 +819,10 @@ def role_removal(request):
                 dual_write_handler = SeedingRelationApiDualWriteHandler(role_obj)
                 dual_write_handler.replicate_deleted_system_role()
                 role_obj.delete()
-                return HttpResponse(f"Role '{role_name}' deleted.", status=204, content_type="text/plain")
+                return HttpResponse(f"Role '{role_name}' deleted.", status=204)
             except Exception:
-                return HttpResponse("Role cannot be deleted.", status=400, content_type="text/plain")
-    return HttpResponse('Invalid method, only "DELETE" is allowed.', status=405, content_type="text/plain")
+                return HttpResponse("Role cannot be deleted.", status=400)
+    return HttpResponse('Invalid method, only "DELETE" is allowed.', status=405)
 
 
 def permission_removal(request):
@@ -856,11 +848,9 @@ def permission_removal(request):
             try:
                 logger.warning(f"Deleting permission '{permission}'. Requested by '{request.user.username}'")
                 delete_permission(permission_obj)
-                return HttpResponse(f"Permission '{permission}' deleted.", status=204, content_type="text/plain")
+                return HttpResponse(f"Permission '{permission}' deleted.", status=204)
             except Exception as e:
-                return HttpResponse(
-                    f"Permission cannot be deleted. {escape(str(e))}", status=400, content_type="text/plain"
-                )
+                return HttpResponse(f"Permission cannot be deleted. {str(e)}", status=400)
     return HttpResponse('Invalid method, only "DELETE" is allowed.', status=405)
 
 
@@ -1032,11 +1022,7 @@ def bootstrap_tenant(request):
         for org_id in org_ids:
             tenant = get_object_or_404(Tenant, org_id=org_id)
             bootstrap_service.bootstrap_tenant(tenant, force=force)
-    return HttpResponse(
-        f"Bootstrapping tenants with org_ids {escape(str(org_ids))} were finished.",
-        status=200,
-        content_type="text/plain",
-    )
+    return HttpResponse(f"Bootstrapping tenants with org_ids {org_ids} were finished.", status=200)
 
 
 def list_or_delete_bindings_for_role(request, role_uuid):
@@ -1175,7 +1161,7 @@ def migration_resources(request):
         page = pg.paginate_queryset(resource_objs, request)
         page = [str(record.id) for record in page]
         return HttpResponse(json.dumps(page), content_type="application/json", status=200)
-    return HttpResponse(f"Invalid method, {escape(request.method)}", status=405, content_type="text/plain")
+    return HttpResponse(f"Invalid method, {request.method}", status=405)
 
 
 def reset_imported_tenants(request: HttpRequest) -> HttpResponse:
@@ -1566,9 +1552,8 @@ def principal_removal(request):
 
     if request.method == "GET":
         return HttpResponse(
-            f"Principals to be deleted: {escape(str(principal_usernames))}",
+            f"Principals to be deleted: {principal_usernames}",
             status=200,
-            content_type="text/plain",
         )
     if not destructive_ok("api"):
         return HttpResponse("Destructive operations disallowed.", status=400)
@@ -1587,9 +1572,7 @@ def principal_removal(request):
 
                 bootstrap_service.update_user(user)
 
-        return HttpResponse(
-            f"Users deleted: {escape(str(principal_usernames))}", status=204, content_type="text/plain"
-        )
+        return HttpResponse(f"Users deleted: {principal_usernames}", status=204)
 
 
 def retrieve_ungrouped_workspace(request):
