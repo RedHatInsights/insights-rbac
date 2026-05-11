@@ -264,8 +264,9 @@ class RelationsApiReplicator(RelationReplicator):
         if (pagination_limit is None) and (continuation_token is not None):
             raise TypeError("A pagination limit must be provided if a continuation token is.")
 
-        if not resource_type and not subject_type:
-            raise ValueError("At least one of resource_type and subject_type must be provided")
+        # TODO: replace this check with (not resource_type and not subject_type) if Kessel gets fixed.
+        if not resource_type or not subject_type:
+            raise ValueError("Both resource_type and subject_type must be provided (due to a Kessel limitation)")
 
         if resource_namespace is None:
             resource_namespace = "rbac" if resource_type != "" else ""

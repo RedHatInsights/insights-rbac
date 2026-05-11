@@ -23,6 +23,10 @@ from .env import ENVIRONMENT
 
 def config():
     """Database config."""
+    # Connection persistence: reuse connections for up to N seconds (0 = close after each request).
+    # Set via DATABASE_CONN_MAX_AGE env var; default 60s in production to reduce connection churn.
+    conn_max_age = ENVIRONMENT.int("DATABASE_CONN_MAX_AGE", default=60)
+
     if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
         db_obj = {
             "ENGINE": "django.db.backends.postgresql",
@@ -31,6 +35,8 @@ def config():
             "PASSWORD": LoadedConfig.database.password,
             "HOST": LoadedConfig.database.hostname,
             "PORT": LoadedConfig.database.port,
+            "CONN_MAX_AGE": conn_max_age,
+            "CONN_HEALTH_CHECKS": True,
         }
         if LoadedConfig.database.rdsCa:
             db_options = {
@@ -49,6 +55,8 @@ def config():
             "PASSWORD": ENVIRONMENT.get_value("DATABASE_PASSWORD", default=None),
             "HOST": ENVIRONMENT.get_value("DATABASE_HOST", default=None),
             "PORT": ENVIRONMENT.get_value("DATABASE_PORT", default=None),
+            "CONN_MAX_AGE": conn_max_age,
+            "CONN_HEALTH_CHECKS": True,
         }
         db_options = {
             "OPTIONS": {
