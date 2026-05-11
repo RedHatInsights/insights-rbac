@@ -21,11 +21,25 @@ from app_common_python import LoadedConfig
 from .env import ENVIRONMENT
 
 
+def _pg_session_options() -> str:
+    """Build the PostgreSQL ``options`` string for session-level parameters.
+
+    lock_timeout: abort any statement waiting longer than this for a row lock.
+    Prevents zombie transactions from piling up when a single lock holder blocks
+    many concurrent requests (each blocked connection stays open until the lock
+    is released or the connection is killed).
+    RDS does not support this option, so we don't add it through app-interface.
+    """
+    lock_timeout_ms = ENVIRONMENT.int("DATABASE_LOCK_TIMEOUT_MS", default=60_000)
+    return f"-c lock_timeout={lock_timeout_ms}"
+
+
 def config():
     """Database config."""
     # Connection persistence: reuse connections for up to N seconds (0 = close after each request).
     # Set via DATABASE_CONN_MAX_AGE env var; default 60s in production to reduce connection churn.
     conn_max_age = ENVIRONMENT.int("DATABASE_CONN_MAX_AGE", default=60)
+    pg_options = _pg_session_options()
 
     if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
         db_obj = {
@@ -43,10 +57,15 @@ def config():
                 "OPTIONS": {
                     "sslmode": ENVIRONMENT.get_value("PGSSLMODE", default="prefer"),
                     "sslrootcert": LoadedConfig.rds_ca(),
+                    "options": pg_options,
                 }
             }
         else:
-            db_options = {}
+            db_options = {
+                "OPTIONS": {
+                    "options": pg_options,
+                }
+            }
     else:
         db_obj = {
             "ENGINE": "django.db.backends.postgresql",
@@ -62,6 +81,7 @@ def config():
             "OPTIONS": {
                 "sslmode": ENVIRONMENT.get_value("PGSSLMODE", default="prefer"),
                 "sslrootcert": ENVIRONMENT.get_value("PGSSLROOTCERT", default="/etc/rds-certs/rds-cacert"),
+                "options": pg_options,
             }
         }
 
