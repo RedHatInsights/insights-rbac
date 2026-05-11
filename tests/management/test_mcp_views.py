@@ -3220,3 +3220,276 @@ class MCPInvestigateTamAccessTests(MCPToolTestMixin, IdentityRequest):
         tool_output = self._get_tool_output(response)
         self.assertIn("permissions_by_application", tool_output["analysis"])
         self.assertIn("subscriptions", tool_output["analysis"]["permissions_by_application"])
+
+
+class AuditRedhatAccessTests(MCPToolTestMixin, IdentityRequest):
+    """Tests for the audit_redhat_access MCP tool."""
+
+    def setUp(self):
+        """Set up audit_redhat_access tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+
+        # Create a public tenant for system roles
+        self.public_tenant, _ = Tenant.objects.get_or_create(tenant_name="public")
+
+        # Create system roles with permissions
+        self.system_role = Role.objects.create(
+            name="Test role 1",
+            display_name="Test role 1",
+            description="Test role for audit tests",
+            system=True,
+            tenant=self.public_tenant,
+        )
+        self.perm = Permission.objects.create(
+            application="test-app",
+            resource_type="resources",
+            verb="read",
+            permission="test-app:resources:read",
+            tenant=self.public_tenant,
+        )
+        Access.objects.create(permission=self.perm, role=self.system_role, tenant=self.public_tenant)
+
+        # Create another role
+        self.other_role = Role.objects.create(
+            name="Test role 2",
+            display_name="Test role 2",
+            description="Another test role",
+            system=True,
+            tenant=self.public_tenant,
+        )
+        self.other_perm = Permission.objects.create(
+            application="other-app",
+            resource_type="items",
+            verb="read",
+            permission="other-app:items:read",
+            tenant=self.public_tenant,
+        )
+        Access.objects.create(permission=self.other_perm, role=self.other_role, tenant=self.public_tenant)
+
+        # Create a cross-account request
+        self.car = CrossAccountRequest.objects.create(
+            target_org=self.tenant.org_id,
+            user_id="10001",
+            status="approved",
+            start_date=timezone.now() - timezone.timedelta(days=1),
+            end_date=timezone.now() + timezone.timedelta(days=6),
+        )
+        self.car.roles.add(self.system_role)
+
+        # Create another request expiring soon
+        self.car_expiring = CrossAccountRequest.objects.create(
+            target_org=self.tenant.org_id,
+            user_id="10002",
+            status="approved",
+            start_date=timezone.now() - timezone.timedelta(days=10),
+            end_date=timezone.now() + timezone.timedelta(days=2),
+        )
+        self.car_expiring.roles.add(self.other_role)
+
+    def tearDown(self):
+        """Tear down audit_redhat_access tests."""
+        CrossAccountRequest.objects.all().delete()
+        AuditLog.objects.all().delete()
+        Access.objects.filter(tenant=self.public_tenant).delete()
+        Permission.objects.filter(tenant=self.public_tenant).delete()
+        Role.objects.filter(tenant=self.public_tenant).delete()
+        super().tearDown()
+
+    def test_audit_redhat_access_success(self):
+        """Positive: audit_redhat_access returns cross-account data with summary."""
+        response = self._call_tool("audit_redhat_access")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertIn("active_access", tool_output)
+        self.assertIn("summary", tool_output)
+
+    def test_audit_redhat_access_without_auth_returns_error(self):
+        """Permission: audit_redhat_access without auth returns auth error."""
+        response = self._call_tool("audit_redhat_access", use_auth=False)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
+    def test_audit_redhat_access_returns_user_info(self, mock_proxy):
+        """Positive: audit_redhat_access returns user information from BOP."""
+        mock_proxy.return_value = {
+            "status_code": 200,
+            "data": [
+                {
+                    "user_id": "10001",
+                    "first_name": "Test",
+                    "last_name": "User1",
+                    "email": "user1@example.com",
+                    "username": "testuser1",
+                },
+                {
+                    "user_id": "10002",
+                    "first_name": "Test",
+                    "last_name": "User2",
+                    "email": "user2@example.com",
+                    "username": "testuser2",
+                },
+            ],
+        }
+
+        response = self._call_tool("audit_redhat_access")
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(len(tool_output["active_access"]), 2)
+
+        # Check first user
+        user1 = next(u for u in tool_output["active_access"] if "User1" in u["user_info"]["name"])
+        self.assertEqual(user1["user_info"]["email"], "user1@example.com")
+        self.assertIn("Test role 1", [r["name"] for r in user1["roles"]])
+
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
+    def test_audit_redhat_access_shows_expiring_soon(self, mock_proxy):
+        """Positive: audit_redhat_access identifies access expiring within 7 days."""
+        mock_proxy.return_value = {"status_code": 200, "data": []}
+
+        response = self._call_tool("audit_redhat_access")
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["summary"]["expiring_soon"], 1)
+        self.assertIn("warning", tool_output["summary"])
+
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
+    def test_audit_redhat_access_with_audit_activity(self, mock_proxy):
+        """Positive: audit_redhat_access includes audit log activity."""
+        mock_proxy.return_value = {
+            "status_code": 200,
+            "data": [
+                {
+                    "user_id": "10001",
+                    "first_name": "Test",
+                    "last_name": "User1",
+                    "email": "user1@example.com",
+                    "username": "testuser1",
+                }
+            ],
+        }
+
+        # Create some audit log entries for this user
+        AuditLog.objects.create(
+            principal_username="testuser1",
+            action="edit",
+            resource_type="group",
+            description="Edited group: Test Group",
+            tenant=self.tenant,
+        )
+        AuditLog.objects.create(
+            principal_username="testuser1",
+            action="add",
+            resource_type="user",
+            description="Added user to group",
+            tenant=self.tenant,
+        )
+
+        response = self._call_tool("audit_redhat_access")
+
+        tool_output = self._get_tool_output(response)
+        user_access = tool_output["active_access"][0]
+        self.assertEqual(user_access["audit_activity"]["total_actions"], 2)
+        self.assertIn("edit", user_access["audit_activity"]["summary"])
+        self.assertIn("add", user_access["audit_activity"]["summary"])
+
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
+    def test_audit_redhat_access_identifies_unused_access(self, mock_proxy):
+        """Positive: audit_redhat_access identifies users with no audit activity."""
+        mock_proxy.return_value = {
+            "status_code": 200,
+            "data": [
+                {
+                    "user_id": "10001",
+                    "first_name": "Test",
+                    "last_name": "User1",
+                    "email": "user1@example.com",
+                    "username": "testuser1",
+                },
+                {
+                    "user_id": "10002",
+                    "first_name": "Test",
+                    "last_name": "User2",
+                    "email": "user2@example.com",
+                    "username": "testuser2",
+                },
+            ],
+        }
+
+        response = self._call_tool("audit_redhat_access")
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["summary"]["unused_access"], 2)
+        self.assertIn("note", tool_output["summary"])
+
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
+    def test_audit_redhat_access_permissions_by_application(self, mock_proxy):
+        """Positive: audit_redhat_access groups permissions by application."""
+        mock_proxy.return_value = {"status_code": 200, "data": []}
+
+        response = self._call_tool("audit_redhat_access")
+
+        tool_output = self._get_tool_output(response)
+        self.assertIn("permissions_by_application", tool_output["summary"])
+        self.assertIn("test-app", tool_output["summary"]["permissions_by_application"])
+        self.assertIn("other-app", tool_output["summary"]["permissions_by_application"])
+
+    def test_audit_redhat_access_no_requests(self):
+        """Negative: audit_redhat_access returns empty when no requests exist."""
+        CrossAccountRequest.objects.all().delete()
+
+        response = self._call_tool("audit_redhat_access")
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(len(tool_output["active_access"]), 0)
+        self.assertIn("message", tool_output["summary"])
+        self.assertIn("hint", tool_output["summary"])
+
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
+    def test_audit_redhat_access_include_inactive(self, mock_proxy):
+        """Positive: audit_redhat_access includes expired requests when include_inactive=true."""
+        mock_proxy.return_value = {"status_code": 200, "data": []}
+
+        # Create an expired request
+        expired_car = CrossAccountRequest.objects.create(
+            target_org=self.tenant.org_id,
+            user_id="10003",
+            status="expired",
+            start_date=timezone.now() - timezone.timedelta(days=30),
+            end_date=timezone.now() - timezone.timedelta(days=1),
+        )
+        expired_car.roles.add(self.system_role)
+
+        response = self._call_tool("audit_redhat_access", {"include_inactive": True})
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(len(tool_output["active_access"]), 3)
+
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
+    def test_audit_redhat_access_custom_audit_days(self, mock_proxy):
+        """Positive: audit_redhat_access respects custom audit_days parameter."""
+        mock_proxy.return_value = {
+            "status_code": 200,
+            "data": [
+                {
+                    "user_id": "10001",
+                    "first_name": "Test",
+                    "last_name": "User1",
+                    "email": "user1@example.com",
+                    "username": "testuser1",
+                }
+            ],
+        }
+
+        response = self._call_tool("audit_redhat_access", {"audit_days": 7})
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["summary"]["audit_period_days"], 7)
