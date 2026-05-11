@@ -236,9 +236,13 @@ class WorkspaceOrderingTestCase(IdentityRequest, TestCase):
     def test_malformed_ordering_parameters_valid(self, mock_flag):
         """Test that whitespace-trimmed and duplicate params are handled."""
         test_cases = [
-            {"query": "order_by= name", "description": "leading space (trimmed to 'name')"},
-            {"query": "order_by=name ", "description": "trailing space (trimmed to 'name')"},
-            {"query": "order_by=name&order_by=type", "description": "duplicate param (last value wins)"},
+            {"query": "order_by= name", "field": "name", "description": "leading space (trimmed to 'name')"},
+            {"query": "order_by=name ", "field": "name", "description": "trailing space (trimmed to 'name')"},
+            {
+                "query": "order_by=name&order_by=type",
+                "field": "type",
+                "description": "duplicate param (last value wins)",
+            },
         ]
 
         for test_case in test_cases:
@@ -247,3 +251,4 @@ class WorkspaceOrderingTestCase(IdentityRequest, TestCase):
                 self.assertEqual(response.status_code, status.HTTP_200_OK)
                 data = response.json()["data"]
                 self.assertIsNotNone(data)
+                self._assert_field_sorted(data, test_case["field"])
