@@ -27,7 +27,7 @@ data:
       "editable": true,
       "fiscalYearStartMonth": 0,
       "graphTooltip": 0,
-      "id": 1025919,
+      "id": 1268004,
       "links": [],
       "panels": [
         {
@@ -4939,7 +4939,7 @@ data:
           {
             "current": {
               "text": "crcp01ue1-prometheus",
-              "value": "crcp01ue1-prometheus"
+              "value": "PC1EAC84DCBBF0697"
             },
             "includeAll": false,
             "label": "Datasource",
@@ -4951,7 +4951,14 @@ data:
             "type": "datasource"
           },
           {
-            "current": {},
+            "current": {
+              "text": [
+                "All"
+              ],
+              "value": [
+                "$__all"
+              ]
+            },
             "datasource": {
               "type": "prometheus",
               "uid": "$datasource"
@@ -4971,7 +4978,10 @@ data:
             "type": "query"
           },
           {
-            "current": {},
+            "current": {
+              "text": "rbac-prod",
+              "value": "rbac-prod"
+            },
             "datasource": {
               "type": "prometheus",
               "uid": "$datasource"
@@ -4994,11 +5004,11 @@ data:
         "from": "now-24h",
         "to": "now"
       },
+      "timepicker": {},
       "timezone": "",
       "title": "Operations - Rbac w/CPU",
       "uid": "TjP_nMWMk",
-      "version": 12,
-      "weekStart": ""
+      "version": 13
     }
 kind: ConfigMap
 metadata:
