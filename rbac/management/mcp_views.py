@@ -2792,10 +2792,13 @@ def _investigate_user_access_v2(
         RoleBindingPrincipal.objects.filter(principal=principal).values_list("binding_id", flat=True)
     )
 
-    # Get group-based role bindings
-    group_binding_ids = set(
-        RoleBindingGroup.objects.filter(group__in=groups_list).values_list("binding_id", flat=True)
-    )
+    # Get group-based role bindings with group info
+    group_bindings_qs = RoleBindingGroup.objects.filter(group__in=groups_list).select_related("group")
+    group_binding_ids: set[int] = set()
+    binding_to_group: dict[int, str] = {}
+    for rbg in group_bindings_qs:
+        group_binding_ids.add(rbg.binding_id)
+        binding_to_group[rbg.binding_id] = rbg.group.name
 
     # Combine all binding IDs
     all_binding_ids = direct_binding_ids | group_binding_ids
@@ -2820,7 +2823,7 @@ def _investigate_user_access_v2(
     bindings = (
         RoleBinding.objects.filter(id__in=all_binding_ids, tenant=tenant)
         .select_related("role")
-        .prefetch_related("role__permissions", "groups", "principals")
+        .prefetch_related("role__permissions")
     )
 
     # Build groups data
@@ -2845,13 +2848,12 @@ def _investigate_user_access_v2(
             continue
 
         # Determine binding source (direct or via group)
-        binding_source = "direct"
-        source_group = None
-        for bg in binding.groups.all():
-            if bg in groups_list:
-                binding_source = "group"
-                source_group = bg.name
-                break
+        if binding.id in binding_to_group:
+            binding_source = "group"
+            source_group = binding_to_group[binding.id]
+        else:
+            binding_source = "direct"
+            source_group = None
 
         permissions_list: list[str] = []
         for perm in role.permissions.all():
