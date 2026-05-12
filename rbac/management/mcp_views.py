@@ -2842,7 +2842,7 @@ def _investigate_user_access_v2(
     # Build role bindings data and collect permissions
     bindings_data: list[dict[str, Any]] = []
     all_permissions: set[str] = set()
-    permission_sources: dict[str, list[dict[str, str]]] = {}
+    permission_sources: dict[str, list[dict[str, str | None]]] = {}
 
     for binding in bindings:
         role = binding.role
