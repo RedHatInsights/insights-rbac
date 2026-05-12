@@ -1794,10 +1794,10 @@ parameters:
   value: ''
 - name: PARITY_CHECK_INTERVAL_SECONDS
   description: Time in seconds in which job runs
-  value: ''
+  value: '300'
 - name: PARITY_CHECK_TENANT_SAMPLE_SIZE
   description: Max tenants per run
-  value: ''
+  value: '10'
 - name: PARITY_CHECK_PRINCIPAL_SAMPLE_SIZE
   description: Max principals per tenant
-  value: ''
+  value: '50'
