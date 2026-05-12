@@ -4064,12 +4064,9 @@ class MCPInvestigateUserAccessV2Tests(MCPToolTestMixin, IdentityRequest):
         """Positive: investigate_user_access V2 handles direct principal bindings."""
         # Create a direct binding to the principal
         direct_role = RoleV2.objects.create(name="Direct Role", tenant=self.tenant)
-        write_perm = Permission.objects.create(
-            application="compliance",
-            resource_type="policies",
-            verb="write",
+        write_perm, _ = Permission.objects.get_or_create(
             permission="compliance:policies:write",
-            tenant=self.tenant,
+            defaults={"tenant": self.tenant},
         )
         direct_role.permissions.add(write_perm)
 
