@@ -26,11 +26,12 @@ import re
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache, wraps
 from typing import Any, Callable
 
 from django.conf import settings
+from django.db.models import Count
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.test import RequestFactory
 from django.urls import reverse
@@ -354,6 +355,8 @@ def _call_view(
 # │ list_group_principals            │ common    │ GET /api/v1/groups/{uuid}/principals/      │
 # │ list_cross_account_requests      │ common    │ GET /api/v1/cross-account-requests/        │
 # │ get_cross_account_request        │ common    │ GET /api/v1/cross-account-requests/{id}/   │
+# │ investigate_tam_access           │ common    │ (orchestrates cross-account + roles)       │
+# │ audit_redhat_access              │ common    │ (cross-account + roles + audit logs)       │
 # │ list_workspaces                  │ common    │ GET /api/v2/workspaces/                    │
 # │ get_workspace                    │ common    │ GET /api/v2/workspaces/{uuid}/             │
 # │ search_roles                     │ unified   │ V1: GET /api/v1/roles/                     │
@@ -1144,6 +1147,7 @@ def get_cross_account_request(
         "roles: [{name, permissions: [...]}], permission_summary}], analysis}."
     ),
     requires_auth=True,
+    api_version=ApiVersion.COMMON,
 )
 def investigate_tam_access(
     request: HttpRequest,
@@ -1331,6 +1335,220 @@ def investigate_tam_access(
             }
 
     return json.dumps({"requests": results, "analysis": analysis}, default=str)
+
+
+@register_tool(
+    description=(
+        "Audit all Red Hat cross-account access into your organization. "
+        "Returns a complete inventory of: (1) who from Red Hat has access, (2) what roles/permissions "
+        "they have, (3) when their access expires, and (4) what RBAC changes they've made. "
+        "SCENARIO: 'Who from Red Hat is in our org right now?' → call audit_redhat_access() to get "
+        "a summary of all active approved cross-account requests with audit activity. "
+        "Set include_inactive=true to also see expired or pending requests. "
+        "Set audit_days to control how far back to look in audit logs (default 30 days). "
+        "Returns: {active_access: [{user_info, roles, permissions, expires, days_remaining, "
+        "audit_activity: {total_actions, recent_actions, summary}}], summary: {total_users, "
+        "expiring_soon, unused_access}}."
+    ),
+    requires_auth=True,
+    api_version=ApiVersion.COMMON,
+)
+def audit_redhat_access(
+    request: HttpRequest,
+    *,
+    include_inactive: bool = False,
+    audit_days: int = 30,
+    limit: int = 50,
+) -> str:
+    """Audit Red Hat cross-account access into the organization."""
+    org_id = getattr(request.user, "org_id", None)
+    tenant = getattr(request, "tenant", None)
+    if not org_id or not tenant:
+        return json.dumps({"error": "No organization context available"})
+
+    now = datetime.now(timezone.utc)
+    audit_since = now - timedelta(days=audit_days)
+
+    # Query cross-account requests targeting this org
+    queryset = CrossAccountRequest.objects.filter(target_org=org_id).prefetch_related(
+        "roles", "roles__access__permission"
+    )
+
+    if not include_inactive:
+        queryset = queryset.filter(status="approved", start_date__lte=now, end_date__gte=now)
+    else:
+        queryset = queryset.filter(status__in=["approved", "pending", "expired"])
+
+    queryset = queryset.order_by("-end_date")[:limit]
+    requests_list = list(queryset)
+
+    if not requests_list:
+        return json.dumps(
+            {
+                "active_access": [],
+                "summary": {
+                    "total_users": 0,
+                    "expiring_soon": 0,
+                    "unused_access": 0,
+                    "message": "No cross-account requests found for this organization.",
+                    "hint": "Use list_cross_account_requests(query_by='target_org') to see all requests.",
+                },
+            }
+        )
+
+    # Get requester info from BOP for all user_ids
+    user_ids = list({car.user_id for car in requests_list})
+    user_info_map: dict[str, dict[str, Any]] = {}
+    try:
+        proxy = PrincipalProxy()
+        bop_resp = proxy.request_filtered_principals(
+            user_ids, org_id=None, options={"query_by": "user_id", "return_id": True}
+        )
+        if bop_resp.get("status_code") == 200:
+            for principal in bop_resp.get("data", []):
+                user_info_map[str(principal.get("user_id", ""))] = {
+                    "first_name": principal.get("first_name", ""),
+                    "last_name": principal.get("last_name", ""),
+                    "email": principal.get("email", ""),
+                    "username": principal.get("username", ""),
+                }
+    except Exception:
+        logger.warning("mcp: failed to fetch requester info from BOP", exc_info=True)
+
+    # Batch query audit logs for all usernames
+    all_usernames = {info.get("username") for info in user_info_map.values() if info.get("username")}
+    audit_by_user: dict[str, list[AuditLog]] = {u: [] for u in all_usernames}
+    audit_counts_by_user: dict[str, int] = {}
+    if all_usernames:
+        audit_qs = AuditLog.objects.filter(
+            tenant=tenant, principal_username__in=all_usernames, created__gte=audit_since
+        ).order_by("-created")
+        for entry in audit_qs:
+            if entry.principal_username in audit_by_user and len(audit_by_user[entry.principal_username]) < 10:
+                audit_by_user[entry.principal_username].append(entry)
+
+        # Get true total counts per user
+        counts_qs = (
+            AuditLog.objects.filter(tenant=tenant, principal_username__in=all_usernames, created__gte=audit_since)
+            .values("principal_username")
+            .annotate(count=Count("id"))
+        )
+        audit_counts_by_user = {row["principal_username"]: row["count"] for row in counts_qs}
+
+    # Build detailed response
+    results: list[dict[str, Any]] = []
+    expiring_soon_count = 0
+    unused_access_count = 0
+    all_permissions_granted: set[str] = set()
+
+    for car in requests_list:
+        days_remaining = (car.end_date - now).days if car.end_date else None
+        is_expiring_soon = days_remaining is not None and 0 < days_remaining <= 7 and car.status == "approved"
+        if is_expiring_soon:
+            expiring_soon_count += 1
+
+        requester_info = user_info_map.get(car.user_id, {"user_id": car.user_id})
+        username = requester_info.get("username", "")
+
+        # Collect roles and permissions
+        roles_data: list[dict[str, Any]] = []
+        permissions_list: list[str] = []
+        for role in car.roles.all():
+            role_perms: list[str] = []
+            for access in role.access.all():
+                if access.permission:
+                    perm_str = access.permission.permission
+                    role_perms.append(perm_str)
+                    permissions_list.append(perm_str)
+                    all_permissions_granted.add(perm_str)
+
+            roles_data.append(
+                {
+                    "name": role.display_name or role.name,
+                    "description": role.description or "",
+                    "permissions": sorted(role_perms),
+                }
+            )
+
+        # Get pre-fetched audit logs for this user
+        audit_activity: dict[str, Any] = {"total_actions": 0, "recent_actions": [], "summary": ""}
+        if username and car.status == "approved":
+            audit_entries = audit_by_user.get(username, [])
+            audit_activity["total_actions"] = audit_counts_by_user.get(username, 0)
+
+            if audit_entries:
+                for entry in audit_entries[:5]:
+                    audit_activity["recent_actions"].append(
+                        {
+                            "action": entry.action,
+                            "resource_type": entry.resource_type,
+                            "description": entry.description,
+                            "date": entry.created.strftime("%Y-%m-%d %H:%M") if entry.created else None,
+                        }
+                    )
+                # Summarize activity types
+                action_counts: dict[str, int] = {}
+                for entry in audit_entries:
+                    action_counts[entry.action] = action_counts.get(entry.action, 0) + 1
+                summary_parts = [f"{count} {action}" for action, count in sorted(action_counts.items())]
+                audit_activity["summary"] = ", ".join(summary_parts) + f" action(s) in last {audit_days} days"
+            else:
+                audit_activity["summary"] = f"No RBAC activity in last {audit_days} days"
+                unused_access_count += 1
+
+        # Determine status display
+        status_display = car.status
+        if car.status == "approved":
+            if days_remaining is not None and days_remaining < 0:
+                status_display = "expired (just now)"
+            elif is_expiring_soon:
+                status_display = f"approved (expires in {days_remaining} day{'s' if days_remaining != 1 else ''})"
+
+        results.append(
+            {
+                "request_id": str(car.request_id),
+                "user_info": {
+                    "user_id": requester_info.get("user_id", car.user_id),
+                    "name": f"{requester_info.get('first_name', '')} {requester_info.get('last_name', '')}".strip()
+                    or car.user_id,
+                    "email": requester_info.get("email", ""),
+                    "username": username or f"user_{car.user_id}",
+                },
+                "status": status_display,
+                "start_date": car.start_date.strftime("%Y-%m-%d") if car.start_date else None,
+                "end_date": car.end_date.strftime("%Y-%m-%d") if car.end_date else None,
+                "days_remaining": days_remaining if car.status == "approved" else None,
+                "roles": roles_data,
+                "permissions_summary": f"{len(permissions_list)} permission(s) across {len(roles_data)} role(s)",
+                "audit_activity": audit_activity,
+            }
+        )
+
+    # Group permissions by application for summary
+    perm_by_app: dict[str, int] = {}
+    for perm in all_permissions_granted:
+        parts = perm.split(":")
+        if len(parts) >= 1:
+            app = parts[0]
+            perm_by_app[app] = perm_by_app.get(app, 0) + 1
+
+    # Build summary
+    summary: dict[str, Any] = {
+        "total_users": len(results),
+        "total_active": sum(1 for r in results if "approved" in r["status"]),
+        "expiring_soon": expiring_soon_count,
+        "unused_access": unused_access_count,
+        "permissions_by_application": {app: count for app, count in sorted(perm_by_app.items())},
+        "audit_period_days": audit_days,
+    }
+
+    if expiring_soon_count > 0:
+        summary["warning"] = f"{expiring_soon_count} access grant(s) expiring within 7 days"
+
+    if unused_access_count > 0:
+        summary["note"] = f"{unused_access_count} user(s) with access but no RBAC activity in last {audit_days} days"
+
+    return json.dumps({"active_access": results, "summary": summary}, default=str)
 
 
 @register_tool(

@@ -33,6 +33,7 @@ from internal.utils import (
     replicate_missing_binding_tuples,
 )
 from management.health.healthcheck import redis_health
+from management.parity_check import run_parity_checks
 from management.principal.cleaner import (
     clean_tenants_principals,
     process_principal_events_from_umb,
@@ -179,3 +180,37 @@ def replicate_default_workspaces_in_worker(limit: Optional[int] = None):
 def recompute_tenant_role_bindings_in_worker(org_id: str):
     """Celery task to recompute role bindings for tenant."""
     return recompute_tenant_role_bindings(tenant=Tenant.objects.get(org_id=org_id))
+
+
+@shared_task
+def run_parity_access_checks_in_worker(
+    tenant_sample_size: Optional[int] = None,
+    principal_sample_size: Optional[int] = None,
+) -> dict:
+    """Celery task to run parity access checks between RBAC and Kessel PDP.
+
+    This task compares workspace access permissions computed by RBAC with those
+    returned by the Kessel Inventory API (PDP). Any discrepancies are logged
+    as metrics and warnings for monitoring and alerting.
+
+    Args:
+        tenant_sample_size: Maximum number of v2-enabled tenants to check per run.
+        principal_sample_size: Maximum number of principals per tenant to check.
+
+    Returns:
+        dict: Summary of check results including counts and any discrepancies found.
+    """
+    result = run_parity_checks(
+        tenant_sample_size=tenant_sample_size,
+        principal_sample_size=principal_sample_size,
+    )
+
+    return {
+        "tenants_checked": result.tenants_checked,
+        "principals_checked": result.principals_checked,
+        "checks_passed": result.checks_passed,
+        "checks_failed": result.checks_failed,
+        "discrepancies_count": len(result.discrepancies),
+        "errors_count": len(result.errors),
+        "duration_seconds": result.duration_seconds,
+    }
