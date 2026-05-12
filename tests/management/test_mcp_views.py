@@ -3268,13 +3268,13 @@ class AuditRedhatAccessTests(MCPToolTestMixin, IdentityRequest):
         )
         Access.objects.create(permission=self.other_perm, role=self.other_role, tenant=self.public_tenant)
 
-        # Create a cross-account request
+        # Create a cross-account request (not expiring soon)
         self.car = CrossAccountRequest.objects.create(
             target_org=self.tenant.org_id,
             user_id="10001",
             status="approved",
             start_date=timezone.now() - timezone.timedelta(days=1),
-            end_date=timezone.now() + timezone.timedelta(days=6),
+            end_date=timezone.now() + timezone.timedelta(days=30),
         )
         self.car.roles.add(self.system_role)
 
