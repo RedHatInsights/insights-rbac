@@ -26,7 +26,7 @@ import re
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache, wraps
 from typing import Any, Callable
 
@@ -1146,6 +1146,7 @@ def get_cross_account_request(
         "roles: [{name, permissions: [...]}], permission_summary}], analysis}."
     ),
     requires_auth=True,
+    api_version=ApiVersion.COMMON,
 )
 def investigate_tam_access(
     request: HttpRequest,
@@ -1365,7 +1366,7 @@ def audit_redhat_access(
         return json.dumps({"error": "No organization context available"})
 
     now = datetime.now(timezone.utc)
-    audit_since = now - datetime.timedelta(days=audit_days)
+    audit_since = now - timedelta(days=audit_days)
 
     # Query cross-account requests targeting this org
     queryset = CrossAccountRequest.objects.filter(target_org=org_id).prefetch_related(
@@ -1405,7 +1406,6 @@ def audit_redhat_access(
         if bop_resp.get("status_code") == 200:
             for principal in bop_resp.get("data", []):
                 user_info_map[str(principal.get("user_id", ""))] = {
-                    "user_id": principal.get("user_id", ""),
                     "first_name": principal.get("first_name", ""),
                     "last_name": principal.get("last_name", ""),
                     "email": principal.get("email", ""),
@@ -1461,10 +1461,10 @@ def audit_redhat_access(
             )
 
         # Get pre-fetched audit logs for this user
-        audit_activity: dict[str, Any] = {"total_actions": 0, "recent_actions": [], "summary": ""}
+        audit_activity: dict[str, Any] = {"recent_actions_count": 0, "recent_actions": [], "summary": ""}
         if username and car.status == "approved":
             audit_entries = audit_by_user.get(username, [])
-            audit_activity["total_actions"] = len(audit_entries)
+            audit_activity["recent_actions_count"] = len(audit_entries)
 
             if audit_entries:
                 for entry in audit_entries[:5]:
