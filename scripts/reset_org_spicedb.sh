@@ -1,6 +1,6 @@
 # Outputs all bootstrap relationships for a given org ID to a file
 # This file can be piped the zed relationship delete in order to delete them
-# This is NOT compatible with orgs that have more relationships 
+# This is NOT compatible with orgs that have more relationships
 # than those that come with bootstrapping and default / admin group memberships.
 # That is, once dual write is on or migration has run, this cannot be safely used.
 # It may miss relationships or not parse the output relationships correctly.
