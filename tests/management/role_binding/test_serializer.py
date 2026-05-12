@@ -1911,11 +1911,38 @@ class UpdateRoleBindingRequestSerializerTests(IdentityRequest):
         self.assertTrue(serializer.is_valid(), serializer.errors)
         self.assertEqual(len(serializer.validated_data["roles"]), 2)
 
+    # ── resource.tenant.org_id tests ──────────────────────────────────
+
+    def test_resource_tenant_org_id_accepted_via_dotted_key(self):
+        """Test that resource.tenant.org_id is remapped and accepted."""
+        data = self._make_valid_data(resource_id=_REMOVE, resource_type=_REMOVE)
+        data["resource.tenant.org_id"] = "12345678"
+        s = UpdateRoleBindingRequestSerializer(data=data)
+        self.assertTrue(s.is_valid(), s.errors)
+        self.assertEqual(s.validated_data["resource_tenant_org_id"], "12345678")
+
+    def test_resource_tenant_org_id_with_resource_id_is_invalid(self):
+        """Test that resource.tenant.org_id cannot be combined with resource_id."""
+        data = self._make_valid_data()
+        data["resource.tenant.org_id"] = "12345678"
+        s = UpdateRoleBindingRequestSerializer(data=data)
+        self.assertFalse(s.is_valid())
+        self.assertIn("resource.tenant.org_id cannot be combined", str(s.errors))
+
+    def test_resource_tenant_org_id_with_wrong_resource_type_is_invalid(self):
+        """Test that resource.tenant.org_id with resource_type != 'tenant' is rejected."""
+        data = self._make_valid_data(resource_id=_REMOVE)
+        data["resource.tenant.org_id"] = "12345678"
+        data["resource_type"] = "workspace"
+        s = UpdateRoleBindingRequestSerializer(data=data)
+        self.assertFalse(s.is_valid())
+        self.assertIn("resource_type must be 'tenant'", str(s.errors))
+
     # ── Missing required fields (parameterized) ──────────────────────
 
     def test_missing_required_field_returns_error(self):
         """Test that omitting any single required field fails validation."""
-        required_fields = ["resource_id", "resource_type", "subject_id", "subject_type", "roles"]
+        required_fields = ["subject_id", "subject_type", "roles"]
 
         for field in required_fields:
             with self.subTest(missing_field=field):
@@ -1923,6 +1950,20 @@ class UpdateRoleBindingRequestSerializerTests(IdentityRequest):
                 serializer = UpdateRoleBindingRequestSerializer(data=data)
                 self.assertFalse(serializer.is_valid())
                 self.assertIn(field, serializer.errors)
+
+    def test_missing_resource_id_without_org_id_returns_error(self):
+        """Test that omitting resource_id without resource.tenant.org_id fails validation."""
+        data = self._make_valid_data(resource_id=_REMOVE)
+        serializer = UpdateRoleBindingRequestSerializer(data=data)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("resource_id", serializer.errors)
+
+    def test_missing_resource_type_without_org_id_returns_error(self):
+        """Test that omitting resource_type without resource.tenant.org_id fails validation."""
+        data = self._make_valid_data(resource_type=_REMOVE)
+        serializer = UpdateRoleBindingRequestSerializer(data=data)
+        self.assertFalse(serializer.is_valid())
+        self.assertIn("resource_type", serializer.errors)
 
     # ── Validation error tests (parameterized) ───────────────────────
 
