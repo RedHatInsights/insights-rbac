@@ -31,6 +31,7 @@ from functools import lru_cache, wraps
 from typing import Any, Callable
 
 from django.conf import settings
+from django.db.models import Count
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.test import RequestFactory
 from django.urls import reverse
@@ -1417,6 +1418,7 @@ def audit_redhat_access(
     # Batch query audit logs for all usernames
     all_usernames = {info.get("username") for info in user_info_map.values() if info.get("username")}
     audit_by_user: dict[str, list[AuditLog]] = {u: [] for u in all_usernames}
+    audit_counts_by_user: dict[str, int] = {}
     if all_usernames:
         audit_qs = AuditLog.objects.filter(
             tenant=tenant, principal_username__in=all_usernames, created__gte=audit_since
@@ -1424,6 +1426,14 @@ def audit_redhat_access(
         for entry in audit_qs:
             if entry.principal_username in audit_by_user and len(audit_by_user[entry.principal_username]) < 10:
                 audit_by_user[entry.principal_username].append(entry)
+
+        # Get true total counts per user
+        counts_qs = (
+            AuditLog.objects.filter(tenant=tenant, principal_username__in=all_usernames, created__gte=audit_since)
+            .values("principal_username")
+            .annotate(count=Count("id"))
+        )
+        audit_counts_by_user = {row["principal_username"]: row["count"] for row in counts_qs}
 
     # Build detailed response
     results: list[dict[str, Any]] = []
@@ -1461,10 +1471,10 @@ def audit_redhat_access(
             )
 
         # Get pre-fetched audit logs for this user
-        audit_activity: dict[str, Any] = {"recent_actions_count": 0, "recent_actions": [], "summary": ""}
+        audit_activity: dict[str, Any] = {"total_actions": 0, "recent_actions": [], "summary": ""}
         if username and car.status == "approved":
             audit_entries = audit_by_user.get(username, [])
-            audit_activity["recent_actions_count"] = len(audit_entries)
+            audit_activity["total_actions"] = audit_counts_by_user.get(username, 0)
 
             if audit_entries:
                 for entry in audit_entries[:5]:
