@@ -26,6 +26,7 @@ from django_filters import rest_framework as filters
 from management.atomic_transactions import atomic_with_retry
 from management.audit_log.model import AuditLog
 from management.base_viewsets import BaseV2ViewSet
+from management.filters import ValidatedOrderingFilter
 from management.permissions.workspace_access import WorkspaceAccessPermission
 from management.utils import clean_query_param, validate_and_get_key, validate_and_get_key_multi
 from management.workspace.filters import WorkspaceAccessFilterBackend, WorkspaceObjectAccessMixin
@@ -33,7 +34,6 @@ from management.workspace.service import WorkspaceService
 from psycopg2.errors import DeadlockDetected, SerializationFailure
 from rest_framework import serializers, status
 from rest_framework.decorators import action
-from rest_framework.filters import OrderingFilter
 from rest_framework.permissions import SAFE_METHODS
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -74,7 +74,7 @@ class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
     ordering_fields = ("name", "created", "modified", "type")
     ordering = ("name",)
     # WorkspaceAccessFilterBackend must be first to filter by access before other filters
-    filter_backends = (WorkspaceAccessFilterBackend, filters.DjangoFilterBackend, OrderingFilter)
+    filter_backends = (WorkspaceAccessFilterBackend, filters.DjangoFilterBackend, ValidatedOrderingFilter)
 
     def __init__(self, **kwargs):
         """Init viewset."""
