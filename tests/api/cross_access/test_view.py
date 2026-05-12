@@ -20,13 +20,18 @@ from api.models import CrossAccountRequest, Tenant
 from api.cross_access.util import get_cross_principal_name
 from django.urls import reverse
 from django.utils import timezone
-from management.models import Role, Principal
+
+from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
+from management.models import Group, Role, Principal
 from management.notifications.notification_handlers import EVENT_TYPE_RH_TAM_REQUEST_CREATED
 from rest_framework import status
 from rest_framework.test import APIClient
 
 from datetime import timedelta
 from unittest.mock import patch
+
+from management.relation_replicator.relation_replicator import ReplicationEventType
+from management.role.model import BindingMapping
 from management.workspace.model import Workspace
 from migration_tool.in_memory_tuples import (
     all_of,
@@ -42,11 +47,20 @@ from tests.api.cross_access.fixtures import CrossAccountRequestTest
 from django.test.utils import override_settings
 from functools import partial
 
+from tests.util import assert_v1_v2_locally_consistent
+
 URL_LIST = reverse("v1_api:cross-list")
 
 
+@override_settings(ATOMIC_RETRY_DISABLED=True)
 class CrossAccountRequestViewTests(CrossAccountRequestTest):
     """Test the cross account request view."""
+
+    def tearDown(self):
+        with self.subTest(msg="tuple consistency"):
+            assert_v1_v2_locally_consistent(test=self)
+
+        super().tearDown()
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
@@ -224,6 +238,53 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
                     "last_name": "test",
                     "account_number": "567890",
                     "user_id": "1111111",
+                },
+            ],
+        },
+    )
+    def test_list_missing_user(self, mock_request):
+        """Test listing of cross account request based on account number of identity."""
+        client = APIClient()
+        response = client.get(URL_LIST, **self.headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 4)
+
+        data = response.data["data"]
+
+        user1_cars = [r for r in data if r["request_id"] == str(self.request_1.request_id)]
+        user2_cars = [r for r in data if r["request_id"] == str(self.request_2.request_id)]
+
+        self.assertEqual(1, len(user1_cars))
+        self.assertEqual(1, len(user2_cars))
+
+        user1_car = user1_cars[0]
+        user2_car = user2_cars[0]
+
+        self.assertTrue(user1_car["user_available"])
+        self.assertNotIn("user_id", user1_car)
+        self.assertEqual("user", user1_car["first_name"])
+        self.assertEqual("test", user1_car["last_name"])
+        self.assertEqual("test_user@email.com", user1_car["email"])
+
+        self.assertFalse(user2_car["user_available"])
+        self.assertEqual("2222222", user2_car["user_id"])
+        self.assertNotIn("first_name", user2_car)
+        self.assertNotIn("last_name", user2_car)
+        self.assertNotIn("email", user2_car)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "username": "test_user",
+                    "email": "test_user@email.com",
+                    "first_name": "user",
+                    "last_name": "test",
+                    "account_number": "567890",
+                    "user_id": "1111111",
                 }
             ],
         },
@@ -286,6 +347,30 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
     @patch("management.notifications.notification_handlers.notify")
     def test_create_requests_success(self, notify_mock):
         """Test the creation of cross account request success."""
+        client = APIClient()
+        with self.settings(NOTIFICATIONS_ENABLED=True):
+            response = client.post(
+                f"{URL_LIST}?", self.data4create, format="json", **self.associate_non_admin_request.META
+            )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["target_account"], self.data4create["target_account"])
+        self.assertEqual(response.data["status"], "pending")
+        self.assertEqual(response.data["start_date"], self.data4create["start_date"])
+        self.assertEqual(response.data["end_date"], self.data4create["end_date"])
+        self.assertEqual(len(response.data["roles"]), 2)
+        notify_mock.assert_called_once_with(
+            EVENT_TYPE_RH_TAM_REQUEST_CREATED,
+            {
+                "username": self.user_data["username"],
+                "request_id": response.data["request_id"],
+            },
+            self.data4create["target_org"],
+        )
+
+    @patch("management.notifications.notification_handlers.notify")
+    def test_create_requests_success_with_same_name_or_roles(self, notify_mock):
+        """Test the creation of cross account request success."""
+        Role.objects.create(name="role_1", system=False, tenant=self.tenant)
         client = APIClient()
         with self.settings(NOTIFICATIONS_ENABLED=True):
             response = client.post(
@@ -434,8 +519,107 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
             response.data.get("errors")[0].get("detail"), "Only the requestor may update the cross access request."
         )
 
+    def test_patch_custom_role_request_fail(self):
+        """Test updating an entire CAR."""
+        Role.objects.create(name="role_custom", system=False, tenant=self.tenant)
+        data_to_patch = {
+            "start_date": self.format_date(self.ref_time + timedelta(3)),
+            "end_date": self.format_date(self.ref_time + timedelta(5)),
+            "roles": ["role_custom"],
+            "status": "cancelled",
+        }
+        car_uuid = self.request_1.request_id
+        self.request_1.target_account = self.another_account
+        self.request_1.target_org = self.another_org_id
+        self.request_1.status = "pending"
+        self.request_1.save()
+        url = reverse("v1_api:cross-detail", kwargs={"pk": str(car_uuid)})
+
+        client = APIClient()
+        response = client.patch(url, data_to_patch, format="json", **self.associate_admin_request.META)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(
+            response.data.get("errors")[0].get("detail"),
+            "Role 'role_custom' does not exist.",
+        )
+
+    def test_patch_roles_which_doesnt_exist_request_fail(self):
+        """Test updating an entire CAR."""
+        data_to_patch = {
+            "start_date": self.format_date(self.ref_time + timedelta(3)),
+            "end_date": self.format_date(self.ref_time + timedelta(5)),
+            "roles": ["YYYY", "XXXXX"],
+            "status": "cancelled",
+        }
+        car_uuid = self.request_1.request_id
+        self.request_1.target_account = self.another_account
+        self.request_1.target_org = self.another_org_id
+        self.request_1.status = "pending"
+        self.request_1.save()
+        url = reverse("v1_api:cross-detail", kwargs={"pk": str(car_uuid)})
+
+        client = APIClient()
+        response = client.patch(url, data_to_patch, format="json", **self.associate_admin_request.META)
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+        self.assertEqual(response.data.get("errors")[0].get("detail"), "Role 'YYYY' does not exist.")
+
+    def test_patch_roles_request_success(self):
+        """Test updating an entire CAR."""
+        data_to_patch = {
+            "start_date": self.format_date(self.ref_time + timedelta(3)),
+            "end_date": self.format_date(self.ref_time + timedelta(5)),
+            "roles": ["role_8", "role_9"],
+            "status": "cancelled",
+        }
+        car_uuid = self.request_1.request_id
+        self.request_1.target_account = self.another_account
+        self.request_1.target_org = self.another_org_id
+        self.request_1.status = "pending"
+        self.request_1.save()
+        url = reverse("v1_api:cross-detail", kwargs={"pk": str(car_uuid)})
+
+        client = APIClient()
+        response = client.patch(url, data_to_patch, format="json", **self.associate_admin_request.META)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for field in data_to_patch:
+            if field == "roles":
+                for role in response.data.get("roles"):
+                    self.assertIn(role.get("display_name"), data_to_patch["roles"])
+                continue
+            self.assertEqual(data_to_patch.get(field), response.data.get(field))
+
     def test_update_request_success_for_requestor(self):
         """Test updating an entire CAR."""
+        self.data4create["target_account"] = self.another_account
+        self.data4create["target_org"] = self.another_org_id
+        Tenant.objects.create(
+            tenant_name=f"acct{self.another_account}", account_id=self.another_account, org_id=self.another_org_id
+        )
+        self.data4create["start_date"] = self.format_date(self.ref_time + timedelta(3))
+        self.data4create["end_date"] = self.format_date(self.ref_time + timedelta(5))
+        self.data4create["roles"] = ["role_8", "role_9"]
+        self.data4create["status"] = "pending"
+
+        car_uuid = self.request_1.request_id
+        self.request_1.target_account = self.another_account
+        self.request_1.target_org = self.another_org_id
+        self.request_1.status = "pending"
+        self.request_1.save()
+        url = reverse("v1_api:cross-detail", kwargs={"pk": str(car_uuid)})
+
+        client = APIClient()
+        response = client.put(url, self.data4create, format="json", **self.associate_admin_request.META)
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        for field in self.data4create:
+            if field == "roles":
+                for role in response.data.get("roles"):
+                    self.assertIn(role.get("display_name"), self.data4create["roles"])
+                continue
+            self.assertEqual(self.data4create.get(field), response.data.get(field))
+
+    def test_update_request_success_for_requestor_when_custom_role_with_same_name_exist(self):
+        """Test updating an entire CAR."""
+        Role.objects.create(name="role_8", system=False, tenant=self.tenant)
         self.data4create["target_account"] = self.another_account
         self.data4create["target_org"] = self.another_org_id
         Tenant.objects.create(
@@ -463,6 +647,7 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
                     self.assertIn(role.get("display_name"), self.data4create["roles"])
                 continue
             self.assertEqual(self.data4create.get(field), response.data.get(field))
+        self.assertEqual(len(response.data.get("roles")), 2)
 
     def test_update_request_fail_acct_for_requestor(self):
         """Test that updating the account of a CAR fails."""
@@ -527,7 +712,6 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
         # request_2's account is "xxxxxx" same as associate_admin_request's account
         car_uuid = self.request_2.request_id
         url = reverse("v1_api:cross-detail", kwargs={"pk": str(car_uuid)})
-
         client = APIClient()
 
         # From pending to approved
@@ -537,8 +721,25 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data.get("status"), update_data.get("status"))
 
+        test_group = Group.objects.create(tenant=self.tenant, name="test_group")
+
+        dual_write = RelationApiDualWriteGroupHandler(test_group, ReplicationEventType.ASSIGN_ROLE)
+        dual_write.generate_relations_reset_roles([self.role_1])
+        dual_write.replicate()
+
+        binding_mapping = self.role_1.binding_mappings.first()
+
         # From approved to denied
         update_data = {"status": "denied"}
+        response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
+
+        # Assigning the group should have prevented the BindingMapping from being deleted.
+        self.assertTrue(BindingMapping.objects.filter(pk=binding_mapping.pk).exists())
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data.get("status"), update_data.get("status"))
+
+        # Deined again should be fine
         response = client.patch(url, update_data, format="json", **self.associate_admin_request.META)
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -791,7 +992,7 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
         self.approve_request(self.request_4)
 
         # Check that the roles are now bound to the user in the target account (default workspace)
-        default_workspace_id = Workspace.objects.get(tenant__org_id=self.org_id, type=Workspace.Types.DEFAULT).id
+        default_workspace_id = Workspace.objects.default(tenant=self.tenant).id
         default_bindings = self.relations.find_tuples(
             # Tuples for bindings to the default workspace
             all_of(resource("rbac", "workspace", default_workspace_id), relation("binding"))
@@ -801,11 +1002,11 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
         cross_account_bindings, _ = self.relations.find_group_with_tuples(
             # Tuples which are...
             # grouped by resource
-            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+            group_by=lambda t: (t.resource.type.namespace, t.resource.type.name, t.resource.id),
             # where the resource is one of the default role bindings...
             group_filter=lambda group: group[0] == "rbac"
             and group[1] == "role_binding"
-            and group[2] in {str(binding.subject_id) for binding in default_bindings},
+            and group[2] in {str(binding.subject.subject.id) for binding in default_bindings},
             # and where one of the tuples from that binding has...
             predicates=[
                 all_of(
@@ -824,7 +1025,10 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
 
         # Collect all the bound roles by iterating over the bindings and getting the subjects of the role relation
         bound_roles = {
-            t.subject_id for _, tuples in cross_account_bindings.items() for t in tuples if t.relation == "role"
+            t.subject.subject.id
+            for _, tuples in cross_account_bindings.items()
+            for t in tuples
+            if t.relation == "role"
         }
 
         # Assert the bindings are to roles with the same ID
@@ -849,13 +1053,13 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
         # Add roles to request for user 2222222 and approve it.
         self.add_roles_to_request(self.request_4, [farmer, fisher])
 
-        default_workspace_id = Workspace.objects.get(tenant__org_id=self.org_id, type=Workspace.Types.DEFAULT).id
+        default_workspace_id = Workspace.objects.default(tenant=self.tenant).id
         previous_default_bindings = self.relations.find_tuples(
             # Tuples for bindings to the default workspace
             all_of(resource("rbac", "workspace", default_workspace_id), relation("binding"))
         )
 
-        previous_subject_ids = {str(binding.subject_id) for binding in previous_default_bindings}
+        previous_subject_ids = {str(binding.subject.subject.id) for binding in previous_default_bindings}
 
         # generated relations to approve request
         self.approve_request(self.request_4)
@@ -869,18 +1073,18 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
         # Collect default bindings which were added by approving request
         default_bindings = []
         for binding in all_default_bindings:
-            if str(binding.subject_id) not in previous_subject_ids:
+            if str(binding.subject.subject.id) not in previous_subject_ids:
                 default_bindings.append(binding)
 
         # Of these bindings, look for the ones that are for the user 2222222
         cross_account_bindings, _ = self.relations.find_group_with_tuples(
             # Tuples which are...
             # grouped by resource
-            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+            group_by=lambda t: (t.resource.type.namespace, t.resource.type.name, t.resource.id),
             # where the resource is one of the default role bindings...
             group_filter=lambda group: group[0] == "rbac"
             and group[1] == "role_binding"
-            and group[2] in {str(binding.subject_id) for binding in default_bindings},
+            and group[2] in {str(binding.subject.subject.id) for binding in default_bindings},
             # and where one of the tuples from that binding has...
             predicates=[
                 all_of(
@@ -899,7 +1103,10 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
 
         # Collect all the bound roles by iterating over the bindings and getting the subjects of the role relation
         bound_roles = {
-            t.subject_id for _, tuples in cross_account_bindings.items() for t in tuples if t.relation == "role"
+            t.subject.subject.id
+            for _, tuples in cross_account_bindings.items()
+            for t in tuples
+            if t.relation == "role"
         }
 
         # Assert the bindings are to roles with the same ID
@@ -915,11 +1122,11 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
         cross_account_bindings, _ = self.relations.find_group_with_tuples(
             # Tuples which are...
             # grouped by resource
-            group_by=lambda t: (t.resource_type_namespace, t.resource_type_name, t.resource_id),
+            group_by=lambda t: (t.resource.type.namespace, t.resource.type.name, t.resource.id),
             # where the resource is one of the default role bindings...
             group_filter=lambda group: group[0] == "rbac"
             and group[1] == "role_binding"
-            and group[2] in {str(binding.subject_id) for binding in default_bindings},
+            and group[2] in {str(binding.subject.subject.id) for binding in default_bindings},
             # and where one of the tuples from that binding has...
             predicates=[
                 all_of(
@@ -946,7 +1153,7 @@ class CrossAccountRequestViewTests(CrossAccountRequestTest):
 
         default_bindings = []
         for binding in all_default_bindings:
-            if str(binding.subject_id) not in previous_subject_ids:
+            if str(binding.subject.subject.id) not in previous_subject_ids:
                 default_bindings.append(binding)
 
         self.assertEqual(len(default_bindings), 0, "Default bindings for cross access request roles still exists")

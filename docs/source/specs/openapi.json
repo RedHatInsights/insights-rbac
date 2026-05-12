@@ -38,9 +38,130 @@
     {
       "name": "CrossAccountRequest",
       "description": "Operations about cross account requests"
+    },
+    {
+      "name": "Audit Logs",
+      "description": "Operations about audit logs requests"
     }
   ],
   "paths": {
+    "/auditlogs/": {
+      "get": {
+        "tags": [
+          "Audit Logs"
+        ],
+        "description": "A list of all of the Admin User's actions logged in Audit Logs",
+        "operationId": "getAuditlogs",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/QueryLimit"
+          },
+          {
+            "$ref": "#/components/parameters/QueryOffset"
+          },
+          {
+            "in": "query",
+            "name": "principal_username",
+            "required": false,
+            "description": "Parameter for filtering audit logs by principal username. Supports partial and exact matching via name_match parameter.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "resource_type",
+            "required": false,
+            "description": "Parameter for filtering audit logs by resource type. Multiple values can be provided.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "group",
+                  "role",
+                  "user",
+                  "permission"
+                ]
+              }
+            }
+          },
+          {
+            "in": "query",
+            "name": "action",
+            "required": false,
+            "description": "Parameter for filtering audit logs by action. Multiple values can be provided.",
+            "schema": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "delete",
+                  "add",
+                  "edit",
+                  "create",
+                  "remove"
+                ]
+              }
+            }
+          },
+          {
+            "in": "query",
+            "name": "name_match",
+            "required": false,
+            "description": "Parameter for specifying the matching type for principal_username filter. Default is partial.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "partial",
+                "exact"
+              ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "order_by",
+            "required": false,
+            "description": "Parameter for ordering audit logs. Prefix with '-' for descending order. Default is '-created'.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "created",
+                "-created",
+                "principal_username",
+                "-principal_username",
+                "resource_type",
+                "-resource_type",
+                "action",
+                "-action"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User actions have been successfully added to audit logs",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AuditLogPagination"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/cross-account-requests/": {
       "get": {
         "tags": [
@@ -526,6 +647,39 @@
         }
       }
     },
+    "/openapi.json": {
+      "get": {
+        "tags": [
+          "Status"
+        ],
+        "summary": "Get the OpenAPI specification",
+        "description": "Returns the OpenAPI specification document for this API",
+        "operationId": "getOpenAPISpec",
+        "responses": {
+          "200": {
+            "description": "OpenAPI specification document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "description": "OpenAPI 3.0 specification"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/principals/": {
       "get": {
         "tags": [
@@ -620,11 +774,16 @@
             "in": "query",
             "name": "order_by",
             "required": false,
-            "description": "Parameter for ordering principals by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-username",
+            "description": "Parameter for ordering principals by value. For inverse ordering, supply '-' before the param value, such as: ?order_by=-username. All options work for type of service-account principal, only username works for a user based principal.",
             "schema": {
               "type": "string",
               "enum": [
-                "username"
+                "username",
+                "name",
+                "owner",
+                "description",
+                "clientId",
+                "time_created"
               ]
             }
           },
@@ -645,13 +804,41 @@
             "in": "query",
             "name": "type",
             "required": false,
-            "description": "Parameter for selecting the type of principal to be returned.",
+            "description": "Parameter for selecting the type of principal to be returned. Defaults to 'user'.",
             "schema": {
               "type": "string",
               "enum": [
                 "service-account",
-                "user"
+                "user",
+                "all"
               ]
+            }
+          },
+          {
+            "in": "query",
+            "name": "name",
+            "required": false,
+            "description": "Parameter for filtering principals of type 'service-account' by exact name such as: ?type=service-account&name=userA.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "owner",
+            "required": false,
+            "description": "Parameter for filtering principals of type 'service-account' by exact owner such as: ?type=service-account&owner=ownerA.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "description",
+            "required": false,
+            "description": "Parameter for filtering principals of type 'service-account' by partial description such as: ?type=service-account&description=desc.",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -667,6 +854,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/ServiceAccountPagination"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AllPrincipalsPagination"
                     }
                   ]
                 }
@@ -1265,7 +1455,8 @@
               "type": "string",
               "enum": [
                 "service-account",
-                "user"
+                "user",
+                "all"
               ]
             }
           },
@@ -1312,6 +1503,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/ServiceAccountInGroupResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/AllPrincipalsPagination"
                     }
                   ]
                 }
@@ -2921,6 +3115,50 @@
           }
         }
       },
+      "AuditLog": {
+        "properties": {
+          "created": {
+            "type": "string"
+          },
+          "principal_username": {
+            "type": "string",
+            "example": "user123"
+          },
+          "description": {
+            "type": "string",
+            "example": "user abc added to group: 1234"
+          },
+          "resource_type": {
+            "type": "string",
+            "example": "group"
+          },
+          "action": {
+            "type": "string",
+            "example": "add"
+          }
+        }
+      },
+      "AuditLogPagination": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ListPagination"
+          },
+          {
+            "type": "object",
+            "required": [
+              "data"
+            ],
+            "properties": {
+              "data": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/AuditLog"
+                }
+              }
+            }
+          }
+        ]
+      },
       "Principal": {
         "required": [
           "username",
@@ -3124,6 +3362,63 @@
             }
           }
         }
+      },
+      "AllPrincipalsPagination": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ListPagination"
+          },
+          {
+            "type": "object",
+            "required": [
+              "data"
+            ],
+            "properties": {
+              "data": {
+                "type": "object",
+                "properties": {
+                  "serviceAccounts": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/ServiceAccount"
+                    }
+                  },
+                  "users": {
+                    "type": "array",
+                    "items": {
+                      "oneOf": [
+                        {
+                          "$ref": "#/components/schemas/Principal"
+                        },
+                        {
+                          "$ref": "#/components/schemas/PrincipalMinimal"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "oneOf": [
+                  {
+                    "required": [
+                      "serviceAccounts"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "users"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "serviceAccounts",
+                      "users"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        ]
       },
       "Group": {
         "required": [
@@ -3411,7 +3706,6 @@
       },
       "CrossAccountRequestIn": {
         "required": [
-          "target_account",
           "target_org",
           "start_date",
           "end_date",
@@ -3503,7 +3797,18 @@
           },
           {
             "type": "object",
+            "required": [
+              "user_available",
+              "first_name",
+              "last_name",
+              "email"
+            ],
             "properties": {
+              "user_available": {
+                "type": "boolean",
+                "enum": [true],
+                "example": true
+              },
               "first_name": {
                 "type": "string",
                 "example": "Jane"
@@ -3527,10 +3832,19 @@
           },
           {
             "type": "object",
+            "required": [
+              "user_id",
+              "user_available"
+            ],
             "properties": {
               "user_id": {
                 "type": "string",
                 "example": "1234"
+              },
+              "user_available": {
+                "type": "boolean",
+                "enum": [false],
+                "example": false
               }
             }
           }
@@ -3643,10 +3957,21 @@
         ]
       },
       "ResourceDefinitionFilter": {
+          "oneOf": [
+              {
+                "$ref": "#/components/schemas/ResourceDefinitionFilterOperationEqual"
+              },
+              {
+                "$ref": "#/components/schemas/ResourceDefinitionFilterOperationIn"
+              }
+          ]
+     },
+      "ResourceDefinitionFilterOperationEqual": {
+        "type": "object",
         "required": [
-          "key",
-          "operation",
-          "value"
+            "key",
+            "operation",
+            "value"
         ],
         "properties": {
           "key": {
@@ -3656,34 +3981,41 @@
           "operation": {
             "type": "string",
             "enum": [
-              "equal",
+              "equal"
+            ]
+          },
+          "value": {
+            "type": "string",
+            "example": "123456",
+            "nullable": true
+          }
+        }
+      },
+      "ResourceDefinitionFilterOperationIn": {
+        "type": "object",
+        "required": [
+            "key",
+            "operation",
+            "value"
+        ],
+        "properties": {
+          "key": {
+            "type": "string",
+            "example": "cost-management.aws.account"
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
               "in"
             ]
           },
           "value": {
-            "oneOf": [
-              {
-                "type": "string",
-                "example": "123456",
-                "nullable": true
-              },
-              {
-                "type": "array",
-                "items": {
-                  "oneOf": [
-                    {
-                      "type": "string",
-                      "example": "value1"
-                    }
-                  ]
-                },
-                "example": [
-                  "value1",
-                  "value2"
-                ],
-                "nullable": true
-              }
-            ]
+            "type": "array",
+            "items": {
+              "type": "string",
+              "nullable": true
+            },
+            "example": ["value1", null, "value2"]
           }
         }
       },

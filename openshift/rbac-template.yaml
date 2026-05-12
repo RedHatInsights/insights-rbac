@@ -514,7 +514,7 @@ objects:
     selector:
       name: rbac-pgsql
     resources:
-      limits:
+      requests:
         memory: ${MEMORY_REQUEST}
       limits:
         memory: ${MEMORY_LIMIT}

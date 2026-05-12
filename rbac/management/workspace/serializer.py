@@ -16,18 +16,24 @@
 #
 
 """Serializer for workspace management."""
+
+import re
+
+from management.workspace.service import WorkspaceService
 from rest_framework import serializers
 
 from .model import Workspace
+
+WORKSPACE_NAME_REGEX = re.compile(r"^[\w\s-]+$")
 
 
 class WorkspaceSerializer(serializers.ModelSerializer):
     """Serializer for the Workspace model."""
 
     id = serializers.UUIDField(read_only=True, required=False)
-    name = serializers.CharField(required=False, max_length=255)
+    name = serializers.CharField(required=True, max_length=255)
     description = serializers.CharField(allow_null=True, required=False, max_length=255)
-    parent_id = serializers.UUIDField(allow_null=True, required=False)
+    parent_id = serializers.UUIDField(required=False)
     created = serializers.DateTimeField(read_only=True)
     modified = serializers.DateTimeField(read_only=True)
     type = serializers.CharField(read_only=True)
@@ -46,12 +52,45 @@ class WorkspaceSerializer(serializers.ModelSerializer):
             "type",
         )
 
+    @property
+    def _service(self) -> WorkspaceService:
+        return self.context["view"]._service
+
+    def validate_name(self, value):
+        """Reject names with characters other than letters, numbers, spaces, hyphens, and underscores.
+
+        Existing names are grandfathered: skip validation when the name is unchanged on update.
+        """
+        if self.instance and self.instance.name == value:
+            return value
+        if not WORKSPACE_NAME_REGEX.match(value):
+            raise serializers.ValidationError(
+                "Workspace name may only contain letters, numbers, spaces, hyphens, and underscores."
+            )
+        return value
+
+    def validate(self, attrs):
+        """Require parent_id in the body for PUT (full update) requests."""
+        request = self.context.get("request")
+        if request and request.method == "PUT" and "parent_id" not in attrs:
+            instance = self.instance
+            if instance and instance.type not in (Workspace.Types.ROOT, Workspace.Types.UNGROUPED_HOSTS):
+                raise serializers.ValidationError({"parent_id": "This field is required."})
+        return attrs
+
     def create(self, validated_data):
         """Create the workspace object in the database."""
-        validated_data["tenant"] = self.context["request"].tenant
+        tenant = self.context["request"].tenant
+        return self._service.create(validated_data, tenant)
 
-        workspace = Workspace.objects.create(**validated_data)
-        return workspace
+    def update(self, instance, validated_data):
+        """Update the workspace object in the database."""
+        return self._service.update(instance, validated_data)
+
+    def move(self, instance, target_workspace):
+        """Move the workspace object in the database."""
+        updated_workspace = self._service.move(instance, target_workspace)
+        return {"id": str(updated_workspace.id), "parent_id": str(updated_workspace.parent_id)}
 
 
 class WorkspaceAncestrySerializer(serializers.ModelSerializer):
@@ -83,3 +122,32 @@ class WorkspaceWithAncestrySerializer(WorkspaceSerializer):
         """Serialize the workspace's ancestors."""
         ancestors = obj.ancestors().only("name", "id", "parent_id")
         return WorkspaceAncestrySerializer(ancestors, many=True).data
+
+
+class WorkspaceEventSerializer(serializers.ModelSerializer):
+    """Serializer for the Workspace model for sending event."""
+
+    id = serializers.UUIDField()
+    name = serializers.CharField()
+    type = serializers.CharField()
+    created = serializers.DateTimeField()
+    modified = serializers.DateTimeField()
+
+    class Meta:
+        """Metadata for the serializer."""
+
+        model = Workspace
+        fields = (
+            "name",
+            "id",
+            "created",
+            "modified",
+            "type",
+        )
+        read_only_fields = (
+            "name",
+            "id",
+            "created",
+            "modified",
+            "type",
+        )

@@ -15,6 +15,7 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """API models for import organization."""
+
 # flake8: noqa
 # pylint: disable=unused-import
 from management.permission.model import Permission
@@ -27,6 +28,17 @@ from management.role.model import (
     ResourceDefinition,
     Role,
     BindingMapping,
+)
+from management.role.v2_model import (
+    RoleV2,
+    CustomRoleV2,
+    SeededRoleV2,
+    PlatformRoleV2,
+)
+from management.role_binding.model import (
+    RoleBinding,
+    RoleBindingGroup,
+    RoleBindingPrincipal,
 )
 from management.policy.model import Policy
 from management.audit_log.model import AuditLog

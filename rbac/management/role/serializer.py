@@ -16,10 +16,21 @@
 #
 
 """Serializer for role management."""
+
+from django.conf import settings
 from django.utils.translation import gettext as _
-from management.group.model import Group
+from feature_flags import FEATURE_FLAGS
+from internal.utils import get_or_create_ungrouped_workspace, is_resource_a_workspace
+from management.models import Group, Workspace
 from management.serializer_override_mixin import SerializerCreateOverrideMixin
-from management.utils import filter_queryset_by_tenant, get_principal, validate_and_get_key
+from management.utils import (
+    filter_queryset_by_tenant,
+    get_principal,
+    is_permission_blocked_for_v1,
+    is_valid_uuid,
+    validate_and_get_key,
+    value_to_list,
+)
 from rest_framework import serializers
 
 from api.models import Tenant
@@ -49,13 +60,94 @@ class ResourceDefinitionSerializer(SerializerCreateOverrideMixin, serializers.Mo
             message = f"attributeFilter operation must be one of {ALLOWED_OPERATIONS}"
             error = {key: [_(message)]}
             raise serializers.ValidationError(error)
+        else:
+            values = value.get("value")
+            error = False
+            if op == "in" and not isinstance(values, list):
+                key = "format"
+                message = "attributeFilter operation 'in' expects a List value"
+                error = {key: [_(message)]}
+            elif op == "equal" and not isinstance(values, (str, type(None))):
+                key = "format"
+                message = "attributeFilter operation 'equal' expects a String value or None"
+                error = {key: [_(message)]}
+            if error:
+                raise serializers.ValidationError(error)
+
+            # Validate that group.id only contains UUIDs or None
+            filter_key = value.get("key")
+            if filter_key == "group.id":
+                if op == "in":
+                    if isinstance(values, list):
+                        invalid_values = [v for v in values if v is not None and not is_valid_uuid(v)]
+                        if invalid_values:
+                            key = "format"
+                            message = (
+                                f"attributeFilter with key 'group.id' must contain only valid UUIDs or None, "
+                                f"invalid values: {invalid_values}"
+                            )
+                            error = {key: [_(message)]}
+                            raise serializers.ValidationError(error)
+                elif op == "equal":
+                    if values is not None and not is_valid_uuid(values):
+                        key = "format"
+                        message = f"attributeFilter with key 'group.id' must be a valid UUID or None, got: {values}"
+                        error = {key: [_(message)]}
+                        raise serializers.ValidationError(error)
+
         return value
+
+    def to_representation(self, instance):
+        """Convert the ResourceDefinition instance to a dictionary."""
+        serialized_data = super().to_representation(instance)
+        if FEATURE_FLAGS.is_remove_null_value_enabled() and instance.attributeFilter["key"] == "group.id":
+            value = instance.attributeFilter["value"]
+            if isinstance(value, list) and None in value:
+                ungrouped_hosts = get_or_create_ungrouped_workspace(instance.tenant)
+                value = [v for v in value if v is not None]
+                value.append(str(ungrouped_hosts.id))
+            elif value is None:
+                ungrouped_hosts = get_or_create_ungrouped_workspace(instance.tenant)
+                value = str(ungrouped_hosts.id)
+            serialized_data["attributeFilter"]["value"] = value
+        if self._should_add_hierarchy(instance):
+            serialized_data.get("attributeFilter").update(
+                {"operation": "in", "value": self._original_vals_and_descendant_ids(instance)}
+            )
+        return serialized_data
 
     class Meta:
         """Metadata for the serializer."""
 
         model = ResourceDefinition
         fields = ("attributeFilter",)
+
+    def _original_vals_and_descendant_ids(self, instance):
+        attr_filter_list = value_to_list(instance.attributeFilter.get("value"))
+        uuids = [val for val in attr_filter_list if is_valid_uuid(val)]
+        non_uuids = [val for val in attr_filter_list if not is_valid_uuid(val)]
+        ids_with_parents = Workspace.objects.descendant_ids_with_parents(uuids, instance.tenant_id)
+        return list(set(non_uuids + ids_with_parents))
+
+    def _should_add_hierarchy(self, instance):
+        hierarchy_enabled = settings.WORKSPACE_HIERARCHY_ENABLED is True
+        is_access_request = self.context.get("for_access") is True
+        return hierarchy_enabled and is_access_request and self._is_workspace_filter(instance)
+
+    def _is_workspace_filter(self, instance):
+        return is_resource_a_workspace(instance.application, instance.resource_type, instance.attributeFilter)
+
+
+class AccessListSerializer(serializers.ListSerializer):
+    """List serializer that filters out blocked permissions for v1 API."""
+
+    def to_representation(self, data):
+        """Filter blocked permissions before serializing the list."""
+        request = self.context.get("request")
+        if request:
+            iterable = data.all() if hasattr(data, "all") else data
+            data = [item for item in iterable if not is_permission_blocked_for_v1(item.permission.permission, request)]
+        return super().to_representation(data)
 
 
 class AccessSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer):
@@ -80,6 +172,7 @@ class AccessSerializer(SerializerCreateOverrideMixin, serializers.ModelSerialize
 
         model = Access
         fields = ("resourceDefinitions", "permission")
+        list_serializer_class = AccessListSerializer
 
 
 class RoleSerializer(serializers.ModelSerializer):
@@ -144,10 +237,8 @@ class RoleSerializer(serializers.ModelSerializer):
         """Update the role object in the database."""
         access_list = validated_data.pop("access")
         tenant = self.context["request"].tenant
-        role_name = instance.name
-        update_data = validate_role_update(instance, validated_data)
 
-        instance = update_role(role_name, update_data, tenant)
+        instance = update_role(instance, validated_data)
 
         create_access_for_role(instance, access_list, tenant)
 
@@ -160,6 +251,16 @@ class RoleSerializer(serializers.ModelSerializer):
     def get_external_tenant(self, obj):
         """Get the external tenant name if it's from an external tenant."""
         return obj.external_tenant_name()
+
+    def validate(self, data):
+        """Validate the input data of role."""
+        if self.instance and self.instance.system:
+            key = "role.update"
+            message = "System roles may not be updated."
+            error = {key: [_(message)]}
+            raise serializers.ValidationError(error)
+        _validate_name_not_system_role(data.get("name"), data.get("display_name"), self.instance)
+        return super().validate(data)
 
 
 class RoleMinimumSerializer(SerializerCreateOverrideMixin, serializers.ModelSerializer):
@@ -308,11 +409,7 @@ class RolePatchSerializer(RoleSerializer):
 
     def update(self, instance, validated_data):
         """Patch the role object."""
-        tenant = self.context["request"].tenant
-        role_name = instance.name
-        update_data = validate_role_update(instance, validated_data)
-
-        instance = update_role(role_name, update_data, tenant, clear_access=False)
+        instance = update_role(instance, validated_data, clear_access=False)
         return instance
 
 
@@ -324,6 +421,27 @@ class BindingMappingSerializer(serializers.ModelSerializer):
 
         model = BindingMapping
         fields = "__all__"
+
+
+def _validate_name_not_system_role(name, display_name, instance=None):
+    """Validate that name/display_name do not conflict with system role names (case-insensitive)."""
+    public_tenant = Tenant.objects.get(tenant_name="public")
+
+    if name and (not instance or instance.name != name):
+        if Role.objects.filter(system=True, tenant=public_tenant, name__iexact=name).exists():
+            raise serializers.ValidationError(
+                {"name": [_("Role name '%(name)s' conflicts with an existing system role.") % {"name": name}]}
+            )
+
+    if display_name and (not instance or instance.display_name != display_name):
+        if Role.objects.filter(system=True, tenant=public_tenant, display_name__iexact=display_name).exists():
+            raise serializers.ValidationError(
+                {
+                    "display_name": [
+                        _("Display name '%(name)s' conflicts with an existing system role.") % {"name": display_name}
+                    ]
+                }
+            )
 
 
 def obtain_applications(obj):
@@ -349,9 +467,19 @@ def obtain_groups_in(obj, request):
 
     public_tenant = Tenant.objects.get(tenant_name="public")
 
-    platform_default_groups = Group.platform_default_set().filter(tenant=request.tenant).filter(
-        policies__in=policy_ids
-    ) or Group.platform_default_set().filter(tenant=public_tenant).filter(policies__in=policy_ids)
+    # Fix: Check if custom default group exists for tenant first
+    tenant_has_custom_default = Group.platform_default_set().filter(tenant=request.tenant).exists()
+
+    if tenant_has_custom_default:
+        # Use tenant's custom default group only
+        platform_default_groups = (
+            Group.platform_default_set().filter(tenant=request.tenant).filter(policies__in=policy_ids)
+        )
+    else:
+        # Fall back to public tenant's default group
+        platform_default_groups = (
+            Group.platform_default_set().filter(tenant=public_tenant).filter(policies__in=policy_ids)
+        )
 
     if username_param and scope_param != PRINCIPAL_SCOPE:
         is_org_admin = request.user_from_query.admin
@@ -361,9 +489,17 @@ def obtain_groups_in(obj, request):
     qs = assigned_groups | platform_default_groups
 
     if is_org_admin:
-        admin_default_groups = Group.admin_default_set().filter(tenant=request.tenant).filter(
-            policies__in=policy_ids
-        ) or Group.admin_default_set().filter(tenant=public_tenant).filter(policies__in=policy_ids)
+        # Apply same fix for admin default groups
+        tenant_has_custom_admin_default = Group.admin_default_set().filter(tenant=request.tenant).exists()
+
+        if tenant_has_custom_admin_default:
+            admin_default_groups = (
+                Group.admin_default_set().filter(tenant=request.tenant).filter(policies__in=policy_ids)
+            )
+        else:
+            admin_default_groups = (
+                Group.admin_default_set().filter(tenant=public_tenant).filter(policies__in=policy_ids)
+            )
 
         qs = qs | admin_default_groups
 
@@ -382,43 +518,19 @@ def create_access_for_role(role, access_list, tenant):
             ResourceDefinition.objects.create(**resource_def_item, access=access_obj, tenant=tenant)
 
 
-def validate_role_update(instance, validated_data):
-    """Validate if role could be updated."""
-    if instance.system:
-        key = "role.update"
-        message = "System roles may not be updated."
-        error = {key: [_(message)]}
-        raise serializers.ValidationError(error)
-    updated_name = validated_data.get("name", instance.name)
-    updated_display_name = validated_data.get("display_name", instance.display_name)
-    updated_description = validated_data.get("description", instance.description)
-
-    return {
-        "updated_name": updated_name,
-        "updated_display_name": updated_display_name,
-        "updated_description": updated_description,
-    }
-
-
-def update_role(role_name, update_data, tenant, clear_access=True):
+def update_role(instance, validated_data, clear_access=True):
     """Update role attribute."""
-    role = Role.objects.get(name=role_name, tenant=tenant)
-
     update_fields = []
 
-    if "updated_name" in update_data:
-        role.name = update_data["updated_name"]
-        update_fields.append("name")
-    if "updated_display_name" in update_data:
-        role.display_name = update_data["updated_display_name"]
-        update_fields.append("display_name")
-    if "updated_description" in update_data:
-        role.description = update_data["updated_description"]
-        update_fields.append("description")
+    for field_name in ["name", "display_name", "description"]:
+        if field_name not in validated_data:
+            continue
+        setattr(instance, field_name, validated_data[field_name])
+        update_fields.append(field_name)
 
-    role.save(update_fields=update_fields)
+    instance.save(update_fields=update_fields)
 
     if clear_access:
-        role.access.all().delete()
+        instance.access.all().delete()
 
-    return role
+    return instance

@@ -16,6 +16,7 @@
 #
 
 """Custom RBAC Middleware."""
+
 import binascii
 import json
 import logging
@@ -25,28 +26,23 @@ from django.conf import settings
 from django.core.handlers.wsgi import WSGIRequest
 from django.db import IntegrityError, transaction
 from django.http import Http404, HttpResponse, QueryDict
-from django.urls import resolve
-from django.utils.deprecation import MiddlewareMixin
+from django.urls import resolve, reverse
+from feature_flags import FEATURE_FLAGS
+from management.authorization.token_validator import ITSSOTokenValidator, TokenValidator
 from management.cache import TenantCache
 from management.models import Principal
+from management.principal.proxy import PrincipalProxy
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.tenant_service import get_tenant_bootstrap_service
 from management.tenant_service.tenant_service import TenantBootstrapService
-from management.utils import APPLICATION_KEY, access_for_principal, validate_psk
+from management.utils import APPLICATION_KEY, access_for_principal, build_system_user_from_token, build_user_from_psk
 from prometheus_client import Counter
 from rest_framework import status
 
-from api.common import (
-    RH_IDENTITY_HEADER,
-    RH_INSIGHTS_REQUEST_ID,
-    RH_RBAC_ACCOUNT,
-    RH_RBAC_CLIENT_ID,
-    RH_RBAC_ORG_ID,
-    RH_RBAC_PSK,
-)
+from api.common import RH_IDENTITY_HEADER, RH_INSIGHTS_REQUEST_ID
 from api.models import Tenant, User
 from api.serializers import extract_header
-
+from rbac.a2s import is_a2s_path as _is_a2s_path
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 req_sys_counter = Counter(
@@ -76,9 +72,18 @@ def catch_integrity_error(func):
 
 def is_no_auth(request):
     """Check condition for needing to authenticate the user."""
-    no_auth_list = ["status", "metrics", "openapi.json", "health"]
-    no_auth = any(no_auth_path in request.path for no_auth_path in no_auth_list)
-    return no_auth
+    no_auth_list = [
+        reverse("v1_api:server-ready"),
+        reverse("v1_api:server-status"),
+        reverse("v1_api:openapi"),
+        "/metrics",
+    ]
+
+    # Only add V2 OpenAPI endpoint if V2 APIs are enabled
+    if settings.V2_APIS_ENABLED:
+        no_auth_list.append(reverse("v2_api:openapi"))
+
+    return request.path in no_auth_list
 
 
 class HttpResponseUnauthorizedRequest(HttpResponse):
@@ -90,7 +95,25 @@ class HttpResponseUnauthorizedRequest(HttpResponse):
     status_code = 401
 
 
-class IdentityHeaderMiddleware(MiddlewareMixin):
+PROXY = PrincipalProxy()
+
+
+def get_user_id(user: User):
+    """Return the user ID for the given user."""
+    user_id = user.user_id
+    if not user_id:
+        resp = PROXY.request_filtered_principals([user.username], org_id=user.org_id, options={"return_id": True})
+        if isinstance(resp, dict) and "errors" in resp:
+            logging.warning(resp.get("errors"))
+            return
+        if not resp.get("data"):
+            logging.warning(f"No user found of user name {user.username}.")
+            raise Http404()
+        return resp["data"][0]["user_id"]
+    return user.user_id
+
+
+class IdentityHeaderMiddleware:
     """A subclass of RemoteUserMiddleware.
 
     Processes the provided identity found on the request.
@@ -98,15 +121,16 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
 
     header = RH_IDENTITY_HEADER
     bootstrap_service: TenantBootstrapService
+    token_validator: TokenValidator = ITSSOTokenValidator()
 
     def __init__(self, get_response):
-        """Initialize the middleware."""
-        super().__init__(get_response)
+        """One-time configuration and initialization."""
+        self.get_response = get_response
         # TODO: Lazy bootstrapping of tenants should use a synchronous replicator
         # In this case the replicator needs to include a precondition
         # which does not add the tuples if any others already exist for the tenant
         # (the tx will be rolled back in that case)
-        self.bootstrap_service = get_tenant_bootstrap_service(OutboxReplicator())
+        self.bootstrap_service = get_tenant_bootstrap_service(OutboxReplicator(), get_user_id)
 
     def get_tenant(self, model, hostname, request):
         """Override the tenant selection logic."""
@@ -115,9 +139,16 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             try:
                 # If the tenant already exists, we assume it must be bootstrapped if dual writes are enabled.
                 tenant = Tenant.objects.get(org_id=request.user.org_id)
+                # Update account_id if missing and user has it (fixes regression from Phase 0 to Phase 1)
+                needs_update = False
                 if not tenant.ready:
                     tenant.ready = True
-                    tenant.save(update_fields=["ready"])
+                    needs_update = True
+                if tenant.account_id is None and request.user.account:
+                    tenant.account_id = request.user.account
+                    needs_update = True
+                if needs_update:
+                    tenant.save(update_fields=["ready", "account_id"])
             except Tenant.DoesNotExist:
                 if request.user.system:
                     raise Http404()
@@ -192,22 +223,19 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
         return access
 
     @catch_integrity_error
-    def process_request(self, request):  # pylint: disable=R1710
-        """Process request for identity middleware.
-
-        Args:
-            request (object): The request object
-
-        """
+    def __call__(self, request):
+        """Code to be executed for each request before or after the view is called."""
         # Get request ID
         request.req_id = request.META.get(RH_INSIGHTS_REQUEST_ID)
 
-        if any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES]):
-            # This request is for a private API endpoint
-            return
+        if any(
+            [request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES]
+        ) and not _is_a2s_path(request):
+            # This request is for a private API endpoint (except _a2s/ which uses public auth)
+            return self.get_response(request)
 
         if is_no_auth(request):
-            return
+            return self.get_response(request)
         user = User()
         try:
             _, json_rh_auth = extract_header(request, self.header)
@@ -242,6 +270,8 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             # If we did not get the user information or service account information from the "x-rh-identity" header,
             # then the request is directly unauthorized.
             if not user_info and not service_account:
+                if _is_a2s_path(request):
+                    return self.get_response(request)
                 logger.debug("x-rh-identity does not contain user_info or service_account keys: %s", json_rh_auth)
                 return HttpResponseUnauthorizedRequest()
 
@@ -284,19 +314,12 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                         return HttpResponseUnauthorizedRequest()
                     user.username = f"{user.org_id}-{user.user_id}"
         except (KeyError, TypeError, JSONDecodeError):
-            request_psk = request.META.get(RH_RBAC_PSK)
-            account = request.META.get(RH_RBAC_ACCOUNT)
-            org_id = request.META.get(RH_RBAC_ORG_ID)
-            client_id = request.META.get(RH_RBAC_CLIENT_ID)
-            has_system_auth_headers = request_psk and org_id and client_id
-
-            if has_system_auth_headers and validate_psk(request_psk, client_id):
-                user.username = client_id
-                user.account = account
-                user.org_id = org_id
-                user.admin = True
-                user.system = True
-            else:
+            if _is_a2s_path(request):
+                return self.get_response(request)
+            user = build_user_from_psk(request) or build_system_user_from_token(
+                request, token_validator=self.token_validator
+            )
+            if not user:
                 logger.error("Could not obtain identity on request.")
                 return HttpResponseUnauthorizedRequest()
         except binascii.Error as error:
@@ -306,14 +329,38 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             request.user = user
             request.tenant = self.get_tenant(model=None, hostname=None, request=request)
 
+        response = self.get_response(request)
+
+        # Code to be executed for each request/response after
+        # the view is called.
+        is_internal_request = any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES])
+        is_system = False
+
+        if hasattr(request, "user") and request.user:
+            username = request.user.username
+            if username:
+                is_system = request.user.system
+
+        behalf = "system" if is_system else "principal"
+
+        req_sys_counter.labels(
+            behalf=behalf,
+            method=request.method,
+            view=resolve(request.path).url_name,
+            status=response.get("status_code"),
+        ).inc()
+
+        IdentityHeaderMiddleware.log_request(request, response, is_internal_request)
+        return response
+
     @staticmethod
-    def log_request(request, response, is_internal=False):
+    def log_request(request, response, is_internal_request=False):
         """Log requests for identity middleware.
 
         Args:
             request (object): The request object
             response (object): The response object
-            is_internal (bool): Boolean for if request is internal
+            is_internal_request (bool): Boolean for if request is internal
         """
         query_string = ""
         is_admin = False
@@ -325,6 +372,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
         if request.META.get("QUERY_STRING"):
             query_string = "?{}".format(request.META.get("QUERY_STRING"))
 
+        is_internal = False
         if hasattr(request, "user") and request.user:
             username = request.user.username
             if username:
@@ -333,6 +381,7 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
                 org_id = request.user.org_id
                 is_system = request.user.system
                 user_id = request.user.user_id
+                is_internal = getattr(request.user, "internal", False)
             else:
                 # django.contrib.auth.models.AnonymousUser does not
                 is_admin = is_system = False
@@ -376,38 +425,9 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             "is_admin": is_admin,
             "is_system": is_system,
             "is_internal": is_internal,
+            "is_internal_request": is_internal_request,
         }
         logger.info(log_object)
-
-    def process_response(self, request, response):  # pylint: disable=no-self-use
-        """Process response for identity middleware.
-
-        Args:
-            request (object): The request object
-            response (object): The response object
-        """
-        is_internal = False
-        if any([request.path.startswith(prefix) for prefix in settings.INTERNAL_API_PATH_PREFIXES]):
-            # This request is for a private API endpoint
-            is_internal = True
-            IdentityHeaderMiddleware.log_request(request, response, is_internal)
-            return response
-
-        behalf = "principal"
-        is_system = False
-
-        if is_system:
-            behalf = "system"
-
-        req_sys_counter.labels(
-            behalf=behalf,
-            method=request.method,
-            view=resolve(request.path).url_name,
-            status=response.get("status_code"),
-        ).inc()
-
-        IdentityHeaderMiddleware.log_request(request, response, is_internal)
-        return response
 
     def should_load_user_permissions(self, request: WSGIRequest, user: User) -> bool:
         """Decide whether RBAC should load the access permissions for the user based on the given request."""
@@ -433,21 +453,31 @@ class IdentityHeaderMiddleware(MiddlewareMixin):
             return True
 
 
-class DisableCSRF(MiddlewareMixin):  # pylint: disable=too-few-public-methods
+class DisableCSRF:  # pylint: disable=too-few-public-methods
     """Middleware to disable CSRF for 3scale usecase."""
 
-    def process_request(self, request):  # pylint: disable=no-self-use
-        """Process request for csrf checks.
+    def __init__(self, get_response):
+        """One-time configuration and initialization."""
+        self.get_response = get_response
 
-        Args:
-            request (object): The request object
-
-        """
+    def __call__(self, request):
+        """Code to be executed for each request before or after the view is called."""
         setattr(request, "_dont_enforce_csrf_checks", True)
+        return self.get_response(request)
 
 
-class ReadOnlyApiMiddleware(MiddlewareMixin):  # pylint: disable=too-few-public-methods
+class ReadOnlyApiMiddleware:
     """Middleware to enable read-only on APIs when configured."""
+
+    def __init__(self, get_response):
+        """One-time configuration and initialization."""
+        self.get_response = get_response
+
+    def __call__(self, request):
+        """Code to be executed for each request before or after the view is called."""
+        if self._should_deny_all_writes(request) or self._should_deny_v2_writes(request):
+            return self._read_only_response()
+        return self.get_response(request)
 
     def _is_write_request(self, request):
         """Determine whether or not the request is a write request."""
@@ -464,7 +494,11 @@ class ReadOnlyApiMiddleware(MiddlewareMixin):  # pylint: disable=too-few-public-
         """Determine whether or not to deny v2 writes."""
         resolver = resolve(request.path)
         api_namespace = resolver.app_name if resolver else ""
-        return settings.V2_READ_ONLY_API_MODE and self._is_write_request(request) and api_namespace == "v2_management"
+        return (
+            FEATURE_FLAGS.is_v2_api_read_only_mode_enabled()
+            and self._is_write_request(request)
+            and api_namespace == "v2_management"
+        )
 
     def _read_only_response(self):
         """Return a read-only API error response."""
@@ -473,8 +507,3 @@ class ReadOnlyApiMiddleware(MiddlewareMixin):  # pylint: disable=too-few-public-
             content_type="application/json",
             status=405,
         )
-
-    def process_request(self, request):  # pylint: disable=no-self-use
-        """Process request ReadOnlyApiMiddleware."""
-        if self._should_deny_all_writes(request) or self._should_deny_v2_writes(request):
-            return self._read_only_response()

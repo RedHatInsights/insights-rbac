@@ -24,12 +24,13 @@ from rest_framework import status
 from rest_framework.test import APIClient
 
 from datetime import timedelta
+
+from management.principal.model import Principal
 from management.tenant_service.v2 import V2TenantBootstrapService
 from migration_tool.in_memory_tuples import InMemoryRelationReplicator, InMemoryTuples
 
 from tests.identity_request import IdentityRequest
 from tests.management.role.test_dual_write import RbacFixture
-
 
 URL_LIST = reverse("v1_api:cross-list")
 
@@ -77,7 +78,7 @@ class CrossAccountRequestTest(IdentityRequest):
             self.associate_admin_request has user_id 1111111, and account number xxxxxx
             It would be approver for request_1, request_2, request_5;
             It would be requestor for request_3, request_6
-            | target_account | user_id | start_date | end_date  |  status  | roles |
+            |    target_org  | user_id | start_date | end_date  |  status  | roles |
             |     xxxxxx     | 1111111 |    now     | now+10day | approved |       |
             |     xxxxxx     | 2222222 |    now     | now+10day | pending  |       |
             |     123456     | 1111111 |    now     | now+10day | approved |       |
@@ -90,7 +91,7 @@ class CrossAccountRequestTest(IdentityRequest):
         self.another_org_id = "54321"
 
         self.data4create = {
-            "target_account": "012345",
+            "target_account": None,
             "target_org": "054321",
             "start_date": self.format_date(self.ref_time),
             "end_date": self.format_date(self.ref_time + timedelta(90)),
@@ -108,10 +109,13 @@ class CrossAccountRequestTest(IdentityRequest):
         tenant_for_target_account.save()
         self.fixture.bootstrap_tenant(tenant_for_target_account)
 
-        self.role_1 = Role.objects.create(name="role_1", system=True, tenant=public_tenant)
-        self.role_2 = Role.objects.create(name="role_2", system=True, tenant=public_tenant)
-        self.role_9 = Role.objects.create(name="role_9", system=True, tenant=public_tenant)
-        self.role_8 = Role.objects.create(name="role_8", system=True, tenant=public_tenant)
+        self.role_1 = self.fixture.new_system_role(name="role_1")
+        self.role_2 = self.fixture.new_system_role(name="role_2")
+        self.role_9 = self.fixture.new_system_role(name="role_9")
+        self.role_8 = self.fixture.new_system_role(name="role_8")
+
+        Principal.objects.create(tenant=public_tenant, username="1111111", user_id="1111111")
+        Principal.objects.create(tenant=public_tenant, username="2222222", user_id="2222222")
 
         self.request_1 = CrossAccountRequest.objects.create(
             target_account=self.account,

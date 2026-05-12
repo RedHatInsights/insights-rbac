@@ -16,6 +16,7 @@
 #
 
 """API views for import organization"""
+
 # flake8: noqa
 # pylint: disable=unused-import
 from management.principal.view import PrincipalView
@@ -25,3 +26,4 @@ from management.access.view import AccessView
 from management.permission.view import PermissionViewSet
 from management.audit_log.view import AuditLogViewSet
 from management.workspace.view import WorkspaceViewSet
+from management.role_binding.view import RoleBindingViewSet

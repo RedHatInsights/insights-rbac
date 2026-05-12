@@ -16,6 +16,7 @@
 #
 
 """Model for role management."""
+
 import logging
 from typing import Optional, Union
 from uuid import uuid4
@@ -25,10 +26,11 @@ from django.db import models
 from django.db.models import signals
 from django.utils import timezone
 from internal.integration import sync_handlers
-from kessel.relations.v1beta1.common_pb2 import Relationship
 from management.cache import AccessCache, skip_purging_cache_for_public_tenant
 from management.models import Permission, Principal
 from management.rbac_fields import AutoDateTimeField
+from management.relation_replicator.types import RelationTuple
+from management.role.user_source import SourceKey
 from migration_tool.models import (
     V2boundresource,
     V2role,
@@ -37,8 +39,7 @@ from migration_tool.models import (
     role_binding_user_subject_tuple,
 )
 
-from api.models import TenantAwareModel
-
+from api.models import FilterQuerySet, TenantAwareModel
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
@@ -56,6 +57,7 @@ class Role(TenantAwareModel):
     created = models.DateTimeField(default=timezone.now)
     modified = AutoDateTimeField(default=timezone.now)
     admin_default = models.BooleanField(default=False)
+    objects = FilterQuerySet.as_manager()
 
     @property
     def role(self):
@@ -107,18 +109,36 @@ class ResourceDefinition(TenantAwareModel):
         if self.access:
             return self.access.role
 
+    @property
+    def application(self):
+        """Get the corresponding application."""
+        if self.access and self.access.permission:
+            return self.access.permission.application
+
+    @property
+    def resource_type(self):
+        """Get the corresponding resource type."""
+        if self.access and self.access.permission:
+            return self.access.permission.resource_type
+
+    @property
+    def tenant_id(self):
+        """Get the tenant_id of the RD."""
+        if self.tenant:
+            return self.tenant.id
+
 
 class ExtTenant(models.Model):
     """External tenant."""
 
-    name = models.CharField(max_length=20, null=False, unique=True)
+    name = models.CharField(max_length=64, null=False, unique=True)
 
 
 class ExtRoleRelation(models.Model):
     """External relation info of role."""
 
     ext_tenant = models.ForeignKey(ExtTenant, null=True, on_delete=models.CASCADE, related_name="ext_role_relation")
-    ext_id = models.CharField(max_length=20, null=False)
+    ext_id = models.CharField(max_length=64, null=False)
     role = models.OneToOneField(Role, on_delete=models.CASCADE, null=False, related_name="ext_relation")
 
     class Meta:
@@ -136,6 +156,15 @@ class BindingMapping(models.Model):
     resource_type_namespace = models.CharField(max_length=256, null=False)
     resource_type_name = models.CharField(max_length=256, null=False)
     resource_id = models.CharField(max_length=256, null=False)
+
+    def save(self, *args, **kwargs):
+        """Validate and save this BindingMapping."""
+        users = self.mappings.get("users", None)
+
+        if (users is not None) and not isinstance(users, dict):
+            raise TypeError("users must be a dict. Support for representing users as a list has been removed.")
+
+        super().save(*args, **kwargs)
 
     @classmethod
     def for_role_binding(cls, role_binding: V2rolebinding, v1_role: Union[Role, str]):
@@ -156,37 +185,84 @@ class BindingMapping(models.Model):
             resource_id=resource_id,
         )
 
-    def as_tuples(self) -> list[Relationship]:
+    def as_tuples(self) -> list[RelationTuple]:
         """Create tuples from BindingMapping model."""
         v2_role_binding = self.get_role_binding()
         return v2_role_binding.as_tuples()
 
     def is_unassigned(self):
         """Return true if mapping is not assigned to any groups or users."""
-        return len(self.mappings.get("groups", [])) == 0 and len(self.mappings.get("users", [])) == 0
+        return len(self.mappings.get("groups", [])) == 0 and len(self.mappings.get("users", {})) == 0
 
-    def remove_group_from_bindings(self, group_uuid: str) -> Optional[Relationship]:
-        """Remove group from mappings."""
-        self.mappings["groups"].remove(group_uuid)
+    def unassign_group(self, group_uuid) -> Optional[RelationTuple]:
+        """
+        Completely unassign this group from the mapping, even if it is assigned more than once.
+
+        Returns the Relationship for this Group.
+        """
+        relationship = None
+        while True:
+            relationship = self.pop_group_from_bindings(group_uuid)
+            if relationship is not None:
+                break
+        return relationship
+
+    def pop_group_from_bindings(self, group_uuid: str) -> Optional[RelationTuple]:
+        """
+        Pop the group from mappings.
+
+        The group may still be bound to the role in other ways, so the group may still be included in the binding
+        more than once after this method returns.
+
+        If the group is no longer assigned at all, the Relationship is returned to be removed.
+
+        If you wish to remove the group entirely (and know it is safe to do so!), use [unassign_group].
+        """
+        if group_uuid in self.mappings["groups"]:
+            self.mappings["groups"].remove(group_uuid)
         if group_uuid in self.mappings["groups"]:
             return None
         return role_binding_group_subject_tuple(self.mappings["id"], group_uuid)
 
-    def add_group_to_bindings(self, group_uuid: str) -> Relationship:
-        """Add group to mappings."""
+    def assign_group_to_bindings(self, group_uuid: str) -> Optional[RelationTuple]:
+        """
+        Assign group to mappings.
+
+        If the group entry already exists, skip it.
+        """
+        if group_uuid in self.mappings["groups"]:
+            return None
         self.mappings["groups"].append(group_uuid)
         return role_binding_group_subject_tuple(self.mappings["id"], group_uuid)
 
-    def remove_user_from_bindings(self, user_id: str) -> Optional[Relationship]:
-        """Remove user from mappings."""
-        self.mappings["users"].remove(user_id)
-        if user_id in self.mappings["users"]:
+    # TODO: This can be deleted after the migration
+    def add_group_to_bindings(self, group_uuid: str) -> RelationTuple:
+        """
+        Add group to mappings.
+
+        This adds an additional entry for the group, even if the group is already assigned, to account for multiple
+        possible sources that may have assigned the group for the same role and resource.
+        """
+        self.mappings["groups"].append(group_uuid)
+        return role_binding_group_subject_tuple(self.mappings["id"], group_uuid)
+
+    def unassign_user_from_bindings(self, user_id: str, source: SourceKey) -> Optional[RelationTuple]:
+        """Unassign user from mappings."""
+        self._require_source(source)
+        self.mappings["users"].pop(str(source), None)
+        users_list = self.mappings["users"].values()
+        if user_id in users_list:
+            logging.info(
+                f"[Dual Write] user {user_id} still in mappings of bindingmapping {self.pk}, "
+                "therefore, no relation to remove. "
+            )
             return None
         return role_binding_user_subject_tuple(self.mappings["id"], user_id)
 
-    def add_user_to_bindings(self, user_id: str) -> Relationship:
-        """Add user to mappings."""
-        self.mappings["users"].append(user_id)
+    def assign_user_to_bindings(self, user_id: str, source: SourceKey) -> RelationTuple:
+        """Assign user to mappings."""
+        self._require_source(source)
+        self.mappings["users"][str(source)] = user_id
         return role_binding_user_subject_tuple(self.mappings["id"], user_id)
 
     def update_mappings_from_role_binding(self, role_binding: V2rolebinding):
@@ -218,6 +294,13 @@ class BindingMapping(models.Model):
             permissions=frozenset(args["role"]["permissions"]),
         )
         return V2rolebinding(**args)
+
+    @staticmethod
+    def _require_source(source) -> SourceKey:
+        if not isinstance(source, SourceKey):
+            raise TypeError(f"Expected SourceKey, but got: {source!r}")
+
+        return source
 
 
 def role_related_obj_change_cache_handler(sender=None, instance=None, using=None, **kwargs):

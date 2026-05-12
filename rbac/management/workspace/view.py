@@ -15,37 +15,71 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """View for Workspace management."""
-from django.utils.translation import gettext as _
-from django_filters import rest_framework as filters
-from management.base_viewsets import BaseV2ViewSet
-from management.permissions import WorkspaceAccessPermission
-from management.utils import validate_and_get_key, validate_uuid
-from rest_framework import serializers
-from rest_framework.filters import OrderingFilter
 
+import logging
+import uuid
+
+import pgtransaction
+from django.core.exceptions import ValidationError
+from django.db import OperationalError, transaction
+from django_filters import rest_framework as filters
+from management.atomic_transactions import atomic_with_retry
+from management.audit_log.model import AuditLog
+from management.base_viewsets import BaseV2ViewSet
+from management.permissions.workspace_access import WorkspaceAccessPermission
+from management.utils import clean_query_param, validate_and_get_key, validate_and_get_key_multi
+from management.workspace.filters import WorkspaceAccessFilterBackend, WorkspaceObjectAccessMixin
+from management.workspace.service import WorkspaceService
+from psycopg2.errors import DeadlockDetected, SerializationFailure
+from rest_framework import serializers, status
+from rest_framework.decorators import action
+from rest_framework.filters import OrderingFilter
+from rest_framework.permissions import SAFE_METHODS
+from rest_framework.request import Request
+from rest_framework.response import Response
+
+from api.common.pagination import V2ResultsSetPagination
 from .model import Workspace
 from .serializer import WorkspaceSerializer, WorkspaceWithAncestrySerializer
+from ..utils import flatten_validation_error, validate_uuid
 
-VALID_PATCH_FIELDS = ["name", "description", "parent_id"]
-REQUIRED_PUT_FIELDS = ["name", "description", "parent_id"]
-REQUIRED_CREATE_FIELDS = ["name", "parent_id"]
 INCLUDE_ANCESTRY_KEY = "include_ancestry"
 VALID_BOOLEAN_VALUES = ["true", "false"]
 
+logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
-class WorkspaceViewSet(BaseV2ViewSet):
+
+class WorkspacePagination(V2ResultsSetPagination):
+    """Custom pagination for Workspace API with higher max_limit."""
+
+    # 3000 - max limit of count of workspaces per org id - UI needs to list all workspaces for main page
+    max_limit = 3000
+
+
+class WorkspaceViewSet(WorkspaceObjectAccessMixin, BaseV2ViewSet):
     """Workspace View.
 
     A viewset that provides default `create()`, `destroy` and `retrieve()`.
 
+    Access control is handled by:
+    - WorkspaceAccessPermission: Coarse-grained endpoint access
+    - WorkspaceAccessFilterBackend: Queryset filtering via Kessel Inventory API
+    - WorkspaceObjectAccessMixin: 404 for inaccessible workspaces (no existence leak)
     """
 
     permission_classes = (WorkspaceAccessPermission,)
     queryset = Workspace.objects.annotate()
     serializer_class = WorkspaceSerializer
-    ordering_fields = ("name",)
+    pagination_class = WorkspacePagination
+    ordering_fields = ("name", "created", "modified", "type")
     ordering = ("name",)
-    filter_backends = (filters.DjangoFilterBackend, OrderingFilter)
+    # WorkspaceAccessFilterBackend must be first to filter by access before other filters
+    filter_backends = (WorkspaceAccessFilterBackend, filters.DjangoFilterBackend, OrderingFilter)
+
+    def __init__(self, **kwargs):
+        """Init viewset."""
+        super().__init__(**kwargs)
+        self._service = WorkspaceService()
 
     def get_serializer_class(self):
         """Get serializer class based on route."""
@@ -57,86 +91,283 @@ class WorkspaceViewSet(BaseV2ViewSet):
                 return WorkspaceWithAncestrySerializer
         return super().get_serializer_class()
 
+    def get_queryset(self):
+        """Get queryset override."""
+        if self.request.method not in SAFE_METHODS:
+            return super().get_queryset().select_for_update()
+        return super().get_queryset()
+
+    def _log_audit(self, request, action, workspace, description):
+        """Create an audit log entry for a workspace operation."""
+        audit_log = AuditLog()
+        audit_log.log_v2(
+            request=request,
+            resource_type=AuditLog.WORKSPACE,
+            action=action,
+            resource_uuid=workspace.id,
+            description=description,
+        )
+
+    def get_object(self):
+        """Get the object, validating the UUID first."""
+        pk = self.kwargs.get("pk")
+        if pk is not None:
+            validate_uuid(pk, "workspace uuid validation")
+        return super().get_object()
+
+    @pgtransaction.atomic(isolation_level=pgtransaction.SERIALIZABLE, retry=3)
+    def _create_atomic(self, request, *args, **kwargs):
+        """
+        Create a workspace atomically with SERIALIZABLE isolation level and automatic retries.
+
+        The SERIALIZABLE isolation level ensures the highest data consistency by preventing
+        concurrent transactions from interfering with each other. However, when conflicts occur
+        (e.g., two transactions trying to create workspaces simultaneously), PostgreSQL raises
+        SerializationFailure. The retry=3 parameter automatically retries the transaction up to
+        3 times when SerializationFailure or DeadlockDetected errors occur. This is expected
+        behavior and retrying usually succeeds as concurrent transactions complete.
+        """
+        tenant = request.tenant
+        parent_id = request.data.get("parent_id")
+
+        if parent_id and tenant:
+            if not Workspace.objects.filter(id=parent_id, tenant=tenant).exists():
+                raise serializers.ValidationError(
+                    {"parent_id": f"Parent workspace '{parent_id}' doesn't exist in tenant"}
+                )
+        return super().create(request=request, args=args, kwargs=kwargs)
+
+    def perform_create(self, serializer):
+        """Create workspace and log audit entry."""
+        super().perform_create(serializer)
+        workspace = serializer.instance
+        self._log_audit(self.request, AuditLog.CREATE, workspace, f"Created workspace: {workspace.name}")
+
     def create(self, request, *args, **kwargs):
         """Create a Workspace."""
-        self.validate_workspace(request)
-        return super().create(request=request, args=args, kwargs=kwargs)
+        try:
+            return self._create_atomic(request, *args, **kwargs)
+        except TimeoutError as e:
+            logger.exception("TimeoutError in workspace creation operation")
+            return Response(
+                {"detail": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            )
+        except OperationalError as e:
+            response = self._handle_operational_error(e, "creation")
+            if response is not None:
+                return response
+            raise
+        except ValidationError as e:
+            message = ""
+            for field, error_message in flatten_validation_error(e):
+                if "unique_workspace_name_per_parent" in error_message:
+                    message = "A workspace with the same name already exists under the parent."
+                    break
+                if "__all__" in field:
+                    message = error_message
+                    break
+            if message:
+                raise serializers.ValidationError(message)
+            raise
 
     def retrieve(self, request, *args, **kwargs):
         """Get a workspace."""
         return super().retrieve(request=request, args=args, kwargs=kwargs)
 
     def list(self, request, *args, **kwargs):
-        """Get a list of workspaces."""
+        """Get a list of workspaces.
+
+        Access filtering is handled by WorkspaceAccessFilterBackend.
+        Ordering is handled by OrderingFilter (supports ?order_by=name or ?order_by=-name).
+        This method only handles additional query parameter filtering.
+
+        The ``type`` query parameter supports comma-separated values so that
+        callers can request multiple workspace types in a single request, e.g.
+        ``?type=standard,ungrouped-hosts``.
+        """
         all_types = "all"
-        queryset = self.get_queryset()
-        type_values = Workspace.Types.values + [all_types]
-        type_field = validate_and_get_key(request.query_params, "type", type_values, all_types)
+        valid_types = [v.lower() for v in Workspace.Types.values] + [all_types]
+        # Use filter_queryset to apply all filter backends (including access filtering and ordering)
+        queryset = self.filter_queryset(self.get_queryset())
 
-        if type_field != all_types:
-            queryset = queryset.filter(type=type_field)
+        # Sanitize the raw type parameter for NUL bytes (consistent with name/parent_id/ids)
+        type_raw = clean_query_param(request.query_params.get("type"), "type")
 
-        serializer = self.get_serializer(queryset, many=True)
-        page = self.paginate_queryset(serializer.data)
-        return self.get_paginated_response(page)
+        # Support comma-separated type values (e.g. "standard,ungrouped-hosts")
+        type_fields = validate_and_get_key_multi(
+            {"type": type_raw} if type_raw is not None else {},
+            "type",
+            valid_types,
+            default_value=all_types,
+        )
+        # Collapse: if "all" is among the values, treat as unfiltered
+        if all_types in type_fields:
+            type_fields = [all_types]
 
+        name = clean_query_param(request.query_params.get("name"), "name")
+        parent_id = clean_query_param(request.query_params.get("parent_id"), "parent_id")
+        id_filter = clean_query_param(request.query_params.get("ids"), "ids")
+
+        # Validate parent_id is a valid UUID
+        if parent_id is not None:
+            validate_uuid(parent_id, "parent_id")
+
+        # Validate and filter by ids parameter (comma-separated list of UUIDs)
+        if id_filter is not None:
+            ids = list(
+                dict.fromkeys(stripped for id_val in id_filter.split(",") if (stripped := id_val.strip().lower()))
+            )
+
+            for workspace_id in ids:
+                validate_uuid(workspace_id, "workspace id filter")
+            queryset = queryset.filter(id__in=ids)
+
+            # When filtering by ids, default to standard type unless type is explicitly specified
+            if "type" not in request.query_params:
+                type_fields = [Workspace.Types.STANDARD]
+
+        if type_fields != [all_types]:
+            queryset = queryset.filter(type__in=type_fields)
+        if name:
+            queryset = queryset.filter(name__icontains=name)
+        if parent_id:
+            queryset = queryset.filter(parent_id=parent_id)
+
+        page = self.paginate_queryset(queryset)
+        serializer = self.get_serializer(page, many=True)
+        return self.get_paginated_response(serializer.data)
+
+    @atomic_with_retry(retries=3)
     def destroy(self, request, *args, **kwargs):
-        """Delete a workspace."""
-        instance = self.get_object()
-        if Workspace.objects.filter(parent=instance, tenant=instance.tenant).exists():
-            message = "Unable to delete due to workspace dependencies"
-            error = {"workspace": [_(message)]}
-            raise serializers.ValidationError(error)
-        return super().destroy(request=request, args=args, kwargs=kwargs)
+        """
+        Destroy the instance.
 
+        Overridden only to add transaction.
+        """
+        return super().destroy(request, *args, **kwargs)
+
+    def perform_destroy(self, instance):
+        """Delegate to service for destroy logic and log audit entry."""
+        self._service.destroy(instance)
+        self._log_audit(self.request, AuditLog.DELETE, instance, f"Deleted workspace: {instance.name}")
+
+    def perform_update(self, serializer):
+        """Update workspace and log audit entry."""
+        instance = serializer.instance
+        audit_log = AuditLog()
+        description = audit_log.find_edited_field(
+            AuditLog.WORKSPACE, f"workspace {instance.name}", self.request, instance
+        )
+        super().perform_update(serializer)
+        self._log_audit(self.request, AuditLog.EDIT, instance, description)
+
+    @transaction.atomic()
     def update(self, request, *args, **kwargs):
         """Update a workspace."""
-        self.validate_workspace(request, "put")
-        self.update_validation(request)
-        return super().update(request=request, args=args, kwargs=kwargs)
+        return super().update(request, *args, **kwargs)
 
-    def partial_update(self, request, *args, **kwargs):
-        """Patch a workspace."""
-        self.validate_workspace(request, "patch")
-        payload = request.data or {}
-        for field in payload:
-            if field not in VALID_PATCH_FIELDS:
-                message = f"Field '{field}' is not supported. Please use one or more of: {VALID_PATCH_FIELDS}."
-                error = {"workspace": [_(message)]}
-                raise serializers.ValidationError(error)
+    @pgtransaction.atomic(isolation_level=pgtransaction.SERIALIZABLE, retry=3)
+    def _move_atomic(self, request):
+        """
+        Move a workspace atomically with SERIALIZABLE isolation level and automatic retries.
 
-        self.update_validation(request)
+        The SERIALIZABLE isolation level ensures the highest data consistency by preventing
+        concurrent transactions from interfering with each other. However, when conflicts occur
+        (e.g., two transactions trying to move workspaces simultaneously), PostgreSQL raises
+        SerializationFailure. The retry=3 parameter automatically retries the transaction up to
+        3 times when SerializationFailure or DeadlockDetected errors occur. This is expected
+        behavior and retrying usually succeeds as concurrent transactions complete.
 
-        return super().update(request=request, args=args, kwargs=kwargs)
+        Note: Access checks for both source and target workspaces are handled by
+        WorkspaceAccessPermission.has_permission() before this method is called.
+        """
+        target_workspace_id = self._parent_id_query_param_validation(request)
+        workspace = self.get_object()
+        serializer = self.get_serializer(workspace)
+        result = serializer.move(workspace, target_workspace_id)
+        self._log_audit(
+            request,
+            AuditLog.EDIT,
+            workspace,
+            f"Moved workspace: {workspace.name} to parent {workspace.parent.name}",
+        )
+        return result
 
-    def update_validation(self, request):
-        """Validate a workspace for update."""
-        instance = self.get_object()
-        parent_id = request.data.get("parent_id")
-        if str(instance.id) == parent_id:
-            message = "Parent ID and ID can't be same"
-            error = {"workspace": [_(message)]}
-            raise serializers.ValidationError(error)
+    @action(detail=True, methods=["post"], url_path="move")
+    def move(self, request, *args, **kwargs):
+        """Move a workspace."""
+        try:
+            response_data = self._move_atomic(request)
+            return Response(response_data, status=status.HTTP_200_OK)
+        except OperationalError as e:
+            response = self._handle_operational_error(e, "movement", ws_id=kwargs.get("pk"))
+            if response is not None:
+                return response
+            raise
+        except Workspace.DoesNotExist:
+            logger.exception("Target Workspace not found during operation, ws id: %s", kwargs.get("pk"))
+            return Response(
+                {"detail": "Workspace not found."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        except ValidationError as e:
+            message = ""
+            for field, error_message in flatten_validation_error(e):
+                if "unique_workspace_name_per_parent" in error_message:
+                    message = "A workspace with the same name already exists under the target parent."
+                    break
+                if "__all__" in field:
+                    message = error_message
+                    break
+            raise serializers.ValidationError(message)
 
-    def validate_required_fields(self, request, required_fields):
-        """Validate required fields for workspace."""
-        for field in required_fields:
-            if field not in request.data:
-                message = f"Field '{field}' is required."
-                error = {"workspace": [_(message)]}
-                raise serializers.ValidationError(error)
+    def _handle_operational_error(
+        self, error: OperationalError, operation: str, ws_id: str | None = None
+    ) -> Response | None:
+        """Handle OperationalError from pgtransaction after retries are exhausted.
 
-    def validate_workspace(self, request, action="create"):
-        """Validate a workspace."""
-        parent_id = request.data.get("parent_id")
-        tenant = request.tenant
-        if action == "create":
-            self.validate_required_fields(request, REQUIRED_CREATE_FIELDS)
-        elif action == "put":
-            self.validate_required_fields(request, REQUIRED_PUT_FIELDS)
-        if parent_id:
-            validate_uuid(parent_id)
-            if not Workspace.objects.filter(id=parent_id, tenant=tenant).exists():
-                message = f"Parent workspace '{parent_id}' doesn't exist in tenant"
-                error = {"workspace": [message]}
-                raise serializers.ValidationError(error)
+        When this method is called, pgtransaction has already retried the transaction
+        up to 3 times. This is the final error handler for serialization conflicts
+        and deadlocks that persist despite retries.
+
+        Returns a Response for known error types, or None if the error is unrecognized
+        (caller should re-raise with bare ``raise`` to preserve the original traceback).
+        """
+        ws_context = f", ws_id='{ws_id}'" if ws_id else ""
+        if hasattr(error, "__cause__"):
+            if isinstance(error.__cause__, SerializationFailure):
+                logger.error(
+                    "SerializationFailure in workspace %s operation after all retries exhausted%s",
+                    operation,
+                    ws_context,
+                )
+                response = Response(
+                    {
+                        "detail": "The server is temporarily unable to handle this request due to concurrent updates. "
+                        "Please try again shortly."
+                    },
+                    status=status.HTTP_503_SERVICE_UNAVAILABLE,
+                )
+                response["Retry-After"] = "1"
+                return response
+            elif isinstance(error.__cause__, DeadlockDetected):
+                logger.error(
+                    "DeadlockDetected in workspace %s operation after all retries exhausted%s",
+                    operation,
+                    ws_context,
+                )
+                return Response(
+                    {"detail": "Internal server error in concurrent updates. Please try again later."},
+                    status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                )
+        return None
+
+    @staticmethod
+    def _parent_id_query_param_validation(request: Request) -> uuid.UUID:
+        """Validate the parent_id query parameter."""
+        new_parent_id = request.data.get("parent_id")
+        if not new_parent_id:
+            raise serializers.ValidationError({"parent_id": "The 'parent_id' field is required."})
+        validate_uuid(new_parent_id)
+        return uuid.UUID(new_parent_id)

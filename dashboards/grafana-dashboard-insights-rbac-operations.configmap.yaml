@@ -2,46 +2,6 @@ apiVersion: v1
 data:
   rbac-grafana.json: |-
     {
-      "__inputs": [],
-      "__elements": {},
-      "__requires": [
-        {
-          "type": "panel",
-          "id": "gauge",
-          "name": "Gauge",
-          "version": ""
-        },
-        {
-          "type": "grafana",
-          "id": "grafana",
-          "name": "Grafana",
-          "version": "10.4.1"
-        },
-        {
-          "type": "panel",
-          "id": "heatmap",
-          "name": "Heatmap",
-          "version": ""
-        },
-        {
-          "type": "datasource",
-          "id": "prometheus",
-          "name": "Prometheus",
-          "version": "1.0.0"
-        },
-        {
-          "type": "panel",
-          "id": "text",
-          "name": "Text",
-          "version": ""
-        },
-        {
-          "type": "panel",
-          "id": "timeseries",
-          "name": "Time series",
-          "version": ""
-        }
-      ],
       "annotations": {
         "list": [
           {
@@ -67,17 +27,1081 @@ data:
       "editable": true,
       "fiscalYearStartMonth": 0,
       "graphTooltip": 0,
-      "id": null,
+      "id": 1268004,
       "links": [],
-      "liveNow": false,
       "panels": [
+        {
+          "collapsed": false,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 0
+          },
+          "id": 79,
+          "panels": [],
+          "title": "RBAC Consumer",
+          "type": "row"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 9,
+            "x": 0,
+            "y": 1
+          },
+          "id": 80,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.6.3",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "min_over_time((sum(rate(relations_replication_event_total[10m]))-sum(rate(rbac_kafka_consumer_messages_processed_total{message_type=\"relations\",status=\"success\"}[10m])))[1m:15s]) > 0.02\n",
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "RBAC Consumer-> Relations Excessive lag events (>0.02 rate diff for 10m) ",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 9,
+            "x": 9,
+            "y": 1
+          },
+          "id": 81,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.6.3",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(relations_replication_event_total[10m])) - sum(rate(rbac_kafka_consumer_messages_processed_total{message_type=\"relations\",status=\"success\"}[10m]))\n",
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "RBAC Consumer -> Relations: Replication event creation rate minus total consumer successful \"relations\" processed",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 6,
+            "x": 0,
+            "y": 7
+          },
+          "id": 82,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.6.3",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "sum(relations_replication_event_total)",
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "RBAC Replication Event Count",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PD776AFABBE26000A"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 6,
+            "x": 6,
+            "y": 7
+          },
+          "id": 83,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.6.3",
+          "targets": [
+            {
+              "editorMode": "code",
+              "expr": "sum(rbac_kafka_consumer_messages_processed_total{message_type=\"relations\",status=\"success\"})",
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "RBAC Consumer Replication Event Count",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 6,
+            "w": 6,
+            "x": 12,
+            "y": 7
+          },
+          "id": 84,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.6.3",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "sum(rbac_kafka_consumer_messages_processed_total{message_type=\"debezium\",status=\"success\"})",
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Successful Debezium Total",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 6,
+            "x": 0,
+            "y": 13
+          },
+          "id": 85,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.6.3",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "sum(increase(rbac_kafka_consumer_messages_processed_total{message_type=\"relations\",status=\"success\"}[$__range]))",
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Consumer Relations Messages Increase",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 6,
+            "x": 6,
+            "y": 13
+          },
+          "id": 86,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.6.3",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "sum(increase(rbac_kafka_consumer_messages_processed_total{message_type=\"debezium\",status=\"success\"}[$__range]))",
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Consumer Debezium Events Increase",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 6,
+            "x": 12,
+            "y": 13
+          },
+          "id": 87,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.6.3",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "sum(increase(rbac_kafka_consumer_messages_processed_total{message_type=\"workspaces\",status=\"success\"}[$__range]))",
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Consumer Workspaces Events Increase",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 6,
+            "x": 0,
+            "y": 20
+          },
+          "id": 88,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.6.3",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "sum(increase(rbac_kafka_consumer_messages_processed_total[$__range]))",
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Total of All Consumer Messages",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 6,
+            "x": 6,
+            "y": 20
+          },
+          "id": 89,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.6.3",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(rbac_kafka_consumer_messages_processed_total{message_type=\"relations\",status=\"success\"}[$__range]))",
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Relations Event Rate",
+          "type": "timeseries"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "fieldConfig": {
+            "defaults": {
+              "color": {
+                "mode": "palette-classic"
+              },
+              "custom": {
+                "axisBorderShow": false,
+                "axisCenteredZero": false,
+                "axisColorMode": "text",
+                "axisLabel": "",
+                "axisPlacement": "auto",
+                "barAlignment": 0,
+                "barWidthFactor": 0.6,
+                "drawStyle": "line",
+                "fillOpacity": 0,
+                "gradientMode": "none",
+                "hideFrom": {
+                  "legend": false,
+                  "tooltip": false,
+                  "viz": false
+                },
+                "insertNulls": false,
+                "lineInterpolation": "linear",
+                "lineWidth": 1,
+                "pointSize": 5,
+                "scaleDistribution": {
+                  "type": "linear"
+                },
+                "showPoints": "auto",
+                "spanNulls": false,
+                "stacking": {
+                  "group": "A",
+                  "mode": "none"
+                },
+                "thresholdsStyle": {
+                  "mode": "off"
+                }
+              },
+              "mappings": [],
+              "thresholds": {
+                "mode": "absolute",
+                "steps": [
+                  {
+                    "color": "green"
+                  },
+                  {
+                    "color": "red",
+                    "value": 80
+                  }
+                ]
+              }
+            },
+            "overrides": []
+          },
+          "gridPos": {
+            "h": 7,
+            "w": 6,
+            "x": 12,
+            "y": 20
+          },
+          "id": 90,
+          "options": {
+            "legend": {
+              "calcs": [],
+              "displayMode": "list",
+              "placement": "bottom",
+              "showLegend": true
+            },
+            "tooltip": {
+              "hideZeros": false,
+              "mode": "single",
+              "sort": "none"
+            }
+          },
+          "pluginVersion": "11.6.3",
+          "targets": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "${datasource}"
+              },
+              "editorMode": "code",
+              "expr": "sum(rate(rbac_kafka_consumer_messages_processed_total{message_type=\"debezium\",status=\"success\"}[$__range]))",
+              "legendFormat": "__auto",
+              "range": true,
+              "refId": "A"
+            }
+          ],
+          "title": "Debezium Events Rate",
+          "type": "timeseries"
+        },
         {
           "collapsed": true,
           "gridPos": {
             "h": 1,
             "w": 24,
             "x": 0,
-            "y": 0
+            "y": 27
           },
           "id": 45,
           "panels": [
@@ -130,8 +1154,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "yellow",
-                        "value": null
+                        "color": "yellow"
                       },
                       {
                         "color": "orange",
@@ -175,7 +1198,7 @@ data:
                 "h": 7,
                 "w": 9,
                 "x": 0,
-                "y": 1
+                "y": 10
               },
               "id": 47,
               "options": {
@@ -231,8 +1254,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "red",
-                        "value": null
+                        "color": "red"
                       },
                       {
                         "color": "green",
@@ -247,7 +1269,7 @@ data:
                 "h": 7,
                 "w": 3,
                 "x": 9,
-                "y": 1
+                "y": 10
               },
               "id": 49,
               "options": {
@@ -296,8 +1318,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       },
                       {
                         "color": "red",
@@ -312,7 +1333,7 @@ data:
                 "h": 7,
                 "w": 3,
                 "x": 12,
-                "y": 1
+                "y": 10
               },
               "id": 51,
               "options": {
@@ -352,14 +1373,11 @@ data:
         },
         {
           "collapsed": true,
-          "datasource": {
-            "uid": "$datasource"
-          },
           "gridPos": {
             "h": 1,
             "w": 24,
             "x": 0,
-            "y": 1
+            "y": 28
           },
           "id": 27,
           "panels": [
@@ -410,8 +1428,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       },
                       {
                         "color": "red",
@@ -427,7 +1444,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 0,
-                "y": 2
+                "y": 11
               },
               "id": 11,
               "options": {
@@ -507,8 +1524,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       },
                       {
                         "color": "red",
@@ -524,7 +1540,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 12,
-                "y": 2
+                "y": 11
               },
               "id": 15,
               "options": {
@@ -615,8 +1631,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       },
                       {
                         "color": "red",
@@ -632,7 +1647,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 0,
-                "y": 11
+                "y": 20
               },
               "id": 9,
               "options": {
@@ -713,8 +1728,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       },
                       {
                         "color": "red",
@@ -730,7 +1744,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 12,
-                "y": 11
+                "y": 20
               },
               "id": 19,
               "options": {
@@ -825,8 +1839,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       },
                       {
                         "color": "red",
@@ -842,7 +1855,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 0,
-                "y": 20
+                "y": 29
               },
               "id": 17,
               "options": {
@@ -875,29 +1888,16 @@ data:
               "type": "timeseries"
             }
           ],
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "PD776AFABBE26000A"
-              },
-              "refId": "A"
-            }
-          ],
           "title": "Operational Data (CPU/Mem)",
           "type": "row"
         },
         {
           "collapsed": true,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PD776AFABBE26000A"
-          },
           "gridPos": {
             "h": 1,
             "w": 24,
             "x": 0,
-            "y": 2
+            "y": 29
           },
           "id": 23,
           "panels": [
@@ -915,8 +1915,7 @@ data:
                     "mode": "percentage",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       }
                     ]
                   },
@@ -931,7 +1930,6 @@ data:
                 "y": 3
               },
               "id": 4,
-              "interval": "",
               "options": {
                 "minVizHeight": 75,
                 "minVizWidth": 75,
@@ -947,7 +1945,7 @@ data:
                 "showThresholdMarkers": true,
                 "sizing": "auto"
               },
-              "pluginVersion": "10.4.1",
+              "pluginVersion": "11.6.3",
               "targets": [
                 {
                   "datasource": {
@@ -977,8 +1975,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       },
                       {
                         "color": "red",
@@ -1012,7 +2009,7 @@ data:
                 "showThresholdMarkers": true,
                 "sizing": "auto"
               },
-              "pluginVersion": "10.4.1",
+              "pluginVersion": "11.6.3",
               "targets": [
                 {
                   "datasource": {
@@ -1040,8 +2037,7 @@ data:
                     "mode": "percentage",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       },
                       {
                         "color": "red",
@@ -1075,7 +2071,7 @@ data:
                 "showThresholdMarkers": true,
                 "sizing": "auto"
               },
-              "pluginVersion": "10.4.1",
+              "pluginVersion": "11.6.3",
               "targets": [
                 {
                   "datasource": {
@@ -1102,8 +2098,7 @@ data:
                     "mode": "percentage",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       }
                     ]
                   },
@@ -1118,7 +2113,6 @@ data:
                 "y": 3
               },
               "id": 14,
-              "interval": "",
               "options": {
                 "minVizHeight": 75,
                 "minVizWidth": 75,
@@ -1134,7 +2128,7 @@ data:
                 "showThresholdMarkers": true,
                 "sizing": "auto"
               },
-              "pluginVersion": "10.4.1",
+              "pluginVersion": "11.6.3",
               "targets": [
                 {
                   "datasource": {
@@ -1160,8 +2154,7 @@ data:
                     "mode": "percentage",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       }
                     ]
                   },
@@ -1191,7 +2184,7 @@ data:
                 "showThresholdMarkers": true,
                 "sizing": "auto"
               },
-              "pluginVersion": "10.4.1",
+              "pluginVersion": "11.6.3",
               "targets": [
                 {
                   "datasource": {
@@ -1223,6 +2216,7 @@ data:
                     "axisLabel": "",
                     "axisPlacement": "auto",
                     "barAlignment": 0,
+                    "barWidthFactor": 0.6,
                     "drawStyle": "bars",
                     "fillOpacity": 100,
                     "gradientMode": "none",
@@ -1253,8 +2247,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       },
                       {
                         "color": "red",
@@ -1284,11 +2277,12 @@ data:
                   "showLegend": true
                 },
                 "tooltip": {
+                  "hideZeros": false,
                   "mode": "multi",
                   "sort": "none"
                 }
               },
-              "pluginVersion": "10.4.1",
+              "pluginVersion": "11.6.3",
               "targets": [
                 {
                   "datasource": {
@@ -1304,15 +2298,6 @@ data:
               "type": "timeseries"
             },
             {
-              "cards": {},
-              "color": {
-                "cardColor": "#b4ff00",
-                "colorScale": "sqrt",
-                "colorScheme": "interpolateRdYlGn",
-                "exponent": 0.5,
-                "mode": "spectrum"
-              },
-              "dataFormat": "tsbuckets",
               "datasource": {
                 "uid": "$datasource"
               },
@@ -1337,14 +2322,7 @@ data:
                 "x": 12,
                 "y": 8
               },
-              "heatmap": {},
-              "hideZeroBuckets": false,
-              "highlightCards": true,
               "id": 2,
-              "interval": "",
-              "legend": {
-                "show": false
-              },
               "maxDataPoints": 25,
               "options": {
                 "calculate": false,
@@ -1384,8 +2362,7 @@ data:
                   "unit": "s"
                 }
               },
-              "pluginVersion": "10.4.1",
-              "reverseYBuckets": false,
+              "pluginVersion": "11.6.3",
               "targets": [
                 {
                   "datasource": {
@@ -1399,20 +2376,7 @@ data:
                 }
               ],
               "title": "Endpoint Latency ($Endpoint)",
-              "tooltip": {
-                "show": true,
-                "showHistogram": false
-              },
-              "type": "heatmap",
-              "xAxis": {
-                "show": true
-              },
-              "yAxis": {
-                "format": "s",
-                "logBase": 1,
-                "show": true
-              },
-              "yBucketBound": "auto"
+              "type": "heatmap"
             },
             {
               "datasource": {
@@ -1430,6 +2394,7 @@ data:
                     "axisLabel": "",
                     "axisPlacement": "auto",
                     "barAlignment": 0,
+                    "barWidthFactor": 0.6,
                     "drawStyle": "bars",
                     "fillOpacity": 100,
                     "gradientMode": "none",
@@ -1460,8 +2425,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       },
                       {
                         "color": "red",
@@ -1488,11 +2452,12 @@ data:
                   "showLegend": true
                 },
                 "tooltip": {
+                  "hideZeros": false,
                   "mode": "multi",
                   "sort": "none"
                 }
               },
-              "pluginVersion": "10.4.1",
+              "pluginVersion": "11.6.3",
               "targets": [
                 {
                   "datasource": {
@@ -1508,15 +2473,6 @@ data:
               "type": "timeseries"
             },
             {
-              "cards": {},
-              "color": {
-                "cardColor": "#b4ff00",
-                "colorScale": "sqrt",
-                "colorScheme": "interpolateRdYlGn",
-                "exponent": 0.5,
-                "mode": "spectrum"
-              },
-              "dataFormat": "tsbuckets",
               "datasource": {
                 "uid": "$datasource"
               },
@@ -1541,13 +2497,7 @@ data:
                 "x": 12,
                 "y": 17
               },
-              "heatmap": {},
-              "hideZeroBuckets": false,
-              "highlightCards": true,
               "id": 12,
-              "legend": {
-                "show": false
-              },
               "maxDataPoints": 25,
               "options": {
                 "calculate": false,
@@ -1587,8 +2537,7 @@ data:
                   "unit": "s"
                 }
               },
-              "pluginVersion": "10.4.1",
-              "reverseYBuckets": false,
+              "pluginVersion": "11.6.3",
               "targets": [
                 {
                   "datasource": {
@@ -1602,29 +2551,7 @@ data:
                 }
               ],
               "title": "RBAC to BOP Latency",
-              "tooltip": {
-                "show": true,
-                "showHistogram": false
-              },
-              "type": "heatmap",
-              "xAxis": {
-                "show": true
-              },
-              "yAxis": {
-                "format": "s",
-                "logBase": 1,
-                "show": true
-              },
-              "yBucketBound": "auto"
-            }
-          ],
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "PD776AFABBE26000A"
-              },
-              "refId": "A"
+              "type": "heatmap"
             }
           ],
           "title": "RBAC Internal",
@@ -1632,15 +2559,11 @@ data:
         },
         {
           "collapsed": true,
-          "datasource": {
-            "type": "prometheus",
-            "uid": "PD776AFABBE26000A"
-          },
           "gridPos": {
             "h": 1,
             "w": 24,
             "x": 0,
-            "y": 3
+            "y": 30
           },
           "id": 21,
           "panels": [
@@ -1692,8 +2615,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       },
                       {
                         "color": "red",
@@ -1709,7 +2631,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 0,
-                "y": 4
+                "y": 5
               },
               "id": 3,
               "options": {
@@ -1790,8 +2712,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       },
                       {
                         "color": "red",
@@ -1807,7 +2728,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 12,
-                "y": 4
+                "y": 5
               },
               "id": 13,
               "options": {
@@ -1838,15 +2759,6 @@ data:
               "type": "timeseries"
             },
             {
-              "cards": {},
-              "color": {
-                "cardColor": "#c15c17",
-                "colorScale": "linear",
-                "colorScheme": "interpolateOranges",
-                "exponent": 0.9,
-                "mode": "opacity"
-              },
-              "dataFormat": "tsbuckets",
               "datasource": {
                 "uid": "$datasource"
               },
@@ -1869,15 +2781,9 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 0,
-                "y": 13
+                "y": 14
               },
-              "heatmap": {},
-              "hideZeroBuckets": false,
-              "highlightCards": true,
               "id": 7,
-              "legend": {
-                "show": true
-              },
               "maxDataPoints": 25,
               "options": {
                 "calculate": false,
@@ -1918,7 +2824,6 @@ data:
                 }
               },
               "pluginVersion": "10.4.1",
-              "reverseYBuckets": false,
               "targets": [
                 {
                   "datasource": {
@@ -1932,29 +2837,7 @@ data:
                 }
               ],
               "title": "Latency",
-              "tooltip": {
-                "show": true,
-                "showHistogram": false
-              },
-              "type": "heatmap",
-              "xAxis": {
-                "show": true
-              },
-              "yAxis": {
-                "format": "dtdurations",
-                "logBase": 1,
-                "show": true
-              },
-              "yBucketBound": "auto"
-            }
-          ],
-          "targets": [
-            {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "PD776AFABBE26000A"
-              },
-              "refId": "A"
+              "type": "heatmap"
             }
           ],
           "title": "RBAC from Gateway",
@@ -1966,14 +2849,14 @@ data:
             "h": 1,
             "w": 24,
             "x": 0,
-            "y": 4
+            "y": 31
           },
           "id": 29,
           "panels": [
             {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "$datasource"
+              "fieldConfig": {
+                "defaults": {},
+                "overrides": []
               },
               "gridPos": {
                 "h": 7,
@@ -2012,8 +2895,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "red",
-                        "value": null
+                        "color": "red"
                       },
                       {
                         "color": "green",
@@ -2115,8 +2997,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "transparent",
-                        "value": null
+                        "color": "transparent"
                       },
                       {
                         "color": "red",
@@ -2214,13 +3095,11 @@ data:
                   "links": [],
                   "mappings": [],
                   "max": 100,
-                  "min": 98,
                   "thresholds": {
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       },
                       {
                         "color": "red",
@@ -2431,20 +3310,20 @@ data:
             "h": 1,
             "w": 24,
             "x": 0,
-            "y": 5
+            "y": 32
           },
           "id": 74,
           "panels": [
             {
-              "datasource": {
-                "type": "prometheus",
-                "uid": "$datasource"
+              "fieldConfig": {
+                "defaults": {},
+                "overrides": []
               },
               "gridPos": {
                 "h": 7,
                 "w": 3,
                 "x": 0,
-                "y": 6
+                "y": 14
               },
               "id": 38,
               "options": {
@@ -2477,8 +3356,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "red",
-                        "value": null
+                        "color": "red"
                       },
                       {
                         "color": "green",
@@ -2494,7 +3372,7 @@ data:
                 "h": 7,
                 "w": 4,
                 "x": 3,
-                "y": 6
+                "y": 14
               },
               "id": 40,
               "options": {
@@ -2580,8 +3458,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "transparent",
-                        "value": null
+                        "color": "transparent"
                       },
                       {
                         "color": "red",
@@ -2597,7 +3474,7 @@ data:
                 "h": 7,
                 "w": 13,
                 "x": 7,
-                "y": 6
+                "y": 14
               },
               "id": 41,
               "options": {
@@ -2682,8 +3559,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       },
                       {
                         "color": "red",
@@ -2699,7 +3575,7 @@ data:
                 "h": 10,
                 "w": 20,
                 "x": 0,
-                "y": 13
+                "y": 21
               },
               "id": 43,
               "options": {
@@ -2776,8 +3652,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       },
                       {
                         "color": "red",
@@ -2792,7 +3667,7 @@ data:
                 "h": 6,
                 "w": 7,
                 "x": 0,
-                "y": 23
+                "y": 31
               },
               "id": 53,
               "options": {
@@ -2876,8 +3751,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       },
                       {
                         "color": "red",
@@ -2893,7 +3767,7 @@ data:
                 "h": 6,
                 "w": 13,
                 "x": 7,
-                "y": 23
+                "y": 31
               },
               "id": 55,
               "options": {
@@ -2935,20 +3809,307 @@ data:
             "h": 1,
             "w": 24,
             "x": 0,
-            "y": 6
+            "y": 33
+          },
+          "id": 75,
+          "panels": [
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "$datasource"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "drawStyle": "line",
+                    "fillOpacity": 0,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineWidth": 1,
+                    "pointSize": 5,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "auto",
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green"
+                      },
+                      {
+                        "color": "red",
+                        "value": 80
+                      }
+                    ]
+                  }
+                },
+                "overrides": []
+              },
+              "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 7
+              },
+              "id": 77,
+              "options": {
+                "legend": {
+                  "calcs": [],
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "tooltip": {
+                  "mode": "single",
+                  "sort": "none"
+                }
+              },
+              "targets": [
+                {
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(rate(django_http_requests_total_by_method_total{service=\"rbac-service\", method=~\"POST|PUT|PATCH|DELETE\"}[1m])) by (method)",
+                  "instant": false,
+                  "legendFormat": "__auto",
+                  "range": true,
+                  "refId": "A"
+                }
+              ],
+              "title": "HTTP requests total (write)",
+              "type": "timeseries"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "$datasource"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "drawStyle": "line",
+                    "fillOpacity": 0,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineWidth": 1,
+                    "pointSize": 5,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "auto",
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green"
+                      },
+                      {
+                        "color": "red",
+                        "value": 80
+                      }
+                    ]
+                  }
+                },
+                "overrides": []
+              },
+              "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 15
+              },
+              "id": 76,
+              "options": {
+                "legend": {
+                  "calcs": [],
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "tooltip": {
+                  "mode": "single",
+                  "sort": "none"
+                }
+              },
+              "targets": [
+                {
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(rate(django_http_requests_total_by_method_total{service=\"rbac-service\", method=~\"GET|HEAD|OPTIONS\"}[1m])) by (method)",
+                  "instant": false,
+                  "legendFormat": "__auto",
+                  "range": true,
+                  "refId": "A"
+                }
+              ],
+              "title": "HTTP requests total (read)",
+              "type": "timeseries"
+            },
+            {
+              "datasource": {
+                "type": "prometheus",
+                "uid": "$datasource"
+              },
+              "fieldConfig": {
+                "defaults": {
+                  "color": {
+                    "mode": "palette-classic"
+                  },
+                  "custom": {
+                    "axisBorderShow": false,
+                    "axisCenteredZero": false,
+                    "axisColorMode": "text",
+                    "axisLabel": "",
+                    "axisPlacement": "auto",
+                    "barAlignment": 0,
+                    "drawStyle": "line",
+                    "fillOpacity": 0,
+                    "gradientMode": "none",
+                    "hideFrom": {
+                      "legend": false,
+                      "tooltip": false,
+                      "viz": false
+                    },
+                    "insertNulls": false,
+                    "lineInterpolation": "linear",
+                    "lineWidth": 1,
+                    "pointSize": 5,
+                    "scaleDistribution": {
+                      "type": "linear"
+                    },
+                    "showPoints": "auto",
+                    "spanNulls": false,
+                    "stacking": {
+                      "group": "A",
+                      "mode": "none"
+                    },
+                    "thresholdsStyle": {
+                      "mode": "off"
+                    }
+                  },
+                  "mappings": [],
+                  "thresholds": {
+                    "mode": "absolute",
+                    "steps": [
+                      {
+                        "color": "green"
+                      },
+                      {
+                        "color": "red",
+                        "value": 80
+                      }
+                    ]
+                  }
+                },
+                "overrides": []
+              },
+              "gridPos": {
+                "h": 8,
+                "w": 12,
+                "x": 0,
+                "y": 23
+              },
+              "id": 78,
+              "options": {
+                "legend": {
+                  "calcs": [],
+                  "displayMode": "list",
+                  "placement": "bottom",
+                  "showLegend": true
+                },
+                "tooltip": {
+                  "mode": "single",
+                  "sort": "none"
+                }
+              },
+              "targets": [
+                {
+                  "datasource": {
+                    "type": "prometheus",
+                    "uid": "$datasource"
+                  },
+                  "editorMode": "code",
+                  "expr": "sum(rate(django_http_requests_total_by_method_total{service=\"rbac-service\"}[1m]))",
+                  "instant": false,
+                  "legendFormat": "all methods",
+                  "range": true,
+                  "refId": "A"
+                }
+              ],
+              "title": "HTTP requests total",
+              "type": "timeseries"
+            }
+          ],
+          "title": "RBAC count of read / write requests",
+          "type": "row"
+        },
+        {
+          "collapsed": true,
+          "gridPos": {
+            "h": 1,
+            "w": 24,
+            "x": 0,
+            "y": 34
           },
           "id": 57,
           "panels": [
             {
-              "cards": {},
-              "color": {
-                "cardColor": "#b4ff00",
-                "colorScale": "sqrt",
-                "colorScheme": "interpolateRdYlGn",
-                "exponent": 0.5,
-                "mode": "spectrum"
-              },
-              "dataFormat": "tsbuckets",
               "datasource": {
                 "type": "prometheus",
                 "uid": "$datasource"
@@ -2972,16 +4133,9 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 0,
-                "y": 7
+                "y": 15
               },
-              "heatmap": {},
-              "hideZeroBuckets": false,
-              "highlightCards": true,
               "id": 59,
-              "interval": "",
-              "legend": {
-                "show": false
-              },
               "maxDataPoints": 25,
               "options": {
                 "calculate": false,
@@ -3022,7 +4176,6 @@ data:
                 }
               },
               "pluginVersion": "10.4.1",
-              "reverseYBuckets": false,
               "targets": [
                 {
                   "datasource": {
@@ -3038,20 +4191,7 @@ data:
                 }
               ],
               "title": "Endpoint <$Endpoint> Latency",
-              "tooltip": {
-                "show": true,
-                "showHistogram": false
-              },
-              "type": "heatmap",
-              "xAxis": {
-                "show": true
-              },
-              "yAxis": {
-                "format": "s",
-                "logBase": 1,
-                "show": true
-              },
-              "yBucketBound": "auto"
+              "type": "heatmap"
             },
             {
               "datasource": {
@@ -3104,8 +4244,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "green",
-                        "value": null
+                        "color": "green"
                       }
                     ]
                   },
@@ -3117,7 +4256,7 @@ data:
                 "h": 9,
                 "w": 12,
                 "x": 12,
-                "y": 7
+                "y": 15
               },
               "id": 61,
               "options": {
@@ -3250,8 +4389,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "transparent",
-                        "value": null
+                        "color": "transparent"
                       }
                     ]
                   },
@@ -3263,7 +4401,7 @@ data:
                 "h": 7,
                 "w": 12,
                 "x": 0,
-                "y": 16
+                "y": 24
               },
               "id": 63,
               "options": {
@@ -3345,8 +4483,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "transparent",
-                        "value": null
+                        "color": "transparent"
                       }
                     ]
                   },
@@ -3358,7 +4495,7 @@ data:
                 "h": 7,
                 "w": 12,
                 "x": 12,
-                "y": 16
+                "y": 24
               },
               "id": 65,
               "options": {
@@ -3440,8 +4577,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "transparent",
-                        "value": null
+                        "color": "transparent"
                       }
                     ]
                   },
@@ -3453,7 +4589,7 @@ data:
                 "h": 7,
                 "w": 12,
                 "x": 0,
-                "y": 23
+                "y": 31
               },
               "id": 67,
               "options": {
@@ -3535,8 +4671,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "transparent",
-                        "value": null
+                        "color": "transparent"
                       }
                     ]
                   },
@@ -3548,7 +4683,7 @@ data:
                 "h": 7,
                 "w": 12,
                 "x": 12,
-                "y": 23
+                "y": 31
               },
               "id": 69,
               "options": {
@@ -3598,8 +4733,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "red",
-                        "value": null
+                        "color": "red"
                       },
                       {
                         "color": "green",
@@ -3615,7 +4749,7 @@ data:
                 "h": 7,
                 "w": 12,
                 "x": 0,
-                "y": 30
+                "y": 38
               },
               "id": 71,
               "options": {
@@ -3704,8 +4838,7 @@ data:
                     "mode": "absolute",
                     "steps": [
                       {
-                        "color": "red",
-                        "value": null
+                        "color": "red"
                       },
                       {
                         "color": "green",
@@ -3721,7 +4854,7 @@ data:
                 "h": 7,
                 "w": 12,
                 "x": 12,
-                "y": 30
+                "y": 38
               },
               "id": 73,
               "options": {
@@ -3798,37 +4931,39 @@ data:
           "type": "row"
         }
       ],
-      "schemaVersion": 39,
+      "preload": false,
+      "schemaVersion": 41,
       "tags": [],
       "templating": {
         "list": [
           {
             "current": {
-              "selected": false,
               "text": "crcp01ue1-prometheus",
-              "value": "crcp01ue1-prometheus"
+              "value": "PC1EAC84DCBBF0697"
             },
-            "hide": 0,
             "includeAll": false,
             "label": "Datasource",
-            "multi": false,
             "name": "datasource",
             "options": [],
             "query": "prometheus",
-            "queryValue": "",
             "refresh": 1,
-            "regex": "/.*crc[s|p].*/",
-            "skipUrlSync": false,
+            "regex": "/.*(crc|hcc)[s|p].*/",
             "type": "datasource"
           },
           {
-            "current": {},
+            "current": {
+              "text": [
+                "All"
+              ],
+              "value": [
+                "$__all"
+              ]
+            },
             "datasource": {
               "type": "prometheus",
               "uid": "$datasource"
             },
             "definition": "django_http_requests_latency_seconds_by_view_method_bucket{job=\"rbac-service\"}",
-            "hide": 0,
             "includeAll": true,
             "multi": true,
             "name": "Endpoint",
@@ -3839,23 +4974,20 @@ data:
             },
             "refresh": 1,
             "regex": "/.*view=\"([^\"]*).*/",
-            "skipUrlSync": false,
             "sort": 1,
-            "tagValuesQuery": "",
-            "tagsQuery": "",
-            "type": "query",
-            "useTags": false
+            "type": "query"
           },
           {
-            "current": {},
+            "current": {
+              "text": "rbac-prod",
+              "value": "rbac-prod"
+            },
             "datasource": {
               "type": "prometheus",
               "uid": "$datasource"
             },
             "definition": "kube_pod_container_status_restarts_total{}",
-            "hide": 0,
             "includeAll": false,
-            "multi": false,
             "name": "Namespace",
             "options": [],
             "query": {
@@ -3864,12 +4996,7 @@ data:
             },
             "refresh": 1,
             "regex": "/.*namespace=\"(rbac[^\"]*).*/",
-            "skipUrlSync": false,
-            "sort": 0,
-            "tagValuesQuery": "",
-            "tagsQuery": "",
-            "type": "query",
-            "useTags": false
+            "type": "query"
           }
         ]
       },
@@ -3877,36 +5004,11 @@ data:
         "from": "now-24h",
         "to": "now"
       },
-      "timepicker": {
-        "refresh_intervals": [
-          "5s",
-          "10s",
-          "30s",
-          "1m",
-          "5m",
-          "15m",
-          "30m",
-          "1h",
-          "2h",
-          "1d"
-        ],
-        "time_options": [
-          "5m",
-          "15m",
-          "1h",
-          "6h",
-          "12h",
-          "24h",
-          "2d",
-          "7d",
-          "30d"
-        ]
-      },
+      "timepicker": {},
       "timezone": "",
       "title": "Operations - Rbac w/CPU",
       "uid": "TjP_nMWMk",
-      "version": 9,
-      "weekStart": ""
+      "version": 13
     }
 kind: ConfigMap
 metadata:

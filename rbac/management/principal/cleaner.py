@@ -16,6 +16,7 @@
 #
 
 """Handler for principal clean up."""
+
 import logging
 import os
 import ssl
@@ -31,6 +32,7 @@ from management.tenant_service import get_tenant_bootstrap_service
 from management.tenant_service.tenant_service import TenantBootstrapService
 from prometheus_client import Counter
 from rest_framework import status
+from sentry_sdk import capture_exception
 from stompest.config import StompConfig
 from stompest.error import StompConnectionError
 from stompest.protocol import StompSpec
@@ -38,18 +40,27 @@ from stompest.sync import Stomp
 
 from api.models import Tenant, User
 
-
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 PROXY = PrincipalProxy()  # pylint: disable=invalid-name
-CERT_LOC = "/opt/rbac/rbac/management/principal/umb_certs/cert.pem"
-KEY_LOC = "/opt/rbac/rbac/management/principal/umb_certs/key.pem"
+
+# Location of the CA, certificate and key files as defined in the
+# "it-umb-key-pair" secret and the "umb-certificates" volume mount.
+CA_LOC = "/opt/rbac/rbac/management/principal/umb_certificates/ca.crt"
+CERT_LOC = "/opt/rbac/rbac/management/principal/umb_certificates/tls.crt"
+KEY_LOC = "/opt/rbac/rbac/management/principal/umb_certificates/tls.key"
+
 LOCK_ID = 42  # For Keith, with Love
 
-METRIC_STOMP_MESSAGE_TOTAL = "stomp_messages_total"
-umb_message_processed_count = Counter(
-    METRIC_STOMP_MESSAGE_TOTAL,
+METRIC_STOMP_MESSAGES_ACK_TOTAL = "stomp_messages_ack_total"
+METRIC_STOMP_MESSAGES_NACK_TOTAL = "stomp_messages_nack_total"
+stomp_messages_ack_total = Counter(
+    METRIC_STOMP_MESSAGES_ACK_TOTAL,
     "Number of stomp UMB messages processed",
+)
+stomp_messages_nack_total = Counter(
+    METRIC_STOMP_MESSAGES_NACK_TOTAL,
+    "Number of stomp UMB messages that failed to be processed",
 )
 
 
@@ -124,9 +135,15 @@ ssl_context.check_hostname = False
 # Since hot umb host it is within Red Hat network, we can trust the host
 ssl_context.verify_mode = ssl.CERT_NONE
 if os.path.isfile(CERT_LOC):
-    ssl_context.load_cert_chain(CERT_LOC, keyfile=KEY_LOC)
+    ssl_context.load_cert_chain(certfile=CERT_LOC, keyfile=KEY_LOC)
 
-CONFIG = StompConfig(f"ssl://{settings.UMB_HOST}:{settings.UMB_PORT}", sslContext=ssl_context)
+# Load the CA's certificate in the context.
+if os.path.isfile(CA_LOC):
+    ssl_context.load_verify_locations(cafile=CA_LOC)
+
+CONFIG = StompConfig(
+    f"ssl://{settings.UMB_HOST}:{settings.UMB_PORT}", sslContext=ssl_context, version=StompSpec.VERSION_1_2
+)
 QUEUE = f"/queue/Consumer.{settings.SA_NAME}.users-subscription.VirtualTopic.canonical.user"
 UMB_CLIENT = Stomp(CONFIG)
 
@@ -199,28 +216,32 @@ def process_umb_event(frame, umb_client: Stomp, bootstrap_service: TenantBootstr
             logger.info("process_umb_event: Another listener is running. Aborting.")
             return False
 
-        data_dict = xmltodict.parse(frame.body)
-        canonical_message = data_dict.get("CanonicalMessage")
-        if canonical_message:
-            try:
-                user = retrieve_user_info(canonical_message)
-            except Exception as e:  # Skip processing and leave the it to be processed later
-                logger.error("process_umb_event: Error retrieving user info: %s", str(e))
-                return True
+        try:
+            body = frame.body.decode("utf-8", errors="ignore")
+            data_dict = xmltodict.parse(body)
+            canonical_message = data_dict.get("CanonicalMessage")
 
+            user = retrieve_user_info(canonical_message)
             # By default, only process disabled users.
             # If the setting is enabled, process all users.
             if not user.is_active or settings.PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB:
                 # If Tenant is not already ready, don't ready it
                 bootstrap_service.update_user(user, ready_tenant=False)
-        else:
-            # Message is malformed.
-            # Ensure we dont block the entire queue by discarding it.
-            # TODO: this is not the only way a message can be malformed
-            pass
+            umb_client.ack(frame)
+            stomp_messages_ack_total.inc()
+        except Exception as e:
+            logger.error("process_umb_event: Error processing umb message : %s", str(e))
+            capture_exception(e)
+            # Nack sends back to the broker that we failed to process this message.
+            # The broker may redeliver the message up to a certain number of retries.
+            # Eventually, the message is discarded, usually logged and sent to a DLQ.
+            # In other words, nacking is appropriate for messages which *may* be processable
+            # if retried.
+            # Either way, this lets us eventually proceed further in the queue,
+            # and should mark the message so it can be debugged later if needed.
+            umb_client.nack(frame)
+            stomp_messages_nack_total.inc()
 
-    umb_client.ack(frame)
-    umb_message_processed_count.inc()
     return True
 
 
@@ -229,8 +250,10 @@ def process_principal_events_from_umb(bootstrap_service: Optional[TenantBootstra
     logger.info("process_tenant_principal_events: Start processing principal events from umb.")
     bootstrap_service = bootstrap_service or get_tenant_bootstrap_service(OutboxReplicator())
     try:
-        UMB_CLIENT.connect()
-        UMB_CLIENT.subscribe(QUEUE, {StompSpec.ACK_HEADER: StompSpec.ACK_CLIENT_INDIVIDUAL})
+        # 1.1 or greater is required to support NACK, used when messages fail.
+        UMB_CLIENT.connect(versions=[StompSpec.VERSION_1_1, StompSpec.VERSION_1_2])
+        # We only have one subscription for this connection, so using a static ID header.
+        UMB_CLIENT.subscribe(QUEUE, {StompSpec.ACK_HEADER: StompSpec.ACK_CLIENT_INDIVIDUAL, StompSpec.ID_HEADER: "0"})
     except StompConnectionError as e:
         # Skip if already connected/subscribed
         if not str(e).startswith(("Already connected", "Already subscribed")):

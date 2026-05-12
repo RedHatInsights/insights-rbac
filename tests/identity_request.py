@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test Case extension to collect common test data."""
+
 import uuid
 import os
 
@@ -22,15 +23,14 @@ from base64 import b64encode
 from json import dumps as json_dumps
 from unittest.mock import Mock
 
-from django.test import TestCase, override_settings
+from django.test import TestCase, override_settings, TransactionTestCase
 from faker import Faker
 
 from api.models import Tenant
 from api.common import RH_IDENTITY_HEADER
 
 
-@override_settings(REPLICATION_TO_RELATION_ENABLED=True, PRINCIPAL_USER_DOMAIN="redhat")
-class IdentityRequest(TestCase):
+class BaseIdentityRequest:
     """Parent Class for IAM test cases."""
 
     fake = Faker()
@@ -60,6 +60,19 @@ class IdentityRequest(TestCase):
             cls.tenant.delete()
         super().tearDownClass()
 
+    def tearDown(self):
+        """Tear down each test - clear cache to ensure test isolation."""
+        from management.utils import PRINCIPAL_CACHE
+
+        try:
+            # Try to clear Redis cache if available
+            if PRINCIPAL_CACHE.use_caching:
+                PRINCIPAL_CACHE.connection.flushdb()
+        except Exception:
+            # If Redis is not available or fails, just disable caching
+            PRINCIPAL_CACHE.disable_caching()
+        super().tearDown()
+
     @classmethod
     def _create_customer_data(cls):
         """Create customer data."""
@@ -71,8 +84,11 @@ class IdentityRequest(TestCase):
 
     @classmethod
     def _create_user_data(cls):
-        """Create user data."""
-        user_data = {"username": cls.fake.user_name(), "email": cls.fake.email(), "user_id": cls.fake.ean8()}
+        """Create user data with unique username to avoid cache collisions between tests."""
+        # Generate unique username by appending UUID to avoid cache collisions
+        base_username = cls.fake.user_name()
+        unique_username = f"{base_username}_{uuid.uuid4().hex[:8]}"
+        user_data = {"username": unique_username, "email": cls.fake.email(), "user_id": cls.fake.ean8()}
         return user_data
 
     def _create_service_account_data(cls) -> dict[str, str]:
@@ -145,3 +161,16 @@ class IdentityRequest(TestCase):
                 identity["identity"]["type"] = "ServiceAccount"
 
         return identity
+
+
+@override_settings(REPLICATION_TO_RELATION_ENABLED=True, PRINCIPAL_USER_DOMAIN="redhat")
+class IdentityRequest(BaseIdentityRequest, TestCase):
+    pass
+
+
+@override_settings(REPLICATION_TO_RELATION_ENABLED=True, PRINCIPAL_USER_DOMAIN="redhat")
+class TransactionalIdentityRequest(BaseIdentityRequest, TransactionTestCase):
+    def setUp(self):
+        super().setUp()
+
+        Tenant.objects.get_or_create(tenant_name="public")

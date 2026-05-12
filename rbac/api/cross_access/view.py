@@ -16,20 +16,19 @@
 #
 
 """View for cross access request."""
+
 from typing import Callable, List, Optional
 
-from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 from django_filters import rest_framework as filters
+from management.atomic_transactions import atomic
 from management.filters import CommonFilters
-from management.models import Role
 from management.principal.proxy import PrincipalProxy
 from management.relation_replicator.relation_replicator import ReplicationEventType
-from management.utils import validate_and_get_key, validate_uuid
+from management.utils import raise_validation_error, validate_and_get_key, validate_uuid
 from rest_framework import mixins, viewsets
 from rest_framework.filters import OrderingFilter
-from rest_framework.serializers import ValidationError
 
 from api.cross_access.access_control import CrossAccountRequestAccessPermission
 from api.cross_access.relation_api_dual_write_cross_access_handler import RelationApiDualWriteCrossAccessHandler
@@ -55,11 +54,6 @@ class CrossAccountRequestFilter(filters.FilterSet):
         """Filter to lookup requests by target_org."""
         return CommonFilters.multiple_values_in(self, queryset, "target_org", values)
 
-    def account_filter(self, queryset, field, values):
-        """Filter to lookup requests by target_account."""
-        accounts = values.split(",")
-        return queryset.filter(target_account__in=accounts)
-
     def approved_filter(self, queryset, field, value):
         """Filter to lookup requests by status of approved."""
         if value:
@@ -76,14 +70,13 @@ class CrossAccountRequestFilter(filters.FilterSet):
             query = query | Q(status__iexact=status)
         return queryset.distinct().filter(query)
 
-    account = filters.CharFilter(field_name="target_account", method="account_filter")
     org_id = filters.CharFilter(field_name="target_org", method="org_id_filter")
     approved_only = filters.BooleanFilter(field_name="end_date", method="approved_filter")
     status = filters.CharFilter(field_name="status", method="status_filter")
 
     class Meta:
         model = CrossAccountRequest
-        fields = ["account", "org_id", "approved_only", "status"]
+        fields = ["org_id", "approved_only", "status"]
 
 
 class CrossAccountRequestViewSet(
@@ -143,7 +136,8 @@ class CrossAccountRequestViewSet(
         """Patch a cross-account request. Target account admin use it to update status of the request."""
         return super().partial_update(request=request, *args, **kwargs)
 
-    @transaction.atomic
+    # This can operate on V2 tenants, so we need to use a SERIALIZABLE transaction here.
+    @atomic
     def update(self, request, *args, **kwargs):
         """Update a cross-account request. TAM requestor use it to update their requesters."""
         validate_uuid(kwargs.get("pk"), "cross-account request uuid validation")
@@ -155,8 +149,7 @@ class CrossAccountRequestViewSet(
         request = self.request
         if serializer.partial and request.data.get("status"):
             self.update_status(current, request.data.get("status"))
-        else:
-            serializer.save()
+        serializer.save()
 
     def retrieve(self, request, *args, **kwargs):
         """Retrieve cross account requests by request_id."""
@@ -198,56 +191,37 @@ class CrossAccountRequestViewSet(
 
         # Replace the user_id with user's info
         for element in result.data["data"]:
-            user_id = element.pop("user_id")
-            requestor_info = principals[user_id]
-            element.update(requestor_info)
+            user_id = element["user_id"]
+            requestor_info = principals.get(user_id)
+
+            if requestor_info is not None:
+                element["user_available"] = True
+
+                del element["user_id"]
+                element.update(requestor_info)
+            else:
+                element["user_available"] = False
 
         return result
-
-    def throw_validation_error(self, source, message):
-        """Construct a validation error and raise the error."""
-        error = {source: [message]}
-        raise ValidationError(error)
 
     def validate_and_format_input(self, request_data):
         """Validate the create api input."""
         for field in PARAMS_FOR_CREATION:
             if not request_data.__contains__(field):
-                self.throw_validation_error("cross-account-request", f"Field {field} must be specified.")
+                raise_validation_error("cross-account-request", f"Field {field} must be specified.")
 
         target_org = request_data.get("target_org")
         if target_org == self.request.user.org_id:
-            self.throw_validation_error(
+            raise_validation_error(
                 "cross-account-request", "Creating a cross access request for your own org id is not allowed."
             )
 
         try:
             Tenant.objects.get(org_id=target_org)
         except Tenant.DoesNotExist:
-            raise self.throw_validation_error("cross-account-request", f"Org ID '{target_org}' does not exist.")
+            raise raise_validation_error("cross-account-request", f"Org ID '{target_org}' does not exist.")
 
-        request_data["roles"] = self.format_roles(request_data.get("roles"))
         request_data["user_id"] = self.request.user.user_id
-
-    def validate_and_format_patch_input(self, request_data):
-        """Validate the create api input."""
-        if "roles" in request_data:
-            request_data["roles"] = self.format_roles(request_data.get("roles"))
-
-    def format_roles(self, roles):
-        """Format role list as expected for cross-account-request."""
-        public_tenant = Tenant.objects.get(tenant_name="public")
-        for role_name in roles:
-            try:
-                role = Role.objects.get(tenant=public_tenant, display_name=role_name)
-                if not role.system:
-                    self.throw_validation_error(
-                        "cross-account-request", "Only system roles may be assigned to a cross-account-request."
-                    )
-            except Role.DoesNotExist:
-                raise self.throw_validation_error("cross-account-request", f"Role '{role_name}' does not exist.")
-
-        return [{"display_name": role} for role in roles]
 
     def _with_dual_write_handler(
         self,
@@ -267,6 +241,8 @@ class CrossAccountRequestViewSet(
 
     def update_status(self, car, status):
         """Update the status of a cross-account-request."""
+        if car.status == status:  # No operation needed
+            return
         car.status = status
         if status == "approved":
             create_cross_principal(car.user_id, target_org=car.target_org)
@@ -279,7 +255,6 @@ class CrossAccountRequestViewSet(
                 ),
             )
         elif status == "denied":
-
             self._with_dual_write_handler(
                 car,
                 ReplicationEventType.DENY_CROSS_ACCOUNT_REQUEST,
@@ -287,7 +262,6 @@ class CrossAccountRequestViewSet(
                     cross_account_roles
                 ),
             )
-        car.save()
 
     def check_patch_permission(self, request, update_obj):
         """Check if user has right to patch cross access request."""
@@ -296,33 +270,33 @@ class CrossAccountRequestViewSet(
             may update status from pending/approved/denied to approved/denied.
             """
             if not request.user.admin:
-                self.throw_validation_error("cross-account partial update", "Only org admins may update status.")
+                raise_validation_error("cross-account partial update", "Only org admins may update status.")
             if update_obj.status not in ["pending", "approved", "denied"]:
-                self.throw_validation_error(
+                raise_validation_error(
                     "cross-account partial update", "Only pending/approved/denied requests may be updated."
                 )
             if request.data.get("status") not in ["approved", "denied"]:
-                self.throw_validation_error(
+                raise_validation_error(
                     "cross-account partial update", "Request status may only be updated to approved/denied."
                 )
             if len(request.data.keys()) > 1 or next(iter(request.data)) != "status":
-                self.throw_validation_error("cross-account partial update", "Only status may be updated.")
+                raise_validation_error("cross-account partial update", "Only status may be updated.")
         elif request.user.user_id == update_obj.user_id:
             """For requestors updating their requests, the request status may
             only be updated from pending to cancelled.
             """
             if update_obj.status != "pending" or request.data.get("status") != "cancelled":
-                self.throw_validation_error(
+                raise_validation_error(
                     "cross-account partial update", "Request status may only be updated from pending to cancelled."
                 )
             for field in request.data:
                 if field not in VALID_PATCH_FIELDS:
-                    self.throw_validation_error(
+                    raise_validation_error(
                         "cross-account partial update",
                         f"Field '{field}' is not supported. Please use one or more of: {VALID_PATCH_FIELDS}",
                     )
         else:
-            self.throw_validation_error(
+            raise_validation_error(
                 "cross-account partial update", "User does not have permission to update the request."
             )
 
@@ -330,25 +304,20 @@ class CrossAccountRequestViewSet(
         """Check if user has permission to update cross access request."""
         # Only requestors could update the cross access request.
         if request.user.user_id != update_obj.user_id:
-            self.throw_validation_error(
-                "cross-account update", "Only the requestor may update the cross access request."
-            )
+            raise_validation_error("cross-account update", "Only the requestor may update the cross access request.")
 
         # Only pending request could be updated.
         if update_obj.status != "pending":
-            self.throw_validation_error("cross-account update", "Only pending requests may be updated.")
+            raise_validation_error("cross-account update", "Only pending requests may be updated.")
 
         # Do not allow updating the status:
         if request.data.get("status") and str(request.data.get("status")) != "pending":
-            self.throw_validation_error(
+            raise_validation_error(
                 "cross-account update",
                 "The status may not be updated through PUT endpoint. "
                 "Please use PATCH to update the status of the request.",
             )
 
-        # Do not allow updating the target_org or target_account.
+        # Do not allow updating the target_org.
         if request.data.get("target_org") and str(request.data.get("target_org")) != update_obj.target_org:
-            self.throw_validation_error("cross-account-update", "Target org must stay the same.")
-
-        if request.data.get("target_account") and str(request.data.get("target_account")) != update_obj.target_account:
-            self.throw_validation_error("cross-account-update", "Target account must stay the same.")
+            raise_validation_error("cross-account-update", "Target org must stay the same.")

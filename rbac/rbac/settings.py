@@ -25,6 +25,7 @@ https://docs.djangoproject.com/en/2.0/topics/settings/
 For the full list of settings and their values, see
 https://docs.djangoproject.com/en/2.0/ref/settings/
 """
+
 import os
 
 import datetime
@@ -36,8 +37,8 @@ import redis
 from boto3 import client as boto_client
 from corsheaders.defaults import default_headers
 from dateutil.parser import parse as parse_dt
-from app_common_python import LoadedConfig, KafkaTopics
-
+from app_common_python import LoadedConfig, KafkaTopics, DependencyEndpoints
+from feature_flags import FEATURE_FLAGS
 
 # Database
 # https://docs.djangoproject.com/en/2.0/ref/settings/#databases
@@ -84,7 +85,6 @@ DEBUG = False if os.getenv("DJANGO_DEBUG", "False") == "False" else True  # pyli
 
 ALLOWED_HOSTS = ["*"]
 
-
 # Application definition
 
 INSTALLED_APPS = [
@@ -92,6 +92,7 @@ INSTALLED_APPS = [
     # 'django.contrib.admin',
     "django.contrib.auth",
     "django.contrib.contenttypes",
+    "django.contrib.postgres",
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
@@ -169,7 +170,6 @@ TIME_ZONE = "UTC"
 
 USE_I18N = True
 
-USE_L10N = True
 
 USE_TZ = True
 
@@ -190,7 +190,14 @@ STATIC_URL = "{}/static/".format(API_PATH_PREFIX.rstrip("/"))
 
 STATICFILES_DIRS = [os.path.join(BASE_DIR, "..", "docs/source/specs")]
 
-STATICFILES_STORAGE = "whitenoise.storage.CompressedManifestStaticFilesStorage"
+STORAGES = {
+    "default": {
+        "BACKEND": "django.core.files.storage.FileSystemStorage",
+    },
+    "staticfiles": {
+        "BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage",
+    },
+}
 
 INTERNAL_IPS = ["127.0.0.1"]
 
@@ -271,14 +278,20 @@ LOGGING = {
         "django.server": {"handlers": DEBUG_LOG_HANDLERS, "level": DJANGO_LOGGING_LEVEL, "propagate": False},
         "django.request": {"handlers": DEBUG_LOG_HANDLERS, "level": DJANGO_LOGGING_LEVEL, "propagate": False},
         "api": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
+        "internal": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
         "rbac": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
         "management": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
         "migration_tool": {"handlers": LOGGING_HANDLERS, "level": RBAC_LOGGING_LEVEL},
+        "feature_flags": {"handlers": DEBUG_LOG_HANDLERS, "level": "DEBUG"},
     },
 }
 
 if CW_AWS_ACCESS_KEY_ID:
     NAMESPACE = ENVIRONMENT.get_value("APP_NAMESPACE", default="unknown")
+    # Allow different components (e.g., kafka-consumer) to use distinct CloudWatch log streams
+    # by appending a suffix to the namespace-based stream name
+    CW_STREAM_NAME_SUFFIX = ENVIRONMENT.get_value("CW_STREAM_NAME_SUFFIX", default="")
+    CW_STREAM_NAME = f"{NAMESPACE}{CW_STREAM_NAME_SUFFIX}" if CW_STREAM_NAME_SUFFIX else NAMESPACE
 
     boto3_logs_client = boto_client(
         "logs",
@@ -292,7 +305,7 @@ if CW_AWS_ACCESS_KEY_ID:
         "class": "watchtower.CloudWatchLogHandler",
         "boto3_client": boto3_logs_client,
         "log_group_name": CW_LOG_GROUP,
-        "stream_name": NAMESPACE,
+        "stream_name": CW_STREAM_NAME,
         "formatter": LOGGING_FORMATTER,
         "use_queues": True,
         "create_log_group": CW_CREATE_LOG_GROUP,
@@ -304,6 +317,7 @@ if CW_AWS_ACCESS_KEY_ID:
 CORS_ORIGIN_ALLOW_ALL = True
 
 CORS_ALLOW_HEADERS = default_headers + ("x-rh-identity", "HTTP_X_RH_IDENTITY")
+CORS_EXPOSE_HEADERS = list(globals().get("CORS_EXPOSE_HEADERS", [])) + ["Mcp-Session-Id"]
 
 APPEND_SLASH = False
 
@@ -316,6 +330,23 @@ else:
     REDIS_HOST = ENVIRONMENT.get_value("REDIS_HOST", default="localhost")
     REDIS_PORT = ENVIRONMENT.get_value("REDIS_PORT", default="6379")
     REDIS_PASSWORD = ENVIRONMENT.get_value("REDIS_PASSWORD", default=None)
+
+# Feature Flag settings
+FEATURE_FLAGS_CONF = LoadedConfig.featureFlags
+if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False) and FEATURE_FLAGS_CONF:
+    FEATURE_FLAGS_TOKEN = FEATURE_FLAGS_CONF.clientAccessToken
+    FEATURE_FLAGS_URL = (
+        f"{FEATURE_FLAGS_CONF.scheme.value}://{FEATURE_FLAGS_CONF.hostname}:{FEATURE_FLAGS_CONF.port}/api"
+    )
+    APP_NAME = LoadedConfig.metadata.name
+else:
+    FEATURE_FLAGS_TOKEN = ENVIRONMENT.get_value("FEATURE_FLAGS_TOKEN", default=None)
+    FEATURE_FLAGS_URL = ENVIRONMENT.get_value("FEATURE_FLAGS_URL", default="http://localhost:4242/api")
+    APP_NAME = "rbac"
+
+CLOWDER_ENABLED = ENVIRONMENT.bool("CLOWDER_ENABLED", default=False)
+
+FEATURE_FLAGS_CACHE_DIR = ENVIRONMENT.get_value("FEATURE_FLAGS_CACHE_DIR", default="/tmp/")
 
 REDIS_SSL = REDIS_PASSWORD is not None
 
@@ -350,7 +381,6 @@ ROLE_CREATE_ALLOW_LIST = ENVIRONMENT.get_value("ROLE_CREATE_ALLOW_LIST", default
 # Dual write migration configuration
 REPLICATION_TO_RELATION_ENABLED = ENVIRONMENT.bool("REPLICATION_TO_RELATION_ENABLED", default=False)
 V2_MIGRATION_APP_EXCLUDE_LIST = ENVIRONMENT.get_value("V2_MIGRATION_APP_EXCLUDE_LIST", default="").split(",")
-V2_MIGRATION_RESOURCE_EXCLUDE_LIST = ENVIRONMENT.get_value("V2_MIGRATION_RESOURCE_EXCLUDE_LIST", default="").split(",")
 V2_BOOTSTRAP_TENANT = ENVIRONMENT.bool("V2_BOOTSTRAP_TENANT", default=False)
 
 # Migration Setup
@@ -382,6 +412,7 @@ if ENVIRONMENT.bool("LOG_DATABASE_QUERIES", default=False):
 
 # Internal API Configuration
 INTERNAL_API_PATH_PREFIXES = ["/_private/"]
+A2S_PATH_PREFIX = "/_private/_a2s/"
 
 try:
     INTERNAL_DESTRUCTIVE_API_OK_UNTIL = parse_dt(
@@ -401,6 +432,12 @@ NOTIFICATIONS_TOPIC = ENVIRONMENT.get_value("NOTIFICATIONS_TOPIC", default=None)
 
 EXTERNAL_SYNC_TOPIC = ENVIRONMENT.get_value("EXTERNAL_SYNC_TOPIC", default=None)
 EXTERNAL_CHROME_TOPIC = ENVIRONMENT.get_value("EXTERNAL_CHROME_TOPIC", default=None)
+
+RBAC_KAFKA_CONSUMER_TOPIC = ENVIRONMENT.get_value("RBAC_KAFKA_CONSUMER_TOPIC", default=None)
+
+RBAC_KAFKA_CONSUMER_GROUP_ID = ENVIRONMENT.get_value("RBAC_KAFKA_CONSUMER_GROUP_ID", default="rbac-consumer-group")
+
+RBAC_KAFKA_CUSTOM_CONSUMER_BROKER = ENVIRONMENT.get_value("RBAC_KAFKA_CUSTOM_CONSUMER_BROKER", default="")
 
 # if we don't enable KAFKA we can't use the notifications
 if not KAFKA_ENABLED:
@@ -438,6 +475,7 @@ if KAFKA_ENABLED:
                         "sasl_plain_password": kafka_brokers[broker_index].sasl.password,
                         "sasl_mechanism": kafka_brokers[broker_index].sasl.saslMechanism.upper(),
                         "security_protocol": kafka_brokers[broker_index].sasl.securityProtocol.upper(),
+                        "retries": 5,
                     }
                 )
             if kafka_brokers[broker_index].cacert:
@@ -461,6 +499,10 @@ if KAFKA_ENABLED:
     clowder_chrome_topic = KafkaTopics.get(EXTERNAL_CHROME_TOPIC)
     if clowder_chrome_topic:
         EXTERNAL_CHROME_TOPIC = clowder_chrome_topic.name
+
+    clowder_rbac_consumer_topic = KafkaTopics.get(RBAC_KAFKA_CONSUMER_TOPIC)
+    if clowder_rbac_consumer_topic:
+        RBAC_KAFKA_CONSUMER_TOPIC = clowder_rbac_consumer_topic.name
 
 # BOP TLS settings
 if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False) and ENVIRONMENT.bool("USE_CLOWDER_CA_FOR_BOP", default=False):
@@ -492,10 +534,110 @@ UMB_PORT = ENVIRONMENT.get_value("UMB_PORT", default="61612")
 # Service account name
 SA_NAME = ENVIRONMENT.get_value("SA_NAME", default="nonprod-hcc-rbac")
 
+REDHAT_SSO = ENVIRONMENT.get_value("REDHAT_SSO", default="")
+OPENID_URL = ENVIRONMENT.get_value("OPENID_URL", default="/auth/realms/redhat-external/protocol/openid-connect/token")
+SCOPE = ENVIRONMENT.get_value("SCOPE", default="openid")
+TOKEN_GRANT_TYPE = ENVIRONMENT.get_value("TOKEN_GRANT_TYPE", default="client_credentials")
 RELATION_API_SERVER = ENVIRONMENT.get_value("RELATION_API_SERVER", default="localhost:9000")
+KESSEL_RELATION_CLOWDER_APPLICATION_NAME = "kessel-relations"
+
+if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
+    try:
+        hostname = DependencyEndpoints[KESSEL_RELATION_CLOWDER_APPLICATION_NAME]["api"].hostname
+        RELATION_API_SERVER = f"{hostname}:9000"
+    except KeyError as e:
+        # Note: Can't use logging here as it runs before Django logging config is applied
+        print(
+            f"WARNING: Dependency endpoint for '{KESSEL_RELATION_CLOWDER_APPLICATION_NAME}' not found: {e}. "
+            f"Falling back to default RELATION_API_SERVER value: {RELATION_API_SERVER}"
+        )
+
+RELATIONS_API_CLIENT_ID = ENVIRONMENT.get_value("RELATION_API_CLIENT_ID", default="")
+RELATIONS_API_CLIENT_SECRET = ENVIRONMENT.get_value("RELATION_API_CLIENT_SECRET", default="")
+RELATIONS_API_TOKEN_URL = ENVIRONMENT.get_value(
+    "RELATIONS_API_TOKEN_URL",
+    default="https://sso.stage.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token",
+)
+
+INVENTORY_API_CLIENT_ID = ENVIRONMENT.get_value("INVENTORY_API_CLIENT_ID", default="")
+INVENTORY_API_CLIENT_SECRET = ENVIRONMENT.get_value("INVENTORY_API_CLIENT_SECRET", default="")
+INVENTORY_API_TOKEN_URL = ENVIRONMENT.get_value(
+    "INVENTORY_API_TOKEN_URL",
+    default="https://sso.stage.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token",
+)
+INVENTORY_API_LOCAL = ENVIRONMENT.bool("INVENTORY_API_LOCAL", default=True)
+INVENTORY_API_SERVER = ENVIRONMENT.get_value("INVENTORY_API_SERVER", default="localhost:9000")
+KESSEL_INVENTORY_CLOWDER_APPLICATION_NAME = "kessel-inventory"
+INVENTORY_API_PORT = 9000
+if CLOWDER_ENABLED:
+    try:
+        hostname = DependencyEndpoints[KESSEL_INVENTORY_CLOWDER_APPLICATION_NAME]["api"].hostname
+        INVENTORY_API_SERVER = f"{hostname}:{INVENTORY_API_PORT}"
+    except KeyError as e:
+        # Note: Can't use logging here as it runs before Django logging config is applied
+        print(
+            f"WARNING: Dependency endpoint for '{KESSEL_INVENTORY_CLOWDER_APPLICATION_NAME}' not found: {e}. "
+            f"Falling back to default INVENTORY_API_SERVER value: {INVENTORY_API_SERVER}"
+        )
+
 ENV_NAME = ENVIRONMENT.get_value("ENV_NAME", default="stage")
 
 # Versioned API settings
 V2_APIS_ENABLED = ENVIRONMENT.bool("V2_APIS_ENABLED", default=False)
 V2_READ_ONLY_API_MODE = ENVIRONMENT.bool("V2_READ_ONLY_API_MODE", default=False)
+WORKSPACE_ACCESS_CHECK_V2_ENABLED = ENVIRONMENT.bool("WORKSPACE_ACCESS_CHECK_V2_ENABLED", default=False)
+# When True, use 'role_binding_view' permission; when False, use 'view' permission for role binding access
+USE_ROLE_BINDING_VIEW_PERMISSION = ENVIRONMENT.bool("USE_ROLE_BINDING_VIEW_PERMISSION", default=True)
 READ_ONLY_API_MODE = ENVIRONMENT.get_value("READ_ONLY_API_MODE", default=False)
+V2_EDIT_API_ENABLED = ENVIRONMENT.bool("V2_EDIT_API_ENABLED", default=False)
+V1_ROLE_PERMISSION_BLOCK_LIST = [
+    permission.strip()
+    for permission in ENVIRONMENT.get_value("V1_ROLE_PERMISSION_BLOCK_LIST", default="").split(",")
+    if permission.strip()
+]
+
+# Read-your-writes settings
+READ_YOUR_WRITES_WORKSPACE_ENABLED = ENVIRONMENT.bool("READ_YOUR_WRITES_WORKSPACE_ENABLED", default=False)
+READ_YOUR_WRITES_CHANNEL = ENVIRONMENT.get_value("READ_YOUR_WRITES_CHANNEL", default="READ_YOUR_WRITES_CHANNEL")
+READ_YOUR_WRITES_TIMEOUT_SECONDS = ENVIRONMENT.int("READ_YOUR_WRITES_TIMEOUT_SECONDS", default=10)
+
+# Workspace settings
+WORKSPACE_APPLICATION_NAME = ENVIRONMENT.get_value("WORKSPACE_APPLICATION_NAME", default="inventory")
+# Comma-separated list of resource types that should trigger workspace hierarchy
+WORKSPACE_RESOURCE_TYPE = [
+    t.strip() for t in ENVIRONMENT.get_value("WORKSPACE_RESOURCE_TYPE", default="groups,hosts,*").split(",")
+]
+WORKSPACE_ATTRIBUTE_FILTER = ENVIRONMENT.get_value("WORKSPACE_ATTRIBUTE_FILTER", default="group.id")
+WORKSPACE_HIERARCHY_ENABLED = ENVIRONMENT.bool("WORKSPACE_HIERARCHY_ENABLED", False)
+WORKSPACE_ORG_CREATION_LIMIT = ENVIRONMENT.get_value("WORKSPACE_ORG_CREATION_LIMIT", default=3000)
+WORKSPACE_HIERARCHY_DEPTH_LIMIT = ENVIRONMENT.int("WORKSPACE_HIERARCHY_DEPTH_LIMIT", default=5)
+WORKSPACE_RESTRICT_DEFAULT_PEERS = ENVIRONMENT.bool("WORKSPACE_RESTRICT_DEFAULT_PEERS", default=False)
+# Enable detailed timing logs for v2 workspace access checks (for performance investigation)
+WORKSPACE_ACCESS_TIMING_ENABLED = ENVIRONMENT.bool("WORKSPACE_ACCESS_TIMING_ENABLED", default=False)
+
+# Permission scope configuration used by management.permission.scope_service.ImplicitResourceService.
+# These can include wildcard patterns (e.g. "rbac:*:read" or "advisor:*:*").
+ROOT_SCOPE_PERMISSIONS = ENVIRONMENT.get_value("ROOT_SCOPE_PERMISSIONS", default="")
+TENANT_SCOPE_PERMISSIONS = ENVIRONMENT.get_value("TENANT_SCOPE_PERMISSIONS", default="")
+DEFAULT_SCOPE_PERMISSIONS = ENVIRONMENT.get_value("DEFAULT_SCOPE_PERMISSIONS", default="")
+
+# Org level permissons parent role uuids
+SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID = ENVIRONMENT.get_value("SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID", default="")
+SYSTEM_DEFAULT_TENANT_ROLE_UUID = ENVIRONMENT.get_value("SYSTEM_DEFAULT_TENANT_ROLE_UUID", default="")
+SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID = ENVIRONMENT.get_value("SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID", default="")
+SYSTEM_ADMIN_TENANT_ROLE_UUID = ENVIRONMENT.get_value("SYSTEM_ADMIN_TENANT_ROLE_UUID", default="")
+
+# MCP settings
+MCP_TOOL_TIMEOUT_SECONDS = ENVIRONMENT.int("MCP_TOOL_TIMEOUT_SECONDS", default=30)
+MCP_TOOL_MAX_WORKERS = ENVIRONMENT.int("MCP_TOOL_MAX_WORKERS", default=10)
+
+# Manipulation of response to include ungrouped hosts id
+ADD_UNGROUPED_HOSTS_ID = ENVIRONMENT.bool("ADD_UNGROUPED_HOSTS_ID", default=False)
+REMOVE_NULL_VALUE = ENVIRONMENT.bool("REMOVE_NULL_VALUE", default=False)
+
+# Service-to-service (S2S) authentication settings
+SERVICE_PSKS = ENVIRONMENT.json("SERVICE_PSKS", default={})
+SYSTEM_USERS = ENVIRONMENT.json("SYSTEM_USERS", default={})
+
+# Principal caching settings
+PRINCIPAL_CACHE_LIFETIME = ENVIRONMENT.int("PRINCIPAL_CACHE_LIFETIME", default=3600)

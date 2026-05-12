@@ -10,10 +10,3 @@ RBAC, accessed through the application program interface (API), is a role based 
    management
    development
    install
-
-Indices and tables
-==================
-
-* :ref:`genindex`
-* :ref:`modindex`
-* :ref:`search`

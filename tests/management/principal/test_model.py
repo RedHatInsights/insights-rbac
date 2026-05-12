@@ -15,6 +15,9 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the principal model."""
+
+from django.db import IntegrityError, transaction
+
 from management.models import Principal
 from tests.identity_request import IdentityRequest
 
@@ -30,10 +33,29 @@ class PrincipalModelTests(IdentityRequest):
         """Test that we can create principal correctly."""
         # Default value for cross_account is False.
         principalA = Principal.objects.create(username="principalA", tenant=self.tenant)
-        self.assertEqual(principalA.username, "principalA")
+        self.assertEqual(principalA.username, "principala")
         self.assertEqual(principalA.cross_account, False)
 
         # Explicitly set cross_account.
         principalB = Principal.objects.create(username="principalB", cross_account=True, tenant=self.tenant)
-        self.assertEqual(principalB.username, "principalB")
+        self.assertEqual(principalB.username, "principalb")
         self.assertEqual(principalB.cross_account, True)
+
+    def test_unique_user_id(self):
+        """Test that the principals' user ids' must be either 'null' or unique."""
+        with transaction.atomic():
+            # Creating principals with different user IDs or even "null" user IDs is fine, as the constraint has been
+            # purposely set so that "null" user IDs are considered different.
+            _ = Principal.objects.create(username="principal", tenant=self.tenant, user_id="user-id-one")
+            _ = Principal.objects.create(username="principal-two", tenant=self.tenant)
+            _ = Principal.objects.create(username="principal-three", tenant=self.tenant, user_id="user-id-three")
+            _ = Principal.objects.create(username="principal-four", tenant=self.tenant)
+
+            with self.assertRaises(IntegrityError) as context:
+                _ = Principal.objects.create(username="principal-five", tenant=self.tenant, user_id="user-id-one")
+
+            self.assertIn(
+                'duplicate key value violates unique constraint "management_principal_user_id_key"',
+                str(context.exception),
+                "unexpected database constraint violation",
+            )

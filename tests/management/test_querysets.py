@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the Management queryset helpers."""
+
 import uuid
 from unittest.mock import Mock, patch
 
@@ -57,6 +58,22 @@ class QuerySetTest(TestCase):
     @classmethod
     def tearDownClass(cls):
         cls.tenant.delete()
+
+    def tearDown(self):
+        """Clean up after each test."""
+        # Clean up database objects
+        Group.objects.all().delete()
+        Principal.objects.all().delete()
+        Role.objects.all().delete()
+        Policy.objects.all().delete()
+        Permission.objects.all().delete()
+        Access.objects.all().delete()
+
+        # Clear principal cache to avoid stale data between tests
+        from management.utils import PRINCIPAL_CACHE
+
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant("100001")
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
 
     def _create_groups(self):
         """Setup groups for tests."""

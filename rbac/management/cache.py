@@ -8,7 +8,7 @@ import pickle
 from django.conf import settings
 from prometheus_client import Counter
 from redis import BlockingConnectionPool, exceptions
-from redis.client import Redis
+from redis.client import Pipeline, Redis
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 _connection_pool = BlockingConnectionPool(**settings.REDIS_CACHE_CONNECTION_PARAMS)  # should match gunicorn.threads
@@ -69,7 +69,7 @@ class BasicCache:
                 self.disable_caching()
                 return False
         except Exception as e:
-            logger.exception("Error:", e)
+            logger.exception(f"Error: {e}")
 
     @contextlib.contextmanager
     def delete_handler(self, err_msg):
@@ -247,6 +247,125 @@ class JWKSCache(BasicCache):
     def set_jwks_response(self, response):
         """Save the JWKS certificates' response in Redis."""
         super().save(self.JWKS_CACHE_KEY, response, "JWKS response")
+
+
+class JWTCache(BasicCache):
+    """Redis-based caching for the storage of JWT token."""
+
+    JWT_CACHE_KEY = "rbac::jwt::relations"
+
+    def key_for(self):
+        """Redis key for the JWT token response."""
+        return "rbac::jwt::relations"
+
+    def set_cache(self, pipe, key, item):
+        """Set cache to redis."""
+        pipe.set(name=key, value=item)
+        pipe.expire(name=key, time=settings.IT_TOKEN_JKWS_CACHE_LIFETIME)
+        pipe.execute()
+
+    def get_from_redis(self, key):
+        """Get object from redis based on key."""
+        obj = self.connection.get(name=key)
+        if obj:
+            return obj.decode("utf-8") if isinstance(obj, bytes) else obj
+        return None
+
+    def get_jwt_response(self):
+        """Get the JWT token response from Redis."""
+        return super().get_cached(self.JWT_CACHE_KEY, "Unable to fetch the JWT response from Redis")
+
+    def set_jwt_response(self, response):
+        """Save the JWT token response in Redis."""
+        super().save(self.JWT_CACHE_KEY, response, "JWT response")
+
+
+class JWTCacheOptimized(JWTCache):
+    """Optimized JWT cache for high-throughput consumers (Kafka).
+
+    This cache skips redundant health checks for performance in message processing scenarios.
+    Use this instead of JWTCache for consumers that process many messages per second.
+    """
+
+    def get_jwt_response(self):
+        """Get the JWT token response from Redis without health check overhead."""
+        if not self.use_caching:
+            return None
+
+        try:
+            return self.get_from_redis(self.JWT_CACHE_KEY)
+        except exceptions.RedisError:
+            logger.exception("Unable to fetch the JWT response from Redis")
+            # Disable caching temporarily on error
+            self.disable_caching()
+        return None
+
+
+class PrincipalCache(BasicCache):
+    """Redis-based caching for storing the principals."""
+
+    def key_for(self, org_id: str, principal_username: str) -> str:
+        """Generate the cache key for Redis.
+
+        :param org_id: The tenant of the principal.
+        :param principal_username: The username of the principal.
+        :returns: The key used in Redis to store principals.
+        """
+        return f"rbac::principal::{org_id}::{principal_username}"
+
+    def set_cache(self, pipe: Pipeline, key: str, principal):
+        """Set cache to redis."""
+        pipe.set(name=key, value=pickle.dumps(principal))
+        pipe.expire(name=key, time=settings.PRINCIPAL_CACHE_LIFETIME)
+        pipe.execute()
+
+    def get_from_redis(self, key: str):
+        """Get principal from redis based on the tenant and the principal."""
+        principal = self.connection.get(name=key)
+        if principal:
+            return pickle.loads(principal)
+        else:
+            return None
+
+    def get_principal(self, org_id: str, principal_username: str):
+        """Fetch the principal from the cache.
+
+        :param org_id: The tenant of the principal.
+        :param principal_username: The username of the principal to fetch.
+        :returns: The principal itself or None.
+        """
+        return super().get_cached(
+            self.key_for(org_id, principal_username),
+            f'[org_id: "{org_id}"][principal_username: "{principal_username}"] Unable to fetch principal from cache',
+        )
+
+    def cache_principal(self, org_id: str, principal):
+        """Cache the given principal.
+
+        :param org_id: The tenant of the principal.
+        :param principal: The principal object to cache.
+        """
+        super().save(
+            key=self.key_for(org_id, principal.username),
+            item=principal,
+            obj_name="principal",
+        )
+
+    def delete_all_principals_for_tenant(self, org_id: str):
+        """Purge all principals for a given tenant from the cache.
+
+        :param org_id: The tenant org_id to clear principals for.
+        """
+        err_msg = f"Error deleting all principals for tenant {org_id}"
+        with self.delete_handler(err_msg):
+            logger.info(f"Deleting entire principal cache for tenant {org_id}")
+            count = 0
+            pipeline = self.connection.pipeline()
+            for key in self.connection.scan_iter(match=f"rbac::principal::{org_id}::*", count=BATCH_DELETE_SIZE):
+                pipeline.delete(key)
+                count += 1
+            pipeline.execute()
+            logger.info(f"Deleted {count} principals for tenant {org_id}")
 
 
 def skip_purging_cache_for_public_tenant(tenant):

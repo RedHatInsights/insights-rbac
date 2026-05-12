@@ -16,14 +16,22 @@
 #
 
 """View for permission management."""
+
 from django.conf import settings
 from django.db.models import Q
+from django.db.models.functions import Collate
 from django_filters import rest_framework as filters
 from management.filters import CommonFilters
 from management.models import Access, Permission, Role
 from management.permission.serializer import PermissionSerializer
 from management.permissions.permission_access import PermissionAccessPermission
-from management.utils import validate_and_get_key, validate_uuid
+from management.permissions.v2_edit_api_access import is_v2_edit_enabled_for_request
+from management.role.v2_role_scope import v2_role_excluded_applications
+from management.utils import (
+    api_path_prefix,
+    validate_and_get_key,
+    validate_uuid,
+)
 from rest_framework import mixins, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
@@ -79,13 +87,36 @@ class PermissionViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
 
     """
 
-    queryset = Permission.objects.all()
+    queryset = (
+        Permission.objects.all().annotate(permission_collate=Collate("permission", "C")).order_by("permission_collate")
+    )
+
     permission_classes = (PermissionAccessPermission,)
     filter_backends = (filters.DjangoFilterBackend, OrderingFilter)
     serializer_class = PermissionSerializer
     filterset_class = PermissionFilter
-    ordering_fields = ("application", "resource_type", "verb", "permission")
-    ordering = ("application",)
+    ordering_fields = (
+        "application",
+        "resource_type",
+        "verb",
+    )
+    ordering = ("permission_collate",)
+
+    def get_queryset(self):
+        """Override to filter out blocked permissions for v1 API and scope for v2 tenants."""
+        queryset = super().get_queryset()
+
+        if self.request.path.startswith(f"/{api_path_prefix()}v1/"):
+            blocked_permissions = settings.V1_ROLE_PERMISSION_BLOCK_LIST
+            if blocked_permissions:
+                queryset = queryset.exclude(permission__in=blocked_permissions)
+
+        if is_v2_edit_enabled_for_request(self.request):
+            excluded_apps = v2_role_excluded_applications()
+            if excluded_apps:
+                queryset = queryset.exclude(application__in=list(excluded_apps))
+
+        return queryset
 
     def list(self, request, *args, **kwargs):
         """Obtain the list of permissions for the tenant.
@@ -130,6 +161,9 @@ class PermissionViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
           ]
         }
         """
+        if request.query_params.get("order_by") == "-permission":
+            self.queryset = self.queryset.order_by("-permission_collate")
+            self.ordering = "-permission_collate"
         return super().list(request=request, args=args, kwargs=kwargs)
 
     @action(detail=False)
@@ -166,7 +200,6 @@ class PermissionViewSet(mixins.ListModelMixin, viewsets.GenericViewSet):
             context = request.query_params.get(key)
             if context:
                 filters[f"{key}__in"] = context.split(",")
-
         query_set = (
             self.filter_queryset(self.get_queryset())
             .order_by(query_field)

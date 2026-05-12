@@ -53,7 +53,7 @@ objects:
     selector:
       name: ${NAME}-redis
     resources:
-      limits:
+      requests:
         memory: ${MEMORY_REQUEST}
       limits:
         memory: ${MEMORY_LIMIT}

@@ -16,14 +16,15 @@
 #
 
 """Models to store cross account access request."""
+
 import datetime
 from uuid import uuid4
 
 from django.db import models
 from django.utils import timezone
 from management.rbac_fields import AutoDateTimeField
+from management.role.user_source import SourceKey
 from rest_framework.serializers import ValidationError
-
 
 STATUS_LIST = ["pending", "cancelled", "approved", "denied", "expired"]
 
@@ -70,6 +71,10 @@ class CrossAccountRequest(models.Model):
         self.validate_input_value()
 
         super(CrossAccountRequest, self).save(*args, **kwargs)
+
+    def source_key(self) -> SourceKey:
+        """Return the SourceKey for this cross-account request, for use with a BindingMapping."""
+        return SourceKey(self, str(self.request_id))
 
 
 class RequestsRoles(models.Model):

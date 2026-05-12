@@ -19,12 +19,12 @@
 The `urlpatterns` list routes URLs to views. For more information please see:
     https://docs.djangoproject.com/en/2.0/topics/http/urls/
 """
+
 import os
 
 from django.conf import settings
-from django.conf.urls import include
 from django.contrib.staticfiles.urls import staticfiles_urlpatterns
-from django.urls import path, re_path
+from django.urls import include, path, re_path
 
 API_PATH_PREFIX = os.getenv("API_PATH_PREFIX", "api/")
 if API_PATH_PREFIX != "":
@@ -38,16 +38,23 @@ if API_PATH_PREFIX != "":
 urlpatterns = [
     re_path(r"^{}v1/".format(API_PATH_PREFIX), include(("api.urls", "v1_api"))),
     re_path(r"^{}v1/".format(API_PATH_PREFIX), include(("management.urls", "v1_management"))),
-    re_path(r"^_private/", include(("internal.urls", "internal"))),
+    path(settings.A2S_PATH_PREFIX.lstrip("/"), include(("management.mcp_urls", "mcp"))),
+    path("_private/", include(("internal.urls", "internal"))),
     path("", include("django_prometheus.urls")),
 ]
 
 if settings.V2_APIS_ENABLED:
-    urlpatterns.append(
-        re_path(
-            r"^{}v2/".format(API_PATH_PREFIX),
-            include(("management.v2_urls", "v2_management")),
-        )
+    urlpatterns.extend(
+        [
+            re_path(
+                r"^{}v2/".format(API_PATH_PREFIX),
+                include(("api.v2_urls", "v2_api")),
+            ),
+            re_path(
+                r"^{}v2/".format(API_PATH_PREFIX),
+                include(("management.v2_urls", "v2_management")),
+            ),
+        ]
     )
 
 urlpatterns += staticfiles_urlpatterns()

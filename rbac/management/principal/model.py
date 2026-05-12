@@ -16,6 +16,7 @@
 #
 
 """Model for principal management."""
+
 from typing import Optional
 from uuid import uuid4
 
@@ -51,8 +52,14 @@ class Principal(TenantAwareModel):
             return None
         return Principal.user_id_to_principal_resource_id(self.user_id)
 
+    def save(self, *args, **kwargs):
+        """Override save to only store lower case username."""
+        self.username = self.username.lower()
+        super(Principal, self).save(*args, **kwargs)
+
     class Meta:
         ordering = ["username"]
         constraints = [
             models.UniqueConstraint(fields=["username", "tenant"], name="unique principal username per tenant"),
+            models.UniqueConstraint(fields=["user_id"], name="management_principal_user_id_key"),
         ]

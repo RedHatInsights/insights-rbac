@@ -17,6 +17,7 @@ objects:
     database:
       name: rbac
       dbVolumeSize: medium
+      version: 16
     inMemoryDb: true
     kafkaTopics:
     - topicName: ${NOTIFICATIONS_TOPIC}
@@ -28,6 +29,12 @@ objects:
     - topicName: ${EXTERNAL_CHROME_TOPIC}
       partitions: 1
       replicas: 3
+    - topicName: ${RBAC_KAFKA_CONSUMER_TOPIC}
+      partitions: 1
+      replicas: 3
+    optionalDependencies:
+      - kessel-inventory
+      - kessel-relations
     deployments:
     - name: worker-service
       minReplicas: ${{MIN_WORKER_REPLICAS}}
@@ -85,8 +92,8 @@ objects:
           name: default-role-config
         - mountPath: /opt/rbac/rbac/management/role/permissions
           name: model-access-permissions
-        - mountPath: /opt/rbac/rbac/management/principal/umb_certs
-          name: umb-certs
+        - mountPath: /opt/rbac/rbac/management/principal/umb_certificates
+          name: umb-certificates
         volumes:
         - configMap:
             name: ${CONFIG_MAP_NAME}
@@ -94,15 +101,10 @@ objects:
         - configMap:
             name: ${MODEL_ACCESS_PERMISSIONS}
           name: model-access-permissions
-        - name: umb-certs
+        - name: umb-certificates
           secret:
-            secretName: service-accounts
             optional: true
-            items:
-            - key: umb-cert
-              path: cert.pem
-            - key: umb-key
-              path: key.pem
+            secretName: it-umb-key-pair
         resources:
           limits:
             cpu: ${CELERY_WORKER_CPU_LIMIT}
@@ -223,16 +225,60 @@ objects:
             value: ${SA_NAME}
           - name: RELATION_API_SERVER
             value: ${RELATION_API_SERVER}
+          - name: RELATION_API_CLIENT_ID
+            valueFrom:
+              secretKeyRef:
+                key: rbac-client-id
+                name: service-accounts
+                optional: true
+          - name: RELATION_API_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                key: rbac-client-secret
+                name: service-accounts
+                optional: true
+          - name: INVENTORY_API_SERVER
+            value: ${INVENTORY_API_SERVER}
+          - name: REDHAT_SSO
+            value: ${REDHAT_SSO}
           - name: REPLICATION_TO_RELATION_ENABLED
             value: ${REPLICATION_TO_RELATION_ENABLED}
           - name: PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB
             value: ${PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB}
           - name: V2_MIGRATION_APP_EXCLUDE_LIST
             value: ${V2_MIGRATION_APP_EXCLUDE_LIST}
-          - name: V2_MIGRATION_RESOURCE_EXCLUDE_LIST
-            value: ${V2_MIGRATION_RESOURCE_EXCLUDE_LIST}
           - name: V2_BOOTSTRAP_TENANT
             value: ${V2_BOOTSTRAP_TENANT}
+          - name: WORKSPACE_APPLICATION_NAME
+            value: ${WORKSPACE_APPLICATION_NAME}
+          - name: WORKSPACE_RESOURCE_TYPE
+            value: ${WORKSPACE_RESOURCE_TYPE}
+          - name: WORKSPACE_ATTRIBUTE_FILTER
+            value: ${WORKSPACE_ATTRIBUTE_FILTER}
+          - name: WORKSPACE_HIERARCHY_ENABLED
+            value: ${WORKSPACE_HIERARCHY_ENABLED}
+          - name: WORKSPACE_ORG_CREATION_LIMIT
+            value: ${WORKSPACE_ORG_CREATION_LIMIT}
+          - name: WORKSPACE_HIERARCHY_DEPTH_LIMIT
+            value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
+          - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
+            value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
+          - name: FEATURE_FLAGS_CACHE_DIR
+            value: ${FEATURE_FLAGS_CACHE_DIR}
+          - name: SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
+            value: ${SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID}
+          - name: SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID
+            value: ${SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID}
+          - name: SYSTEM_DEFAULT_TENANT_ROLE_UUID
+            value: ${SYSTEM_DEFAULT_TENANT_ROLE_UUID}
+          - name: SYSTEM_ADMIN_TENANT_ROLE_UUID
+            value: ${SYSTEM_ADMIN_TENANT_ROLE_UUID}
+          - name: ROOT_SCOPE_PERMISSIONS
+            value: ${ROOT_SCOPE_PERMISSIONS}
+          - name: TENANT_SCOPE_PERMISSIONS
+            value: ${TENANT_SCOPE_PERMISSIONS}
+          - name: DEFAULT_SCOPE_PERMISSIONS
+            value: ${DEFAULT_SCOPE_PERMISSIONS}
           ####### Following envs are for scheduler, doesn't hurt to put in worker
           - name: PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB
             value: ${PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB}
@@ -253,7 +299,7 @@ objects:
           - '-c'
           - >
             PYTHONPATH=${PWD}/rbac/ celery -A
-            rbac.celery beat -l $DJANGO_LOG_LEVEL
+            rbac.celery beat -l $DJANGO_LOG_LEVEL --schedule=/tmp/celerybeat-schedule
         livenessProbe:
           exec:
             command:
@@ -314,7 +360,7 @@ objects:
           timeoutSeconds: 3
         readinessProbe:
           httpGet:
-            path: /api/rbac/v1/status/
+            path: /api/rbac/v1/ready/
             port: 8000
             scheme: HTTP
           initialDelaySeconds: 60
@@ -422,6 +468,44 @@ objects:
             value: ${CLOWDER_ENABLED}
           - name: CW_NULL_WORKAROUND
             value: ${CW_NULL_WORKAROUND}
+            #Relations API variables
+          - name: RELATION_API_CLIENT_ID
+            valueFrom:
+              secretKeyRef:
+                key: rbac-client-id
+                name: service-accounts
+                optional: true
+          - name: RELATION_API_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                key: rbac-client-secret
+                name: service-accounts
+                optional: true
+          - name: RELATION_API_SERVER
+            value: ${RELATION_API_SERVER}
+            # Inventory API variables
+          - name: INVENTORY_API_CLIENT_ID
+            valueFrom:
+              secretKeyRef:
+                key: rbac-client-id
+                name: service-accounts
+                optional: true
+          - name: INVENTORY_API_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                key: rbac-client-secret
+                name: service-accounts
+                optional: true
+          - name: INVENTORY_API_SERVER
+            value: ${INVENTORY_API_SERVER}
+          - name: INVENTORY_API_TOKEN_URL
+            value: ${INVENTORY_API_TOKEN_URL}
+          - name: SCOPES
+            value: ${SCOPES}
+          - name: TOKEN_GRANT_TYPE
+            value: ${TOKEN_GRANT_TYPE}
+          - name: REDHAT_SSO
+            value: ${REDHAT_SSO}
           - name: GLITCHTIP_DSN
             valueFrom:
               secretKeyRef:
@@ -456,10 +540,44 @@ objects:
             value: ${PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB}
           - name: V2_MIGRATION_APP_EXCLUDE_LIST
             value: ${V2_MIGRATION_APP_EXCLUDE_LIST}
-          - name: V2_MIGRATION_RESOURCE_EXCLUDE_LIST
-            value: ${V2_MIGRATION_RESOURCE_EXCLUDE_LIST}
           - name: V2_BOOTSTRAP_TENANT
             value: ${V2_BOOTSTRAP_TENANT}
+          - name: WORKSPACE_APPLICATION_NAME
+            value: ${WORKSPACE_APPLICATION_NAME}
+          - name: WORKSPACE_RESOURCE_TYPE
+            value: ${WORKSPACE_RESOURCE_TYPE}
+          - name: WORKSPACE_ATTRIBUTE_FILTER
+            value: ${WORKSPACE_ATTRIBUTE_FILTER}
+          - name: WORKSPACE_HIERARCHY_ENABLED
+            value: ${WORKSPACE_HIERARCHY_ENABLED}
+          - name: WORKSPACE_HIERARCHY_DEPTH_LIMIT
+            value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
+          - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
+            value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
+          - name: WORKSPACE_ORG_CREATION_LIMIT
+            value: ${WORKSPACE_ORG_CREATION_LIMIT}
+          - name: READ_YOUR_WRITES_TIMEOUT_SECONDS
+            value: ${READ_YOUR_WRITES_TIMEOUT_SECONDS}
+          - name: FEATURE_FLAGS_CACHE_DIR
+            value: ${FEATURE_FLAGS_CACHE_DIR}
+          - name: SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
+            value: ${SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID}
+          - name: SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID
+            value: ${SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID}
+          - name: SYSTEM_DEFAULT_TENANT_ROLE_UUID
+            value: ${SYSTEM_DEFAULT_TENANT_ROLE_UUID}
+          - name: SYSTEM_ADMIN_TENANT_ROLE_UUID
+            value: ${SYSTEM_ADMIN_TENANT_ROLE_UUID}
+          - name: ROOT_SCOPE_PERMISSIONS
+            value: ${ROOT_SCOPE_PERMISSIONS}
+          - name: TENANT_SCOPE_PERMISSIONS
+            value: ${TENANT_SCOPE_PERMISSIONS}
+          - name: DEFAULT_SCOPE_PERMISSIONS
+            value: ${DEFAULT_SCOPE_PERMISSIONS}
+          - name: WORKSPACE_ACCESS_TIMING_ENABLED
+            value: ${WORKSPACE_ACCESS_TIMING_ENABLED}
+          - name: RBAC_KAFKA_CONSUMER_TOPIC
+            value: ${RBAC_KAFKA_CONSUMER_TOPIC}
           ####### Following envs are additional to workers
           - name: SERVICE_PSKS
             valueFrom:
@@ -467,6 +585,12 @@ objects:
                 key: psks.json
                 name: ${RBAC_PSKS}
                 optional: false
+          - name: SYSTEM_USERS
+            valueFrom:
+              secretKeyRef:
+                key: system-users.json
+                name: ${RBAC_SYSTEM_USERS}
+                optional: true
           - name: POD_CPU_LIMIT
             valueFrom:
               resourceFieldRef:
@@ -536,66 +660,144 @@ objects:
             value: ${V2_APIS_ENABLED}
           - name: V2_READ_ONLY_API_MODE
             value: ${V2_READ_ONLY_API_MODE}
+          - name: V2_EDIT_API_ENABLED
+            value: ${V2_EDIT_API_ENABLED}
+          - name: V1_ROLE_PERMISSION_BLOCK_LIST
+            value: ${V1_ROLE_PERMISSION_BLOCK_LIST}
           - name: READ_ONLY_API_MODE
             value: ${READ_ONLY_API_MODE}
+          - name: ADD_UNGROUPED_HOSTS_ID
+            value: ${ADD_UNGROUPED_HOSTS_ID}
+          - name: REMOVE_NULL_VALUE
+            value: ${REMOVE_NULL_VALUE}
+          - name: SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
+            value: ${SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID}
+          - name: SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID
+            value: ${SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID}
+          - name: SYSTEM_DEFAULT_TENANT_ROLE_UUID
+            value: ${SYSTEM_DEFAULT_TENANT_ROLE_UUID}
+          - name: SYSTEM_ADMIN_TENANT_ROLE_UUID
+            value: ${SYSTEM_ADMIN_TENANT_ROLE_UUID}
+          - name: ROOT_SCOPE_PERMISSIONS
+            value: ${ROOT_SCOPE_PERMISSIONS}
+          - name: TENANT_SCOPE_PERMISSIONS
+            value: ${TENANT_SCOPE_PERMISSIONS}
+          - name: DEFAULT_SCOPE_PERMISSIONS
+            value: ${DEFAULT_SCOPE_PERMISSIONS}
+
+    - name: rbac-kafka-consumer
+      minReplicas: ${{RBAC_KAFKA_CONSUMER_REPLICAS}}
+      maxReplicas: ${{RBAC_KAFKA_CONSUMER_REPLICAS}}
+      metadata:
+        annotations:
+          ignore-check.kube-linter.io/minimum-three-replicas: "A single consumer guarantees events are processed in the exact order they happened, maintaining the integrity and consistency."
+      podSpec:
+        image: ${IMAGE}:${IMAGE_TAG}
+        command: ["/opt/rbac/rbac/manage.py", "launch-rbac-kafka-consumer"]
+        env:
+          - name: APP_NAMESPACE
+            valueFrom:
+              fieldRef:
+                fieldPath: metadata.namespace
+          - name: CLOWDER_ENABLED
+            value: ${CLOWDER_ENABLED}
+          - name: CW_NULL_WORKAROUND
+            value: ${CW_NULL_WORKAROUND}
+          - name: DJANGO_DEBUG
+            value: ${DJANGO_DEBUG}
+          - name: DJANGO_LOG_LEVEL
+            value: ${DJANGO_LOG_LEVEL}
+          # Logging configuration for consumer
+          - name: RBAC_LOG_LEVEL
+            value: ${RBAC_LOG_LEVEL}
+          - name: DJANGO_LOG_FORMATTER
+            value: ${DJANGO_LOG_FORMATTER}
+          - name: DJANGO_LOG_HANDLERS
+            value: ${DJANGO_LOG_HANDLERS}
+          # Use separate CloudWatch log stream for consumer
+          - name: CW_STREAM_NAME_SUFFIX
+            value: "-rbac-kafka-consumer"
+          - name: DJANGO_SECRET_KEY
+            valueFrom:
+              secretKeyRef:
+                key: django-secret-key
+                name: rbac-secret
+                optional: false
+          - name: ENV_NAME
+            value: ${ENV_NAME}
+          # Glitchtip/Sentry for error monitoring
+          - name: GLITCHTIP_DSN
+            valueFrom:
+              secretKeyRef:
+                name: ${GLITCHTIP_SECRET}
+                key: dsn
+                optional: true
+          - name: KAFKA_ENABLED
+            value: ${KAFKA_ENABLED}
+          - name: RBAC_KAFKA_CONSUMER_TOPIC
+            value: ${RBAC_KAFKA_CONSUMER_TOPIC}
+          - name: RBAC_KAFKA_CONSUMER_GROUP_ID
+            value: ${RBAC_KAFKA_CONSUMER_GROUP_ID}
+          - name: RBAC_KAFKA_CUSTOM_CONSUMER_BROKER
+            value: ${RBAC_KAFKA_CUSTOM_CONSUMER_BROKER}
+          - name: REPLICATION_TO_RELATION_ENABLED
+            value: ${REPLICATION_TO_RELATION_ENABLED}
+          - name: RELATION_API_SERVER
+            value: ${RELATION_API_SERVER}
+          # Relations API variables
+          - name: RELATION_API_CLIENT_ID
+            valueFrom:
+              secretKeyRef:
+                key: rbac-client-id
+                name: service-accounts
+                optional: true
+          - name: RELATION_API_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                key: rbac-client-secret
+                name: service-accounts
+                optional: true
+          - name: SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
+            value: ${SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID}
+          - name: SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID
+            value: ${SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID}
+          - name: SYSTEM_DEFAULT_TENANT_ROLE_UUID
+            value: ${SYSTEM_DEFAULT_TENANT_ROLE_UUID}
+          - name: SYSTEM_ADMIN_TENANT_ROLE_UUID
+            value: ${SYSTEM_ADMIN_TENANT_ROLE_UUID}
+          - name: ROOT_SCOPE_PERMISSIONS
+            value: ${ROOT_SCOPE_PERMISSIONS}
+          - name: TENANT_SCOPE_PERMISSIONS
+            value: ${TENANT_SCOPE_PERMISSIONS}
+          - name: DEFAULT_SCOPE_PERMISSIONS
+            value: ${DEFAULT_SCOPE_PERMISSIONS}
+          - name: REDHAT_SSO
+            value: ${REDHAT_SSO}
+        livenessProbe:
+          exec:
+            command: ["test", "-f", "/tmp/kubernetes-liveness"]
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+          successThreshold: 1
+        readinessProbe:
+          exec:
+            command: ["test", "-f", "/tmp/kubernetes-readiness"]
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+          successThreshold: 1
+        resources:
+          limits:
+            cpu: ${RBAC_KAFKA_CONSUMER_CPU_LIMIT}
+            memory: ${RBAC_KAFKA_CONSUMER_MEMORY_LIMIT}
+          requests:
+            cpu: ${RBAC_KAFKA_CONSUMER_CPU_REQUEST}
+            memory: ${RBAC_KAFKA_CONSUMER_MEMORY_REQUEST}
 
     jobs:
-      - name: tenant-org-id-populator
-        podSpec:
-          image: quay.io/cloudservices/tenant-utils:latest
-          command:
-            - ./org-id-column-populator
-            - -C
-            - -a
-            - account_id
-            - -o
-            - org_id
-            - -t
-            - api_tenant
-            - --ean-translator-addr
-            - http://${TENANT_TRANSLATOR_HOST}:${TENANT_TRANSLATOR_PORT}
-            - --batch-size
-            - "50"
-          env:
-            - name: LOG_FORMAT
-              value: ${LOG_FORMAT}
-            - name: LOG_BATCH_FREQUENCY
-              value: '1'
-          resources:
-            limits:
-              cpu: 300m
-              memory: 1Gi
-            requests:
-              cpu: 50m
-              memory: 512Mi
-      - name: cross-account-request-target-org-populator
-        podSpec:
-          image: quay.io/cloudservices/tenant-utils:latest
-          command:
-            - ./org-id-column-populator
-            - -C
-            - -a
-            - target_account
-            - -o
-            - target_org
-            - -t
-            - api_crossaccountrequest
-            - --ean-translator-addr
-            - http://${TENANT_TRANSLATOR_HOST}:${TENANT_TRANSLATOR_PORT}
-            - --batch-size
-            - "50"
-          env:
-            - name: LOG_FORMAT
-              value: ${LOG_FORMAT}
-            - name: LOG_BATCH_FREQUENCY
-              value: '1'
-          resources:
-            limits:
-              cpu: 300m
-              memory: 1Gi
-            requests:
-              cpu: 50m
-              memory: 512Mi
       - name: user-id-populator
         podSpec:
           image: quay.io/cloudservices/rbac:latest
@@ -721,10 +923,24 @@ objects:
               value: ${PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB}
             - name: V2_MIGRATION_APP_EXCLUDE_LIST
               value: ${V2_MIGRATION_APP_EXCLUDE_LIST}
-            - name: V2_MIGRATION_RESOURCE_EXCLUDE_LIST
-              value: ${V2_MIGRATION_RESOURCE_EXCLUDE_LIST}
             - name: V2_BOOTSTRAP_TENANT
               value: ${V2_BOOTSTRAP_TENANT}
+            - name: WORKSPACE_APPLICATION_NAME
+              value: ${WORKSPACE_APPLICATION_NAME}
+            - name: WORKSPACE_RESOURCE_TYPE
+              value: ${WORKSPACE_RESOURCE_TYPE}
+            - name: WORKSPACE_ATTRIBUTE_FILTER
+              value: ${WORKSPACE_ATTRIBUTE_FILTER}
+            - name: WORKSPACE_HIERARCHY_ENABLED
+              value: ${WORKSPACE_HIERARCHY_ENABLED}
+            - name: WORKSPACE_HIERARCHY_DEPTH_LIMIT
+              value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
+            - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
+              value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
+            - name: WORKSPACE_ORG_CREATION_LIMIT
+              value: ${WORKSPACE_ORG_CREATION_LIMIT}
+            - name: FEATURE_FLAGS_CACHE_DIR
+              value: ${FEATURE_FLAGS_CACHE_DIR}
             ######## Following envs are different from worker
             - name: S3_AWS_ACCESS_KEY_ID
               valueFrom:
@@ -806,7 +1022,237 @@ objects:
           volumeMounts:
           - mountPath: /tmp
             name: users-data
-
+      - name: workspace-populator
+        podSpec:
+          image: quay.io/redhat-services-prod/hcc-accessmanagement-tenant/insights-rbac:latest
+          command:
+            - /opt/rbac/rbac/manage.py
+            - import_workspace_data
+          env: &workspace_job_env_vars
+            # Common env vars for workspace-related jobs
+            - name: APP_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: DJANGO_LOG_LEVEL
+              value: ${DJANGO_LOG_LEVEL}
+            - name: DJANGO_DEBUG
+              value: ${DJANGO_DEBUG}
+            - name: PERMISSION_SEEDING_ENABLED
+              value: 'False'
+            - name: ROLE_SEEDING_ENABLED
+              value: 'False'
+            - name: GROUP_SEEDING_ENABLED
+              value: 'False'
+            - name: DJANGO_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: django-secret-key
+                  name: rbac-secret
+                  optional: false
+            - name: ENV_NAME
+              value: ${ENV_NAME}
+            - name: PRINCIPAL_PROXY_SERVICE_PROTOCOL
+              valueFrom:
+                secretKeyRef:
+                  key: principal-proxy-protocol
+                  name: rbac-secret
+                  optional: false
+            - name: PRINCIPAL_PROXY_SERVICE_HOST
+              valueFrom:
+                secretKeyRef:
+                  key: principal-proxy-host
+                  name: rbac-secret
+                  optional: false
+            - name: PRINCIPAL_PROXY_SERVICE_PORT
+              valueFrom:
+                secretKeyRef:
+                  key: principal-proxy-port
+                  name: rbac-secret
+                  optional: false
+            - name: PRINCIPAL_PROXY_SERVICE_PATH
+              value: ''
+            - name: PRINCIPAL_PROXY_USER_ENV
+              valueFrom:
+                secretKeyRef:
+                  key: principal-proxy-env
+                  name: rbac-secret
+                  optional: false
+            - name: PRINCIPAL_PROXY_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  key: client-id
+                  name: insights-rbac
+                  optional: false
+            - name: PRINCIPAL_PROXY_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  key: token
+                  name: insights-rbac
+                  optional: false
+            - name: PRINCIPAL_PROXY_SERVICE_SSL_VERIFY
+              valueFrom:
+                secretKeyRef:
+                  key: principal-proxy-ssl-verify
+                  name: rbac-secret
+                  optional: true
+            - name: PRINCIPAL_PROXY_SERVICE_SOURCE_CERT
+              valueFrom:
+                secretKeyRef:
+                  key: principal-proxy-source-cert
+                  name: rbac-secret
+                  optional: true
+            - name: PRINCIPAL_USER_DOMAIN
+              value: ${PRINCIPAL_USER_DOMAIN}
+            - name: PGSSLMODE
+              value: ${PGSSLMODE}
+            - name: CLOWDER_ENABLED
+              value: ${CLOWDER_ENABLED}
+            - name: CW_NULL_WORKAROUND
+              value: ${CW_NULL_WORKAROUND}
+            - name: GLITCHTIP_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: ${GLITCHTIP_SECRET}
+                  key: dsn
+                  optional: true
+            - name: MAX_SEED_THREADS
+              value: ${MAX_SEED_THREADS}
+            - name: ACCESS_CACHE_CONNECT_SIGNALS
+              value: 'False'
+            - name: NOTIFICATIONS_ENABLED
+              value: ${NOTIFICATIONS_ENABLED}
+            - name: NOTIFICATIONS_RH_ENABLED
+              value: ${NOTIFICATIONS_RH_ENABLED}
+            - name: KAFKA_ENABLED
+              value: ${KAFKA_ENABLED}
+            - name: NOTIFICATIONS_TOPIC
+              value: ${NOTIFICATIONS_TOPIC}
+            - name: EXTERNAL_SYNC_TOPIC
+              value: ${EXTERNAL_SYNC_TOPIC}
+            - name: EXTERNAL_CHROME_TOPIC
+              value: ${EXTERNAL_CHROME_TOPIC}
+            - name: MIGRATE_AND_SEED_ON_INIT
+              value: ${WORKER_MIGRATE_AND_SEED_ON_INIT}
+            - name: UMB_HOST
+              value: ${UMB_HOST}
+            - name: UMB_PORT
+              value: ${UMB_PORT}
+            - name: SA_NAME
+              value: ${SA_NAME}
+            - name: PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB
+              value: ${PRINCIPAL_CLEANUP_UPDATE_ENABLED_UMB}
+            - name: V2_MIGRATION_APP_EXCLUDE_LIST
+              value: ${V2_MIGRATION_APP_EXCLUDE_LIST}
+            - name: V2_BOOTSTRAP_TENANT
+              value: ${V2_BOOTSTRAP_TENANT}
+            - name: WORKSPACE_APPLICATION_NAME
+              value: ${WORKSPACE_APPLICATION_NAME}
+            - name: WORKSPACE_RESOURCE_TYPE
+              value: ${WORKSPACE_RESOURCE_TYPE}
+            - name: WORKSPACE_ATTRIBUTE_FILTER
+              value: ${WORKSPACE_ATTRIBUTE_FILTER}
+            - name: WORKSPACE_HIERARCHY_ENABLED
+              value: ${WORKSPACE_HIERARCHY_ENABLED}
+            - name: WORKSPACE_HIERARCHY_DEPTH_LIMIT
+              value: ${WORKSPACE_HIERARCHY_DEPTH_LIMIT}
+            - name: WORKSPACE_RESTRICT_DEFAULT_PEERS
+              value: ${WORKSPACE_RESTRICT_DEFAULT_PEERS}
+            - name: WORKSPACE_ORG_CREATION_LIMIT
+              value: ${WORKSPACE_ORG_CREATION_LIMIT}
+            - name: FEATURE_FLAGS_CACHE_DIR
+              value: ${FEATURE_FLAGS_CACHE_DIR}
+            - name: SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
+              value: ${SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID}
+            - name: SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID
+              value: ${SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID}
+            - name: SYSTEM_DEFAULT_TENANT_ROLE_UUID
+              value: ${SYSTEM_DEFAULT_TENANT_ROLE_UUID}
+            - name: SYSTEM_ADMIN_TENANT_ROLE_UUID
+              value: ${SYSTEM_ADMIN_TENANT_ROLE_UUID}
+            - name: ROOT_SCOPE_PERMISSIONS
+              value: ${ROOT_SCOPE_PERMISSIONS}
+            - name: TENANT_SCOPE_PERMISSIONS
+              value: ${TENANT_SCOPE_PERMISSIONS}
+            - name: DEFAULT_SCOPE_PERMISSIONS
+              value: ${DEFAULT_SCOPE_PERMISSIONS}
+            ######## Following envs are different from worker
+            - name: S3_AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: ${RBAC_HBI_S3_AWS_SECRET}
+                  key: aws_access_key_id
+            - name: S3_AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ${RBAC_HBI_S3_AWS_SECRET}
+                  key: aws_secret_access_key
+            - name: S3_AWS_BUCKET
+              value: ${RBAC_HBI_S3_AWS_BUCKET}
+            - name: REPLICATION_TO_RELATION_ENABLED
+              value: "True"
+            - name: REMOVE_NULL_VALUE
+              value: ${REMOVE_NULL_VALUE}
+          resources:
+            limits:
+              cpu: 300m
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 512Mi
+          volumes:
+          - name: workspace-data
+            persistentVolumeClaim:
+              claimName: workspace-data
+          volumeMounts:
+          - mountPath: /tmp
+            name: workspace-data
+      - name: force-bootstrap-tenants
+        podSpec:
+          image: quay.io/cloudservices/rbac:latest
+          command:
+            - /opt/rbac/rbac/manage.py
+            - bootstrap_tenants
+            - "--all"
+            - "--force"
+          resources:
+            limits:
+              cpu: 300m
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 512Mi
+          env: *workspace_job_env_vars
+      - name: fix-orphan-relations
+        podSpec:
+          image: ${IMAGE}:${IMAGE_TAG}
+          command:
+            - /opt/rbac/rbac/manage.py
+            - fix_orphan_relations
+            - "--all"
+          resources:
+            limits:
+              cpu: 300m
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 512Mi
+          env: *common_env_vars
+      - name: replicate-default-workspaces
+        podSpec:
+          image: ${IMAGE}:${IMAGE_TAG}
+          command:
+            - /opt/rbac/rbac/manage.py
+            - replicate-default-workspaces
+            - "--all"
+          resources:
+            limits:
+              cpu: 300m
+              memory: 1Gi
+            requests:
+              cpu: 50m
+              memory: 512Mi
+          env: *common_env_vars
 - apiVersion: v1
   kind: ConfigMap
   metadata:
@@ -838,7 +1284,15 @@ objects:
     name: rbac-psks
   data:
     psks.json: >-
-      ewogICJhZHZpc29yIjogewogICAgImFsdC1zZWNyZXQiOiAiMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTEiCiAgfSwKICAiYXBwcm92YWwiOiB7CiAgICAiYWx0LXNlY3JldCI6ICIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMiIKICB9LAogICJub3RpZmljYXRpb25zIjogewogICAgImFsdC1zZWNyZXQiOiAiMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMiCiAgfQp9
+      ewogICJhZHZpc29yIjogewogICAgImFsdC1zZWNyZXQiOiAiMTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTEiCiAgfSwKICAiYXBwcm92YWwiOiB7CiAgICAiYWx0LXNlY3JldCI6ICIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMiIKICB9LAogICJub3RpZmljYXRpb25zIjogewogICAgImFsdC1zZWNyZXQiOiAiMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMzMiCiAgfSwKICAiaW52ZW50b3J5IjogewogICAgInNlY3JldCI6ICI0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQiCiAgfQp9
+  type: Opaque
+- apiVersion: v1
+  kind: Secret
+  metadata:
+    name: system-users
+  data:
+    system-users.json: >-
+      ewogICAgImluc2VydF9zdWJfaGVyZSI6IHsKICAgICAgICAiYWRtaW4iOiB0cnVlLAogICAgICAgICJpc19zZXJ2aWNlX2FjY291bnQiOiB0cnVlLAogICAgICAgICJhbGxvd19hbnlfb3JnIjogdHJ1ZQogICAgfQp9Cg==
   type: Opaque
 - apiVersion: v1
   kind: Secret
@@ -879,7 +1333,7 @@ objects:
   metadata:
     labels:
       app: rbac
-    name: users-data
+    name: workspace-data
   spec:
     accessModes:
     - ReadWriteOnce
@@ -890,7 +1344,7 @@ objects:
 parameters:
 - description: Image name
   name: IMAGE
-  value: quay.io/cloudservices/rbac
+  value: quay.io/redhat-services-prod/hcc-accessmanagement-tenant/insights-rbac
 - description: Determines Clowder deployment
   name: CLOWDER_ENABLED
   value: "true"
@@ -916,6 +1370,16 @@ parameters:
 - displayName: RBAC PSKs
   name: RBAC_PSKS
   value: rbac-psks
+  description: Name of the secret containing PSK configuration.
+- displayName: RBAC system users
+  name: RBAC_SYSTEM_USERS
+  value: system-users
+  description: >
+    Name of the secret containing system user configuration.
+    System user configuration JSON defines which users, when identified via JWT authentication,
+    should be considered system users, and what authority they should have.
+    The keys of the JSON are the sub values of the tokens.
+    The values follow the SystemUserConfig typed dict.
 - displayName: Service Dependency Name
   name: SERVICE_DEPENDENCY_NAME
   value: rbac-pgsql
@@ -983,16 +1447,13 @@ parameters:
   value: 'False'
 - description: Application allow list for role creation in RBAC
   name: ROLE_CREATE_ALLOW_LIST
-  value: cost-management,remediations,inventory,policies,advisor,vulnerability,compliance,automation-analytics,notifications,patch,integrations,ros,staleness,config-manager,idmsvc
-- description: Application exclude list for v2 migration (all permissions)
+  value: cost-management,remediations,inventory,policies,advisor,vulnerability,compliance,automation-analytics,notifications,patch,integrations,ros,staleness,config-manager,idmsvc,subscriptions
+- description: Comma-separated apps excluded from v2 migration; same list filters the v2 roles list API only
   name: V2_MIGRATION_APP_EXCLUDE_LIST
-  value: approval
-- description: Resources (by namespace:name) exclude list for v2 migration (resource definitions only)
-  name: V2_MIGRATION_RESOURCE_EXCLUDE_LIST
-  value: rbac:workspace
+  value: ansible,automation-analytics,cost-management,hybrid-committed-spend,idmsvc,ocm,ocp-advisor,policies,sources
 - description: Whether or not to bootstrap tenants using V2 logic (i.e. creating workspaces and relations).
   name: V2_BOOTSTRAP_TENANT
-  value: 'False'
+  value: 'True'
 - description: Timestamp expiration allowance on destructive actions through the internal RBAC API
   name: RBAC_DESTRUCTIVE_API_ENABLED_UNTIL
   value: ''
@@ -1102,10 +1563,9 @@ parameters:
 - description: Enable sending out notification events of Red Hat changes
   name: NOTIFICATIONS_RH_ENABLED
   value: 'False'
-- name: TENANT_TRANSLATOR_HOST
-  required: true
-- name: TENANT_TRANSLATOR_PORT
-  value: '8892'
+- description: Enable sending out notification events (typo variant used by service deployer)
+  name: NOTIFICATONS_ENABLED
+  value: 'False'
 - name: GUNICORN_WORKER_MULTIPLIER
   value: '2'
 - name: GUNICORN_THREAD_LIMIT
@@ -1185,14 +1645,27 @@ parameters:
 - name: RELATION_API_SERVER
   description: The gRPC API server to use for the relation
   value: "localhost:9000"
+- name: INVENTORY_API_SERVER
+  description: The gRPC API server to use for inventory api
+  value: "localhost:9000"
+- name: INVENTORY_API_TOKEN_URL
+  description: The SSO token url to use for inventory api
+  value: "https://sso.stage.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token"
 - name: REPLICATION_TO_RELATION_ENABLED
   description: Enable replication to Relation API
-  value: "False"
+  value: "True"
 - name: V2_APIS_ENABLED
   description: Flag to explicitly enable v2 API endpoints
+  value: 'True'
 - name: V2_READ_ONLY_API_MODE
   description: Enforce GET only on RBAC v2 APIs only
   value: 'False'
+- name: V2_EDIT_API_ENABLED
+  description: Fallback for feature flag to enable v2 edit APIs and block v1 write APIs per org
+  value: 'False'
+- name: V1_ROLE_PERMISSION_BLOCK_LIST
+  description: Comma-separated list of exact permission strings to hide from v1 API (e.g., rbac:role:read,rbac:group:write)
+  value: 'rbac:role_binding:view,rbac:role_binding:grant,rbac:role_binding:revoke'
 - name: READ_ONLY_API_MODE
   description: Enforce GET only on RBAC APIs
   value: 'False'
@@ -1205,3 +1678,99 @@ parameters:
 - name: USER_ID_POPULATOR_BATCH_SIZE
   description: The number of user records to process in each batch
   value: '90'
+- name: RBAC_HBI_S3_AWS_SECRET
+  description: The AWS secret for accessing HBI S3
+  value: 'rbac-hbi-s3-readonly'
+- name: RBAC_HBI_S3_AWS_BUCKET
+  description: The bucket name for accessing HBI S3
+  value: 'hbi-kessel-s3-stage'
+- description: The application name used in workspace permissions
+  name: WORKSPACE_APPLICATION_NAME
+  value: 'inventory'
+- description: The resource type used in workspace permissions
+  name: WORKSPACE_RESOURCE_TYPE
+  value: 'groups,hosts,*'
+- description: The attribute filter key used in workspace permissions' resource definitions
+  name: WORKSPACE_ATTRIBUTE_FILTER
+  value: 'group.id'
+- description: Flag to enable returning workspace hierarchy in v1 access
+  name: WORKSPACE_HIERARCHY_ENABLED
+  value: 'True'
+- name: ADD_UNGROUPED_HOSTS_ID
+  description: Add ungrouped hosts workspace id in addition to null
+  value: 'False'
+- name: REMOVE_NULL_VALUE
+  description: Remove null value from the list of workspace id
+  value: 'False'
+- name: WORKSPACE_ORG_CREATION_LIMIT
+  description: The limit of workspaces for all organizations
+  value: '3000'
+- name: WORKSPACE_HIERARCHY_DEPTH_LIMIT
+  description: The limit of workspace hierarchy depth
+  value: '5'
+- name: WORKSPACE_RESTRICT_DEFAULT_PEERS
+  description: When true, prevents the ability to create peer workspaces against the default workspace
+  value: 'True'
+- name: READ_YOUR_WRITES_TIMEOUT_SECONDS
+  description: Timeout in seconds for read-your-writes consistency check after workspace creation
+  value: '10'
+- name: SCOPES
+  description: The Scope for token generation
+  value: 'openid'
+- name: TOKEN_GRANT_TYPE
+  description: The grant type for token generation
+  value: 'client_credentials'
+- name: REDHAT_SSO
+  description: The SSO url for rbac environment. Leave empty for ephemeral/local to skip JWT auth.
+  value: ''
+- name: SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
+  description: The UUID for the role for default root workspace level
+  value: ''
+- name: SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID
+  description: The UUID for the role for admin root workspace level
+  value: ''
+- name: SYSTEM_DEFAULT_TENANT_ROLE_UUID
+  description: The UUID for the role for default tenant level
+  value: ''
+- name: SYSTEM_ADMIN_TENANT_ROLE_UUID
+  description: The UUID for the role for admin tenant level
+  value: ''
+- name: FEATURE_FLAGS_CACHE_DIR
+  description: The cache dir for unleash
+  value: '/tmp/unleash_cache'
+- name: RBAC_KAFKA_CONSUMER_CPU_LIMIT
+  description:
+  value: 500m
+- name: RBAC_KAFKA_CONSUMER_CPU_REQUEST
+  description:
+  value: 100m
+- name: RBAC_KAFKA_CONSUMER_MEMORY_LIMIT
+  description:
+  value: 300Mi
+- name: RBAC_KAFKA_CONSUMER_MEMORY_REQUEST
+  description:
+  value: 300Mi
+- name: RBAC_KAFKA_CONSUMER_TOPIC
+  description: The name of the topic for the RBAC Kafka consumer
+  value: 'outbox.event.relations-replication-event'
+- name: RBAC_KAFKA_CONSUMER_GROUP_ID
+  description: The consumer group ID for the RBAC Kafka consumer
+  value: 'connect-relations-sink-connector'
+- name: RBAC_KAFKA_CONSUMER_REPLICAS
+  description: The number of replicas for the RBAC Kafka consumer (set to 0 to disable)
+  value: '1'
+- name: RBAC_KAFKA_CUSTOM_CONSUMER_BROKER
+  description: Custom Kafka broker URL for the RBAC Kafka consumer (if empty, uses default Clowder/localhost configuration)
+  value: ''
+- name: ROOT_SCOPE_PERMISSIONS
+  description: Comma-separated list of permissions that bind to root workspace scope (supports wildcards like rbac:*:read)
+  value: ''
+- name: TENANT_SCOPE_PERMISSIONS
+  description: Comma-separated list of permissions that bind to tenant scope (supports wildcards like rbac:*:*)
+  value: ''
+- name: DEFAULT_SCOPE_PERMISSIONS
+  description: Comma-separated list of permissions that bind to default workspace scope (more specific patterns override broader TENANT_SCOPE_PERMISSIONS entries)
+  value: ''
+- name: WORKSPACE_ACCESS_TIMING_ENABLED
+  description: Enable detailed timing logs for v2 workspace access checks (for performance investigation)
+  value: 'False'

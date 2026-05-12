@@ -18,25 +18,38 @@
 """RelationReplicator which writes to the outbox table."""
 
 import logging
-from typing import Any, Dict, List, Optional, Protocol, TypedDict
+from typing import Any, Dict, List, NotRequired, Optional, Protocol, TypedDict, Union
 
 from django.db import transaction
 from google.protobuf import json_format
-from kessel.relations.v1beta1.common_pb2 import Relationship
+from kessel.relations.v1beta1 import common_pb2
 from management.models import Outbox
+from management.relation_replicator.logging_replicator import stringify_spicedb_relationship
 from management.relation_replicator.relation_replicator import (
+    AggregateTypes,
     RelationReplicator,
     ReplicationEvent,
     ReplicationEventType,
+    WorkspaceEvent,
+    WorkspaceEventStream,
 )
+from management.relation_replicator.types import RelationTuple
 from prometheus_client import Counter
-
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 relations_replication_event_total = Counter(
     "relations_replication_event_total", "Total count of relations replication events"
 )
+workspace_replication_event_total = Counter(
+    "workspace_replication_event_total", "Total count of workspace replication events"
+)
+
+OPERATION_MAPPING = {
+    ReplicationEventType.CREATE_WORKSPACE: "create",
+    ReplicationEventType.DELETE_WORKSPACE: "delete",
+    ReplicationEventType.UPDATE_WORKSPACE: "update",
+}
 
 
 class ReplicationEventPayload(TypedDict):
@@ -44,6 +57,16 @@ class ReplicationEventPayload(TypedDict):
 
     relations_to_add: List[Dict[str, Any]]
     relations_to_remove: List[Dict[str, Any]]
+    resource_context: NotRequired[Dict[str, object]]
+
+
+class WorkspaceEventPayload(TypedDict):
+    """Typed dictionary for WorkspaceEvent payload."""
+
+    org_id: str
+    account_number: str
+    workspace: Dict[str, str]
+    operation: str
 
 
 class OutboxReplicator(RelationReplicator):
@@ -55,22 +78,77 @@ class OutboxReplicator(RelationReplicator):
 
     def replicate(self, event: ReplicationEvent):
         """Replicate the given event to Kessel Relations via the Outbox."""
-        payload = self._build_replication_event(event.add, event.remove)
+        payload = self._build_replication_event(event)
         self._save_replication_event(payload, event.event_type, event.event_info, str(event.partition_key))
 
-    def _build_replication_event(
-        self, relations_to_add: list[Relationship], relations_to_remove: list[Relationship]
-    ) -> ReplicationEventPayload:
+    def _check_for_duplicate_relationships(self, relationships):
+        """
+        Check for duplicate relationships and raise an error if any are found.
+
+        Duplicate relationships indicate a bug in tuple generation and must be fixed at the source.
+        """
+        seen = set()
+        duplicates = []
+
+        for rel in relationships:
+            # Use string representation as unique key (cleaner than tuple of components)
+            key = stringify_spicedb_relationship(rel)
+
+            if key in seen:
+                # Duplicate found - this is a bug!
+                duplicates.append(key)
+            else:
+                seen.add(key)
+
+        if duplicates:
+            # This indicates a bug in tuple generation - fail fast
+            dup_info = "\n".join(f"  - {dup}" for dup in duplicates[:10])
+            raise ValueError(
+                f"Found {len(duplicates)} duplicate relationships (bug in tuple generation!):\n{dup_info}\n"
+                f"Total relationships: {len(relationships)}, Duplicates: {len(duplicates)}"
+            )
+
+    def replicate_workspace(self, event: WorkspaceEvent, event_stream: WorkspaceEventStream):
+        """Replicate the event of workspace."""
+        payload = WorkspaceEventPayload(
+            org_id=event.org_id,
+            account_number=event.account_number,
+            workspace=event.workspace,
+            operation=OPERATION_MAPPING[event.event_type],
+        )
+
+        self._save_workspace_event(
+            payload=payload,
+            event_type=event.event_type,
+            aggregatetype=event_stream.aggregate_type(),
+            aggregateid=str(event.partition_key),
+        )
+
+    @staticmethod
+    def _relation_to_dict(rel: Union[RelationTuple, common_pb2.Relationship]) -> dict[str, Any]:
+        """Serialize a RelationTuple or protobuf Relationship to a dict."""
+        if isinstance(rel, RelationTuple):
+            return rel.to_dict()
+        return json_format.MessageToDict(rel)
+
+    def _build_replication_event(self, event: ReplicationEvent) -> ReplicationEventPayload:
         """Build replication event."""
-        add_json: list[dict[str, Any]] = []
-        for relation in relations_to_add:
-            add_json.append(json_format.MessageToDict(relation))
+        # Check for duplicates in relationships to add (will raise error if found)
+        self._check_for_duplicate_relationships(event.add)
 
-        remove_json: list[dict[str, Any]] = []
-        for relation in relations_to_remove:
-            remove_json.append(json_format.MessageToDict(relation))
+        add_json: list[dict[str, Any]] = [self._relation_to_dict(rel) for rel in event.add]
+        remove_json: list[dict[str, Any]] = [self._relation_to_dict(rel) for rel in event.remove]
 
-        return {"relations_to_add": add_json, "relations_to_remove": remove_json}
+        payload: ReplicationEventPayload = {
+            "relations_to_add": add_json,
+            "relations_to_remove": remove_json,
+        }
+
+        resource_context = event.resource_context()
+        if resource_context:
+            payload["resource_context"] = resource_context
+
+        return payload
 
     def _save_replication_event(
         self,
@@ -85,7 +163,10 @@ class OutboxReplicator(RelationReplicator):
 
         if not payload["relations_to_add"] and not payload["relations_to_remove"]:
             logger.warning(
-                "[Dual Write] Skipping empty replication event. aggregateid='%s' event_type='%s' %s",
+                "[Dual Write] Skipping empty replication event. "
+                "An empty event is always a bug. "
+                "Calling code should avoid this and if not obvious, log why there is nothing to replicate. "
+                "aggregateid='%s' event_type='%s' %s",
                 aggregateid,
                 event_type,
                 logged_info,
@@ -103,7 +184,26 @@ class OutboxReplicator(RelationReplicator):
 
         # https://debezium.io/documentation/reference/stable/transformations/outbox-event-router.html#basic-outbox-table
         outbox = Outbox(
-            aggregatetype="relations-replication-event",
+            aggregatetype=AggregateTypes.RELATIONS,
+            aggregateid=aggregateid,
+            event_type=event_type,
+            payload=payload,
+        )
+
+        self._log.log(outbox)
+
+    def _save_workspace_event(
+        self,
+        payload: WorkspaceEventPayload,
+        event_type: ReplicationEventType,
+        aggregatetype: AggregateTypes,
+        aggregateid: str,
+    ):
+        """Save replication event."""
+        transaction.on_commit(workspace_replication_event_total.inc)
+
+        outbox = Outbox(
+            aggregatetype=aggregatetype.value,
             aggregateid=aggregateid,
             event_type=event_type,
             payload=payload,
@@ -166,3 +266,7 @@ class InMemoryLog:
     def log(self, outbox: Outbox):
         """Log the given outbox event."""
         self._log.append(outbox)
+
+    def clear(self):
+        """Clear all logged events."""
+        self._log.clear()

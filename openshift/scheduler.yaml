@@ -120,7 +120,7 @@ objects:
             - -c
             - >
               PYTHONPATH=${PWD}/rbac/ scl enable rh-python36 -- celery -A
-              rbac.celery beat -l $DJANGO_LOG_LEVEL
+              rbac.celery beat -l $DJANGO_LOG_LEVEL --schedule=/tmp/celerybeat-schedule
           env:
             - name: REDIS_HOST
               valueFrom:

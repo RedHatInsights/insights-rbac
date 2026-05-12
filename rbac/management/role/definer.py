@@ -16,6 +16,8 @@
 #
 
 """Handler for system defined roles."""
+
+import dataclasses
 import json
 import logging
 import os
@@ -23,14 +25,23 @@ import os
 from core.utils import destructive_ok
 from django.conf import settings
 from django.db import transaction
+from django.db.models import QuerySet
 from django.utils import timezone
+from management.atomic_transactions import atomic
+from management.group.definer import seed_group
+from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
 from management.notifications.notification_handlers import role_obj_change_notification_handler
 from management.permission.model import Permission
+from management.permission.scope_service import ImplicitResourceService, Scope
+from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.model import Access, ExtRoleRelation, ExtTenant, ResourceDefinition, Role
+from management.role.platform import admin_platform_parent_scope_for_seeded_system_role, platform_v2_role_uuid_for
 from management.role.relation_api_dual_write_handler import (
+    RelationApiDualWriteHandler,
     SeedingRelationApiDualWriteHandler,
 )
-
+from management.role.v2_model import PlatformRoleV2, SeededRoleV2
+from management.tenant_mapping.model import DefaultAccessType
 
 from api.models import Tenant
 
@@ -64,10 +75,23 @@ def _add_ext_relation_if_it_exists(external_relation, role):
     )
 
 
-def _make_role(data, dual_write_handler, force_create_relationships=False):
+@dataclasses.dataclass
+class _SeedRolesConfig:
+    force_create_relationships: bool
+    force_update_relationships: bool
+
+    def __post_init__(self):
+        if self.force_create_relationships and self.force_update_relationships:
+            raise ValueError("force_create_relationships and force_update_relationships cannot both be True")
+
+
+# We do each operation in a SERIALIZABLE transaction so that other SERIALIZABLE transactions can have a consistent view
+# of what system roles exist.
+@atomic
+def _make_role(data, config: _SeedRolesConfig, platform_roles=None, resource_service=None):
     """Create the role object in the database."""
     public_tenant = Tenant.objects.get(tenant_name="public")
-    name = data.pop("name")
+    name = data.get("name")
     display_name = data.get("display_name", name)
     access_list = data.get("access")
     defaults = dict(
@@ -78,7 +102,9 @@ def _make_role(data, dual_write_handler, force_create_relationships=False):
         admin_default=data.get("admin_default", False),
     )
     role, created = Role.objects.get_or_create(name=name, defaults=defaults, tenant=public_tenant)
+    updated = False
 
+    dual_write_handler = SeedingRelationApiDualWriteHandler(role)
     if created:
         if role.display_name != display_name:
             role.display_name = display_name
@@ -86,18 +112,26 @@ def _make_role(data, dual_write_handler, force_create_relationships=False):
         logger.info("Created system role %s.", name)
         role_obj_change_notification_handler(role, "created")
     else:
-        if role.version != defaults["version"]:
-            dual_write_handler.prepare_for_update(role)
-            Role.objects.filter(name=name).update(**defaults, display_name=display_name, modified=timezone.now())
+        if config.force_update_relationships or (role.version != defaults["version"]):
+            updated = True
+            dual_write_handler.prepare_for_update()
+            Role.objects.public_tenant_only().filter(name=name).update(
+                **defaults, display_name=display_name, modified=timezone.now()
+            )
+            role.refresh_from_db()
             logger.info("Updated system role %s.", name)
             role.access.all().delete()
             role_obj_change_notification_handler(role, "updated")
         else:
-            if force_create_relationships:
-                dual_write_handler.replicate_new_system_role(role)
+            if config.force_create_relationships:
+                dual_write_handler.replicate_new_system_role()
                 logger.info("Replicated system role %s", name)
-                return role
-            logger.info("No change in system role %s", name)
+            else:
+                logger.info("No change in system role %s", name)
+            # Still seed V2 role even if V1 unchanged
+            _seed_v2_role_from_v1(
+                role, display_name, defaults["description"], public_tenant, platform_roles, resource_service
+            )
             return role
 
     if access_list:  # Allow external roles to have none access object
@@ -111,28 +145,45 @@ def _make_role(data, dual_write_handler, force_create_relationships=False):
 
     _add_ext_relation_if_it_exists(data.get("external"), role)
 
+    assert not (created and updated)
+
     if created:
-        dual_write_handler.replicate_new_system_role(role)
-    else:
-        if role.version != defaults["version"]:
-            dual_write_handler.replicate_update_system_role(role)
+        dual_write_handler.replicate_new_system_role()
+    elif updated:
+        dual_write_handler.replicate_update_system_role()
+
+    _seed_v2_role_from_v1(role, display_name, defaults["description"], public_tenant, platform_roles, resource_service)
 
     return role
 
 
-def _update_or_create_roles(roles, dual_write_handler, force_create_relationships=False):
+def _update_or_create_roles(roles, config: _SeedRolesConfig, platform_roles=None, resource_service=None):
     """Update or create roles from list."""
     current_role_ids = set()
-    for role_json in roles:
+    # Sort roles by name to ensure consistent lock ordering and prevent deadlocks
+    sorted_roles = sorted(roles, key=lambda r: r.get("name", ""))
+    for role_json in sorted_roles:
         try:
-            role = _make_role(role_json, dual_write_handler, force_create_relationships)
+            role = _make_role(role_json, config, platform_roles, resource_service)
             current_role_ids.add(role.id)
         except Exception as e:
-            logger.error(f"Failed to update or create system role: {role_json.get('name')} " f"with error: {e}")
+            logger.error(f"Failed to update or create system role: {role_json.get('name')} with error: {e}")
     return current_role_ids
 
 
-def seed_roles(force_create_relationships=False):
+# SERIALIZABLE for the same reason as _make_role above.
+@atomic
+def _do_delete_system_roles(roles: QuerySet):
+    logger.info(f"Removing the following role(s): {roles.values()}")
+
+    for role in roles:
+        dual_write_handler = SeedingRelationApiDualWriteHandler(role)
+        dual_write_handler.replicate_deleted_system_role()
+
+    roles.delete()
+
+
+def seed_roles(force_create_relationships=False, force_update_relationships=False):
     """Update or create system defined roles."""
     roles_directory = os.path.join(settings.BASE_DIR, "management", "role", "definitions")
     role_files = [
@@ -140,27 +191,34 @@ def seed_roles(force_create_relationships=False):
         for f in os.listdir(roles_directory)
         if os.path.isfile(os.path.join(roles_directory, f)) and f.endswith(".json")
     ]
-    dual_write_handler = SeedingRelationApiDualWriteHandler()
     current_role_ids = set()
-    with transaction.atomic():
-        for role_file_name in role_files:
-            role_file_path = os.path.join(roles_directory, role_file_name)
-            with open(role_file_path) as json_file:
-                data = json.load(json_file)
-                role_list = data.get("roles")
-                file_role_ids = _update_or_create_roles(role_list, dual_write_handler, force_create_relationships)
-                current_role_ids.update(file_role_ids)
+
+    platform_roles = _seed_platform_roles()
+    resource_service = ImplicitResourceService.from_settings()
+    for role_file_name in role_files:
+        role_file_path = os.path.join(roles_directory, role_file_name)
+        with open(role_file_path) as json_file:
+            data = json.load(json_file)
+            role_list = data.get("roles")
+            file_role_ids = _update_or_create_roles(
+                role_list,
+                _SeedRolesConfig(
+                    force_create_relationships=force_create_relationships,
+                    force_update_relationships=force_update_relationships,
+                ),
+                platform_roles,
+                resource_service,
+            )
+            current_role_ids.update(file_role_ids)
 
     # Find roles in DB but not in config
-    roles_to_delete = Role.objects.filter(system=True).exclude(id__in=current_role_ids)
+    roles_to_delete = Role.objects.public_tenant_only().exclude(id__in=current_role_ids)
     logger.info(f"The following '{roles_to_delete.count()}' roles(s) eligible for removal: {roles_to_delete.values()}")
+
     if destructive_ok("seeding"):
-        logger.info(f"Removing the following role(s): {roles_to_delete.values()}")
-        # Actually remove roles no longer in config
-        with transaction.atomic():
-            for role in roles_to_delete:
-                dual_write_handler.replicate_deleted_system_role(role)
-            roles_to_delete.delete()
+        # Actually remove roles no longer in config.
+        # We must use all() to ensure we actually load the roles within the transaction.
+        _do_delete_system_roles(roles_to_delete.all())
 
 
 def seed_permissions():
@@ -225,4 +283,129 @@ def seed_permissions():
         logger.info(f"Removing the following permissions(s): {perms_to_delete.values()}")
         # Actually remove perms no longer in DB
         with transaction.atomic():
-            perms_to_delete.delete()
+            for permission in perms_to_delete:
+                delete_permission(permission)
+
+
+def delete_permission(permission: Permission):
+    """Delete a permission and handles relations cleanning."""
+    roles = Role.objects.filter(access__permission=permission).distinct()
+    dual_write_handlers = []
+    for role in roles:
+        role = Role.objects.filter(id=role.id).select_for_update().get()
+        dual_write_handler = (
+            SeedingRelationApiDualWriteHandler(role=role)
+            if role.system
+            else RelationApiDualWriteHandler(role, ReplicationEventType.UPDATE_CUSTOM_ROLE)
+        )
+        dual_write_handler.prepare_for_update()
+        dual_write_handlers.append(dual_write_handler)
+    permission.delete()
+    for dual_write_handler in dual_write_handlers:
+        role = dual_write_handler.role
+        if isinstance(dual_write_handler, SeedingRelationApiDualWriteHandler):
+            dual_write_handler.replicate_update_system_role()
+        else:
+            dual_write_handler.replicate_new_or_updated_role(role)
+
+
+def _create_single_platform_role(access_type, scope, policy_service, public_tenant):
+    """Create a single platform role with the given parameters."""
+    uuid = platform_v2_role_uuid_for(access_type, scope, policy_service)
+
+    role_name = f"{access_type.value.capitalize()} {scope.name.lower()} Platform Role"
+    description = f"Platform default role for {access_type.value} access at {scope.name.lower()} scope"
+
+    platform_role, created = PlatformRoleV2.objects.update_or_create(
+        uuid=uuid,
+        defaults={
+            "name": role_name,
+            "description": description,
+            "tenant": public_tenant,
+        },
+    )
+
+    if created:
+        logger.info("Created platform role: %s", role_name)
+    else:
+        logger.info("Updated platform role: %s", role_name)
+
+    return platform_role
+
+
+def _seed_v2_role_from_v1(v1_role, display_name, description, public_tenant, platform_roles, resource_service):
+    """Create or update V2 role from V1 role during seeding."""
+    try:
+        v2_role, v2_created = SeededRoleV2.objects.update_or_create(
+            uuid=v1_role.uuid,
+            defaults={
+                "name": display_name,
+                "description": description,
+                "tenant": public_tenant,
+                "v1_source": v1_role,
+            },
+        )
+        if v2_created:
+            logger.info("Created V2 system role %s.", display_name)
+        else:
+            logger.info("Updated V2 system role %s.", display_name)
+        v2_role.permissions.clear()
+        v1_permissions = [access.permission for access in v1_role.access.all()]
+        if v1_permissions:
+            v2_role.permissions.set(v1_permissions)
+            logger.info("Added %d permissions to V2 role %s.", len(v1_permissions), display_name)
+        scope = resource_service.scope_for_role(v1_role)
+
+        # Clear parents first since scope may have changed since previous seeding
+        v2_role.parents.clear()
+        platform_role = platform_roles[(DefaultAccessType.USER, scope)]
+        if v1_role.platform_default:
+            platform_role.children.add(v2_role)
+            logger.info("Added %s as child of platform role %s", display_name, platform_role.name)
+
+        admin_scope = admin_platform_parent_scope_for_seeded_system_role(
+            v1_role.name, v1_role.admin_default, scope, apply_override=True
+        )
+        admin_platform_role = platform_roles[(DefaultAccessType.ADMIN, admin_scope)]
+        if v1_role.admin_default:
+            admin_platform_role.children.add(v2_role)
+            logger.info("Added %s as child of admin platform role %s", display_name, admin_platform_role.name)
+
+        return v2_role
+    except Exception as e:
+        logger.error(f"Failed to seed V2 role for {display_name}: {e}")
+        return None
+
+
+def _seed_platform_roles():
+    """Create the 6 platform roles (3 scopes × 2 access types).
+
+    Raises RuntimeError if not all platform roles could be created.
+    """
+    public_tenant = Tenant.objects.get(tenant_name="public")
+    policy_service = GlobalPolicyIdService.shared()
+
+    platform_roles = {}
+
+    for access_type in DefaultAccessType:
+        for scope in Scope:
+            try:
+                platform_role = _create_single_platform_role(access_type, scope, policy_service, public_tenant)
+                platform_roles[(access_type, scope)] = platform_role
+            except DefaultGroupNotAvailableError:
+                logger.warning(
+                    f"Default groups do not exist yet. Creating them now for "
+                    f"{access_type.value} {scope.name.lower()} scope",
+                )
+                # Create the default groups
+                seed_group()
+
+                policy_service = GlobalPolicyIdService.shared()
+                platform_role = _create_single_platform_role(access_type, scope, policy_service, public_tenant)
+                platform_roles[(access_type, scope)] = platform_role
+
+    if len(platform_roles) != 6:
+        raise RuntimeError(f"Expected 6 platform roles, got {len(platform_roles)}")
+
+    logger.info(f"Successfully seeded {len(platform_roles)} platform roles.")
+    return platform_roles

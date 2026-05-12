@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Test the internal viewset."""
+
 import uuid
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -31,7 +32,7 @@ class IntegrationViewsTests(IdentityRequest):
     def setUp(self):
         """Set up the integration view tests."""
         test_roles = ["Role Admin", "Role A", "Role B"]
-        test_principals = ["user_admin", "user_a", "user_b"]
+        test_principals = ["user_admin", "user_a", "user_b", "roles_test"]
 
         super().setUp()
         self.client = APIClient()
@@ -96,6 +97,10 @@ class IntegrationViewsTests(IdentityRequest):
         Group.objects.all().delete()
         Role.objects.all().delete()
         Policy.objects.all().delete()
+        # Clear the principal cache to avoid test isolation issues
+        from management.utils import PRINCIPAL_CACHE
+
+        PRINCIPAL_CACHE.delete_all_principals_for_tenant(self.tenant.org_id)
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
@@ -193,7 +198,7 @@ class IntegrationViewsTests(IdentityRequest):
         self.assertEqual(response.data.get("meta").get("count"), 3)
 
     def test_groups_for_principal_invalid_account(self):
-        """Test that a /tenant/<id>/principal/<username>groups/ request from an external account fails."""
+        """Test that a /tenant/<id>/principal/<username>/groups/ request from an external account fails."""
         external_request_context = self._create_request_context(self.customer, self.user_data, is_internal=False)
         request = external_request_context["request"]
         response = self.client.get(
@@ -202,6 +207,20 @@ class IntegrationViewsTests(IdentityRequest):
             follow=True,
         )
         self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_groups_for_principal_roles_in_username(self):
+        """
+        Test that a request to /tenant/<id>/principal/<username>/groups/ from an internal account works
+        with "roles" substring in the principal's username (RHCLOUD-32144).
+        """
+        response = self.client.get(
+            f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/principal/roles_test/groups/",
+            **self.request.META,
+            follow=True,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        # Expecting ["Group All"]
+        self.assertEqual(response.data.get("meta").get("count"), 1)
 
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
@@ -428,6 +447,7 @@ class IntegrationViewsTests(IdentityRequest):
             **self.request.META,
             follow=True,
         )
+
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(response.data.get("meta").get("count"), 1)
 
@@ -453,3 +473,107 @@ class IntegrationViewsTests(IdentityRequest):
         expected_org_ids = [t.org_id for t in [self.modifiedTenant1, self.modifiedTenant2]]
         actual_org_ids = [t["org_id"] for t in response.data.get("data")]
         self.assertEqual(sorted(expected_org_ids), sorted(actual_org_ids))
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": False,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "user_a",
+                    "account_number": "1111111",
+                    "is_active": True,
+                },
+                {
+                    "org_id": "100001",
+                    "is_org_admin": False,
+                    "is_internal": False,
+                    "id": 52567474,
+                    "username": "user_admin",
+                    "account_number": "1111111",
+                    "is_active": True,
+                },
+            ],
+        },
+    )
+    def test_principals_for_group_offset_limit(self, mock_request):
+        """Test that a valid request to /tenant/<id>/groups/<uuid>/principals/ returns principals in group with offset & limit set."""
+        group_a_uuid = Group.objects.get(name="Group A").uuid
+        response = self.client.get(
+            f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/groups/{group_a_uuid}/principals/?offset=1&limit=10",
+            **self.request.META,
+            follow=True,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data.get("data")), 1)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {
+                    "org_id": "100001",
+                    "is_org_admin": False,
+                    "is_internal": False,
+                    "id": 52567473,
+                    "username": "user_a",
+                    "account_number": "1111111",
+                    "is_active": True,
+                },
+                {
+                    "org_id": "100001",
+                    "is_org_admin": False,
+                    "is_internal": False,
+                    "id": 52567474,
+                    "username": "user_admin",
+                    "account_number": "1111111",
+                    "is_active": True,
+                },
+            ],
+        },
+    )
+    def test_principals_for_group_pagination_exists(self, mock_request):
+        """Test that a valid request to /tenant/<id>/groups/<uuid>/principals/ returns principals in group with correct pagination links after pagination change."""
+        group_a_uuid = Group.objects.get(name="Group A").uuid
+        response = self.client.get(
+            f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/groups/{group_a_uuid}/principals/",
+            **self.request.META,
+            follow=True,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+        # Check that pagination contains correct links
+        links = response.data.get("links")
+        self.assertIn("next", links)
+        self.assertIn("previous", links)
+        self.assertIn("first", links)
+        self.assertIn("last", links)
+
+        # Check links have correct path set inside
+        self.assertTrue(
+            links["first"].startswith(
+                f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/groups/{group_a_uuid}/principals/"
+            )
+        )
+        self.assertTrue(
+            links["last"].startswith(
+                f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/groups/{group_a_uuid}/principals/"
+            )
+        )
+        if links["previous"] is not None:
+            self.assertTrue(
+                links["previous"].startswith(
+                    f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/groups/{group_a_uuid}/principals/"
+                )
+            )
+        if links["next"] is not None:
+            self.assertTrue(
+                links["next"].startswith(
+                    f"/_private/api/v1/integrations/tenant/{self.tenant.org_id}/groups/{group_a_uuid}/principals/"
+                )
+            )

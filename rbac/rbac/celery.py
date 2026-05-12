@@ -15,6 +15,7 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Celery setup."""
+
 from __future__ import absolute_import, unicode_literals
 
 import logging
@@ -28,7 +29,6 @@ from celery.schedules import crontab
 from celery.signals import worker_ready
 from django.conf import settings
 from prometheus_client import CollectorRegistry, multiprocess, start_http_server
-
 
 logger = logging.getLogger("__name__")
 

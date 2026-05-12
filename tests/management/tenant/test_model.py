@@ -17,11 +17,23 @@
 """Test cases for Tenant bootstrapping logic."""
 
 from typing import Optional, Tuple
+import uuid
+
+from django.conf import settings
+from unittest.mock import patch
 from django.test import TestCase
 from management.group.definer import seed_group
 from management.group.model import Group
 from management.policy.model import Policy
 from management.principal.model import Principal
+from management.relation_replicator.relation_replicator import (
+    RelationReplicator,
+    WorkspaceEvent,
+    WorkspaceEventStream,
+    ReplicationEvent,
+    ReplicationEventType,
+    PartitionKey,
+)
 from management.tenant_mapping.model import TenantMapping
 from management.tenant_service.v2 import V2TenantBootstrapService
 from management.workspace.model import Workspace
@@ -33,7 +45,9 @@ from migration_tool.in_memory_tuples import (
     resource,
     subject,
 )
+from migration_tool.models import V2boundresource
 from tests.management.role.test_dual_write import RbacFixture
+from tests.v2_util import WorkspaceCacheReplicator
 
 from api.models import Tenant, User
 
@@ -43,11 +57,14 @@ class V2TenantBootstrapServiceTest(TestCase):
 
     service: V2TenantBootstrapService
     tuples: InMemoryTuples
+    replicator: WorkspaceCacheReplicator
     fixture: RbacFixture
 
     def setUp(self):
+        # Clear any existing state first
         self.tuples = InMemoryTuples()
-        self.service = V2TenantBootstrapService(InMemoryRelationReplicator(self.tuples))
+        self.replicator = WorkspaceCacheReplicator(InMemoryRelationReplicator(self.tuples))
+        self.service = V2TenantBootstrapService(self.replicator)
         self.fixture = RbacFixture(self.service)
         self.fixture.new_system_role("System Role", ["app1:foo:read"], platform_default=True)
         self.default_group, self.admin_group = seed_group()
@@ -188,8 +205,8 @@ class V2TenantBootstrapServiceTest(TestCase):
             ),
         )
 
-    def test_will_add_default_access_when_already_customized(self):
-        """Test just to confirm behavior but this is not a valid state and this scenario should never happen."""
+    def test_will_reuse_default_access_when_already_customized(self):
+        """Test that bootstrapping a single tenant with a custom default group will use that group."""
         tenant = self.fixture.new_unbootstrapped_tenant(org_id="o1")
         self.fixture.custom_default_group(tenant)
 
@@ -203,7 +220,7 @@ class V2TenantBootstrapServiceTest(TestCase):
         default_ws = self.fixture.default_workspace(tenant)
 
         self.assertEqual(
-            1,
+            0,
             self.tuples.count_tuples(
                 all_of(
                     resource("rbac", "workspace", default_ws.id),
@@ -213,7 +230,7 @@ class V2TenantBootstrapServiceTest(TestCase):
             ),
         )
         self.assertEqual(
-            1,
+            0,
             self.tuples.count_tuples(
                 all_of(
                     resource("rbac", "role_binding", bootstrapped.mapping.default_role_binding_uuid),
@@ -222,7 +239,7 @@ class V2TenantBootstrapServiceTest(TestCase):
                 )
             ),
         )
-        self.assertNotEqual(
+        self.assertEqual(
             tenant.tenant_mapping.default_group_uuid, Group.objects.get(tenant=tenant, platform_default=True).uuid
         )
 
@@ -251,11 +268,18 @@ class V2TenantBootstrapServiceTest(TestCase):
 
     def test_bulk_adding_updating_users(self):
         bootstrapped = self.fixture.new_tenant(org_id="o1")
-        self.tuples.clear()
+        self._clear_state()
 
         # Set up another org with custom default group but not bootstrapped
+        # Create the custom default group directly to avoid triggering auto-bootstrap
+        # that happens through clone_default_group_in_public_schema with V2_BOOTSTRAP_TENANT=True
         o3_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o3")
-        o3_custom_group = self.fixture.custom_default_group(o3_tenant)
+        o3_custom_group = Group.objects.create(
+            tenant=o3_tenant,
+            name="Custom default access",
+            platform_default=True,
+            system=False,
+        )
 
         self.fixture.new_unbootstrapped_tenant(org_id="o4")
 
@@ -281,11 +305,11 @@ class V2TenantBootstrapServiceTest(TestCase):
         # Admins get 2, otherwise 1
         num_group_membership_tuples = 2 + 1 + 2 + 1 + 1 + 1
         # o1 is already bootstrapped, should get 0
-        # existing unbootstrapped custom group tenants get 6
-        # new or otherwise unbootstrapped tenants get 9
-        num_tenant_bootstrapping_tuples = 0 + 9 + 6 + 9
+        # existing unbootstrapped custom group tenants get 12
+        # new or otherwise unbootstrapped tenants get 21
+        num_tenant_bootstrapping_tuples = 0 + 21 + 12 + 21
 
-        self.assertEquals(num_group_membership_tuples + num_tenant_bootstrapping_tuples, self.tuples.count_tuples())
+        self.assertEqual(num_group_membership_tuples + num_tenant_bootstrapping_tuples, self.tuples.count_tuples())
 
         # Assert user updated for first user with existing tenant
         self.assertAddedToDefaultGroup("localhost/u1", bootstrapped.mapping, and_admin_group=True)  # 2
@@ -308,7 +332,7 @@ class V2TenantBootstrapServiceTest(TestCase):
 
     def test_bulk_import_updates_user_ids_on_principals_but_does_not_add_principals(self):
         bootstrapped = self.fixture.new_tenant(org_id="o1")
-        self.tuples.clear()
+        self._clear_state()
 
         # Set up another org with custom default group but not bootstrapped
         o3_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o3")
@@ -352,9 +376,48 @@ class V2TenantBootstrapServiceTest(TestCase):
         # Assert no extra principals created
         self.assertEqual(4, Principal.objects.count())
 
+    def test_bulk_import_does_not_update_usernames_in_the_wrong_tenant(self):
+        """Principals are only unique by Tenant and username. We cannot look up by just username."""
+        # Set up another org with custom default group but not bootstrapped
+        o3_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o3")
+        o4_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o4")
+        o5_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o5")
+
+        # Another principal with the same username but different tenant
+        Principal.objects.create(username="username5", tenant=o5_tenant)
+
+        # Existing bootstrapped tenant with existing user with id
+        Principal.objects.create(username="username5", tenant=o3_tenant)
+        Principal.objects.create(username="username6", tenant=o4_tenant, user_id="u6")
+
+        users = []
+        for user_id, username, org_id, admin in [
+            ("u5", "username5", "o3", False),  # Unbootstrapped tenant, existing user without ID
+            ("u6", "username6", "o4", False),  # Unbootstrapped tenant, existing user with ID
+            # o5 tenant should be in the batch, but with a different user
+            ("u7", "username6", "o5", False),
+        ]:
+            user = User()
+            user.user_id = user_id
+            user.username = username
+            user.org_id = org_id
+            user.admin = admin
+            user.is_active = True
+            users.append(user)
+
+        self.service.import_bulk_users(users)
+
+        # Assert username5 in o3 gets the user ID, not the one in o5
+        self.assertEqual("u5", Principal.objects.get(username="username5", tenant=o3_tenant).user_id)
+        self.assertIsNone(Principal.objects.get(username="username5", tenant=o5_tenant).user_id)
+        self.assertEqual("u6", Principal.objects.get(username="username6").user_id)
+
+        # Assert no extra principals created
+        self.assertEqual(3, Principal.objects.count())
+
     def test_force_bootstrap_replicates_already_bootstrapped_unready_tenants(self):
         bootstrapped = self.fixture.new_tenant(org_id="o1")
-        self.tuples.clear()
+        self._clear_state()
 
         original_mapping = TenantMapping.objects.get(tenant=bootstrapped.tenant)
         original_workspaces = list(Workspace.objects.filter(tenant=bootstrapped.tenant))
@@ -373,7 +436,7 @@ class V2TenantBootstrapServiceTest(TestCase):
         bootstrapped = self.fixture.new_tenant(org_id="o1")
         bootstrapped.tenant.ready = True
         bootstrapped.tenant.save()
-        self.tuples.clear()
+        self._clear_state()
 
         original_mapping = TenantMapping.objects.get(tenant=bootstrapped.tenant)
         original_workspaces = list(Workspace.objects.filter(tenant=bootstrapped.tenant))
@@ -387,6 +450,132 @@ class V2TenantBootstrapServiceTest(TestCase):
 
         self.assertEqual(original_mapping, new_mapping)
         self.assertCountEqual(original_workspaces, new_workspaces)
+
+    def test_inject_get_user_id_method(self):
+        bootstrapped = self.fixture.new_tenant(org_id="o1")
+
+        user = User()
+        user.org_id = "o1"
+        user.admin = False
+        user.is_active = True
+        user.user_name = "user_1"
+
+        get_user_id = lambda user: "u1"
+        service = V2TenantBootstrapService(InMemoryRelationReplicator(self.tuples), get_user_id=get_user_id)
+        bootstrapped = service.update_user(user)
+
+        # But is a regular user
+        self.assertEqual(
+            1,
+            self.tuples.count_tuples(
+                all_of(
+                    resource("rbac", "group", bootstrapped.mapping.default_group_uuid),
+                    relation("member"),
+                    subject("rbac", "principal", "localhost/u1"),
+                )
+            ),
+        )
+
+    def test_bulk_import_workspace(self):
+        ws_id_1 = uuid.uuid4()
+        ws_id_2 = uuid.uuid4()
+        root_id = uuid.uuid4()
+        default_id = uuid.uuid4()
+        self._clear_state()
+        pairs = [
+            (ws_id_1, root_id),
+            (ws_id_2, default_id),
+        ]
+        self.service.create_workspace_relationships(pairs)
+        self.assertEqual(
+            1,
+            self.tuples.count_tuples(
+                all_of(
+                    resource("rbac", "workspace", ws_id_1),
+                    relation("parent"),
+                    subject("rbac", "workspace", root_id),
+                )
+            ),
+        )
+        self.assertEqual(
+            1,
+            self.tuples.count_tuples(
+                all_of(
+                    resource("rbac", "workspace", ws_id_2),
+                    relation("parent"),
+                    subject("rbac", "workspace", default_id),
+                )
+            ),
+        )
+
+    def test_bulk_bootstrap_simple(self):
+        o1_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o1")
+        o2_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o2")
+        o3_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o3")
+
+        self.service.bootstrap_tenants([o1_tenant, o2_tenant, o3_tenant])
+
+        self.assertTenantBootstrapped(org_id="o1", existing=True)
+        self.assertTenantBootstrapped(org_id="o2", existing=True)
+        self.assertTenantBootstrapped(org_id="o3", existing=True)
+
+    def test_bulk_bootstrap_force(self):
+        o1_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o1")
+        o2_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o2")
+        o3_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o3")
+
+        self.service.bootstrap_tenants([o1_tenant, o2_tenant, o3_tenant])
+        self._clear_state()
+
+        # Re-bootstrapping without forcing should have no effect.
+        self.service.bootstrap_tenants([o1_tenant, o2_tenant, o3_tenant])
+        self.assertEqual(len(self.tuples), 0)
+
+        # Re-bootstrapping with force should re-replicate relations.
+        self.service.bootstrap_tenants([o1_tenant, o2_tenant, o3_tenant], force=True)
+        self.assertGreater(len(self.tuples), 0)
+
+        self.assertTenantBootstrapped(org_id="o1", existing=True)
+        self.assertTenantBootstrapped(org_id="o2", existing=True)
+        self.assertTenantBootstrapped(org_id="o3", existing=True)
+
+    def test_bulk_bootstrap_mixed_state(self):
+        o1_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o1")
+        o2_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o2")
+        o3_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o3")
+
+        self.service.bootstrap_tenant(o1_tenant)
+        self._clear_state()
+
+        self.service.bootstrap_tenants([o1_tenant, o2_tenant, o3_tenant])
+
+        # o2 and o3 should have been newly bootstrapped.
+        self.assertTenantBootstrapped("o2", existing=True)
+        self.assertTenantBootstrapped("o3", existing=True)
+
+        # o1 should not have been re-replicated.
+        self.assertEqual(0, self.tuples.count_tuples(resource("rbac", "tenant", o1_tenant.tenant_resource_id())))
+        self.assertEqual(0, self.tuples.count_tuples(subject("rbac", "tenant", o1_tenant.tenant_resource_id())))
+
+    def test_bulk_bootstrap_custom_default_group(self):
+        o1_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o1")
+        o2_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o2")
+        o3_tenant = self.fixture.new_unbootstrapped_tenant(org_id="o3")
+
+        # Create custom default group directly to avoid triggering auto-bootstrap
+        # that happens through clone_default_group_in_public_schema with V2_BOOTSTRAP_TENANT=True
+        o1_group = Group.objects.create(
+            tenant=o1_tenant,
+            name="Custom default access",
+            platform_default=True,
+            system=False,
+        )
+
+        self.service.bootstrap_tenants([o1_tenant, o2_tenant, o3_tenant])
+
+        self.assertTenantBootstrapped("o1", existing=True, with_custom_default_group=o1_group)
+        self.assertTenantBootstrapped("o2", existing=True)
+        self.assertTenantBootstrapped("o3", existing=True)
 
     def assertAddedToDefaultGroup(self, user_id: str, tenant_mapping: TenantMapping, and_admin_group: bool = False):
         self.assertEqual(
@@ -410,15 +599,19 @@ class V2TenantBootstrapServiceTest(TestCase):
             ),
         )
 
+    def _clear_state(self):
+        self.tuples.clear()
+        self.replicator.clear_events()
+
     def assertTenantBootstrapped(
         self, org_id: str, with_custom_default_group: Optional[Group] = None, existing: bool = False
     ) -> Tuple[Tenant, TenantMapping, Workspace, Workspace]:
-        tenant = Tenant.objects.get(org_id=org_id)
-        mapping = TenantMapping.objects.get(tenant=tenant)
-        workspaces = list(Workspace.objects.filter(tenant=tenant))
+        tenant: Tenant = Tenant.objects.get(org_id=org_id)
+        mapping: TenantMapping = TenantMapping.objects.get(tenant=tenant)
+        workspaces: list[Workspace] = list(Workspace.objects.filter(tenant=tenant))
         self.assertEqual(len(workspaces), 2)
-        default = Workspace.objects.get(type=Workspace.Types.DEFAULT, tenant=tenant)
-        root = Workspace.objects.get(type=Workspace.Types.ROOT, tenant=tenant)
+        default = Workspace.objects.default(tenant=tenant)
+        root = Workspace.objects.root(tenant=tenant)
 
         platform_default_policy = Policy.objects.get(
             group=Group.objects.get(platform_default=True, tenant=self.fixture.public_tenant)
@@ -474,38 +667,73 @@ class V2TenantBootstrapServiceTest(TestCase):
             f"Expected tenant {org_id} to have platform",
         )
 
-        self.assertEqual(
-            1 if custom_default_group is None else 0,
-            self.tuples.count_tuples(
-                all_of(
-                    resource("rbac", "workspace", default.id),
-                    relation("binding"),
-                    subject("rbac", "role_binding", mapping.default_role_binding_uuid),
-                )
-            ),
-            f"Expected default workspace to have platform default role binding for tenant {org_id}",
+        def assert_default_role_binding(
+            target: V2boundresource,
+            group_uuid: uuid.UUID | str,
+            role_uuid: uuid.UUID | str,
+            role_binding_uuid: uuid.UUID | str,
+            count: int = 0,
+        ):
+            verb = "have" if count != 0 else "not verb"
+
+            self.assertEqual(
+                count,
+                self.tuples.count_tuples(
+                    all_of(
+                        resource(target.resource_type[0], target.resource_type[1], target.resource_id),
+                        relation("binding"),
+                        subject("rbac", "role_binding", str(role_binding_uuid)),
+                    )
+                ),
+                f"Expected target resource to {verb} default role binding for tenant {org_id}",
+            )
+
+            self.assertEqual(
+                count,
+                self.tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "role_binding", str(role_binding_uuid)),
+                        relation("subject"),
+                        subject("rbac", "group", str(group_uuid), "member"),
+                    )
+                ),
+                f"Expected default role binding to {verb} default group as subject for tenant {org_id}",
+            )
+
+            self.assertEqual(
+                count,
+                self.tuples.count_tuples(
+                    all_of(
+                        resource("rbac", "role_binding", str(role_binding_uuid)),
+                        relation("role"),
+                        subject("rbac", "role", str(role_uuid)),
+                    )
+                ),
+                f"Expected default role binding to {verb} platform default role as subject for tenant {org_id}",
+            )
+
+        assert_default_role_binding(
+            count=1 if custom_default_group is None else 0,
+            target=V2boundresource(("rbac", "workspace"), str(default.id)),
+            group_uuid=mapping.default_group_uuid,
+            role_uuid=platform_default_policy.uuid,
+            role_binding_uuid=mapping.default_role_binding_uuid,
         )
-        self.assertEqual(
-            1 if custom_default_group is None else 0,
-            self.tuples.count_tuples(
-                all_of(
-                    resource("rbac", "role_binding", mapping.default_role_binding_uuid),
-                    relation("subject"),
-                    subject("rbac", "group", mapping.default_group_uuid, "member"),
-                )
-            ),
-            f"Expected default role binding to have default group as subject for tenant {org_id}",
+
+        assert_default_role_binding(
+            count=1 if custom_default_group is None else 0,
+            target=V2boundresource(("rbac", "workspace"), str(root.id)),
+            group_uuid=mapping.default_group_uuid,
+            role_uuid=settings.SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID,
+            role_binding_uuid=mapping.root_scope_default_role_binding_uuid,
         )
-        self.assertEqual(
-            1 if custom_default_group is None else 0,
-            self.tuples.count_tuples(
-                all_of(
-                    resource("rbac", "role_binding", mapping.default_role_binding_uuid),
-                    relation("role"),
-                    subject("rbac", "role", platform_default_policy.uuid),
-                )
-            ),
-            f"Expected default role binding to have platform default role for tenant {org_id}",
+
+        assert_default_role_binding(
+            count=1 if custom_default_group is None else 0,
+            target=V2boundresource(("rbac", "tenant"), tenant.tenant_resource_id()),
+            group_uuid=mapping.default_group_uuid,
+            role_uuid=settings.SYSTEM_DEFAULT_TENANT_ROLE_UUID,
+            role_binding_uuid=mapping.tenant_scope_default_role_binding_uuid,
         )
 
         if custom_default_group is not None:
@@ -521,37 +749,43 @@ class V2TenantBootstrapServiceTest(TestCase):
                 f"Expected no relations to custom default group (leave to migrator) for tenant {org_id}",
             )
 
-        self.assertEqual(
-            1,
-            self.tuples.count_tuples(
-                all_of(
-                    resource("rbac", "workspace", default.id),
-                    relation("binding"),
-                    subject("rbac", "role_binding", mapping.default_admin_role_binding_uuid),
-                )
-            ),
-            f"Expected default workspace to have admin default role binding for tenant {org_id}",
+        assert_default_role_binding(
+            count=1,
+            target=V2boundresource(("rbac", "workspace"), str(default.id)),
+            group_uuid=mapping.default_admin_group_uuid,
+            role_uuid=admin_default_policy.uuid,
+            role_binding_uuid=mapping.default_admin_role_binding_uuid,
         )
-        self.assertEqual(
-            1,
-            self.tuples.count_tuples(
-                all_of(
-                    resource("rbac", "role_binding", mapping.default_admin_role_binding_uuid),
-                    relation("subject"),
-                    subject("rbac", "group", mapping.default_admin_group_uuid, "member"),
-                )
-            ),
-            f"Expected admin default role binding to have admin default group as subject for tenant {org_id}",
+
+        assert_default_role_binding(
+            count=1,
+            target=V2boundresource(("rbac", "workspace"), str(root.id)),
+            group_uuid=mapping.default_admin_group_uuid,
+            role_uuid=settings.SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID,
+            role_binding_uuid=mapping.root_scope_default_admin_role_binding_uuid,
         )
-        self.assertEqual(
-            1,
-            self.tuples.count_tuples(
-                all_of(
-                    resource("rbac", "role_binding", mapping.default_admin_role_binding_uuid),
-                    relation("role"),
-                    subject("rbac", "role", admin_default_policy.uuid),
-                )
-            ),
-            f"Expected admin default role binding to have admin default role for tenant {org_id}",
+
+        assert_default_role_binding(
+            count=1,
+            target=V2boundresource(("rbac", "tenant"), tenant.tenant_resource_id()),
+            group_uuid=mapping.default_admin_group_uuid,
+            role_uuid=settings.SYSTEM_ADMIN_TENANT_ROLE_UUID,
+            role_binding_uuid=mapping.tenant_scope_default_admin_role_binding_uuid,
         )
+
+        default_workspace_events = [
+            e
+            for e in self.replicator.workspace_events_for(WorkspaceEventStream.STANDARD)
+            if e.event_type == ReplicationEventType.CREATE_WORKSPACE and e.workspace["id"] == str(default.id)
+        ]
+
+        self.assertEqual(len(default_workspace_events), 1)
+        default_workspace_event = default_workspace_events[0]
+
+        self.assertEqual(default_workspace_event.org_id, org_id)
+        self.assertEqual(default_workspace_event.account_number, tenant.account_id)
+        self.assertEqual(str(default_workspace_event.partition_key), str(PartitionKey.byEnvironment()))
+        self.assertEqual(default_workspace_event.workspace["name"], Workspace.SpecialNames.DEFAULT)
+        self.assertEqual(default_workspace_event.workspace["type"], Workspace.Types.DEFAULT)
+
         return tenant, mapping, root, default

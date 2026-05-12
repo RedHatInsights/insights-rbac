@@ -16,6 +16,7 @@
 #
 
 """View for role management."""
+
 import json
 import logging
 import os
@@ -30,17 +31,22 @@ from django.db.models.aggregates import Count
 from django.http import Http404
 from django.utils.translation import gettext as _
 from django_filters import rest_framework as filters
+from internal.utils import get_workspace_ids_from_resource_definition
 from management.filters import CommonFilters
 from management.models import AuditLog, Permission
 from management.notifications.notification_handlers import role_obj_change_notification_handler
 from management.permissions import RoleAccessPermission
+from management.permissions.v2_edit_api_access import V1WriteBlockedWhenWorkspacesEnabled
 from management.querysets import get_role_queryset, user_has_perm
 from management.relation_replicator.relation_replicator import DualWriteException, ReplicationEventType
 from management.role.relation_api_dual_write_handler import (
     RelationApiDualWriteHandler,
 )
 from management.role.serializer import AccessSerializer, RoleDynamicSerializer, RolePatchSerializer
+from management.tenant_mapping.v2_activation import V1WriteBlockedError, assert_v1_write_allowed
 from management.utils import validate_uuid
+from management.workspace.model import Workspace
+from migration_tool.sharedSystemRolesReplicatedRoleBindings import attribute_key_to_v2_related_resource_type
 from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.filters import OrderingFilter
@@ -135,7 +141,7 @@ class RoleViewSet(
 
     queryset = Role.objects.annotate(policyCount=Count("policies", distinct=True))
     serializer_class = RoleSerializer
-    permission_classes = (RoleAccessPermission,)
+    permission_classes = (RoleAccessPermission, V1WriteBlockedWhenWorkspacesEnabled)
     lookup_field = "uuid"
     filter_backends = (filters.DjangoFilterBackend, OrderingFilter)
     filterset_class = RoleFilter
@@ -144,8 +150,9 @@ class RoleViewSet(
 
     def get_queryset(self):
         """Obtain queryset for requesting user based on access and action."""
-        # NOTE: partial_update intentionally omitted because it does not update access or policy.
-        if self.action not in ["update", "destroy"]:
+        # Although partial_update does not update access or policy, we do need to keep the V2 roles associated with the
+        # V1 role in sync, and that means we have to lock the role.
+        if self.action not in ["update", "partial_update", "destroy"]:
             return get_role_queryset(self.request)
         else:
             # Update queryset differs from normal role queryset in a few ways:
@@ -267,10 +274,16 @@ class RoleViewSet(
                 ]
             }
         """
-        self.validate_role(request)
         try:
             with transaction.atomic():
+                assert_v1_write_allowed(request.tenant)
+                self.validate_role(request)
                 return super().create(request=request, args=args, kwargs=kwargs)
+        except V1WriteBlockedError:
+            return Response(
+                status=status.HTTP_403_FORBIDDEN,
+                data={"errors": [{"detail": V1WriteBlockedWhenWorkspacesEnabled.message}]},
+            )
         except IntegrityError as e:
             if DUPLICATE_KEY_ERROR_MSG in e.args[0]:
                 raise serializers.ValidationError(
@@ -386,7 +399,13 @@ class RoleViewSet(
 
         try:
             with transaction.atomic():
+                assert_v1_write_allowed(request.tenant)
                 return super().destroy(request=request, args=args, kwargs=kwargs)
+        except V1WriteBlockedError:
+            return Response(
+                status=status.HTTP_403_FORBIDDEN,
+                data={"errors": [{"detail": V1WriteBlockedWhenWorkspacesEnabled.message}]},
+            )
         except DualWriteException as e:
             return self.dual_write_exception_response(e)
 
@@ -401,7 +420,17 @@ class RoleViewSet(
                 error = {key: [_(message)]}
                 raise serializers.ValidationError(error)
 
-        return super().update(request=request, args=args, kwargs=kwargs)
+        try:
+            with transaction.atomic():
+                assert_v1_write_allowed(request.tenant)
+                return super().update(request=request, args=args, kwargs=kwargs)
+        except V1WriteBlockedError:
+            return Response(
+                status=status.HTTP_403_FORBIDDEN,
+                data={"errors": [{"detail": V1WriteBlockedWhenWorkspacesEnabled.message}]},
+            )
+        except DualWriteException as e:
+            return self.dual_write_exception_response(e)
 
     def update(self, request, *args, **kwargs):
         """Update a role.
@@ -462,11 +491,16 @@ class RoleViewSet(
             }
         """
         validate_uuid(kwargs.get("uuid"), "role uuid validation")
-        self.validate_role(request)
-
         try:
             with transaction.atomic():
+                assert_v1_write_allowed(request.tenant)
+                self.validate_role(request)
                 return super().update(request=request, args=args, kwargs=kwargs)
+        except V1WriteBlockedError:
+            return Response(
+                status=status.HTTP_403_FORBIDDEN,
+                data={"errors": [{"detail": V1WriteBlockedWhenWorkspacesEnabled.message}]},
+            )
         except DualWriteException as e:
             return self.dual_write_exception_response(e)
 
@@ -479,6 +513,14 @@ class RoleViewSet(
         role = serializer.save()
 
         dual_write_handler = RelationApiDualWriteHandler(role, ReplicationEventType.CREATE_CUSTOM_ROLE)
+        # No need to replicate if creating role with empty access, which won't have any relationships
+        if not role.access.all():
+            expected_empty_relation_reason = (
+                f"No access found for role({role.uuid}): '{role.name}'. "
+                "Assuming no relations to create. "
+                f"event_type='{ReplicationEventType.CREATE_CUSTOM_ROLE}'"
+            )
+            dual_write_handler.set_expected_empty_relation_reason_to_replicator(expected_empty_relation_reason)
         dual_write_handler.replicate_new_or_updated_role(role)
 
         role_obj_change_notification_handler(role, "created", self.request.user)
@@ -492,16 +534,13 @@ class RoleViewSet(
 
         Assumes concurrent updates are prevented (e.g. with atomic block and locks).
         """
-        if self.action != "partial_update":
-            dual_write_handler = RelationApiDualWriteHandler(
-                serializer.instance, ReplicationEventType.UPDATE_CUSTOM_ROLE
-            )
-            dual_write_handler.prepare_for_update()
+        dual_write_handler = RelationApiDualWriteHandler(serializer.instance, ReplicationEventType.UPDATE_CUSTOM_ROLE)
+        dual_write_handler.prepare_for_update()
 
         role = serializer.save()
+        dual_write_handler.replicate_new_or_updated_role(role)
 
         if self.action != "partial_update":
-            dual_write_handler.replicate_new_or_updated_role(role)
             role_obj_change_notification_handler(role, "updated", self.request.user)
 
         auditlog = AuditLog()
@@ -520,7 +559,16 @@ class RoleViewSet(
             raise serializers.ValidationError(error)
 
         dual_write_handler = RelationApiDualWriteHandler(instance, ReplicationEventType.DELETE_CUSTOM_ROLE)
-        dual_write_handler.prepare_for_update()
+        # Check emptiness
+        if not instance.access.all():
+            expected_empty_relation_reason = (
+                f"No access found for role({instance.uuid}): '{instance.name}'. "
+                "Assuming no relations to create. "
+                f"event_type='{ReplicationEventType.DELETE_CUSTOM_ROLE}'"
+            )
+            dual_write_handler.set_expected_empty_relation_reason_to_replicator(expected_empty_relation_reason)
+        else:
+            dual_write_handler.prepare_for_update()
 
         self.delete_policies_if_no_role_attached(instance)
         instance.delete()
@@ -557,7 +605,7 @@ class RoleViewSet(
         except (Role.DoesNotExist, ValidationError):
             raise Http404()
 
-        access = AccessSerializer(role.access, many=True).data
+        access = AccessSerializer(role.access, many=True, context={"request": request}).data
         page = self.paginate_queryset(access)
         return self.get_paginated_response(page)
 
@@ -596,7 +644,8 @@ class RoleViewSet(
         if access_list:
             sent_permissions = [access["permission"] for access in access_list]
             for perm in access_list:
-                app, resource_type, verb = perm.get("permission").split(":")
+                permission = perm.get("permission")
+                app, resource_type, verb = permission.split(":")
                 if app not in settings.ROLE_CREATE_ALLOW_LIST:
                     key = "role"
                     message = "Custom roles cannot be created for {}".format(app)
@@ -609,7 +658,7 @@ class RoleViewSet(
 
                 if not db_permission:
                     key = "role"
-                    message = f"Permission does not exist: {perm.get('permission')}"
+                    message = f"Permission does not exist: {permission}"
                     error = {key: [_(message)]}
                     raise serializers.ValidationError(error)
 
@@ -621,6 +670,39 @@ class RoleViewSet(
                         message = f"Permission '{db_permission.permission}' requires: '{required_permissions}'"
                         error = {key: [_(message)]}
                         raise serializers.ValidationError(error)
+
+                # validate permission not being added to workspace out of users org for v1 (RHCLOUD-35481)
+                resourceDefinitions = perm.get("resourceDefinitions", [])
+                for resourceDefinition in resourceDefinitions:
+                    attributeFilter = resourceDefinition.get("attributeFilter")
+                    filter_key = attributeFilter.get("key")
+
+                    if filter_key is not None and attribute_key_to_v2_related_resource_type(filter_key) == (
+                        "rbac",
+                        "workspace",
+                    ):
+                        workspace_ids = get_workspace_ids_from_resource_definition(attributeFilter)
+                        if len(workspace_ids) >= 1:
+                            unique_workspace_ids = set(workspace_ids)
+                            valid_workspaces = (
+                                Workspace.objects.select_for_update()
+                                .filter(id__in=unique_workspace_ids, tenant=request.tenant)
+                                .values_list("id", flat=True)
+                            )
+
+                            valid_workspace_ids = set(valid_workspaces)
+                            invalid_workspace_ids = unique_workspace_ids - valid_workspace_ids
+
+                            if invalid_workspace_ids:
+                                invalid_ids_str = ", ".join(sorted([str(uid) for uid in invalid_workspace_ids]))
+                                key = "role"
+                                message = (
+                                    f"user from org '{request.user.org_id}' cannot add "
+                                    f"permission '{permission}' to workspace outside their org. "
+                                    f"Invalid workspace IDs: {invalid_ids_str}"
+                                )
+                                error = {key: [_(message)]}
+                                raise serializers.ValidationError(error)
 
     def delete_policies_if_no_role_attached(self, role):
         """Delete policy if there is no role attached to it."""

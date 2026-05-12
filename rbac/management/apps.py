@@ -15,6 +15,7 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 """Management application configuration module."""
+
 import logging
 import sys
 
@@ -22,7 +23,11 @@ from django.apps import AppConfig
 from django.db.utils import OperationalError, ProgrammingError
 from management.seeds import group_seeding, permission_seeding, role_seeding
 
-from rbac.settings import GROUP_SEEDING_ENABLED, PERMISSION_SEEDING_ENABLED, ROLE_SEEDING_ENABLED
+from rbac.settings import (
+    GROUP_SEEDING_ENABLED,
+    PERMISSION_SEEDING_ENABLED,
+    ROLE_SEEDING_ENABLED,
+)
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 

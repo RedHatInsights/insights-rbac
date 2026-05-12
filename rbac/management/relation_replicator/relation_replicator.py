@@ -16,11 +16,20 @@
 #
 
 """Class to handle Dual Write API related operations."""
+
+import logging
+import time
 from abc import ABC, abstractmethod
 from enum import Enum
+from typing import Dict, TYPE_CHECKING, Union
 
 from django.conf import settings
 from kessel.relations.v1beta1 import common_pb2
+
+if TYPE_CHECKING:
+    from management.relation_replicator.types import RelationTuple
+
+logger = logging.getLogger(__name__)
 
 
 class DualWriteException(Exception):
@@ -48,6 +57,7 @@ class ReplicationEventType(str, Enum):
     BOOTSTRAP_TENANT = "bootstrap_tenant"
     BULK_BOOTSTRAP_TENANT = "bulk_bootstrap_tenant"
     EXTERNAL_USER_UPDATE = "external_user_update"
+    EXTERNAL_USER_DISABLE = "external_user_disable"
     BULK_EXTERNAL_USER_UPDATE = "bulk_external_user_update"
     MIGRATE_CUSTOM_ROLE = "migrate_custom_role"
     MIGRATE_TENANT_GROUPS = "migrate_tenant_groups"
@@ -57,6 +67,23 @@ class ReplicationEventType(str, Enum):
     DENY_CROSS_ACCOUNT_REQUEST = "deny_cross_account_request"
     EXPIRE_CROSS_ACCOUNT_REQUEST = "expire_cross_account_request"
     MIGRATE_CROSS_ACCOUNT_REQUEST = "migrate_cross_account_request"
+    DELETE_BINDING_MAPPINGS = "delete_binding_mappings"
+    CREATE_UNGROUPED_HOSTS_WORKSPACE = "create_ungrouped_hosts_workspace"
+    FIX_RESOURCE_DEFINITIONS = "fix_resource_definitions"
+    # Binding scope migration
+    MIGRATE_BINDING_SCOPE = "migrate_binding_scope"
+    REMIGRATE_ROLE_BINDING = "remigrate_role_binding"
+    DUPLICATE_BINDING_CLEANUP = "duplicate_binding_cleanup"
+    WORKSPACE_IMPORT = "workspace_import"
+    CREATE_WORKSPACE = "create_workspace"
+    UPDATE_WORKSPACE = "update_workspace"
+    DELETE_WORKSPACE = "delete_workspace"
+    MOVE_WORKSPACE = "move_workspace"
+    CLEANUP_ORPHAN_BINDINGS = "cleanup_orphan_bindings"
+    REMOVE_UNASSIGNED_BINDING_MAPPINGS = "remove_unassigned_binding_mappings"
+    BATCH_CREATE_ROLE_BINDING = "batch_create_role_binding"
+    UPDATE_ROLE_BINDINGS_FOR_SUBJECT = "update_role_bindings_for_subject"
+    REMOVE_DELETED_WORKSPACE_BINDINGS = "remove_deleted_workspace_bindings"
 
 
 class ReplicationEvent:
@@ -65,15 +92,15 @@ class ReplicationEvent:
     event_type: ReplicationEventType
     event_info: dict[str, object]
     partition_key: "PartitionKey"
-    add: list[common_pb2.Relationship]
-    remove: list[common_pb2.Relationship]
+    add: list[Union["RelationTuple", common_pb2.Relationship]]
+    remove: list[Union["RelationTuple", common_pb2.Relationship]]
 
     def __init__(
         self,
         event_type: ReplicationEventType,
         partition_key: "PartitionKey",
-        add: list[common_pb2.Relationship] = [],
-        remove: list[common_pb2.Relationship] = [],
+        add: list[Union["RelationTuple", common_pb2.Relationship]] = [],
+        remove: list[Union["RelationTuple", common_pb2.Relationship]] = [],
         info: dict[str, object] = {},
     ):
         """Initialize ReplicationEvent."""
@@ -83,6 +110,132 @@ class ReplicationEvent:
         self.remove = remove
         self.event_info = info
 
+    def resource_context(self) -> Dict[str, object] | None:
+        """Build context for all replication events that have identifiable resources."""
+        # Validate org_id exists for all events
+        org_id = str(self.event_info.get("org_id", ""))
+        if not org_id:
+            logger.warning(
+                f"Missing required org_id for {self.event_type.value} event. " f"event_info: {self.event_info}"
+            )
+
+        if self.event_type == ReplicationEventType.CREATE_WORKSPACE:
+            if "workspace_id" not in self.event_info:
+                logger.warning(f"Missing workspace_id for CREATE_WORKSPACE event. " f"event_info: {self.event_info}")
+                return None
+
+            resource_id = str(self.event_info["workspace_id"])
+            context = ReplicationEventResourceContext(
+                resource_type="Workspace",
+                resource_id=resource_id,
+                org_id=org_id,
+                event_type=self.event_type.value,
+            )
+            return context.to_json()
+
+        else:
+            context = ReplicationEventResourceContext(
+                org_id=org_id,
+                event_type=self.event_type.value,
+            )
+            return context.to_json()
+
+
+class ReplicationEventResourceContext:
+    """Replication event resource context."""
+
+    resource_type: str | None
+    resource_id: str | None
+    org_id: str
+    event_type: str
+    created_at: int  # Unix timestamp when event was created (whole seconds)
+
+    def __init__(
+        self,
+        org_id: str,
+        event_type: str,
+        resource_type: str | None = None,
+        resource_id: str | None = None,
+        created_at: int | None = None,
+    ):
+        """Initialize ReplicationEventResourceContext."""
+        self.resource_type = resource_type
+        self.resource_id = resource_id
+        self.org_id = org_id
+        self.event_type = event_type
+        # Capture creation timestamp for latency tracking
+        self.created_at = created_at if created_at is not None else int(time.time())
+
+    def to_json(self) -> Dict[str, object]:
+        """Convert to JSON dictionary."""
+        result: Dict[str, object] = {
+            "org_id": self.org_id,
+            "event_type": self.event_type,
+            "created_at": self.created_at,
+        }
+        # Only include resource_type if it's present
+        if self.resource_type is not None:
+            result["resource_type"] = self.resource_type
+        # Only include resource_id if it's present
+        if self.resource_id is not None:
+            result["resource_id"] = self.resource_id
+        return result
+
+
+class WorkspaceEvent:
+    """Workspace event."""
+
+    org_id: str
+    account_number: str
+    workspace: dict[str, str]
+    event_type: ReplicationEventType
+    partition_key: "PartitionKey"
+
+    def __init__(
+        self,
+        org_id: str,
+        account_number: str,
+        workspace: dict[str, str],
+        event_type: ReplicationEventType,
+        partition_key: "PartitionKey",
+    ):
+        """Initialize WorkspaceEvent."""
+        self.org_id = org_id
+        self.account_number = account_number
+        self.workspace = workspace
+        self.event_type = event_type
+        self.partition_key = partition_key
+
+
+class AggregateTypes(str, Enum):
+    """Aggregate types for outbox events."""
+
+    RELATIONS = "relations-replication-event"
+    WORKSPACE = "workspace"
+    WORKSPACE_BULK = "workspace-bulk"
+
+
+class WorkspaceEventStream(Enum):
+    """
+    The class that a WorkspaceEvent belongs to.
+
+    As opposed to PartitionKey (which, for Kafka replicators, represents a partition within the same topic),
+    different WorkspaceEventClasses represent entirely different Kafka topics.
+    """
+
+    STANDARD = "standard"
+    BULK = "bulk"
+
+    def aggregate_type(self) -> AggregateTypes:
+        """Get the AggregateType that should be used for this stream in a Kafka replicator."""
+        if self == WorkspaceEventStream.STANDARD:
+            return AggregateTypes.WORKSPACE
+
+        if self == WorkspaceEventStream.BULK:
+            return AggregateTypes.WORKSPACE_BULK
+
+        raise AssertionError(f"Unexpected WorkspaceEventClass: {self!r}")
+
 
 class RelationReplicator(ABC):
     """Type responsible for replicating relations to Kessel Relations."""
@@ -90,6 +243,10 @@ class RelationReplicator(ABC):
     @abstractmethod
     def replicate(self, event: ReplicationEvent):
         """Replicate the given event to Kessel Relations."""
+        pass
+
+    def replicate_workspace(self, event: WorkspaceEvent, event_stream: WorkspaceEventStream):
+        """Replicate the given workspace event to Kessel Relations."""
         pass
 
 
