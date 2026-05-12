@@ -2474,8 +2474,10 @@ def _check_permission_match(
 ) -> tuple[bool, str | None, list[dict[str, Any]]]:
     """Check if expected permission is granted. Returns (found, matched_perm, sources)."""
     for perm in all_permissions:
-        if _permission_matches(perm, expected_perm_full) or (
-            expected_verb and perm.endswith(f":{expected_verb}") and perm.startswith(f"{application}:")
+        if (
+            _permission_matches(perm, expected_perm_full)
+            or _permission_matches(expected_perm_full, perm)
+            or (expected_verb and perm.endswith(f":{expected_verb}") and perm.startswith(f"{application}:"))
         ):
             return True, perm, permission_sources.get(perm, [])
     return False, None, []

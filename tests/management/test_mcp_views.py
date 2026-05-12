@@ -4076,7 +4076,7 @@ class MCPInvestigateUserAccessV2Tests(MCPToolTestMixin, IdentityRequest):
             resource_id="default",
             tenant=self.tenant,
         )
-        RoleBindingPrincipal.objects.create(binding=direct_binding, principal=self.principal)
+        RoleBindingPrincipal.objects.create(binding=direct_binding, principal=self.principal, source="system")
 
         response = self._call_tool(
             "investigate_user_access",
