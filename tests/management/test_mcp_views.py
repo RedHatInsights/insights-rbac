@@ -3493,3 +3493,652 @@ class AuditRedhatAccessTests(MCPToolTestMixin, IdentityRequest):
 
         tool_output = self._get_tool_output(response)
         self.assertEqual(tool_output["summary"]["audit_period_days"], 7)
+
+
+@override_settings(BYPASS_BOP_VERIFICATION=True)
+class MCPInvestigateUserAccessTests(MCPToolTestMixin, IdentityRequest):
+    """Tests for investigate_user_access MCP tool."""
+
+    def setUp(self):
+        """Set up investigate_user_access tests with groups, roles, and permissions."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.test_username = "sarah"
+        self.principal = Principal.objects.create(username=self.test_username, tenant=self.tenant)
+
+        # Create two groups - "Compliance Auditors" and "Compliance Admins"
+        self.auditors_group = Group.objects.create(
+            name="Compliance Auditors",
+            description="Read-only access to compliance data",
+            tenant=self.tenant,
+        )
+        self.admins_group = Group.objects.create(
+            name="Compliance Admins",
+            description="Administrative access to compliance",
+            tenant=self.tenant,
+        )
+
+        # Add principal to both groups
+        self.auditors_group.principals.add(self.principal)
+        self.admins_group.principals.add(self.principal)
+
+        # Create roles
+        self.auditor_role = Role.objects.create(
+            name="Compliance Auditor",
+            display_name="Compliance Auditor",
+            description="Read-only compliance access",
+            tenant=self.tenant,
+        )
+        self.admin_role = Role.objects.create(
+            name="Compliance administrator",
+            display_name="Compliance administrator",
+            description="Compliance administration (misleading - only has read)",
+            tenant=self.tenant,
+        )
+
+        # Create permissions
+        self.read_perm = Permission.objects.create(
+            application="compliance",
+            resource_type="policies",
+            verb="read",
+            permission="compliance:policies:read",
+            tenant=self.tenant,
+        )
+        self.write_perm = Permission.objects.create(
+            application="compliance",
+            resource_type="policies",
+            verb="write",
+            permission="compliance:policies:write",
+            tenant=self.tenant,
+        )
+
+        # Auditor role only has read permission
+        Access.objects.create(permission=self.read_perm, role=self.auditor_role, tenant=self.tenant)
+
+        # Admin role ALSO only has read permission (this is the "gotcha")
+        Access.objects.create(permission=self.read_perm, role=self.admin_role, tenant=self.tenant)
+
+        # Assign roles to groups via policies
+        auditors_policy = Policy.objects.create(name="auditors_policy", group=self.auditors_group, tenant=self.tenant)
+        auditors_policy.roles.add(self.auditor_role)
+
+        admins_policy = Policy.objects.create(name="admins_policy", group=self.admins_group, tenant=self.tenant)
+        admins_policy.roles.add(self.admin_role)
+
+    def tearDown(self):
+        """Tear down investigate_user_access tests."""
+        Access.objects.all().delete()
+        Policy.objects.all().delete()
+        Role.objects.all().delete()
+        Permission.objects.all().delete()
+        Group.objects.all().delete()
+        Principal.objects.all().delete()
+        super().tearDown()
+
+    def test_investigate_user_access_success(self):
+        """Positive: investigate_user_access returns comprehensive user access info."""
+        response = self._call_tool("investigate_user_access", {"username": self.test_username})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+
+        # Verify structure
+        self.assertIn("user", tool_output)
+        self.assertIn("groups", tool_output)
+        self.assertIn("analysis", tool_output)
+        self.assertIn("permission_sources", tool_output)
+        self.assertIn("hints", tool_output)
+
+        # Verify user info
+        self.assertEqual(tool_output["user"]["username"], self.test_username)
+        self.assertTrue(tool_output["user"]["exists"])
+
+    def test_investigate_user_access_without_auth_returns_error(self):
+        """Permission: investigate_user_access without auth returns auth error."""
+        response = self._call_tool("investigate_user_access", {"username": self.test_username}, use_auth=False)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    def test_investigate_user_access_user_not_found(self):
+        """Negative: investigate_user_access returns error for non-existent user."""
+        response = self._call_tool("investigate_user_access", {"username": "nonexistent_user"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+
+        self.assertIn("error", tool_output)
+        self.assertIn("not found", tool_output["error"])
+        self.assertIn("hint", tool_output)
+
+    def test_investigate_user_access_lists_all_groups(self):
+        """Positive: investigate_user_access lists all groups the user belongs to."""
+        response = self._call_tool("investigate_user_access", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["analysis"]["total_groups"], 2)
+        self.assertEqual(len(tool_output["groups"]), 2)
+
+        group_names = [g["name"] for g in tool_output["groups"]]
+        self.assertIn("Compliance Auditors", group_names)
+        self.assertIn("Compliance Admins", group_names)
+
+    def test_investigate_user_access_lists_roles_per_group(self):
+        """Positive: investigate_user_access lists roles assigned to each group."""
+        response = self._call_tool("investigate_user_access", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        for group in tool_output["groups"]:
+            self.assertIn("roles", group)
+            self.assertEqual(group["role_count"], 1)
+            self.assertEqual(len(group["roles"]), 1)
+
+            if group["name"] == "Compliance Auditors":
+                self.assertEqual(group["roles"][0]["display_name"], "Compliance Auditor")
+            elif group["name"] == "Compliance Admins":
+                self.assertEqual(group["roles"][0]["display_name"], "Compliance administrator")
+
+    def test_investigate_user_access_expands_role_permissions(self):
+        """Positive: investigate_user_access expands roles to show actual permissions."""
+        response = self._call_tool("investigate_user_access", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        for group in tool_output["groups"]:
+            for role in group["roles"]:
+                self.assertIn("permissions", role)
+                self.assertIn("permission_count", role)
+                self.assertGreaterEqual(role["permission_count"], 1)
+                self.assertIn("compliance:policies:read", role["permissions"])
+
+    def test_investigate_user_access_tracks_permission_sources(self):
+        """Positive: investigate_user_access tracks which groups/roles grant each permission."""
+        response = self._call_tool("investigate_user_access", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        # compliance:policies:read should come from both groups/roles
+        self.assertIn("compliance:policies:read", tool_output["permission_sources"])
+        sources = tool_output["permission_sources"]["compliance:policies:read"]
+        self.assertEqual(len(sources), 2)
+
+        source_groups = [s["group"] for s in sources]
+        self.assertIn("Compliance Auditors", source_groups)
+        self.assertIn("Compliance Admins", source_groups)
+
+    def test_investigate_user_access_filter_by_application(self):
+        """Positive: investigate_user_access filters by application."""
+        response = self._call_tool(
+            "investigate_user_access",
+            {"username": self.test_username, "application": "compliance"},
+        )
+
+        tool_output = self._get_tool_output(response)
+
+        self.assertIn("permissions_for_application", tool_output["analysis"])
+        self.assertEqual(tool_output["analysis"]["application_permission_count"], 1)
+        self.assertIn("compliance:policies:read", tool_output["analysis"]["permissions_for_application"])
+
+    def test_investigate_user_access_expected_permission_found(self):
+        """Positive: investigate_user_access identifies when expected permission is present."""
+        response = self._call_tool(
+            "investigate_user_access",
+            {
+                "username": self.test_username,
+                "application": "compliance",
+                "expected_permission": "read",
+            },
+        )
+
+        tool_output = self._get_tool_output(response)
+
+        self.assertTrue(tool_output["analysis"]["has_expected_permission"])
+        check = tool_output["analysis"]["expected_permission_check"]
+        self.assertTrue(check["found"])
+        self.assertEqual(check["matched_permission"], "compliance:policies:read")
+        self.assertIn("granted_via", check)
+
+    def test_investigate_user_access_expected_permission_missing(self):
+        """Positive: investigate_user_access identifies when expected permission is missing."""
+        response = self._call_tool(
+            "investigate_user_access",
+            {
+                "username": self.test_username,
+                "application": "compliance",
+                "expected_permission": "write",
+            },
+        )
+
+        tool_output = self._get_tool_output(response)
+
+        self.assertFalse(tool_output["analysis"]["has_expected_permission"])
+        check = tool_output["analysis"]["expected_permission_check"]
+        self.assertFalse(check["found"])
+        self.assertIn("available_verbs_for_app", check)
+        self.assertIn("read", check["available_verbs_for_app"])
+        self.assertNotIn("write", check["available_verbs_for_app"])
+
+    def test_investigate_user_access_identifies_gaps(self):
+        """Positive: investigate_user_access explains why expected permission is missing."""
+        response = self._call_tool(
+            "investigate_user_access",
+            {
+                "username": self.test_username,
+                "application": "compliance",
+                "expected_permission": "write",
+            },
+        )
+
+        tool_output = self._get_tool_output(response)
+
+        self.assertIn("gaps", tool_output["analysis"])
+        self.assertIn("diagnosis", tool_output["analysis"])
+        self.assertGreater(len(tool_output["analysis"]["gaps"]), 0)
+
+        # Should mention that the groups don't grant write
+        gaps_text = " ".join(tool_output["analysis"]["gaps"])
+        self.assertIn("NOT", gaps_text)
+        self.assertIn("write", gaps_text)
+
+    def test_investigate_user_access_expected_verb_parameter(self):
+        """Positive: investigate_user_access accepts expected_verb as alternative."""
+        response = self._call_tool(
+            "investigate_user_access",
+            {
+                "username": self.test_username,
+                "application": "compliance",
+                "expected_verb": "read",
+            },
+        )
+
+        tool_output = self._get_tool_output(response)
+        self.assertTrue(tool_output["analysis"]["has_expected_permission"])
+
+    def test_investigate_user_access_user_with_no_groups(self):
+        """Positive: investigate_user_access handles user with no groups."""
+        # Create a user with no group memberships
+        lonely_user = Principal.objects.create(username="lonely_user", tenant=self.tenant)
+
+        response = self._call_tool("investigate_user_access", {"username": "lonely_user"})
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(len(tool_output["groups"]), 0)
+        self.assertIn("not a member of any groups", tool_output["analysis"]["message"])
+
+        # Cleanup
+        lonely_user.delete()
+
+    def test_investigate_user_access_includes_hints(self):
+        """Positive: investigate_user_access includes helpful hints."""
+        response = self._call_tool("investigate_user_access", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        self.assertIn("hints", tool_output)
+        self.assertIn("verify_specific_permission", tool_output["hints"])
+        self.assertIn("find_role_with_permission", tool_output["hints"])
+        self.assertIn("check_role_contents", tool_output["hints"])
+        self.assertIn("add_user_to_group", tool_output["hints"])
+
+    def test_investigate_user_access_analysis_summary(self):
+        """Positive: investigate_user_access returns summary statistics."""
+        response = self._call_tool("investigate_user_access", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        analysis = tool_output["analysis"]
+        self.assertEqual(analysis["total_groups"], 2)
+        self.assertEqual(analysis["total_roles"], 2)
+        self.assertEqual(analysis["total_unique_permissions"], 1)  # Only read, not write
+
+    @patch(
+        "management.mcp_views.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": [{"is_org_admin": True}]},
+    )
+    def test_investigate_user_access_org_admin_bypass(self, mock_proxy):
+        """Positive: investigate_user_access notes org admin has implicit access."""
+        response = self._call_tool(
+            "investigate_user_access",
+            {
+                "username": self.test_username,
+                "application": "compliance",
+                "expected_permission": "write",
+            },
+        )
+
+        tool_output = self._get_tool_output(response)
+
+        # Org admin should bypass permission checks
+        self.assertTrue(tool_output["user"]["is_org_admin"])
+        self.assertIn("note", tool_output["user"])
+        self.assertIn("bypasses", tool_output["user"]["note"])
+
+        # Should still report permission as available due to org admin
+        self.assertTrue(tool_output["analysis"]["has_expected_permission"])
+
+    def test_investigate_user_access_scenario_conflicting_groups(self):
+        """Integration: Full scenario test for conflicting group access."""
+        # This tests the exact scenario from the requirements:
+        # "Sarah is in 'Compliance Auditors' AND 'Compliance Admins' but can't edit compliance policies"
+
+        response = self._call_tool(
+            "investigate_user_access",
+            {
+                "username": "sarah",
+                "application": "compliance",
+                "expected_permission": "write",
+            },
+        )
+
+        tool_output = self._get_tool_output(response)
+
+        # Verify user is in both groups
+        self.assertEqual(tool_output["analysis"]["total_groups"], 2)
+        group_names = [g["name"] for g in tool_output["groups"]]
+        self.assertIn("Compliance Auditors", group_names)
+        self.assertIn("Compliance Admins", group_names)
+
+        # Verify write permission is NOT found
+        self.assertFalse(tool_output["analysis"]["has_expected_permission"])
+
+        # Verify the diagnosis explains the issue
+        self.assertIn("diagnosis", tool_output["analysis"])
+        self.assertIn("does not have", tool_output["analysis"]["diagnosis"])
+
+        # Verify gaps identify both groups lack write
+        gaps = tool_output["analysis"]["gaps"]
+        self.assertEqual(len(gaps), 2)  # Both groups should be mentioned
+
+        # Verify the "misleading name" issue is discoverable:
+        # The Compliance Admins group has "Compliance administrator" role
+        # but that role only has read, not write
+        admins_group = next(g for g in tool_output["groups"] if g["name"] == "Compliance Admins")
+        admin_role = admins_group["roles"][0]
+        self.assertEqual(admin_role["display_name"], "Compliance administrator")
+        self.assertIn("compliance:policies:read", admin_role["permissions"])
+        self.assertNotIn("compliance:policies:write", admin_role["permissions"])
+
+    def test_investigate_user_access_full_permission_format(self):
+        """Positive: investigate_user_access handles full permission format."""
+        response = self._call_tool(
+            "investigate_user_access",
+            {
+                "username": self.test_username,
+                "application": "compliance",
+                "expected_permission": "compliance:policies:read",
+            },
+        )
+
+        tool_output = self._get_tool_output(response)
+        self.assertTrue(tool_output["analysis"]["has_expected_permission"])
+
+    def test_investigate_user_access_multiple_permissions_per_role(self):
+        """Positive: investigate_user_access handles roles with multiple permissions."""
+        # Add another permission to the admin role
+        delete_perm = Permission.objects.create(
+            application="compliance",
+            resource_type="policies",
+            verb="delete",
+            permission="compliance:policies:delete",
+            tenant=self.tenant,
+        )
+        Access.objects.create(permission=delete_perm, role=self.admin_role, tenant=self.tenant)
+
+        response = self._call_tool(
+            "investigate_user_access",
+            {"username": self.test_username, "application": "compliance"},
+        )
+
+        tool_output = self._get_tool_output(response)
+
+        # Should now have 2 unique permissions
+        self.assertEqual(tool_output["analysis"]["application_permission_count"], 2)
+        self.assertIn("compliance:policies:read", tool_output["analysis"]["permissions_for_application"])
+        self.assertIn("compliance:policies:delete", tool_output["analysis"]["permissions_for_application"])
+
+
+@override_settings(BYPASS_BOP_VERIFICATION=True, V2_APIS_ENABLED=True)
+class MCPInvestigateUserAccessV2Tests(MCPToolTestMixin, IdentityRequest):
+    """Tests for investigate_user_access on V2 organizations."""
+
+    def setUp(self):
+        """Set up V2 investigate_user_access tests."""
+        reload(urls)
+        clear_url_caches()
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.test_username = "sarah_v2"
+        self.principal = Principal.objects.create(username=self.test_username, tenant=self.tenant)
+
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.get_kessel_principal_id",
+                return_value="localhost/test-user-id",
+            )
+        )
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.WorkspaceInventoryAccessChecker.check_resource_access",
+                return_value=True,
+            )
+        )
+
+        # Activate V2 for this tenant
+        TenantMapping.objects.create(tenant=self.tenant, v2_write_activated_at=timezone.now())
+
+        # Create groups
+        self.auditors_group = Group.objects.create(
+            name="V2 Compliance Auditors",
+            description="Read-only compliance access",
+            tenant=self.tenant,
+        )
+        self.admins_group = Group.objects.create(
+            name="V2 Compliance Admins",
+            description="Admin compliance access",
+            tenant=self.tenant,
+        )
+        self.auditors_group.principals.add(self.principal)
+        self.admins_group.principals.add(self.principal)
+
+        # Create V2 roles with permissions
+        self.read_perm = Permission.objects.create(
+            application="compliance",
+            resource_type="policies",
+            verb="read",
+            permission="compliance:policies:read",
+            tenant=self.tenant,
+        )
+
+        self.auditor_role = RoleV2.objects.create(
+            name="V2 Compliance Auditor",
+            tenant=self.tenant,
+        )
+        self.auditor_role.permissions.add(self.read_perm)
+
+        self.admin_role = RoleV2.objects.create(
+            name="V2 Compliance Administrator",
+            tenant=self.tenant,
+        )
+        self.admin_role.permissions.add(self.read_perm)
+
+        # Create role bindings
+        self.auditor_binding = RoleBinding.objects.create(
+            role=self.auditor_role,
+            resource_type="workspace",
+            resource_id="default",
+            tenant=self.tenant,
+        )
+        RoleBindingGroup.objects.create(binding=self.auditor_binding, group=self.auditors_group)
+
+        self.admin_binding = RoleBinding.objects.create(
+            role=self.admin_role,
+            resource_type="workspace",
+            resource_id="default",
+            tenant=self.tenant,
+        )
+        RoleBindingGroup.objects.create(binding=self.admin_binding, group=self.admins_group)
+
+    def tearDown(self):
+        """Tear down V2 investigate_user_access tests."""
+        RoleBindingGroup.objects.all().delete()
+        RoleBindingPrincipal.objects.all().delete()
+        RoleBinding.objects.all().delete()
+        RoleV2.objects.all().delete()
+        Permission.objects.all().delete()
+        Group.objects.all().delete()
+        Principal.objects.all().delete()
+        TenantMapping.objects.filter(tenant=self.tenant).delete()
+        reload(urls)
+        clear_url_caches()
+        super().tearDown()
+
+    def test_investigate_user_access_v2_returns_org_version(self):
+        """Positive: investigate_user_access returns org_version='v2' for V2 orgs."""
+        response = self._call_tool("investigate_user_access", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["org_version"], "v2")
+
+    def test_investigate_user_access_v2_includes_role_bindings(self):
+        """Positive: investigate_user_access V2 includes role_bindings instead of group.roles."""
+        response = self._call_tool("investigate_user_access", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+        self.assertIn("role_bindings", tool_output)
+        self.assertEqual(len(tool_output["role_bindings"]), 2)
+
+        # Check binding structure
+        binding = tool_output["role_bindings"][0]
+        self.assertIn("role", binding)
+        self.assertIn("permissions", binding["role"])
+        self.assertIn("binding_source", binding)
+        self.assertIn("resource_type", binding)
+
+    def test_investigate_user_access_v2_shows_binding_source(self):
+        """Positive: investigate_user_access V2 shows whether binding is via group or direct."""
+        response = self._call_tool("investigate_user_access", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        # All our bindings are via groups
+        for binding in tool_output["role_bindings"]:
+            self.assertEqual(binding["binding_source"], "group")
+            self.assertIsNotNone(binding["source_group"])
+
+    def test_investigate_user_access_v2_expected_permission_found(self):
+        """Positive: investigate_user_access V2 finds expected permission."""
+        response = self._call_tool(
+            "investigate_user_access",
+            {
+                "username": self.test_username,
+                "application": "compliance",
+                "expected_permission": "read",
+            },
+        )
+
+        tool_output = self._get_tool_output(response)
+        self.assertTrue(tool_output["analysis"]["has_expected_permission"])
+
+    def test_investigate_user_access_v2_expected_permission_missing(self):
+        """Positive: investigate_user_access V2 identifies missing permission."""
+        response = self._call_tool(
+            "investigate_user_access",
+            {
+                "username": self.test_username,
+                "application": "compliance",
+                "expected_permission": "write",
+            },
+        )
+
+        tool_output = self._get_tool_output(response)
+        self.assertFalse(tool_output["analysis"]["has_expected_permission"])
+        self.assertIn("gaps", tool_output["analysis"])
+        self.assertIn("diagnosis", tool_output["analysis"])
+
+    def test_investigate_user_access_v2_direct_binding(self):
+        """Positive: investigate_user_access V2 handles direct principal bindings."""
+        # Create a direct binding to the principal
+        direct_role = RoleV2.objects.create(name="Direct Role", tenant=self.tenant)
+        write_perm, _ = Permission.objects.get_or_create(
+            permission="compliance:policies:write",
+            defaults={"tenant": self.tenant},
+        )
+        direct_role.permissions.add(write_perm)
+
+        direct_binding = RoleBinding.objects.create(
+            role=direct_role,
+            resource_type="workspace",
+            resource_id="default",
+            tenant=self.tenant,
+        )
+        RoleBindingPrincipal.objects.create(binding=direct_binding, principal=self.principal, source="system")
+
+        response = self._call_tool(
+            "investigate_user_access",
+            {
+                "username": self.test_username,
+                "application": "compliance",
+                "expected_permission": "write",
+            },
+        )
+
+        tool_output = self._get_tool_output(response)
+
+        # Should now find write permission via direct binding
+        self.assertTrue(tool_output["analysis"]["has_expected_permission"])
+
+        # Should have a direct binding
+        direct_bindings = [b for b in tool_output["role_bindings"] if b["binding_source"] == "direct"]
+        self.assertEqual(len(direct_bindings), 1)
+
+    def test_investigate_user_access_v2_includes_resource_scope(self):
+        """Positive: investigate_user_access V2 includes resource scope in bindings."""
+        response = self._call_tool("investigate_user_access", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        for binding in tool_output["role_bindings"]:
+            self.assertIn("resource_type", binding)
+            self.assertIn("resource_id", binding)
+            self.assertEqual(binding["resource_type"], "workspace")
+            self.assertEqual(binding["resource_id"], "default")
+
+    def test_investigate_user_access_v2_permission_sources_include_scope(self):
+        """Positive: investigate_user_access V2 permission sources include resource scope."""
+        response = self._call_tool("investigate_user_access", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        self.assertIn("compliance:policies:read", tool_output["permission_sources"])
+        sources = tool_output["permission_sources"]["compliance:policies:read"]
+        self.assertGreater(len(sources), 0)
+
+        for source in sources:
+            self.assertIn("resource_scope", source)
+
+    def test_investigate_user_access_v2_hints_include_role_bindings(self):
+        """Positive: investigate_user_access V2 hints reference role bindings."""
+        response = self._call_tool("investigate_user_access", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        self.assertIn("list_user_bindings", tool_output["hints"])
+
+    def test_investigate_user_access_v2_full_permission_format(self):
+        """Positive: investigate_user_access V2 handles full permission format."""
+        response = self._call_tool(
+            "investigate_user_access",
+            {
+                "username": self.test_username,
+                "application": "compliance",
+                "expected_permission": "compliance:policies:read",
+            },
+        )
+
+        tool_output = self._get_tool_output(response)
+        self.assertTrue(tool_output["analysis"]["has_expected_permission"])
