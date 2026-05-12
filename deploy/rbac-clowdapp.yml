@@ -286,7 +286,14 @@ objects:
             value: ${UMB_JOB_ENABLED}
           - name: READ_ONLY_API_MODE
             value: ${READ_ONLY_API_MODE}
-
+          - name: PARITY_CHECK_ENABLED
+            value: ${PARITY_CHECK_ENABLED}
+          - name: PARITY_CHECK_INTERVAL_SECONDS
+            value: ${PARITY_CHECK_INTERVAL_SECONDS}
+          - name: PARITY_CHECK_TENANT_SAMPLE_SIZE
+            value: ${PARITY_CHECK_TENANT_SAMPLE_SIZE}
+          - name: PARITY_CHECK_PRINCIPAL_SAMPLE_SIZE
+            value: ${PARITY_CHECK_PRINCIPAL_SAMPLE_SIZE}
     - name: scheduler-service
       minReplicas: ${{MIN_SCHEDULER_REPLICAS}}
       metadata:
@@ -684,6 +691,14 @@ objects:
             value: ${TENANT_SCOPE_PERMISSIONS}
           - name: DEFAULT_SCOPE_PERMISSIONS
             value: ${DEFAULT_SCOPE_PERMISSIONS}
+          - name: PARITY_CHECK_ENABLED
+            value: ${PARITY_CHECK_ENABLED}
+          - name: PARITY_CHECK_INTERVAL_SECONDS
+            value: ${PARITY_CHECK_INTERVAL_SECONDS}
+          - name: PARITY_CHECK_TENANT_SAMPLE_SIZE
+            value: ${PARITY_CHECK_TENANT_SAMPLE_SIZE}
+          - name: PARITY_CHECK_PRINCIPAL_SAMPLE_SIZE
+            value: ${PARITY_CHECK_PRINCIPAL_SAMPLE_SIZE}
 
     - name: rbac-kafka-consumer
       minReplicas: ${{RBAC_KAFKA_CONSUMER_REPLICAS}}
@@ -1774,3 +1789,15 @@ parameters:
 - name: WORKSPACE_ACCESS_TIMING_ENABLED
   description: Enable detailed timing logs for v2 workspace access checks (for performance investigation)
   value: 'False'
+- name: PARITY_CHECK_ENABLED
+  description: Enable parity access checks between RBAC and Inventory API
+  value: ''
+- name: PARITY_CHECK_INTERVAL_SECONDS
+  description: Time in seconds in which job runs
+  value: ''
+- name: PARITY_CHECK_TENANT_SAMPLE_SIZE
+  description: Max tenants per run
+  value: ''
+- name: PARITY_CHECK_PRINCIPAL_SAMPLE_SIZE
+  description: Max principals per tenant
+  value: ''
