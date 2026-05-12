@@ -287,12 +287,20 @@ def _call_view_write(
     body: dict[str, Any],
     **view_kwargs: str,
 ) -> str:
-    """Call a Django view with a POST request and return the response body."""
+    """Call a Django view with a POST request and return the response body.
+
+    For 4xx/5xx responses, wraps the response body in an error structure
+    so MCP clients can distinguish success from failure without parsing
+    the view's raw output.
+    """
     view_request = _clone_request(request, path, method="POST", body=body)
     response = view(view_request, **view_kwargs)
     if hasattr(response, "render"):
         response = response.render()
-    return response.content.decode()
+    content = response.content.decode()
+    if response.status_code >= 400:
+        return json.dumps({"error": f"HTTP {response.status_code}", "detail": content})
+    return content
 
 
 def _resolve_group_uuid(group_uuid: str, group_name: str, tenant) -> tuple[str | None, str | None]:
@@ -830,6 +838,7 @@ def list_group_roles(
     resolved_uuid, error = _resolve_group_uuid(group_uuid, group_name, tenant)
     if error:
         return error
+    assert resolved_uuid is not None
 
     query_params: dict[str, str] = {
         "limit": str(limit),
@@ -3133,6 +3142,7 @@ def add_principals_to_group(
     resolved_uuid, error = _resolve_group_uuid(group_uuid, group_name, tenant)
     if error:
         return error
+    assert resolved_uuid is not None
 
     body = {"principals": [{"username": u} for u in principals]}
     path = reverse("v1_management:group-principals", kwargs={"uuid": resolved_uuid})
@@ -3168,6 +3178,7 @@ def add_roles_to_group(
     resolved_uuid, error = _resolve_group_uuid(group_uuid, group_name, tenant)
     if error:
         return error
+    assert resolved_uuid is not None
 
     body = {"roles": [{"uuid": r} for r in roles]}
     path = reverse("v1_management:group-roles", kwargs={"uuid": resolved_uuid})
@@ -3261,7 +3272,7 @@ def create_role_bindings(
     bindings: list[dict[str, Any]],
 ) -> str:
     """Create role bindings by delegating to RoleBindingViewSet.batch_create."""
-    body: dict[str, Any] = {"bindings": bindings}
+    body: dict[str, Any] = {"requests": bindings}
     path = reverse("v2_management:role-bindings-batch-create")
     return _call_view_write(request, _role_binding_batch_create_view, path, body)
 
@@ -3501,12 +3512,13 @@ def _handle_tools_list(request: HttpRequest, request_id: Any, params: dict[str, 
         config = _TOOL_CONFIG.get(tool.name, ToolConfig(fn=lambda: ""))
         if not v2_available and config.api_version == ApiVersion.V2:
             continue
-        if not write_enabled and config.write:
-            continue
+        description = overrides.get(tool.name, tool.description or "")
+        if config.write and not write_enabled:
+            description = f"[DISABLED -- write mode off] {description}"
         tools_data.append(
             {
                 "name": tool.name,
-                "description": overrides.get(tool.name, tool.description or ""),
+                "description": description,
                 "inputSchema": tool.inputSchema,
             }
         )
