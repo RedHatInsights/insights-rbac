@@ -26,11 +26,12 @@ import re
 import time
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from functools import lru_cache, wraps
 from typing import Any, Callable
 
 from django.conf import settings
+from django.db.models import Count
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.test import RequestFactory
 from django.urls import reverse
@@ -349,11 +350,14 @@ def _call_view(
 # │ list_audit_logs                  │ common    │ GET /api/v1/auditlogs/                     │
 # │ get_rbac_recent_changes          │ common    │ (in-process audit log analysis)            │
 # │ investigate_group_changes        │ common    │ (orchestrates audit log + authorization)   │
+# │ investigate_user_access          │ common    │ (groups + roles + permissions analysis)    │
 # │ list_groups                      │ common    │ GET /api/v1/groups/                        │
 # │ get_group                        │ common    │ GET /api/v1/groups/{uuid}/                 │
 # │ list_group_principals            │ common    │ GET /api/v1/groups/{uuid}/principals/      │
 # │ list_cross_account_requests      │ common    │ GET /api/v1/cross-account-requests/        │
 # │ get_cross_account_request        │ common    │ GET /api/v1/cross-account-requests/{id}/   │
+# │ investigate_tam_access           │ common    │ (orchestrates cross-account + roles)       │
+# │ audit_redhat_access              │ common    │ (cross-account + roles + audit logs)       │
 # │ list_workspaces                  │ common    │ GET /api/v2/workspaces/                    │
 # │ get_workspace                    │ common    │ GET /api/v2/workspaces/{uuid}/             │
 # │ search_roles                     │ unified   │ V1: GET /api/v1/roles/                     │
@@ -1144,6 +1148,7 @@ def get_cross_account_request(
         "roles: [{name, permissions: [...]}], permission_summary}], analysis}."
     ),
     requires_auth=True,
+    api_version=ApiVersion.COMMON,
 )
 def investigate_tam_access(
     request: HttpRequest,
@@ -1331,6 +1336,220 @@ def investigate_tam_access(
             }
 
     return json.dumps({"requests": results, "analysis": analysis}, default=str)
+
+
+@register_tool(
+    description=(
+        "Audit all Red Hat cross-account access into your organization. "
+        "Returns a complete inventory of: (1) who from Red Hat has access, (2) what roles/permissions "
+        "they have, (3) when their access expires, and (4) what RBAC changes they've made. "
+        "SCENARIO: 'Who from Red Hat is in our org right now?' → call audit_redhat_access() to get "
+        "a summary of all active approved cross-account requests with audit activity. "
+        "Set include_inactive=true to also see expired or pending requests. "
+        "Set audit_days to control how far back to look in audit logs (default 30 days). "
+        "Returns: {active_access: [{user_info, roles, permissions, expires, days_remaining, "
+        "audit_activity: {total_actions, recent_actions, summary}}], summary: {total_users, "
+        "expiring_soon, unused_access}}."
+    ),
+    requires_auth=True,
+    api_version=ApiVersion.COMMON,
+)
+def audit_redhat_access(
+    request: HttpRequest,
+    *,
+    include_inactive: bool = False,
+    audit_days: int = 30,
+    limit: int = 50,
+) -> str:
+    """Audit Red Hat cross-account access into the organization."""
+    org_id = getattr(request.user, "org_id", None)
+    tenant = getattr(request, "tenant", None)
+    if not org_id or not tenant:
+        return json.dumps({"error": "No organization context available"})
+
+    now = datetime.now(timezone.utc)
+    audit_since = now - timedelta(days=audit_days)
+
+    # Query cross-account requests targeting this org
+    queryset = CrossAccountRequest.objects.filter(target_org=org_id).prefetch_related(
+        "roles", "roles__access__permission"
+    )
+
+    if not include_inactive:
+        queryset = queryset.filter(status="approved", start_date__lte=now, end_date__gte=now)
+    else:
+        queryset = queryset.filter(status__in=["approved", "pending", "expired"])
+
+    queryset = queryset.order_by("-end_date")[:limit]
+    requests_list = list(queryset)
+
+    if not requests_list:
+        return json.dumps(
+            {
+                "active_access": [],
+                "summary": {
+                    "total_users": 0,
+                    "expiring_soon": 0,
+                    "unused_access": 0,
+                    "message": "No cross-account requests found for this organization.",
+                    "hint": "Use list_cross_account_requests(query_by='target_org') to see all requests.",
+                },
+            }
+        )
+
+    # Get requester info from BOP for all user_ids
+    user_ids = list({car.user_id for car in requests_list})
+    user_info_map: dict[str, dict[str, Any]] = {}
+    try:
+        proxy = PrincipalProxy()
+        bop_resp = proxy.request_filtered_principals(
+            user_ids, org_id=None, options={"query_by": "user_id", "return_id": True}
+        )
+        if bop_resp.get("status_code") == 200:
+            for principal in bop_resp.get("data", []):
+                user_info_map[str(principal.get("user_id", ""))] = {
+                    "first_name": principal.get("first_name", ""),
+                    "last_name": principal.get("last_name", ""),
+                    "email": principal.get("email", ""),
+                    "username": principal.get("username", ""),
+                }
+    except Exception:
+        logger.warning("mcp: failed to fetch requester info from BOP", exc_info=True)
+
+    # Batch query audit logs for all usernames
+    all_usernames = {info.get("username") for info in user_info_map.values() if info.get("username")}
+    audit_by_user: dict[str, list[AuditLog]] = {u: [] for u in all_usernames}
+    audit_counts_by_user: dict[str, int] = {}
+    if all_usernames:
+        audit_qs = AuditLog.objects.filter(
+            tenant=tenant, principal_username__in=all_usernames, created__gte=audit_since
+        ).order_by("-created")
+        for entry in audit_qs:
+            if entry.principal_username in audit_by_user and len(audit_by_user[entry.principal_username]) < 10:
+                audit_by_user[entry.principal_username].append(entry)
+
+        # Get true total counts per user
+        counts_qs = (
+            AuditLog.objects.filter(tenant=tenant, principal_username__in=all_usernames, created__gte=audit_since)
+            .values("principal_username")
+            .annotate(count=Count("id"))
+        )
+        audit_counts_by_user = {row["principal_username"]: row["count"] for row in counts_qs}
+
+    # Build detailed response
+    results: list[dict[str, Any]] = []
+    expiring_soon_count = 0
+    unused_access_count = 0
+    all_permissions_granted: set[str] = set()
+
+    for car in requests_list:
+        days_remaining = (car.end_date - now).days if car.end_date else None
+        is_expiring_soon = days_remaining is not None and 0 < days_remaining <= 7 and car.status == "approved"
+        if is_expiring_soon:
+            expiring_soon_count += 1
+
+        requester_info = user_info_map.get(car.user_id, {"user_id": car.user_id})
+        username = requester_info.get("username", "")
+
+        # Collect roles and permissions
+        roles_data: list[dict[str, Any]] = []
+        permissions_list: list[str] = []
+        for role in car.roles.all():
+            role_perms: list[str] = []
+            for access in role.access.all():
+                if access.permission:
+                    perm_str = access.permission.permission
+                    role_perms.append(perm_str)
+                    permissions_list.append(perm_str)
+                    all_permissions_granted.add(perm_str)
+
+            roles_data.append(
+                {
+                    "name": role.display_name or role.name,
+                    "description": role.description or "",
+                    "permissions": sorted(role_perms),
+                }
+            )
+
+        # Get pre-fetched audit logs for this user
+        audit_activity: dict[str, Any] = {"total_actions": 0, "recent_actions": [], "summary": ""}
+        if username and car.status == "approved":
+            audit_entries = audit_by_user.get(username, [])
+            audit_activity["total_actions"] = audit_counts_by_user.get(username, 0)
+
+            if audit_entries:
+                for entry in audit_entries[:5]:
+                    audit_activity["recent_actions"].append(
+                        {
+                            "action": entry.action,
+                            "resource_type": entry.resource_type,
+                            "description": entry.description,
+                            "date": entry.created.strftime("%Y-%m-%d %H:%M") if entry.created else None,
+                        }
+                    )
+                # Summarize activity types
+                action_counts: dict[str, int] = {}
+                for entry in audit_entries:
+                    action_counts[entry.action] = action_counts.get(entry.action, 0) + 1
+                summary_parts = [f"{count} {action}" for action, count in sorted(action_counts.items())]
+                audit_activity["summary"] = ", ".join(summary_parts) + f" action(s) in last {audit_days} days"
+            else:
+                audit_activity["summary"] = f"No RBAC activity in last {audit_days} days"
+                unused_access_count += 1
+
+        # Determine status display
+        status_display = car.status
+        if car.status == "approved":
+            if days_remaining is not None and days_remaining < 0:
+                status_display = "expired (just now)"
+            elif is_expiring_soon:
+                status_display = f"approved (expires in {days_remaining} day{'s' if days_remaining != 1 else ''})"
+
+        results.append(
+            {
+                "request_id": str(car.request_id),
+                "user_info": {
+                    "user_id": requester_info.get("user_id", car.user_id),
+                    "name": f"{requester_info.get('first_name', '')} {requester_info.get('last_name', '')}".strip()
+                    or car.user_id,
+                    "email": requester_info.get("email", ""),
+                    "username": username or f"user_{car.user_id}",
+                },
+                "status": status_display,
+                "start_date": car.start_date.strftime("%Y-%m-%d") if car.start_date else None,
+                "end_date": car.end_date.strftime("%Y-%m-%d") if car.end_date else None,
+                "days_remaining": days_remaining if car.status == "approved" else None,
+                "roles": roles_data,
+                "permissions_summary": f"{len(permissions_list)} permission(s) across {len(roles_data)} role(s)",
+                "audit_activity": audit_activity,
+            }
+        )
+
+    # Group permissions by application for summary
+    perm_by_app: dict[str, int] = {}
+    for perm in all_permissions_granted:
+        parts = perm.split(":")
+        if len(parts) >= 1:
+            app = parts[0]
+            perm_by_app[app] = perm_by_app.get(app, 0) + 1
+
+    # Build summary
+    summary: dict[str, Any] = {
+        "total_users": len(results),
+        "total_active": sum(1 for r in results if "approved" in r["status"]),
+        "expiring_soon": expiring_soon_count,
+        "unused_access": unused_access_count,
+        "permissions_by_application": {app: count for app, count in sorted(perm_by_app.items())},
+        "audit_period_days": audit_days,
+    }
+
+    if expiring_soon_count > 0:
+        summary["warning"] = f"{expiring_soon_count} access grant(s) expiring within 7 days"
+
+    if unused_access_count > 0:
+        summary["note"] = f"{unused_access_count} user(s) with access but no RBAC activity in last {audit_days} days"
+
+    return json.dumps({"active_access": results, "summary": summary}, default=str)
 
 
 @register_tool(
@@ -2231,6 +2450,518 @@ def investigate_group_changes(
                 if role_name.lower() in r["name"].lower() or role_name.lower() in r["display_name"].lower()
             ]
             result["matching_current_roles"] = matching_roles
+
+    return json.dumps(result, default=str)
+
+
+def _build_expected_perm_full(application: str, expected_permission: str, expected_verb: str) -> str:
+    """Build the full permission string to search for."""
+    if expected_permission and application:
+        if ":" in expected_permission:
+            return expected_permission
+        return f"{application}:*:{expected_permission}"
+    elif expected_verb and application:
+        return f"{application}:*:{expected_verb}"
+    return ""
+
+
+def _check_permission_match(
+    expected_perm_full: str,
+    expected_verb: str,
+    application: str,
+    all_permissions: set[str],
+    permission_sources: dict[str, list[dict[str, Any]]],
+) -> tuple[bool, str | None, list[dict[str, Any]]]:
+    """Check if expected permission is granted. Returns (found, matched_perm, sources)."""
+    for perm in all_permissions:
+        if (
+            _permission_matches(perm, expected_perm_full)
+            or _permission_matches(expected_perm_full, perm)
+            or (expected_verb and perm.endswith(f":{expected_verb}") and perm.startswith(f"{application}:"))
+        ):
+            return True, perm, permission_sources.get(perm, [])
+    return False, None, []
+
+
+def _get_available_verbs(application: str, all_permissions: set[str]) -> list[str]:
+    """Extract available verbs for an application from permissions."""
+    available_verbs: set[str] = set()
+    for perm in all_permissions:
+        if perm.startswith(f"{application}:"):
+            parts = perm.split(":")
+            if len(parts) >= 3:
+                available_verbs.add(parts[2])
+    return sorted(available_verbs)
+
+
+def _analyze_expected_permission(
+    application: str,
+    expected_permission: str,
+    expected_verb: str,
+    all_permissions: set[str],
+    permission_sources: dict[str, list[dict[str, Any]]],
+    is_org_admin: bool,
+    analysis: dict[str, Any],
+) -> None:
+    """Analyze whether expected permission is granted and update analysis dict in place."""
+    expected_perm_full = _build_expected_perm_full(application, expected_permission, expected_verb)
+    if not expected_perm_full:
+        return
+
+    has_permission, matched_permission, matched_sources = _check_permission_match(
+        expected_perm_full, expected_verb, application, all_permissions, permission_sources
+    )
+
+    if has_permission or is_org_admin:
+        analysis["has_expected_permission"] = True
+        analysis["expected_permission_check"] = {
+            "looking_for": expected_perm_full,
+            "found": True,
+            "matched_permission": matched_permission if not is_org_admin else "(org admin bypass)",
+            "granted_via": matched_sources if not is_org_admin else [{"role": "Org Admin"}],
+        }
+        if is_org_admin:
+            analysis["note"] = "User is org admin and has implicit access to everything"
+    else:
+        analysis["has_expected_permission"] = False
+        analysis["expected_permission_check"] = {
+            "looking_for": expected_perm_full,
+            "found": False,
+            "available_verbs_for_app": _get_available_verbs(application, all_permissions),
+        }
+
+
+@register_tool(
+    description=(
+        "Investigate why a user has or lacks expected permissions, especially when they belong to "
+        "multiple groups. Supports both V1 and V2 organizations (auto-detected). "
+        "Use this when a user reports they can't do something despite being in a group that should grant access. "
+        "SCENARIO: 'User is in Compliance Auditors AND Compliance Admins but can't edit compliance policies' "
+        "→ call investigate_user_access(username='user', application='compliance', expected_permission='write'). "
+        "The tool will: (1) confirm the user exists and check org admin status, (2) list ALL groups/role bindings, "
+        "(3) expand each role to show actual permissions, (4) check effective access for the application, "
+        "(5) identify if the expected permission is missing and explain why. "
+        "RBAC is additive, so users get the most permissive access from all their memberships. "
+        "Common causes: role doesn't contain the assumed permission, group doesn't have the expected role. "
+        "V1 RETURNS: {user, org_version, groups: [{roles: [{permissions}]}], effective_access, analysis}. "
+        "V2 RETURNS: {user, org_version, groups, role_bindings: [{role: {permissions}}], effective_access, analysis}."
+    ),
+    requires_auth=True,
+    api_version=ApiVersion.COMMON,
+)
+def investigate_user_access(
+    request: HttpRequest,
+    *,
+    username: str,
+    application: str = "",
+    expected_permission: str = "",
+    expected_verb: str = "",
+) -> str:
+    """Investigate why a user has or lacks expected permissions across multiple groups."""
+    tenant = getattr(request, "tenant", None)
+    if not tenant:
+        return json.dumps({"error": "No tenant context available"})
+
+    org_id = getattr(request.user, "org_id", None)
+    is_v2 = is_v2_write_activated(tenant)
+    org_version = "v2" if is_v2 else "v1"
+
+    # Step 1: Check if user exists and get org admin status
+    principal = Principal.objects.filter(username=username, tenant=tenant).first()
+    is_org_admin = False
+
+    if not principal:
+        return json.dumps(
+            {
+                "error": f"User '{username}' not found in this organization",
+                "hint": "Use list_principals(usernames='<partial>', match_criteria='partial') to search for the user.",
+            }
+        )
+
+    # Check org admin status via BOP
+    if org_id:
+        is_org_admin = _is_org_admin(username, org_id)
+
+    user_info: dict[str, Any] = {
+        "username": username,
+        "uuid": str(principal.uuid),
+        "exists": True,
+        "is_org_admin": is_org_admin,
+    }
+
+    if is_org_admin:
+        user_info["note"] = "User is an org admin and bypasses all RBAC checks"
+
+    # Branch based on V1 or V2
+    if is_v2:
+        return _investigate_user_access_v2(
+            request,
+            principal,
+            tenant,
+            username,
+            application,
+            expected_permission,
+            expected_verb,
+            user_info,
+            is_org_admin,
+            org_version,
+        )
+
+    # V1 path: Get all groups the user belongs to
+    groups = (
+        Group.objects.filter(principals=principal, tenant=tenant)
+        .prefetch_related("policies__roles__access__permission")
+        .order_by("name")
+    )
+    groups_list = list(groups)
+
+    if not groups_list and not is_org_admin:
+        return json.dumps(
+            {
+                "user": user_info,
+                "org_version": org_version,
+                "groups": [],
+                "effective_access": [],
+                "analysis": {
+                    "has_expected_permission": False,
+                    "message": f"User '{username}' is not a member of any groups. No permissions are granted.",
+                    "hint": "Use list_groups() to see available groups, then add the user to appropriate groups.",
+                },
+            }
+        )
+
+    # Step 3: For each group, get roles and expand to permissions (V1)
+    groups_data: list[dict[str, Any]] = []
+    all_permissions: set[str] = set()
+    permission_sources: dict[str, list[dict[str, str]]] = {}
+
+    for group in groups_list:
+        group_info: dict[str, Any] = {
+            "uuid": str(group.uuid),
+            "name": group.name,
+            "description": group.description or "",
+            "roles": [],
+        }
+
+        for policy in group.policies.all():
+            for role in policy.roles.all():
+                role_info: dict[str, Any] = {
+                    "uuid": str(role.uuid),
+                    "name": role.name,
+                    "display_name": role.display_name or role.name,
+                    "system": getattr(role, "system", False),
+                    "permissions": [],
+                }
+
+                for access in role.access.all():
+                    if access.permission:
+                        perm_str = access.permission.permission
+                        role_info["permissions"].append(perm_str)
+                        all_permissions.add(perm_str)
+
+                        if perm_str not in permission_sources:
+                            permission_sources[perm_str] = []
+                        permission_sources[perm_str].append(
+                            {
+                                "group": group.name,
+                                "role": role.display_name or role.name,
+                            }
+                        )
+
+                role_info["permission_count"] = len(role_info["permissions"])
+                group_info["roles"].append(role_info)
+
+        group_info["role_count"] = len(group_info["roles"])
+        groups_data.append(group_info)
+
+    # Step 4: Get effective access for the user (filtered by application if provided) - V1
+    effective_access: list[dict[str, Any]] = []
+    effective_access_error: str | None = None
+    if application:
+        path = reverse("v1_management:access")
+        query_params: dict[str, str] = {
+            "application": application,
+            "username": username,
+            "limit": "1000",
+        }
+        try:
+            raw = _call_view(request, _access_view, path, query_params)
+            data = json.loads(raw)
+            effective_access = data.get("data", [])
+        except Exception as e:
+            effective_access_error = str(e)
+            logger.warning("mcp: failed to get effective access for user=%s app=%s: %s", username, application, e)
+
+    # Step 5: Analyze the expected permission
+    analysis: dict[str, Any] = {
+        "total_groups": len(groups_data),
+        "total_roles": sum(g["role_count"] for g in groups_data),
+        "total_unique_permissions": len(all_permissions),
+    }
+
+    if effective_access_error:
+        analysis["effective_access_error"] = effective_access_error
+
+    if application:
+        app_permissions = [p for p in all_permissions if p.startswith(f"{application}:")]
+        analysis["permissions_for_application"] = sorted(app_permissions)
+        analysis["application_permission_count"] = len(app_permissions)
+
+    # Use shared helper for permission analysis
+    _analyze_expected_permission(
+        application, expected_permission, expected_verb, all_permissions, permission_sources, is_org_admin, analysis
+    )
+
+    # Add V1-specific gap analysis if permission not found
+    expected_perm_full = _build_expected_perm_full(application, expected_permission, expected_verb)
+    if expected_perm_full and analysis.get("has_expected_permission") is False:
+        gaps: list[str] = []
+        for group_data in groups_data:
+            group_name = group_data["name"]
+            has_any_app_access = False
+            for role_data in group_data["roles"]:
+                for perm in role_data["permissions"]:
+                    if perm.startswith(f"{application}:"):
+                        has_any_app_access = True
+                        break
+            if not has_any_app_access and application:
+                gaps.append(
+                    f"Group '{group_name}' has {len(group_data['roles'])} role(s) but none grant "
+                    f"any {application} permissions"
+                )
+            elif has_any_app_access:
+                app_perms_in_group = []
+                for role_data in group_data["roles"]:
+                    for perm in role_data["permissions"]:
+                        if perm.startswith(f"{application}:"):
+                            app_perms_in_group.append(f"{role_data['display_name']}: {perm}")
+                missing = expected_verb or expected_permission
+                avail = ", ".join(app_perms_in_group[:5])
+                suffix = f" (+{len(app_perms_in_group) - 5} more)" if len(app_perms_in_group) > 5 else ""
+                gaps.append(
+                    f"Group '{group_name}' grants {application} access but NOT '{missing}'. "
+                    f"Available: {avail}{suffix}"
+                )
+
+        analysis["gaps"] = gaps
+        analysis["diagnosis"] = (
+            f"User '{username}' does not have '{expected_perm_full}' permission. "
+            f"Neither of their {len(groups_data)} group memberships grants this specific access."
+        )
+
+    # Build final result (V1)
+    result: dict[str, Any] = {
+        "user": user_info,
+        "org_version": org_version,
+        "groups": groups_data,
+        "effective_access": effective_access if application else [],
+        "analysis": analysis,
+        "permission_sources": permission_sources,
+    }
+
+    # Add hints
+    result["hints"] = {
+        "verify_specific_permission": (
+            f"Use check_user_permission(username='{username}', permission='app:resource:verb')"
+        ),
+        "find_role_with_permission": "Use search_roles(permission='...') to find roles granting a permission",
+        "check_role_contents": "Use get_role(role_uuid='...') to see all permissions in a role",
+        "add_user_to_group": "Use list_groups(role_names='...') to find groups with a specific role",
+    }
+
+    return json.dumps(result, default=str)
+
+
+def _investigate_user_access_v2(
+    request: HttpRequest,
+    principal: Principal,
+    tenant: Any,
+    username: str,
+    application: str,
+    expected_permission: str,
+    expected_verb: str,
+    user_info: dict[str, Any],
+    is_org_admin: bool,
+    org_version: str,
+) -> str:
+    """Investigate user access for V2 organizations using role bindings."""
+    # Get groups the user belongs to
+    groups = Group.objects.filter(principals=principal, tenant=tenant).order_by("name")
+    groups_list = list(groups)
+
+    # Get direct role bindings for the principal
+    direct_binding_ids = set(
+        RoleBindingPrincipal.objects.filter(principal=principal).values_list("binding_id", flat=True)
+    )
+
+    # Get group-based role bindings with group info
+    group_bindings_qs = RoleBindingGroup.objects.filter(group__in=groups_list).select_related("group")
+    group_binding_ids: set[int] = set()
+    binding_to_group: dict[int, str] = {}
+    for rbg in group_bindings_qs:
+        group_binding_ids.add(rbg.binding_id)
+        binding_to_group[rbg.binding_id] = rbg.group.name
+
+    # Combine all binding IDs
+    all_binding_ids = direct_binding_ids | group_binding_ids
+
+    if not all_binding_ids and not groups_list and not is_org_admin:
+        return json.dumps(
+            {
+                "user": user_info,
+                "org_version": org_version,
+                "groups": [],
+                "role_bindings": [],
+                "effective_access": [],
+                "analysis": {
+                    "has_expected_permission": False,
+                    "message": f"User '{username}' has no role bindings or group memberships.",
+                    "hint": "Use list_role_bindings() to see available bindings.",
+                },
+            }
+        )
+
+    # Get all bindings with their roles and permissions
+    bindings = (
+        RoleBinding.objects.filter(id__in=all_binding_ids, tenant=tenant)
+        .select_related("role")
+        .prefetch_related("role__permissions")
+    )
+
+    # Build groups data
+    groups_data: list[dict[str, Any]] = []
+    for group in groups_list:
+        groups_data.append(
+            {
+                "uuid": str(group.uuid),
+                "name": group.name,
+                "description": group.description or "",
+            }
+        )
+
+    # Build role bindings data and collect permissions
+    bindings_data: list[dict[str, Any]] = []
+    all_permissions: set[str] = set()
+    permission_sources: dict[str, list[dict[str, str | None]]] = {}
+
+    for binding in bindings:
+        role = binding.role
+        if not role:
+            continue
+
+        # Determine binding source (direct or via group)
+        if binding.id in binding_to_group:
+            binding_source = "group"
+            source_group = binding_to_group[binding.id]
+        else:
+            binding_source = "direct"
+            source_group = None
+
+        permissions_list: list[str] = []
+        for perm in role.permissions.all():
+            perm_str = f"{perm.application}:{perm.resource_type}:{perm.verb}"
+            permissions_list.append(perm_str)
+            all_permissions.add(perm_str)
+
+            if perm_str not in permission_sources:
+                permission_sources[perm_str] = []
+            permission_sources[perm_str].append(
+                {
+                    "role": role.name,
+                    "binding_source": binding_source,
+                    "group": source_group,
+                    "resource_scope": f"{binding.resource_type}:{binding.resource_id}",
+                }
+            )
+
+        bindings_data.append(
+            {
+                "uuid": str(binding.uuid),
+                "role": {
+                    "uuid": str(role.uuid),
+                    "name": role.name,
+                    "permissions": permissions_list,
+                    "permission_count": len(permissions_list),
+                },
+                "binding_source": binding_source,
+                "source_group": source_group,
+                "resource_type": binding.resource_type,
+                "resource_id": binding.resource_id,
+            }
+        )
+
+    # Get effective access
+    effective_access = _get_user_access_v2(request, principal, tenant)
+    if application:
+        effective_access = [a for a in effective_access if a.get("application") == application]
+
+    # Build analysis
+    analysis: dict[str, Any] = {
+        "total_groups": len(groups_data),
+        "total_role_bindings": len(bindings_data),
+        "total_unique_permissions": len(all_permissions),
+    }
+
+    if application:
+        app_permissions = [p for p in all_permissions if p.startswith(f"{application}:")]
+        analysis["permissions_for_application"] = sorted(app_permissions)
+        analysis["application_permission_count"] = len(app_permissions)
+
+    # Use shared helper for permission analysis
+    _analyze_expected_permission(
+        application, expected_permission, expected_verb, all_permissions, permission_sources, is_org_admin, analysis
+    )
+
+    # Add V2-specific gap analysis if permission not found
+    expected_perm_full = _build_expected_perm_full(application, expected_permission, expected_verb)
+    if expected_perm_full and analysis.get("has_expected_permission") is False:
+        gaps: list[str] = []
+        for binding_data in bindings_data:
+            role_perms = binding_data["role"]["permissions"]
+            has_any_app_access = any(p.startswith(f"{application}:") for p in role_perms)
+            role_name = binding_data["role"]["name"]
+            source = binding_data["source_group"] or "direct binding"
+
+            if not has_any_app_access and application:
+                gaps.append(f"Role '{role_name}' (via {source}) has no {application} permissions")
+            elif has_any_app_access:
+                app_perms = [p for p in role_perms if p.startswith(f"{application}:")]
+                missing = expected_verb or expected_permission
+                gaps.append(
+                    f"Role '{role_name}' (via {source}) grants {application} access but NOT '{missing}'. "
+                    f"Has: {', '.join(app_perms[:3])}"
+                    + (f" (+{len(app_perms) - 3} more)" if len(app_perms) > 3 else "")
+                )
+
+        analysis["gaps"] = gaps
+        analysis["diagnosis"] = (
+            f"User '{username}' does not have '{expected_perm_full}' permission. "
+            f"None of their {len(bindings_data)} role binding(s) grants this access."
+        )
+
+    # Build result
+    result: dict[str, Any] = {
+        "user": user_info,
+        "org_version": org_version,
+        "groups": groups_data,
+        "role_bindings": bindings_data,
+        "effective_access": effective_access,
+        "analysis": analysis,
+        "permission_sources": permission_sources,
+    }
+
+    # Add hints
+    result["hints"] = {
+        "verify_specific_permission": (
+            f"Use check_user_permission(username='{username}', permission='app:resource:verb')"
+        ),
+        "list_user_bindings": (
+            f"Use list_role_bindings(granted_subject_type='principal', "
+            f"granted_subject_principal_user_id='{username}')"
+        ),
+        "find_role_with_permission": "Use search_roles(permission='...') to find roles granting a permission",
+        "check_role_contents": "Use get_role(role_uuid='...') to see all permissions in a role",
+    }
 
     return json.dumps(result, default=str)
 
