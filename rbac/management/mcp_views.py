@@ -2454,6 +2454,81 @@ def investigate_group_changes(
     return json.dumps(result, default=str)
 
 
+def _build_expected_perm_full(application: str, expected_permission: str, expected_verb: str) -> str:
+    """Build the full permission string to search for."""
+    if expected_permission and application:
+        if ":" in expected_permission:
+            return expected_permission
+        return f"{application}:*:{expected_permission}"
+    elif expected_verb and application:
+        return f"{application}:*:{expected_verb}"
+    return ""
+
+
+def _check_permission_match(
+    expected_perm_full: str,
+    expected_verb: str,
+    application: str,
+    all_permissions: set[str],
+    permission_sources: dict[str, list[dict[str, Any]]],
+) -> tuple[bool, str | None, list[dict[str, Any]]]:
+    """Check if expected permission is granted. Returns (found, matched_perm, sources)."""
+    for perm in all_permissions:
+        if _permission_matches(perm, expected_perm_full) or (
+            expected_verb and perm.endswith(f":{expected_verb}") and perm.startswith(f"{application}:")
+        ):
+            return True, perm, permission_sources.get(perm, [])
+    return False, None, []
+
+
+def _get_available_verbs(application: str, all_permissions: set[str]) -> list[str]:
+    """Extract available verbs for an application from permissions."""
+    available_verbs: set[str] = set()
+    for perm in all_permissions:
+        if perm.startswith(f"{application}:"):
+            parts = perm.split(":")
+            if len(parts) >= 3:
+                available_verbs.add(parts[2])
+    return sorted(available_verbs)
+
+
+def _analyze_expected_permission(
+    application: str,
+    expected_permission: str,
+    expected_verb: str,
+    all_permissions: set[str],
+    permission_sources: dict[str, list[dict[str, Any]]],
+    is_org_admin: bool,
+    analysis: dict[str, Any],
+) -> None:
+    """Analyze whether expected permission is granted and update analysis dict in place."""
+    expected_perm_full = _build_expected_perm_full(application, expected_permission, expected_verb)
+    if not expected_perm_full:
+        return
+
+    has_permission, matched_permission, matched_sources = _check_permission_match(
+        expected_perm_full, expected_verb, application, all_permissions, permission_sources
+    )
+
+    if has_permission or is_org_admin:
+        analysis["has_expected_permission"] = True
+        analysis["expected_permission_check"] = {
+            "looking_for": expected_perm_full,
+            "found": True,
+            "matched_permission": matched_permission if not is_org_admin else "(org admin bypass)",
+            "granted_via": matched_sources if not is_org_admin else [{"role": "Org Admin"}],
+        }
+        if is_org_admin:
+            analysis["note"] = "User is org admin and has implicit access to everything"
+    else:
+        analysis["has_expected_permission"] = False
+        analysis["expected_permission_check"] = {
+            "looking_for": expected_perm_full,
+            "found": False,
+            "available_verbs_for_app": _get_available_verbs(application, all_permissions),
+        }
+
+
 @register_tool(
     description=(
         "Investigate why a user has or lacks expected permissions, especially when they belong to "
@@ -2599,6 +2674,7 @@ def investigate_user_access(
 
     # Step 4: Get effective access for the user (filtered by application if provided) - V1
     effective_access: list[dict[str, Any]] = []
+    effective_access_error: str | None = None
     if application:
         path = reverse("v1_management:access")
         query_params: dict[str, str] = {
@@ -2610,8 +2686,9 @@ def investigate_user_access(
             raw = _call_view(request, _access_view, path, query_params)
             data = json.loads(raw)
             effective_access = data.get("data", [])
-        except Exception:
-            logger.warning("mcp: failed to get effective access for user=%s app=%s", username, application)
+        except Exception as e:
+            effective_access_error = str(e)
+            logger.warning("mcp: failed to get effective access for user=%s app=%s: %s", username, application, e)
 
     # Step 5: Analyze the expected permission
     analysis: dict[str, Any] = {
@@ -2620,95 +2697,55 @@ def investigate_user_access(
         "total_unique_permissions": len(all_permissions),
     }
 
+    if effective_access_error:
+        analysis["effective_access_error"] = effective_access_error
+
     if application:
         app_permissions = [p for p in all_permissions if p.startswith(f"{application}:")]
         analysis["permissions_for_application"] = sorted(app_permissions)
         analysis["application_permission_count"] = len(app_permissions)
 
-    # Check for expected permission
-    expected_perm_full = ""
-    if expected_permission and application:
-        if ":" in expected_permission:
-            expected_perm_full = expected_permission
-        else:
-            expected_perm_full = f"{application}:*:{expected_permission}"
-    elif expected_verb and application:
-        expected_perm_full = f"{application}:*:{expected_verb}"
+    # Use shared helper for permission analysis
+    _analyze_expected_permission(
+        application, expected_permission, expected_verb, all_permissions, permission_sources, is_org_admin, analysis
+    )
 
-    if expected_perm_full:
-        has_permission = False
-        matched_permission = None
-        matched_sources: list[dict[str, str]] = []
-
-        for perm in all_permissions:
-            if _permission_matches(perm, expected_perm_full) or (
-                expected_verb and perm.endswith(f":{expected_verb}") and perm.startswith(f"{application}:")
-            ):
-                has_permission = True
-                matched_permission = perm
-                matched_sources = permission_sources.get(perm, [])
-                break
-
-        if has_permission or is_org_admin:
-            analysis["has_expected_permission"] = True
-            analysis["expected_permission_check"] = {
-                "looking_for": expected_perm_full,
-                "found": True,
-                "matched_permission": matched_permission if not is_org_admin else "(org admin bypass)",
-                "granted_via": matched_sources if not is_org_admin else [{"role": "Org Admin", "group": None}],
-            }
-            if is_org_admin:
-                analysis["note"] = "User is org admin and has implicit access to everything"
-        else:
-            analysis["has_expected_permission"] = False
-
-            available_verbs = set()
-            for perm in all_permissions:
-                if perm.startswith(f"{application}:"):
-                    parts = perm.split(":")
-                    if len(parts) >= 3:
-                        available_verbs.add(parts[2])
-
-            analysis["expected_permission_check"] = {
-                "looking_for": expected_perm_full,
-                "found": False,
-                "available_verbs_for_app": sorted(available_verbs),
-            }
-
-            # Analyze why it's missing
-            gaps: list[str] = []
-            for group_data in groups_data:
-                group_name = group_data["name"]
-                has_any_app_access = False
+    # Add V1-specific gap analysis if permission not found
+    expected_perm_full = _build_expected_perm_full(application, expected_permission, expected_verb)
+    if expected_perm_full and analysis.get("has_expected_permission") is False:
+        gaps: list[str] = []
+        for group_data in groups_data:
+            group_name = group_data["name"]
+            has_any_app_access = False
+            for role_data in group_data["roles"]:
+                for perm in role_data["permissions"]:
+                    if perm.startswith(f"{application}:"):
+                        has_any_app_access = True
+                        break
+            if not has_any_app_access and application:
+                gaps.append(
+                    f"Group '{group_name}' has {len(group_data['roles'])} role(s) but none grant "
+                    f"any {application} permissions"
+                )
+            elif has_any_app_access:
+                app_perms_in_group = []
                 for role_data in group_data["roles"]:
                     for perm in role_data["permissions"]:
                         if perm.startswith(f"{application}:"):
-                            has_any_app_access = True
-                            break
-                if not has_any_app_access and application:
-                    gaps.append(
-                        f"Group '{group_name}' has {len(group_data['roles'])} role(s) but none grant "
-                        f"any {application} permissions"
-                    )
-                elif has_any_app_access:
-                    app_perms_in_group = []
-                    for role_data in group_data["roles"]:
-                        for perm in role_data["permissions"]:
-                            if perm.startswith(f"{application}:"):
-                                app_perms_in_group.append(f"{role_data['display_name']}: {perm}")
-                    missing = expected_verb or expected_permission
-                    avail = ", ".join(app_perms_in_group[:5])
-                    suffix = f" (+{len(app_perms_in_group) - 5} more)" if len(app_perms_in_group) > 5 else ""
-                    gaps.append(
-                        f"Group '{group_name}' grants {application} access but NOT '{missing}'. "
-                        f"Available: {avail}{suffix}"
-                    )
+                            app_perms_in_group.append(f"{role_data['display_name']}: {perm}")
+                missing = expected_verb or expected_permission
+                avail = ", ".join(app_perms_in_group[:5])
+                suffix = f" (+{len(app_perms_in_group) - 5} more)" if len(app_perms_in_group) > 5 else ""
+                gaps.append(
+                    f"Group '{group_name}' grants {application} access but NOT '{missing}'. "
+                    f"Available: {avail}{suffix}"
+                )
 
-            analysis["gaps"] = gaps
-            analysis["diagnosis"] = (
-                f"User '{username}' does not have '{expected_perm_full}' permission. "
-                f"Neither of their {len(groups_data)} group memberships grants this specific access."
-            )
+        analysis["gaps"] = gaps
+        analysis["diagnosis"] = (
+            f"User '{username}' does not have '{expected_perm_full}' permission. "
+            f"Neither of their {len(groups_data)} group memberships grants this specific access."
+        )
 
     # Build final result (V1)
     result: dict[str, Any] = {
@@ -2866,80 +2903,37 @@ def _investigate_user_access_v2(
         analysis["permissions_for_application"] = sorted(app_permissions)
         analysis["application_permission_count"] = len(app_permissions)
 
-    # Check for expected permission
-    expected_perm_full = ""
-    if expected_permission and application:
-        if ":" in expected_permission:
-            expected_perm_full = expected_permission
-        else:
-            expected_perm_full = f"{application}:*:{expected_permission}"
-    elif expected_verb and application:
-        expected_perm_full = f"{application}:*:{expected_verb}"
+    # Use shared helper for permission analysis
+    _analyze_expected_permission(
+        application, expected_permission, expected_verb, all_permissions, permission_sources, is_org_admin, analysis
+    )
 
-    if expected_perm_full:
-        has_permission = False
-        matched_permission = None
-        matched_sources: list[dict[str, Any]] = []
+    # Add V2-specific gap analysis if permission not found
+    expected_perm_full = _build_expected_perm_full(application, expected_permission, expected_verb)
+    if expected_perm_full and analysis.get("has_expected_permission") is False:
+        gaps: list[str] = []
+        for binding_data in bindings_data:
+            role_perms = binding_data["role"]["permissions"]
+            has_any_app_access = any(p.startswith(f"{application}:") for p in role_perms)
+            role_name = binding_data["role"]["name"]
+            source = binding_data["source_group"] or "direct binding"
 
-        for perm in all_permissions:
-            if _permission_matches(perm, expected_perm_full) or (
-                expected_verb and perm.endswith(f":{expected_verb}") and perm.startswith(f"{application}:")
-            ):
-                has_permission = True
-                matched_permission = perm
-                matched_sources = permission_sources.get(perm, [])
-                break
+            if not has_any_app_access and application:
+                gaps.append(f"Role '{role_name}' (via {source}) has no {application} permissions")
+            elif has_any_app_access:
+                app_perms = [p for p in role_perms if p.startswith(f"{application}:")]
+                missing = expected_verb or expected_permission
+                gaps.append(
+                    f"Role '{role_name}' (via {source}) grants {application} access but NOT '{missing}'. "
+                    f"Has: {', '.join(app_perms[:3])}"
+                    + (f" (+{len(app_perms) - 3} more)" if len(app_perms) > 3 else "")
+                )
 
-        if has_permission or is_org_admin:
-            analysis["has_expected_permission"] = True
-            analysis["expected_permission_check"] = {
-                "looking_for": expected_perm_full,
-                "found": True,
-                "matched_permission": matched_permission if not is_org_admin else "(org admin bypass)",
-                "granted_via": matched_sources if not is_org_admin else [{"role": "Org Admin"}],
-            }
-            if is_org_admin:
-                analysis["note"] = "User is org admin and has implicit access to everything"
-        else:
-            analysis["has_expected_permission"] = False
-
-            available_verbs = set()
-            for perm in all_permissions:
-                if perm.startswith(f"{application}:"):
-                    parts = perm.split(":")
-                    if len(parts) >= 3:
-                        available_verbs.add(parts[2])
-
-            analysis["expected_permission_check"] = {
-                "looking_for": expected_perm_full,
-                "found": False,
-                "available_verbs_for_app": sorted(available_verbs),
-            }
-
-            # Analyze gaps
-            gaps: list[str] = []
-            for binding_data in bindings_data:
-                role_perms = binding_data["role"]["permissions"]
-                has_any_app_access = any(p.startswith(f"{application}:") for p in role_perms)
-                role_name = binding_data["role"]["name"]
-                source = binding_data["source_group"] or "direct binding"
-
-                if not has_any_app_access and application:
-                    gaps.append(f"Role '{role_name}' (via {source}) has no {application} permissions")
-                elif has_any_app_access:
-                    app_perms = [p for p in role_perms if p.startswith(f"{application}:")]
-                    missing = expected_verb or expected_permission
-                    gaps.append(
-                        f"Role '{role_name}' (via {source}) grants {application} access but NOT '{missing}'. "
-                        f"Has: {', '.join(app_perms[:3])}"
-                        + (f" (+{len(app_perms) - 3} more)" if len(app_perms) > 3 else "")
-                    )
-
-            analysis["gaps"] = gaps
-            analysis["diagnosis"] = (
-                f"User '{username}' does not have '{expected_perm_full}' permission. "
-                f"None of their {len(bindings_data)} role binding(s) grants this access."
-            )
+        analysis["gaps"] = gaps
+        analysis["diagnosis"] = (
+            f"User '{username}' does not have '{expected_perm_full}' permission. "
+            f"None of their {len(bindings_data)} role binding(s) grants this access."
+        )
 
     # Build result
     result: dict[str, Any] = {

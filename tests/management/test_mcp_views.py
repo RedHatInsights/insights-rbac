@@ -4131,3 +4131,17 @@ class MCPInvestigateUserAccessV2Tests(MCPToolTestMixin, IdentityRequest):
         tool_output = self._get_tool_output(response)
 
         self.assertIn("list_user_bindings", tool_output["hints"])
+
+    def test_investigate_user_access_v2_full_permission_format(self):
+        """Positive: investigate_user_access V2 handles full permission format."""
+        response = self._call_tool(
+            "investigate_user_access",
+            {
+                "username": self.test_username,
+                "application": "compliance",
+                "expected_permission": "compliance:policies:read",
+            },
+        )
+
+        tool_output = self._get_tool_output(response)
+        self.assertTrue(tool_output["analysis"]["has_expected_permission"])
