@@ -5012,6 +5012,19 @@ class MCPUpdateCrossAccountTests(MCPToolTestMixin, IdentityRequest):
         self.assertTrue(config.write)
         self.assertTrue(config.requires_auth)
 
+    def test_patch_cross_account_request_rejects_invalid_status(self):
+        """patch_cross_account_request rejects invalid status values."""
+        response = self._call_tool(
+            "patch_cross_account_request",
+            {"request_id": "00000000-0000-0000-0000-000000000000", "status": "foo"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        output = self._get_tool_output(response)
+        self.assertIn("error", output)
+        self.assertIn("foo", output["error"])
+        self.assertIn("approved", output["error"])
+
 
 # --- DELETE tool tests ---
 
@@ -5048,7 +5061,7 @@ class MCPDeleteGroupTests(MCPToolTestMixin, IdentityRequest):
         self.assertIn("result", data, f"Expected result but got: {data}")
         self.assertFalse(data["result"]["isError"])
         output = json.loads(data["result"]["content"][0]["text"])
-        self.assertEqual(output["status"], "deleted")
+        self.assertEqual(output["status"], "no_content")
 
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     def test_delete_group_by_name(self, mock_replicator):
@@ -5103,7 +5116,7 @@ class MCPDeleteGroupTests(MCPToolTestMixin, IdentityRequest):
         self.assertIn("result", data, f"Expected result but got: {data}")
         self.assertFalse(data["result"]["isError"])
         output = json.loads(data["result"]["content"][0]["text"])
-        self.assertEqual(output["status"], "deleted")
+        self.assertEqual(output["status"], "no_content")
 
     def test_remove_principals_missing_params(self):
         """Removing without usernames or service_accounts returns error."""
@@ -5164,7 +5177,7 @@ class MCPDeleteRoleV1Tests(MCPToolTestMixin, IdentityRequest):
         self.assertIn("result", data, f"Expected result but got: {data}")
         self.assertFalse(data["result"]["isError"])
         output = json.loads(data["result"]["content"][0]["text"])
-        self.assertEqual(output["status"], "deleted")
+        self.assertEqual(output["status"], "no_content")
 
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
     def test_delete_role_v1_success(self, mock_replicator):
@@ -5179,7 +5192,7 @@ class MCPDeleteRoleV1Tests(MCPToolTestMixin, IdentityRequest):
         self.assertIn("result", data, f"Expected result but got: {data}")
         self.assertFalse(data["result"]["isError"])
         output = json.loads(data["result"]["content"][0]["text"])
-        self.assertEqual(output["status"], "deleted")
+        self.assertEqual(output["status"], "no_content")
 
     def test_delete_role_v1_no_auth(self):
         """Deleting a role without auth returns auth error."""
@@ -5249,7 +5262,7 @@ class MCPDeleteToolsV2Tests(MCPToolTestMixin, IdentityRequest):
         self.assertIn("result", data, f"Expected result but got: {data}")
         self.assertFalse(data["result"]["isError"], f"Tool returned error: {data['result']}")
         output = json.loads(data["result"]["content"][0]["text"])
-        self.assertEqual(output["status"], "deleted")
+        self.assertEqual(output["status"], "no_content")
 
     def test_bulk_delete_roles_no_auth(self):
         """Bulk-deleting roles without auth returns auth error."""
@@ -5279,7 +5292,7 @@ class MCPDeleteToolsV2Tests(MCPToolTestMixin, IdentityRequest):
         self.assertIn("result", data, f"Expected result but got: {data}")
         self.assertFalse(data["result"]["isError"], f"Tool returned error: {data['result']}")
         output = json.loads(data["result"]["content"][0]["text"])
-        self.assertEqual(output["status"], "deleted")
+        self.assertEqual(output["status"], "no_content")
 
     def test_delete_workspace_no_auth(self):
         """Deleting a workspace without auth returns auth error."""

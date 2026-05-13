@@ -276,13 +276,13 @@ def _clone_request(
     view applies the same permission checks and is observable in traces.
     """
     method_upper = method.upper()
-    if method_upper in ("POST", "PUT", "PATCH"):
-        factory_method = {"POST": _request_factory.post, "PUT": _request_factory.put, "PATCH": _request_factory.patch}[
-            method_upper
-        ]
-        view_request = factory_method(
-            path, data=json.dumps(body) if body is not None else "", content_type="application/json"
-        )
+    body_data = json.dumps(body) if body is not None else ""
+    if method_upper == "POST":
+        view_request = _request_factory.post(path, data=body_data, content_type="application/json")
+    elif method_upper == "PUT":
+        view_request = _request_factory.put(path, data=body_data, content_type="application/json")
+    elif method_upper == "PATCH":
+        view_request = _request_factory.patch(path, data=body_data, content_type="application/json")
     elif method_upper == "DELETE":
         view_request = _request_factory.delete(path, **kwargs)
     else:
@@ -305,6 +305,38 @@ def _clone_request(
     return view_request
 
 
+def _call_view_json(
+    request: HttpRequest,
+    view: Callable[..., Any],
+    path: str,
+    *,
+    method: str = "GET",
+    body: dict[str, Any] | None = None,
+    query_params: dict[str, str] | None = None,
+    **view_kwargs: str,
+) -> str:
+    """Call a Django view and return the response body as a string.
+
+    Handles response rendering, 204 No Content, and 4xx/5xx error wrapping
+    so MCP clients can distinguish success from failure without parsing
+    the view's raw output.
+    """
+    if query_params:
+        from urllib.parse import urlencode
+
+        path = f"{path}?{urlencode(query_params)}"
+    view_request = _clone_request(request, path, method=method, body=body)
+    response = view(view_request, **view_kwargs)
+    if hasattr(response, "render"):
+        response = response.render()
+    if response.status_code == 204:
+        return json.dumps({"status": "no_content"})
+    content = response.content.decode()
+    if response.status_code >= 400:
+        return json.dumps({"error": f"HTTP {response.status_code}", "detail": content})
+    return content
+
+
 def _call_view_write(
     request: HttpRequest,
     view: Callable[..., Any],
@@ -312,24 +344,10 @@ def _call_view_write(
     body: dict[str, Any],
     *,
     method: str = "POST",
-    **view_kwargs: str,
+    **view_kwargs: Any,
 ) -> str:
-    """Call a Django view with a write request and return the response body.
-
-    For 4xx/5xx responses, wraps the response body in an error structure
-    so MCP clients can distinguish success from failure without parsing
-    the view's raw output.
-    """
-    view_request = _clone_request(request, path, method=method, body=body)
-    response = view(view_request, **view_kwargs)
-    if hasattr(response, "render"):
-        response = response.render()
-    if response.status_code == 204:
-        return json.dumps({"status": "deleted"})
-    content = response.content.decode()
-    if response.status_code >= 400:
-        return json.dumps({"error": f"HTTP {response.status_code}", "detail": content})
-    return content
+    """Call a Django view with a write request (POST/PUT/PATCH)."""
+    return _call_view_json(request, view, path, method=method, body=body, **view_kwargs)
 
 
 def _call_view_delete(
@@ -337,23 +355,10 @@ def _call_view_delete(
     view: Callable[..., Any],
     path: str,
     query_params: dict[str, str] | None = None,
-    **view_kwargs: str,
+    **view_kwargs: Any,
 ) -> str:
-    """Call a Django view with a DELETE request and return the response body."""
-    if query_params:
-        from urllib.parse import urlencode
-
-        path = f"{path}?{urlencode(query_params)}"
-    view_request = _clone_request(request, path, method="DELETE")
-    response = view(view_request, **view_kwargs)
-    if hasattr(response, "render"):
-        response = response.render()
-    if response.status_code == 204:
-        return json.dumps({"status": "deleted"})
-    content = response.content.decode()
-    if response.status_code >= 400:
-        return json.dumps({"error": f"HTTP {response.status_code}", "detail": content})
-    return content
+    """Call a Django view with a DELETE request."""
+    return _call_view_json(request, view, path, method="DELETE", query_params=query_params, **view_kwargs)
 
 
 def _resolve_group_uuid(group_uuid: str, group_name: str, tenant) -> tuple[str | None, str | None]:
@@ -370,6 +375,14 @@ def _resolve_group_uuid(group_uuid: str, group_name: str, tenant) -> tuple[str |
             return None, json.dumps({"error": f"Group '{group_name}' not found"})
         return str(group.uuid), None
     return None, json.dumps({"error": "Either group_uuid or group_name is required"})
+
+
+def _resolve_group_for_tool(request: HttpRequest, group_uuid: str, group_name: str) -> tuple[str | None, str | None]:
+    """Resolve a group UUID from a tool request, checking tenant context first."""
+    tenant = getattr(request, "tenant", None)
+    if not tenant:
+        return None, json.dumps({"error": "No tenant context available"})
+    return _resolve_group_uuid(group_uuid, group_name, tenant)
 
 
 # --- Tool implementations ---
@@ -3212,11 +3225,7 @@ def add_principals_to_group(
     principals: list[str],
 ) -> str:
     """Add principals to a group by delegating to GroupViewSet.principals."""
-    tenant = getattr(request, "tenant", None)
-    if not tenant:
-        return json.dumps({"error": "No tenant context available"})
-
-    resolved_uuid, error = _resolve_group_uuid(group_uuid, group_name, tenant)
+    resolved_uuid, error = _resolve_group_for_tool(request, group_uuid, group_name)
     if error:
         return error
     assert resolved_uuid is not None
@@ -3248,11 +3257,7 @@ def add_roles_to_group(
     roles: list[str],
 ) -> str:
     """Add roles to a group by delegating to GroupViewSet.roles."""
-    tenant = getattr(request, "tenant", None)
-    if not tenant:
-        return json.dumps({"error": "No tenant context available"})
-
-    resolved_uuid, error = _resolve_group_uuid(group_uuid, group_name, tenant)
+    resolved_uuid, error = _resolve_group_for_tool(request, group_uuid, group_name)
     if error:
         return error
     assert resolved_uuid is not None
@@ -3458,11 +3463,7 @@ def update_group(
     description: str = "",
 ) -> str:
     """Update a group by delegating to GroupViewSet."""
-    tenant = getattr(request, "tenant", None)
-    if not tenant:
-        return json.dumps({"error": "No tenant context available"})
-
-    resolved_uuid, error = _resolve_group_uuid(group_uuid, group_name, tenant)
+    resolved_uuid, error = _resolve_group_for_tool(request, group_uuid, group_name)
     if error:
         return error
     assert resolved_uuid is not None
@@ -3608,13 +3609,17 @@ def update_role_binding(
     roles: list[dict[str, str]],
 ) -> str:
     """Update role bindings by subject by delegating to RoleBindingViewSet.by_subject."""
-    query_string = (
-        f"?resource_id={resource_id}&resource_type={resource_type}"
-        f"&subject_id={subject_id}&subject_type={subject_type}"
-    )
-    path = reverse("v2_management:role-bindings-by-subject") + query_string
+    path = reverse("v2_management:role-bindings-by-subject")
+    query_params = {
+        "resource_id": resource_id,
+        "resource_type": resource_type,
+        "subject_id": subject_id,
+        "subject_type": subject_type,
+    }
     body: dict[str, Any] = {"roles": roles}
-    return _call_view_write(request, _role_binding_update_view, path, body, method="PUT")
+    return _call_view_json(
+        request, _role_binding_update_view, path, method="PUT", body=body, query_params=query_params
+    )
 
 
 @register_tool(
@@ -3728,6 +3733,10 @@ def patch_cross_account_request(
     status: str,
 ) -> str:
     """Patch a cross-account request status."""
+    allowed_statuses = {"pending", "approved", "denied", "cancelled", "expired"}
+    if status not in allowed_statuses:
+        return json.dumps({"error": f"Invalid status '{status}'. Must be one of: {sorted(allowed_statuses)}"})
+
     body: dict[str, Any] = {"status": status}
 
     path = reverse("v1_api:cross-detail", kwargs={"pk": request_id})
@@ -3769,11 +3778,7 @@ def delete_group(
     group_name: str = "",
 ) -> str:
     """Delete a group by delegating to GroupViewSet."""
-    tenant = getattr(request, "tenant", None)
-    if not tenant:
-        return json.dumps({"error": "No tenant context available"})
-
-    resolved_uuid, error = _resolve_group_uuid(group_uuid, group_name, tenant)
+    resolved_uuid, error = _resolve_group_for_tool(request, group_uuid, group_name)
     if error:
         return error
     assert resolved_uuid is not None
@@ -3806,14 +3811,10 @@ def remove_principals_from_group(
     service_accounts: str = "",
 ) -> str:
     """Remove principals from a group by delegating to GroupViewSet.principals."""
-    tenant = getattr(request, "tenant", None)
-    if not tenant:
-        return json.dumps({"error": "No tenant context available"})
-
     if not usernames and not service_accounts:
         return json.dumps({"error": "At least one of usernames or service_accounts is required"})
 
-    resolved_uuid, error = _resolve_group_uuid(group_uuid, group_name, tenant)
+    resolved_uuid, error = _resolve_group_for_tool(request, group_uuid, group_name)
     if error:
         return error
     assert resolved_uuid is not None
@@ -3851,11 +3852,7 @@ def remove_roles_from_group(
     roles: str,
 ) -> str:
     """Remove roles from a group by delegating to GroupViewSet.roles."""
-    tenant = getattr(request, "tenant", None)
-    if not tenant:
-        return json.dumps({"error": "No tenant context available"})
-
-    resolved_uuid, error = _resolve_group_uuid(group_uuid, group_name, tenant)
+    resolved_uuid, error = _resolve_group_for_tool(request, group_uuid, group_name)
     if error:
         return error
     assert resolved_uuid is not None
