@@ -351,7 +351,7 @@ def _call_view(
 # │ get_rbac_recent_changes          │ common    │ (in-process audit log analysis)            │
 # │ investigate_group_changes        │ common    │ (orchestrates audit log + authorization)   │
 # │ investigate_user_access          │ common    │ (groups + roles + permissions analysis)    │
-# │ diagnose_403                     │ common    │ (reverse permission-to-role trace)         │
+# │ diagnose_access                  │ common    │ (reverse permission-to-role trace)         │
 # │ list_groups                      │ common    │ GET /api/v1/groups/                        │
 # │ get_group                        │ common    │ GET /api/v1/groups/{uuid}/                 │
 # │ list_group_principals            │ common    │ GET /api/v1/groups/{uuid}/principals/      │
@@ -2969,11 +2969,11 @@ def _investigate_user_access_v2(
 
 @register_tool(
     description=(
-        "Diagnose why a user is getting a 403 Forbidden error on a specific page or action. "
-        "Use this when a user reports: 'I have [role name] but I get 403 on [page/action]'. "
+        "Diagnose why a user cannot perform an action or access a feature. "
+        "Use this when a user reports: 'I have [role name] but I can't [do something]'. "
         "SCENARIO: 'Marcus is getting a 403 when he clicks Create integration on the Integrations page. "
         "He's a Notifications administrator. Why?' "
-        "→ call diagnose_403(username='marcus', application='integrations', action='Create integration', "
+        "→ call diagnose_access(username='marcus', application='integrations', action='Create integration', "
         "expected_permission='integrations:endpoints:write'). "
         "The tool performs a reverse permission-to-role trace: "
         "(1) Confirms the user exists and checks org admin status. "
@@ -2992,7 +2992,7 @@ def _investigate_user_access_v2(
     requires_auth=True,
     api_version=ApiVersion.COMMON,
 )
-def diagnose_403(
+def diagnose_access(
     request: HttpRequest,
     *,
     username: str,
@@ -3080,7 +3080,7 @@ def diagnose_403(
         except Exception as e:
             effective_access_error = str(e)
             logger.warning(
-                "diagnose_403: failed to get effective access for user=%s app=%s: %s", username, application, e
+                "diagnose_access: failed to get effective access for user=%s app=%s: %s", username, application, e
             )
 
     # Extract permission strings and track their sources
@@ -3115,7 +3115,7 @@ def diagnose_403(
         perm_data = json.loads(perm_raw)
         available_permissions = perm_data.get("data", [])
     except Exception as e:
-        logger.warning("diagnose_403: failed to list permissions for app=%s: %s", application, e)
+        logger.warning("diagnose_access: failed to list permissions for app=%s: %s", application, e)
 
     # Build a set of all available permission strings
     all_available_perms: set[str] = set()
@@ -3174,7 +3174,7 @@ def diagnose_403(
             # Warn if the permission doesn't even exist in the system
             if expected_permission not in all_available_perms:
                 logger.info(
-                    "diagnose_403: expected_permission '%s' not found in available permissions for app=%s",
+                    "diagnose_access: expected_permission '%s' not found in available permissions for app=%s",
                     expected_permission,
                     application,
                 )
@@ -3228,7 +3228,7 @@ def diagnose_403(
             roles_data = json.loads(roles_result)
             roles_granting_permission = roles_data.get("data", [])
         except Exception as e:
-            logger.warning("diagnose_403: failed to search roles for permission=%s: %s", target_permission, e)
+            logger.warning("diagnose_access: failed to search roles for permission=%s: %s", target_permission, e)
 
     # Build diagnosis
     diagnosis_parts: list[str] = []

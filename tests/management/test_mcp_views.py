@@ -671,7 +671,7 @@ class MCPViewTests(MCPToolTestMixin, IdentityRequest):
             "list_cross_account_requests",
             "get_cross_account_request",
             "investigate_tam_access",
-            "diagnose_403",
+            "diagnose_access",
             "list_workspaces",
             "get_workspace",
             "check_user_permission",
@@ -4145,11 +4145,11 @@ class MCPInvestigateUserAccessV2Tests(MCPToolTestMixin, IdentityRequest):
         self.assertTrue(tool_output["analysis"]["has_expected_permission"])
 
 
-class MCPDiagnose403Tests(MCPToolTestMixin, IdentityRequest):
-    """Tests for the diagnose_403 MCP tool."""
+class MCPDiagnoseAccessTests(MCPToolTestMixin, IdentityRequest):
+    """Tests for the diagnose_access MCP tool."""
 
     def setUp(self):
-        """Set up test data for diagnose_403 tests."""
+        """Set up test data for diagnose_access tests."""
         super().setUp()
         self.url = "/_private/_a2s/mcp/"
         self.client = APIClient()
@@ -4207,10 +4207,10 @@ class MCPDiagnose403Tests(MCPToolTestMixin, IdentityRequest):
         Principal.objects.all().delete()
         super().tearDown()
 
-    def test_diagnose_403_success(self):
-        """Positive: diagnose_403 returns comprehensive diagnosis."""
+    def test_diagnose_access_success(self):
+        """Positive: diagnose_access returns comprehensive diagnosis."""
         response = self._call_tool(
-            "diagnose_403",
+            "diagnose_access",
             {
                 "username": self.test_username,
                 "application": "integrations",
@@ -4234,10 +4234,10 @@ class MCPDiagnose403Tests(MCPToolTestMixin, IdentityRequest):
         self.assertTrue(tool_output["user"]["exists"])
         self.assertFalse(tool_output["user"]["is_org_admin"])
 
-    def test_diagnose_403_identifies_missing_permission(self):
-        """Positive: diagnose_403 identifies the missing permission."""
+    def test_diagnose_access_identifies_missing_permission(self):
+        """Positive: diagnose_access identifies the missing permission."""
         response = self._call_tool(
-            "diagnose_403",
+            "diagnose_access",
             {
                 "username": self.test_username,
                 "application": "integrations",
@@ -4252,10 +4252,10 @@ class MCPDiagnose403Tests(MCPToolTestMixin, IdentityRequest):
         self.assertIn("write", tool_output["diagnosis"])
         self.assertIn("does NOT have", tool_output["diagnosis"])
 
-    def test_diagnose_403_finds_roles_granting_permission(self):
-        """Positive: diagnose_403 finds roles that grant the missing permission."""
+    def test_diagnose_access_finds_roles_granting_permission(self):
+        """Positive: diagnose_access finds roles that grant the missing permission."""
         response = self._call_tool(
-            "diagnose_403",
+            "diagnose_access",
             {
                 "username": self.test_username,
                 "application": "integrations",
@@ -4270,10 +4270,10 @@ class MCPDiagnose403Tests(MCPToolTestMixin, IdentityRequest):
         role_names = [r["name"] for r in tool_output["roles_granting_permission"]]
         self.assertIn("Integrations administrator", role_names)
 
-    def test_diagnose_403_shows_user_permissions(self):
-        """Positive: diagnose_403 shows what permissions the user does have."""
+    def test_diagnose_access_shows_user_permissions(self):
+        """Positive: diagnose_access shows what permissions the user does have."""
         response = self._call_tool(
-            "diagnose_403",
+            "diagnose_access",
             {
                 "username": self.test_username,
                 "application": "integrations",
@@ -4287,10 +4287,10 @@ class MCPDiagnose403Tests(MCPToolTestMixin, IdentityRequest):
         self.assertIn("integrations:endpoints:read", tool_output["user_permissions_in_app"])
         self.assertNotIn("integrations:endpoints:write", tool_output["user_permissions_in_app"])
 
-    def test_diagnose_403_user_not_found(self):
-        """Negative: diagnose_403 returns error for non-existent user."""
+    def test_diagnose_access_user_not_found(self):
+        """Negative: diagnose_access returns error for non-existent user."""
         response = self._call_tool(
-            "diagnose_403",
+            "diagnose_access",
             {
                 "username": "nonexistent_user",
                 "application": "integrations",
@@ -4303,10 +4303,10 @@ class MCPDiagnose403Tests(MCPToolTestMixin, IdentityRequest):
         self.assertIn("error", tool_output)
         self.assertIn("not found", tool_output["error"])
 
-    def test_diagnose_403_without_auth_returns_error(self):
-        """Permission: diagnose_403 without auth returns auth error."""
+    def test_diagnose_access_without_auth_returns_error(self):
+        """Permission: diagnose_access without auth returns auth error."""
         response = self._call_tool(
-            "diagnose_403",
+            "diagnose_access",
             {
                 "username": self.test_username,
                 "application": "integrations",
@@ -4319,13 +4319,13 @@ class MCPDiagnose403Tests(MCPToolTestMixin, IdentityRequest):
         self.assertIn("error", data)
         self.assertEqual(data["error"]["code"], -32000)
 
-    def test_diagnose_403_user_has_permission(self):
-        """Positive: diagnose_403 explains when user has the permission."""
+    def test_diagnose_access_user_has_permission(self):
+        """Positive: diagnose_access explains when user has the permission."""
         # Add write permission to the user
         Access.objects.create(permission=self.write_perm, role=self.notifications_role, tenant=self.tenant)
 
         response = self._call_tool(
-            "diagnose_403",
+            "diagnose_access",
             {
                 "username": self.test_username,
                 "application": "integrations",
@@ -4341,10 +4341,10 @@ class MCPDiagnose403Tests(MCPToolTestMixin, IdentityRequest):
         self.assertIn("possible_causes", tool_output)
         self.assertIn("next_steps", tool_output)
 
-    def test_diagnose_403_provides_remediation(self):
-        """Positive: diagnose_403 provides actionable remediation steps."""
+    def test_diagnose_access_provides_remediation(self):
+        """Positive: diagnose_access provides actionable remediation steps."""
         response = self._call_tool(
-            "diagnose_403",
+            "diagnose_access",
             {
                 "username": self.test_username,
                 "application": "integrations",
@@ -4358,10 +4358,10 @@ class MCPDiagnose403Tests(MCPToolTestMixin, IdentityRequest):
         self.assertIn("remediation", tool_output)
         self.assertGreater(len(tool_output["remediation"]), 0)
 
-    def test_diagnose_403_includes_hints(self):
-        """Positive: diagnose_403 includes hints for follow-up investigation."""
+    def test_diagnose_access_includes_hints(self):
+        """Positive: diagnose_access includes hints for follow-up investigation."""
         response = self._call_tool(
-            "diagnose_403",
+            "diagnose_access",
             {
                 "username": self.test_username,
                 "application": "integrations",
@@ -4375,10 +4375,10 @@ class MCPDiagnose403Tests(MCPToolTestMixin, IdentityRequest):
         self.assertIn("check_specific_permission", tool_output["hints"])
         self.assertIn("find_roles", tool_output["hints"])
 
-    def test_diagnose_403_lists_available_permissions(self):
-        """Positive: diagnose_403 lists all available permissions for the application."""
+    def test_diagnose_access_lists_available_permissions(self):
+        """Positive: diagnose_access lists all available permissions for the application."""
         response = self._call_tool(
-            "diagnose_403",
+            "diagnose_access",
             {
                 "username": self.test_username,
                 "application": "integrations",
@@ -4395,10 +4395,10 @@ class MCPDiagnose403Tests(MCPToolTestMixin, IdentityRequest):
         "management.mcp_views.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": [{"is_org_admin": True}]},
     )
-    def test_diagnose_403_org_admin_bypass(self, mock_proxy):
-        """Positive: diagnose_403 explains org admin should not get 403."""
+    def test_diagnose_access_org_admin_bypass(self, mock_proxy):
+        """Positive: diagnose_access explains org admin should not get 403."""
         response = self._call_tool(
-            "diagnose_403",
+            "diagnose_access",
             {
                 "username": self.test_username,
                 "application": "integrations",
@@ -4412,10 +4412,10 @@ class MCPDiagnose403Tests(MCPToolTestMixin, IdentityRequest):
         self.assertIn("should NOT be getting 403", tool_output["diagnosis"])
         self.assertIn("possible_causes", tool_output)
 
-    def test_diagnose_403_candidate_permissions(self):
-        """Positive: diagnose_403 suggests candidate permissions when none specified."""
+    def test_diagnose_access_candidate_permissions(self):
+        """Positive: diagnose_access suggests candidate permissions when none specified."""
         response = self._call_tool(
-            "diagnose_403",
+            "diagnose_access",
             {
                 "username": self.test_username,
                 "application": "integrations",
