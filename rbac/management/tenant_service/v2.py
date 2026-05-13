@@ -820,7 +820,7 @@ class V2TenantBootstrapService:
         return tuples_to_add, tuples_to_remove
 
     def _built_in_hierarchy_tuples(self, default_workspace_id, root_workspace_id, org_id) -> List[RelationTuple]:
-        """Create the tuples used to bootstrap the hierarchy of default->root->tenant->platform."""
+        """Create tuples for default->root workspace parents and tenant->platform."""
         tenant_id = f"{self._user_domain}/{org_id}"
 
         return [
@@ -830,9 +830,6 @@ class V2TenantBootstrapService:
                 ("rbac", "workspace"),
                 str(root_workspace_id),
                 "parent",
-            ),
-            create_relationship(
-                ("rbac", "workspace"), str(root_workspace_id), ("rbac", "tenant"), tenant_id, "parent"
             ),
             # Include platform for tenant
             create_relationship(("rbac", "tenant"), tenant_id, ("rbac", "platform"), settings.ENV_NAME, "platform"),

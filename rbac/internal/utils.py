@@ -242,7 +242,7 @@ def _build_workspace_graph(tenant) -> tuple[list, dict]:
 
     Returns:
         tuple of:
-        - root_workspace_ids: list of workspace IDs that have no parent (parent = tenant)
+        - root_workspace_ids: list of workspace IDs with no DB parent (typically root workspace)
         - children_by_parent: dict mapping parent_id -> list of child workspace_ids
     """
     db_workspaces = list(Workspace.objects.filter(tenant=tenant).order_by("id"))
@@ -376,11 +376,10 @@ def rebuild_tenant_workspace_relations(
     their parent relations exist in Kessel. This is a prerequisite for
     cleanup_tenant_orphaned_relationships to work correctly.
 
-    The hierarchy is: tenant -> root workspace -> default workspace -> other workspaces
-    - Root workspace has parent = tenant
-    - Other workspaces have parent = their parent workspace
+    Root workspaces are not linked to the tenant in relations; only workspace-to-workspace
+    parent edges are replicated (default -> root -> ...).
 
-    Uses BFS traversal starting from root workspace. For each workspace, locks the
+    Uses BFS traversal from each root workspace's children. For each workspace, locks the
     parent first, then locks the child, checks/replicates the parent relation,
     then moves to children. This minimizes lock contention.
 
@@ -395,8 +394,6 @@ def rebuild_tenant_workspace_relations(
     Returns:
         dict: Results including workspaces checked, relations added, etc.
     """
-    tenant_resource_id = tenant.tenant_resource_id()
-
     workspaces_checked = 0
     relations_added = 0
     relations_to_add_count = 0
@@ -405,10 +402,11 @@ def rebuild_tenant_workspace_relations(
     # Build workspace graph from DB
     root_workspace_ids, children_by_parent = _build_workspace_graph(tenant)
 
-    # Build BFS queue starting from root workspaces
+    # Build BFS queue from root workspaces' children only (no workspace#parent@tenant edge).
     queue = deque()
     for root_id in root_workspace_ids:
-        queue.append((root_id, "tenant", tenant_resource_id))
+        for child_id in children_by_parent.get(root_id, []):
+            queue.append((child_id, "workspace", str(root_id)))
 
     # BFS traversal - process each workspace in transaction
     while queue:
@@ -447,6 +445,64 @@ def rebuild_tenant_workspace_relations(
         "workspaces_missing_parent": workspaces_missing_parent_count,
         "relations_to_add": relations_to_add_count if dry_run else relations_added,
         "relations_added": relations_added,
+    }
+
+
+def remove_legacy_root_workspace_tenant_parent_relations() -> dict:
+    """
+    Enqueue removal of workspace(root)#parent@tenant relationship tuples.
+
+    Bootstrapping no longer creates this edge; this job clears stale tuples still present in Kessel.
+    """
+    if not settings.REPLICATION_TO_RELATION_ENABLED:
+        return {"skipped": True, "reason": "REPLICATION_TO_RELATION_ENABLED is False"}
+
+    replicator = OutboxReplicator()
+    qs = Tenant.objects.exclude(tenant_name="public").order_by("id")
+
+    batch: list[RelationTuple] = []
+    tenants_processed = 0
+    batch_size = 500
+    tenants_total = qs.count()
+
+    def flush_batch() -> None:
+        if not batch:
+            return
+        replicator.replicate(
+            ReplicationEvent(
+                event_type=ReplicationEventType.MIGRATE_TENANT_GROUPS,
+                info={"action": "remove_root_workspace_tenant_parent", "batch_size": len(batch)},
+                partition_key=PartitionKey.byEnvironment(),
+                add=[],
+                remove=batch,
+            )
+        )
+        batch.clear()
+        logger.info(f"Processed {tenants_processed} of {tenants_total} tenants")
+
+    for tenant in qs.iterator(chunk_size=500):
+        tenants_processed += 1
+        tenant_resource_id = tenant.tenant_resource_id()
+        if tenant_resource_id is None:
+            continue
+        root = Workspace.objects.root(tenant=tenant)
+        batch.append(
+            create_relationship(
+                ("rbac", "workspace"),
+                str(root.id),
+                ("rbac", "tenant"),
+                tenant_resource_id,
+                "parent",
+            )
+        )
+        if len(batch) >= batch_size:
+            flush_batch()
+
+    flush_batch()
+
+    return {
+        "skipped": False,
+        "tenants_processed": tenants_processed,
     }
 
 

@@ -487,15 +487,19 @@ def _workspace_parent_relationship(workspace_id: str, parent: V2boundresource) -
     )
 
 
-def _collect_remote_workspaces(tenant_resource_id: str, read_tuples_typed: _ReadTuplesTyped) -> _RemoteWorkspaceData:
+def _collect_remote_workspaces(
+    tenant: Tenant, tenant_resource_id: str, read_tuples_typed: _ReadTuplesTyped
+) -> _RemoteWorkspaceData:
     """
     Discover all workspaces under a tenant in Kessel.
 
-    The hierarchy is: tenant -> root workspace -> default workspace -> other workspaces
-    Each workspace has a `parent` relation pointing to its parent (tenant or workspace).
+    The hierarchy is: tenant -> root workspace -> default workspace -> other workspaces.
+    Root workspaces are no longer discovered via workspace#parent@tenant reads alone (that tuple may be absent); we
+    seed DFS from the DB root workspace instead, then walk workspace#parent@workspace edges as before.
 
     Args:
-        tenant_resource_id: The tenant resource ID to search from
+        tenant: Tenant whose workspaces to traverse
+        tenant_resource_id: Canonical tenant resource ID for the seeded root parent edge
         read_tuples_typed: Function to read tuples from Kessel
 
     Returns:
@@ -511,18 +515,9 @@ def _collect_remote_workspaces(tenant_resource_id: str, read_tuples_typed: _Read
 
         workspace_data.add_workspace(workspace_id=workspace_id, parent_resource=parent_resource)
 
-    # Find root workspaces (workspace -> parent -> tenant)
-    # Query with empty resource_id to find all workspaces with this tenant as parent
-    root_tuples = read_tuples_typed(
-        resource_type="workspace",
-        resource_id="",
-        relation="parent",
-        subject_type="tenant",
-        subject_id=tenant_resource_id,
-    )
+    root = Workspace.objects.root(tenant=tenant)
 
-    for t in root_tuples:
-        add_seen_workspace(t.resource.id, V2boundresource(("rbac", "tenant"), tenant_resource_id))
+    add_seen_workspace(str(root.id), V2boundresource(("rbac", "tenant"), tenant_resource_id))
 
     # DFS to find child workspaces
     while stack:
@@ -713,6 +708,7 @@ def cleanup_tenant_orphaned_relationships(
         raise ValueError("Expected tenant's resource ID to be present (i.e. for it to have an org_id).")
 
     kessel_workspace_data = _collect_remote_workspaces(
+        tenant=tenant,
         tenant_resource_id=tenant_resource_id,
         read_tuples_typed=read_tuples_typed,
     )
