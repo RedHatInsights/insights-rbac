@@ -351,6 +351,7 @@ def _call_view(
 # │ get_rbac_recent_changes          │ common    │ (in-process audit log analysis)            │
 # │ investigate_group_changes        │ common    │ (orchestrates audit log + authorization)   │
 # │ investigate_user_access          │ common    │ (groups + roles + permissions analysis)    │
+# │ diagnose_403                     │ common    │ (reverse permission-to-role trace)         │
 # │ list_groups                      │ common    │ GET /api/v1/groups/                        │
 # │ get_group                        │ common    │ GET /api/v1/groups/{uuid}/                 │
 # │ list_group_principals            │ common    │ GET /api/v1/groups/{uuid}/principals/      │
@@ -2962,6 +2963,411 @@ def _investigate_user_access_v2(
         "find_role_with_permission": "Use search_roles(permission='...') to find roles granting a permission",
         "check_role_contents": "Use get_role(role_uuid='...') to see all permissions in a role",
     }
+
+    return json.dumps(result, default=str)
+
+
+@register_tool(
+    description=(
+        "Diagnose why a user is getting a 403 Forbidden error on a specific page or action. "
+        "Use this when a user reports: 'I have [role name] but I get 403 on [page/action]'. "
+        "SCENARIO: 'Marcus is getting a 403 when he clicks Create integration on the Integrations page. "
+        "He's a Notifications administrator. Why?' "
+        "→ call diagnose_403(username='marcus', application='integrations', action='Create integration', "
+        "expected_permission='integrations:endpoints:write'). "
+        "The tool performs a reverse permission-to-role trace: "
+        "(1) Confirms the user exists and checks org admin status. "
+        "(2) Lists their effective permissions in the specified application. "
+        "(3) Lists all permissions for that application to show what's available. "
+        "(4) Identifies the specific permission the user is missing. "
+        "(5) Finds which roles grant the missing permission so you can recommend a fix. "
+        "Returns: {user, effective_access, available_permissions, missing_permission, roles_granting_permission, "
+        "diagnosis, remediation}. "
+        "COMMON CAUSES: (a) User's role doesn't include the assumed permission — role names can be misleading. "
+        "(b) User needs a different role entirely. (c) Permission requires a specific resource scope (V2). "
+        "(d) User is in the wrong group. "
+        "TIP: If you don't know the exact permission, set expected_permission='' and the tool will list all "
+        "available permissions for the application so you can identify what's needed."
+    ),
+    requires_auth=True,
+    api_version=ApiVersion.COMMON,
+)
+def diagnose_403(
+    request: HttpRequest,
+    *,
+    username: str,
+    application: str,
+    action: str = "",
+    expected_permission: str = "",
+) -> str:
+    """Diagnose why a user is getting 403 Forbidden on a specific action.
+
+    Performs a reverse permission-to-role trace to identify the gap between
+    what the user has and what they need.
+    """
+    tenant = getattr(request, "tenant", None)
+    if not tenant:
+        return json.dumps({"error": "No tenant context available"})
+
+    org_id = getattr(request.user, "org_id", None)
+    is_v2 = is_v2_write_activated(tenant)
+    org_version = "v2" if is_v2 else "v1"
+
+    # Step 1: Confirm user exists and check org admin status
+    principal = Principal.objects.filter(username=username, tenant=tenant).first()
+
+    if not principal:
+        return json.dumps(
+            {
+                "error": f"User '{username}' not found in this organization",
+                "hint": "Use list_principals(usernames='<partial>', match_criteria='partial') to search for the user.",
+            }
+        )
+
+    is_org_admin = False
+    if org_id:
+        is_org_admin = _is_org_admin(username, org_id)
+
+    user_info: dict[str, Any] = {
+        "username": username,
+        "uuid": str(principal.uuid),
+        "exists": True,
+        "is_org_admin": is_org_admin,
+    }
+
+    if is_org_admin:
+        return json.dumps(
+            {
+                "user": user_info,
+                "org_version": org_version,
+                "diagnosis": (
+                    f"User '{username}' is an org admin and should NOT be getting 403 errors. "
+                    "Org admins bypass all RBAC checks."
+                ),
+                "possible_causes": [
+                    "The 403 may be coming from a different system (not RBAC)",
+                    "The user may be logged into a different account",
+                    "There may be a caching issue — try clearing browser cache",
+                    "The endpoint may have additional authorization beyond RBAC (e.g., feature flag)",
+                ],
+                "next_steps": [
+                    "Verify the user is actually logged in as this username",
+                    "Check if the feature requires a specific entitlement or subscription",
+                    "Check application logs for the actual 403 source",
+                ],
+            }
+        )
+
+    # Step 2: Get user's effective permissions in the application
+    effective_access: list[dict[str, Any]] = []
+    effective_access_error: str | None = None
+
+    if is_v2:
+        effective_access = _get_user_access_v2(request, principal, tenant)
+        if application:
+            effective_access = [a for a in effective_access if a.get("application") == application]
+    else:
+        path = reverse("v1_management:access")
+        query_params: dict[str, str] = {
+            "application": application,
+            "username": username,
+            "limit": "1000",
+        }
+        try:
+            raw = _call_view(request, _access_view, path, query_params)
+            data = json.loads(raw)
+            effective_access = data.get("data", [])
+        except Exception as e:
+            effective_access_error = str(e)
+            logger.warning(
+                "diagnose_403: failed to get effective access for user=%s app=%s: %s", username, application, e
+            )
+
+    # Extract permission strings and track their sources
+    user_permissions: set[str] = set()
+    permission_sources: dict[str, list[str]] = {}
+
+    for access in effective_access:
+        perm_str = None
+        if "permission" in access:
+            perm_str = access["permission"]
+        elif all(k in access for k in ("application", "resource_type", "verb")):
+            perm_str = f"{access['application']}:{access['resource_type']}:{access['verb']}"
+
+        if perm_str:
+            user_permissions.add(perm_str)
+            # Track where this permission comes from
+            source = access.get("role_name") or access.get("role", {}).get("name") or "unknown role"
+            if perm_str not in permission_sources:
+                permission_sources[perm_str] = []
+            if source not in permission_sources[perm_str]:
+                permission_sources[perm_str].append(source)
+
+    # Step 3: List all permissions available for this application
+    available_permissions: list[dict[str, str]] = []
+    try:
+        perm_path = reverse("v1_management:permission-list")
+        perm_params: dict[str, str] = {
+            "application": application,
+            "limit": "1000",
+        }
+        perm_raw = _call_view(request, _permission_list_view, perm_path, perm_params)
+        perm_data = json.loads(perm_raw)
+        available_permissions = perm_data.get("data", [])
+    except Exception as e:
+        logger.warning("diagnose_403: failed to list permissions for app=%s: %s", application, e)
+
+    # Build a set of all available permission strings
+    all_available_perms: set[str] = set()
+    for perm in available_permissions:
+        perm_str = perm.get("permission", "")
+        if perm_str:
+            all_available_perms.add(perm_str)
+
+    # Step 4: Identify missing permission
+    missing_permission: str | None = None
+    candidate_permissions: list[str] = []
+
+    if expected_permission:
+        # User specified what permission they expect to need
+        # Check for exact match OR wildcard match (e.g., user has app:*:* which grants app:resource:write)
+        has_permission = False
+        matched_via: str | None = None
+        for user_perm in user_permissions:
+            if _permission_matches(user_perm, expected_permission):
+                has_permission = True
+                matched_via = user_perm if user_perm != expected_permission else None
+                break
+
+        if has_permission:
+            # User has it — something else is wrong
+            diagnosis_msg = f"User '{username}' DOES have the permission '{expected_permission}'"
+            if matched_via:
+                diagnosis_msg += f" (via wildcard '{matched_via}')"
+            diagnosis_msg += ". The 403 error is likely NOT an RBAC issue."
+
+            return json.dumps(
+                {
+                    "user": user_info,
+                    "org_version": org_version,
+                    "diagnosis": diagnosis_msg,
+                    "user_has_permission": True,
+                    "permission": expected_permission,
+                    "matched_via_wildcard": matched_via,
+                    "effective_access_count": len(effective_access),
+                    "possible_causes": [
+                        "The application may require additional permissions beyond this one",
+                        "The 403 may be coming from a different authorization system",
+                        "In V2, the permission may be scoped to a workspace the user can't access",
+                        "There may be a caching issue",
+                    ],
+                    "next_steps": [
+                        f"Use investigate_user_access(username='{username}', application='{application}') "
+                        "to see all permissions and their resource scopes",
+                        "Check if the action requires multiple permissions",
+                        "Check application logs for the actual authorization check that failed",
+                    ],
+                }
+            )
+        else:
+            missing_permission = expected_permission
+            # Warn if the permission doesn't even exist in the system
+            if expected_permission not in all_available_perms:
+                logger.info(
+                    "diagnose_403: expected_permission '%s' not found in available permissions for app=%s",
+                    expected_permission,
+                    application,
+                )
+    else:
+        # No specific permission specified — identify likely candidates based on action
+        # Look for write/create permissions as those are typically needed for "Create X" actions
+        action_lower = action.lower() if action else ""
+        candidate_set: set[str] = set()
+        for perm in all_available_perms:
+            parts = perm.split(":")
+            if len(parts) == 3:
+                verb = parts[2]
+                if action_lower:
+                    if "create" in action_lower and verb in ("write", "create"):
+                        candidate_set.add(perm)
+                    elif "edit" in action_lower and verb in ("write", "update", "edit"):
+                        candidate_set.add(perm)
+                    elif "delete" in action_lower and verb in ("write", "delete"):
+                        candidate_set.add(perm)
+                    elif "view" in action_lower and verb in ("read", "view"):
+                        candidate_set.add(perm)
+                else:
+                    # No action specified, show write permissions as likely candidates
+                    if verb == "write":
+                        candidate_set.add(perm)
+        candidate_permissions = sorted(candidate_set)
+
+    # Step 5: Find roles that grant the missing permission
+    roles_granting_permission: list[dict[str, Any]] = []
+
+    target_permission = missing_permission or (candidate_permissions[0] if len(candidate_permissions) == 1 else None)
+
+    if target_permission:
+        try:
+            if is_v2:
+                roles_result = _search_roles_v2(
+                    request, limit=100, offset=0, name="", resource_type="", permission=target_permission, order_by=""
+                )
+            else:
+                roles_result = _search_roles_v1(
+                    request,
+                    limit=100,
+                    offset=0,
+                    name="",
+                    display_name="",
+                    permission=target_permission,
+                    application="",
+                    system="",
+                    order_by="",
+                )
+            roles_data = json.loads(roles_result)
+            roles_granting_permission = roles_data.get("data", [])
+        except Exception as e:
+            logger.warning("diagnose_403: failed to search roles for permission=%s: %s", target_permission, e)
+
+    # Build diagnosis
+    diagnosis_parts: list[str] = []
+    remediation: list[str] = []
+
+    # Start with what the user HAS
+    if user_permissions:
+        perm_summary = ", ".join(sorted(user_permissions)[:5])
+        if len(user_permissions) > 5:
+            perm_summary += f" (+{len(user_permissions) - 5} more)"
+        sources_summary = []
+        for perm, sources in list(permission_sources.items())[:3]:
+            sources_summary.append(f"{perm} via {', '.join(sources)}")
+        diagnosis_parts.append(f"{username}'s effective access in {application}: {perm_summary}.")
+        if sources_summary:
+            diagnosis_parts.append(f"Permission sources: {'; '.join(sources_summary)}.")
+    else:
+        diagnosis_parts.append(f"{username} has NO permissions in the {application} application.")
+
+    if missing_permission:
+        diagnosis_parts.append(
+            f"User does NOT have '{missing_permission}', "
+            f"which is likely required for '{action or 'the requested action'}'."
+        )
+
+        if roles_granting_permission:
+            role_names = [r.get("display_name") or r.get("name", "Unknown") for r in roles_granting_permission[:5]]
+            diagnosis_parts.append(
+                f"Roles that DO grant '{missing_permission}': {', '.join(role_names)}"
+                + (f" (+{len(roles_granting_permission) - 5} more)" if len(roles_granting_permission) > 5 else "")
+                + "."
+            )
+
+            # Build remediation steps
+            if is_v2:
+                remediation.append("Create a role binding that assigns one of these roles to the user or their group")
+                remediation.append(
+                    f"Use: list_role_bindings(granted_subject_type='principal', "
+                    f"granted_subject_principal_user_id='{username}') to see user's current bindings"
+                )
+            else:
+                remediation.append("Add the user to a group that has one of these roles assigned")
+                remediation.append("Or assign one of these roles to a group the user is already in")
+                remediation.append(f"Use: list_groups(username='{username}') to see the user's groups")
+        else:
+            diagnosis_parts.append(
+                f"No existing roles grant '{missing_permission}'. A new role may need to be created."
+            )
+            remediation.append(f"Create a custom role with the '{missing_permission}' permission")
+
+    elif candidate_permissions:
+        # Multiple candidates — user needs to determine which one
+        user_missing = [p for p in candidate_permissions if p not in user_permissions]
+
+        if user_missing:
+            diagnosis_parts.append(
+                f"User '{username}' is missing one or more of these likely-required permissions for "
+                f"'{action or 'the action'}': {', '.join(user_missing[:5])}"
+                + (f" (+{len(user_missing) - 5} more)" if len(user_missing) > 5 else "")
+            )
+            remediation.append(
+                f"Identify which specific permission the '{action}' action requires by checking "
+                f"the application documentation or API endpoint definition"
+            )
+            remediation.append("Then use: search_roles(permission='<exact-permission>') to find roles that grant it")
+        else:
+            diagnosis_parts.append(
+                f"User '{username}' appears to have the common write permissions for '{application}'. "
+                f"The 403 may require a more specific permission."
+            )
+    else:
+        diagnosis_parts.append(
+            f"Could not determine which specific permission is required for '{action or 'the action'}'. "
+            f"User has {len(user_permissions)} permission(s) in the '{application}' application."
+        )
+        remediation.append(
+            "Check the API endpoint or application documentation to identify the exact permission required"
+        )
+        remediation.append(f"Use: list_permissions(application='{application}') to see all available permissions")
+
+    # Build result
+    result: dict[str, Any] = {
+        "user": user_info,
+        "org_version": org_version,
+        "application": application,
+        "action": action or "(not specified)",
+        "user_permissions_in_app": sorted(user_permissions),
+        "user_permission_count": len(user_permissions),
+        "permission_sources": permission_sources,
+        "missing_permission": missing_permission,
+        "candidate_permissions": candidate_permissions if not missing_permission else [],
+        "roles_granting_permission": [
+            {
+                "uuid": r.get("uuid"),
+                "name": r.get("name"),
+                "display_name": r.get("display_name"),
+                "system": r.get("system", False),
+            }
+            for r in roles_granting_permission[:10]
+        ],
+        "roles_count": len(roles_granting_permission),
+        "diagnosis": " ".join(diagnosis_parts),
+        "remediation": remediation,
+        "caveat": (
+            "RBAC does not know what permission any specific UI button or page requires. "
+            f"The permission '{missing_permission or 'identified above'}' is inferred from naming conventions "
+            "(e.g., 'Create' actions typically need ':write' permissions). "
+            f"Confirm with the {application.title() if application else 'application'} team "
+            "what the action actually checks."
+        ),
+    }
+
+    if effective_access_error:
+        result["effective_access_error"] = effective_access_error
+
+    # Add available permissions summary
+    result["available_permissions_in_app"] = sorted(all_available_perms)
+    result["available_permission_count"] = len(all_available_perms)
+
+    # Add hints for follow-up investigation
+    result["hints"] = {
+        "deep_investigation": (
+            f"Use investigate_user_access(username='{username}', application='{application}') for full analysis"
+        ),
+        "check_specific_permission": (
+            f"Use check_user_permission(username='{username}', permission='app:resource:verb') to verify"
+        ),
+        "find_roles": "Use search_roles(permission='...') to find all roles granting a specific permission",
+        "list_user_groups": f"Use list_groups(username='{username}') to see user's group memberships",
+    }
+
+    # Warn if the expected permission doesn't exist in the system
+    if missing_permission and missing_permission not in all_available_perms:
+        result["warning"] = (
+            f"The permission '{missing_permission}' was not found in the list of available permissions "
+            f"for the '{application}' application. It may be misspelled, or the permission may not exist. "
+            f"Available permissions: {', '.join(sorted(all_available_perms)[:10])}"
+            + (f" (+{len(all_available_perms) - 10} more)" if len(all_available_perms) > 10 else "")
+        )
 
     return json.dumps(result, default=str)
 
