@@ -4154,8 +4154,10 @@ class MCPDiagnoseAccessTests(MCPToolTestMixin, IdentityRequest):
         self.url = "/_private/_a2s/mcp/"
         self.client = APIClient()
 
-        # Create test user
-        self.test_username = "marcus"
+        # Use the authenticated user's principal (from IdentityRequest)
+        # This is required because AccessView only allows querying your own access
+        # unless you have admin privileges
+        self.test_username = self.user_data["username"]
         self.test_principal = Principal.objects.create(username=self.test_username, tenant=self.tenant)
 
         # Create permissions for integrations app
@@ -4191,7 +4193,7 @@ class MCPDiagnoseAccessTests(MCPToolTestMixin, IdentityRequest):
         Access.objects.create(permission=self.write_perm, role=self.integrations_admin_role, tenant=self.tenant)
         Access.objects.create(permission=self.read_perm, role=self.integrations_admin_role, tenant=self.tenant)
 
-        # Create group with notifications role
+        # Create group with notifications role and add the test principal
         self.notifications_group = Group.objects.create(name="Notification Admins", tenant=self.tenant)
         self.notifications_group.principals.add(self.test_principal)
         policy = Policy.objects.create(name="notifications_policy", group=self.notifications_group, tenant=self.tenant)
