@@ -870,7 +870,7 @@
                   "$ref": "#/components/schemas/FieldMask"
                 }
               ],
-              "default": "resource(id),role(id),subject(id,type)"
+              "default": "resource(id,type),role(id),subject(id,type)"
             },
             "explode": false
           }
