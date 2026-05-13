@@ -3119,8 +3119,8 @@ def diagnose_access(
 
     # Build a set of all available permission strings
     all_available_perms: set[str] = set()
-    for perm in available_permissions:
-        perm_str = perm.get("permission", "")
+    for perm_entry in available_permissions:
+        perm_str = perm_entry.get("permission", "")
         if perm_str:
             all_available_perms.add(perm_str)
 
