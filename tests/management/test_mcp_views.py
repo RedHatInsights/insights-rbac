@@ -4145,6 +4145,7 @@ class MCPInvestigateUserAccessV2Tests(MCPToolTestMixin, IdentityRequest):
         self.assertTrue(tool_output["analysis"]["has_expected_permission"])
 
 
+@override_settings(BYPASS_BOP_VERIFICATION=True)
 class MCPDiagnoseAccessTests(MCPToolTestMixin, IdentityRequest):
     """Tests for the diagnose_access MCP tool."""
 
