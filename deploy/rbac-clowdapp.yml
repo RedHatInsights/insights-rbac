@@ -683,6 +683,8 @@ objects:
             value: ${ADD_UNGROUPED_HOSTS_ID}
           - name: REMOVE_NULL_VALUE
             value: ${REMOVE_NULL_VALUE}
+          - name: MCP_WRITE_ENABLED
+            value: ${MCP_WRITE_ENABLED}
           - name: SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
             value: ${SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID}
           - name: SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID
@@ -1731,6 +1733,9 @@ parameters:
   value: 'False'
 - name: REMOVE_NULL_VALUE
   description: Remove null value from the list of workspace id
+  value: 'False'
+- name: MCP_WRITE_ENABLED
+  description: Enable MCP write tools (create groups, roles, etc). Disabled by default for read-only MCP deployments.
   value: 'False'
 - name: WORKSPACE_ORG_CREATION_LIMIT
   description: The limit of workspaces for all organizations

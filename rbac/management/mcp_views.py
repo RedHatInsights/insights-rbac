@@ -86,6 +86,16 @@ _workspace_detail_view = WorkspaceViewSet.as_view({"get": "retrieve"})
 _role_binding_list_view = RoleBindingViewSet.as_view({"get": "list"})
 _role_binding_by_subject_view = RoleBindingViewSet.as_view({"get": "by_subject"})
 
+# Write views (POST)
+_group_create_view = GroupViewSet.as_view({"post": "create"})
+_group_principals_write_view = GroupViewSet.as_view({"post": "principals"})
+_group_roles_write_view = GroupViewSet.as_view({"post": "roles"})
+_role_v1_create_view = RoleViewSet.as_view({"post": "create"})
+_role_v2_create_view = RoleV2ViewSet.as_view({"post": "create"})
+_role_binding_batch_create_view = RoleBindingViewSet.as_view({"post": "batch_create"})
+_workspace_create_view = WorkspaceViewSet.as_view({"post": "create"})
+_cross_account_create_view = CrossAccountRequestViewSet.as_view({"post": "create"})
+
 logger = logging.getLogger(__name__)
 
 PROTOCOL_VERSION = "2025-03-26"
@@ -181,6 +191,7 @@ class ToolConfig:
     requires_auth: bool = False
     passes_request: bool = False
     api_version: str = ApiVersion.COMMON
+    write: bool = False
 
 
 _TOOL_CONFIG: dict[str, ToolConfig] = {}
@@ -191,6 +202,7 @@ def register_tool(
     description: str,
     requires_auth: bool = False,
     api_version: str = ApiVersion.COMMON,
+    write: bool = False,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Register a tool with both FastMCP and _TOOL_CONFIG.
 
@@ -212,6 +224,7 @@ def register_tool(
             requires_auth=requires_auth,
             passes_request=passes_request,
             api_version=api_version,
+            write=write,
         )
 
         if passes_request:
@@ -234,14 +247,23 @@ def register_tool(
     return decorator
 
 
-def _clone_request(source: HttpRequest, path: str, **kwargs: Any) -> HttpRequest:
+def _clone_request(
+    source: HttpRequest, path: str, *, method: str = "GET", body: Any = None, **kwargs: Any
+) -> HttpRequest:
     """Clone a Django request for internal view delegation.
 
     Copies authentication context (user, tenant, identity header) and
     selected tracing headers from the source request so that the target
     view applies the same permission checks and is observable in traces.
     """
-    view_request = _request_factory.get(path, **kwargs)
+    if method.upper() == "POST":
+        view_request = _request_factory.post(
+            path, data=json.dumps(body) if body is not None else "", content_type="application/json"
+        )
+    else:
+        view_request = _request_factory.get(path, **kwargs)
+
+    view_request._dont_enforce_csrf_checks = True
     view_request.user = source.user
     view_request.tenant = getattr(source, "tenant", None)
     view_request.req_id = getattr(source, "req_id", None)
@@ -256,6 +278,45 @@ def _clone_request(source: HttpRequest, path: str, **kwargs: Any) -> HttpRequest
             view_request.META[header] = value
 
     return view_request
+
+
+def _call_view_write(
+    request: HttpRequest,
+    view: Callable[..., Any],
+    path: str,
+    body: dict[str, Any],
+    **view_kwargs: str,
+) -> str:
+    """Call a Django view with a POST request and return the response body.
+
+    For 4xx/5xx responses, wraps the response body in an error structure
+    so MCP clients can distinguish success from failure without parsing
+    the view's raw output.
+    """
+    view_request = _clone_request(request, path, method="POST", body=body)
+    response = view(view_request, **view_kwargs)
+    if hasattr(response, "render"):
+        response = response.render()
+    content = response.content.decode()
+    if response.status_code >= 400:
+        return json.dumps({"error": f"HTTP {response.status_code}", "detail": content})
+    return content
+
+
+def _resolve_group_uuid(group_uuid: str, group_name: str, tenant) -> tuple[str | None, str | None]:
+    """Resolve a group to its UUID from either group_uuid or group_name.
+
+    Returns (resolved_uuid, error_json). On success error_json is None;
+    on failure resolved_uuid is None and error_json is a JSON error string.
+    """
+    if group_uuid:
+        return group_uuid, None
+    if group_name:
+        group = Group.objects.filter(name__iexact=group_name, tenant=tenant).only("uuid").first()
+        if not group:
+            return None, json.dumps({"error": f"Group '{group_name}' not found"})
+        return str(group.uuid), None
+    return None, json.dumps({"error": "Either group_uuid or group_name is required"})
 
 
 # --- Tool implementations ---
@@ -774,15 +835,10 @@ def list_group_roles(
     if not tenant:
         return json.dumps({"error": "No tenant context available"})
 
-    resolved_uuid = group_uuid
-    if not resolved_uuid and group_name:
-        group = Group.objects.filter(name__iexact=group_name, tenant=tenant).only("uuid").first()
-        if not group:
-            return json.dumps({"error": f"Group '{group_name}' not found"})
-        resolved_uuid = str(group.uuid)
-
-    if not resolved_uuid:
-        return json.dumps({"error": "Either group_uuid or group_name is required"})
+    resolved_uuid, error = _resolve_group_uuid(group_uuid, group_name, tenant)
+    if error:
+        return error
+    assert resolved_uuid is not None
 
     query_params: dict[str, str] = {
         "limit": str(limit),
@@ -3016,6 +3072,276 @@ def _get_user_access_v2(request: HttpRequest, principal: Principal, tenant: Any)
     return access_list
 
 
+# --- Write tool implementations (gated by MCP_WRITE_ENABLED) ---
+
+# ┌──────────────────────────────────────┬───────────┬─────────────────────────────────────────────────────┐
+# │ MCP Tool                             │ Gating    │ API Endpoint                                        │
+# ├──────────────────────────────────────┼───────────┼─────────────────────────────────────────────────────┤
+# │ create_group                         │ both      │ POST /api/v1/groups/                                │
+# │ add_principals_to_group              │ both      │ POST /api/v1/groups/{uuid}/principals/              │
+# │ add_roles_to_group                   │ v1        │ POST /api/v1/groups/{uuid}/roles/                   │
+# │ create_role_v1                       │ v1        │ POST /api/v1/roles/                                 │
+# │ create_role                          │ v2        │ POST /api/v2/roles/                                 │
+# │ create_role_bindings                 │ v2        │ POST /api/v2/role-bindings/:batchCreate              │
+# │ create_workspace                     │ v2        │ POST /api/v2/workspaces/                            │
+# │ create_cross_account_request         │ both      │ POST /api/v1/cross-account-requests/                │
+# └──────────────────────────────────────┴───────────┴─────────────────────────────────────────────────────┘
+
+
+@register_tool(
+    description=(
+        "Create a new custom group. Groups are collections of principals (users) that can be "
+        "assigned roles. Works for both V1 and V2 organizations. "
+        "Required: name (string). Optional: description (string). "
+        "Example: create_group(name='Engineering Team', description='Backend engineers') "
+        "Returns: the created group object with uuid, name, description. "
+        "Calls: POST /api/v1/groups/"
+    ),
+    requires_auth=True,
+    write=True,
+)
+def create_group(
+    request: HttpRequest,
+    *,
+    name: str,
+    description: str = "",
+) -> str:
+    """Create a group by delegating to GroupViewSet."""
+    body: dict[str, Any] = {"name": name}
+    if description:
+        body["description"] = description
+
+    path = reverse("v1_management:group-list")
+    return _call_view_write(request, _group_create_view, path, body)
+
+
+@register_tool(
+    description=(
+        "Add one or more principals (users) to a group. Provide either group_uuid OR group_name "
+        "(group_uuid takes precedence). Works for both V1 and V2 organizations. "
+        "Required: principals (list of usernames to add). "
+        "Example: add_principals_to_group(group_name='Engineering', principals=['jdoe', 'jsmith']) "
+        "Returns: {principals: [{username}], ...}. "
+        "Calls: POST /api/v1/groups/{uuid}/principals/"
+    ),
+    requires_auth=True,
+    write=True,
+)
+def add_principals_to_group(
+    request: HttpRequest,
+    *,
+    group_uuid: str = "",
+    group_name: str = "",
+    principals: list[str],
+) -> str:
+    """Add principals to a group by delegating to GroupViewSet.principals."""
+    tenant = getattr(request, "tenant", None)
+    if not tenant:
+        return json.dumps({"error": "No tenant context available"})
+
+    resolved_uuid, error = _resolve_group_uuid(group_uuid, group_name, tenant)
+    if error:
+        return error
+    assert resolved_uuid is not None
+
+    body = {"principals": [{"username": u} for u in principals]}
+    path = reverse("v1_management:group-principals", kwargs={"uuid": resolved_uuid})
+    return _call_view_write(request, _group_principals_write_view, path, body, uuid=resolved_uuid)
+
+
+@register_tool(
+    description=(
+        "Assign one or more roles to a group. Provide either group_uuid OR group_name "
+        "(group_uuid takes precedence). V1 only -- blocked for V2 organizations "
+        "(use create_role_bindings instead). "
+        "Required: roles (list of role UUIDs to assign). "
+        "Example: add_roles_to_group(group_name='Engineering', roles=['uuid-1', 'uuid-2']) "
+        "Returns: the updated group-roles mapping. "
+        "Calls: POST /api/v1/groups/{uuid}/roles/"
+    ),
+    requires_auth=True,
+    write=True,
+    api_version=ApiVersion.V1,
+)
+def add_roles_to_group(
+    request: HttpRequest,
+    *,
+    group_uuid: str = "",
+    group_name: str = "",
+    roles: list[str],
+) -> str:
+    """Add roles to a group by delegating to GroupViewSet.roles."""
+    tenant = getattr(request, "tenant", None)
+    if not tenant:
+        return json.dumps({"error": "No tenant context available"})
+
+    resolved_uuid, error = _resolve_group_uuid(group_uuid, group_name, tenant)
+    if error:
+        return error
+    assert resolved_uuid is not None
+
+    body = {"roles": [{"uuid": r} for r in roles]}
+    path = reverse("v1_management:group-roles", kwargs={"uuid": resolved_uuid})
+    return _call_view_write(request, _group_roles_write_view, path, body, uuid=resolved_uuid)
+
+
+@register_tool(
+    description=(
+        "Create a custom role (V1 API). V1 only -- blocked for V2 organizations "
+        "(use create_role for V2). "
+        "Required: name, access (list of permission objects). "
+        "Each access entry needs: permission (string 'app:resource:verb') and optionally "
+        "resourceDefinitions (list of resource definition filters). "
+        "Example: create_role_v1(name='Cost Reader', access=[{'permission': 'cost-management:cost_model:read'}]) "
+        "Returns: the created role object with uuid, name, access list. "
+        "Calls: POST /api/v1/roles/"
+    ),
+    requires_auth=True,
+    write=True,
+    api_version=ApiVersion.V1,
+)
+def create_role_v1(
+    request: HttpRequest,
+    *,
+    name: str,
+    display_name: str = "",
+    description: str = "",
+    access: list[dict[str, Any]],
+) -> str:
+    """Create a V1 role by delegating to RoleViewSet."""
+    body: dict[str, Any] = {"name": name, "access": access}
+    if display_name:
+        body["display_name"] = display_name
+    if description:
+        body["description"] = description
+
+    path = reverse("v1_management:role-list")
+    return _call_view_write(request, _role_v1_create_view, path, body)
+
+
+@register_tool(
+    description=(
+        "Create a custom role (V2 API). V2 only -- requires workspace-enabled organization. "
+        "Required: name, permissions (list of permission objects). "
+        "Each permission needs: application, resource_type, operation. "
+        "Example: create_role(name='Cost Reader', permissions=[{'application': 'cost-management', "
+        "'resource_type': 'cost_model', 'operation': 'read'}]) "
+        "Returns: the created role object with uuid, name, permissions list. "
+        "Calls: POST /api/v2/roles/"
+    ),
+    requires_auth=True,
+    write=True,
+    api_version=ApiVersion.V2,
+)
+def create_role(
+    request: HttpRequest,
+    *,
+    name: str,
+    description: str = "",
+    permissions: list[dict[str, str]],
+) -> str:
+    """Create a V2 role by delegating to RoleV2ViewSet."""
+    body: dict[str, Any] = {"name": name, "permissions": permissions}
+    if description:
+        body["description"] = description
+
+    path = reverse("v2_management:roles-list")
+    return _call_view_write(request, _role_v2_create_view, path, body)
+
+
+@register_tool(
+    description=(
+        "Create role bindings (V2 API). Assigns roles to subjects (users/groups) "
+        "within resource scopes (workspaces). V2 only. Can create one or many bindings. "
+        "Required: bindings (list of binding objects, each with role, resource, subject). "
+        "Each binding needs: role (UUID string), resource (object with type and id), "
+        "subject (object with type and id -- type is 'principal' or 'group'). "
+        "Example: create_role_bindings(bindings=[{"
+        "'role': '<role-uuid>', 'resource': {'type': 'workspace', 'id': '<ws-uuid>'}, "
+        "'subject': {'type': 'principal', 'id': '<user-uuid>'}}]) "
+        "Returns: list of created role binding objects. "
+        "Calls: POST /api/v2/role-bindings/:batchCreate"
+    ),
+    requires_auth=True,
+    write=True,
+    api_version=ApiVersion.V2,
+)
+def create_role_bindings(
+    request: HttpRequest,
+    *,
+    bindings: list[dict[str, Any]],
+) -> str:
+    """Create role bindings by delegating to RoleBindingViewSet.batch_create."""
+    body: dict[str, Any] = {"requests": bindings}
+    path = reverse("v2_management:role-bindings-batch-create")
+    return _call_view_write(request, _role_binding_batch_create_view, path, body)
+
+
+@register_tool(
+    description=(
+        "Create a workspace (V2 API). Workspaces are hierarchical containers used to scope "
+        "role bindings. V2 only. "
+        "Required: name (string). Optional: description (string), parent_id (UUID of parent workspace). "
+        "Example: create_workspace(name='EMEA Engineering', parent_id='<root-workspace-uuid>') "
+        "Returns: the created workspace object with uuid, name, type, parent_id. "
+        "Calls: POST /api/v2/workspaces/"
+    ),
+    requires_auth=True,
+    write=True,
+    api_version=ApiVersion.V2,
+)
+def create_workspace(
+    request: HttpRequest,
+    *,
+    name: str,
+    description: str = "",
+    parent_id: str = "",
+) -> str:
+    """Create a workspace by delegating to WorkspaceViewSet."""
+    body: dict[str, Any] = {"name": name}
+    if description:
+        body["description"] = description
+    if parent_id:
+        body["parent_id"] = parent_id
+
+    path = reverse("v2_management:workspace-list")
+    return _call_view_write(request, _workspace_create_view, path, body)
+
+
+@register_tool(
+    description=(
+        "Create a cross-account access request. Allows users from one org (e.g. TAMs) "
+        "to request temporary access to another org's resources. "
+        "Required: target_account (the account number to request access to), "
+        "start_date (YYYY-MM-DD), end_date (YYYY-MM-DD), roles (list of role UUIDs). "
+        "Example: create_cross_account_request(target_account='12345', "
+        "start_date='2026-06-01', end_date='2026-06-30', roles=['<role-uuid>']) "
+        "Returns: the created request with request_id, status, dates. "
+        "Calls: POST /api/v1/cross-account-requests/"
+    ),
+    requires_auth=True,
+    write=True,
+)
+def create_cross_account_request(
+    request: HttpRequest,
+    *,
+    target_account: str,
+    start_date: str,
+    end_date: str,
+    roles: list[str],
+) -> str:
+    """Create a cross-account request by delegating to CrossAccountRequestViewSet."""
+    body: dict[str, Any] = {
+        "target_account": target_account,
+        "start_date": start_date,
+        "end_date": end_date,
+        "roles": roles,
+    }
+
+    path = reverse("v1_api:cross-list")
+    return _call_view_write(request, _cross_account_create_view, path, body)
+
+
 # --- JSON-RPC parsing ---
 
 
@@ -3171,19 +3497,31 @@ def _is_v2_available() -> bool:
     return getattr(settings, "V2_APIS_ENABLED", False)
 
 
+def _is_write_enabled() -> bool:
+    """Check whether MCP write tools are enabled."""
+    return getattr(settings, "MCP_WRITE_ENABLED", False)
+
+
 def _handle_tools_list(request: HttpRequest, request_id: Any, params: dict[str, Any]) -> JsonResponse:
     """Handle MCP tools/list request using FastMCP's registered tools."""
     v2_available = _is_v2_available()
+    write_enabled = _is_write_enabled()
     overrides = _get_all_description_overrides()
-    tools_data = [
-        {
-            "name": tool.name,
-            "description": overrides.get(tool.name, tool.description or ""),
-            "inputSchema": tool.inputSchema,
-        }
-        for tool in _get_tools()
-        if v2_available or _TOOL_CONFIG.get(tool.name, ToolConfig(fn=lambda: "")).api_version != ApiVersion.V2
-    ]
+    tools_data = []
+    for tool in _get_tools():
+        config = _TOOL_CONFIG.get(tool.name, ToolConfig(fn=lambda: ""))
+        if not v2_available and config.api_version == ApiVersion.V2:
+            continue
+        description = overrides.get(tool.name, tool.description or "")
+        if config.write and not write_enabled:
+            description = f"[DISABLED -- write mode off] {description}"
+        tools_data.append(
+            {
+                "name": tool.name,
+                "description": description,
+                "inputSchema": tool.inputSchema,
+            }
+        )
     return _success_response(request_id, {"tools": tools_data})
 
 
@@ -3258,6 +3596,14 @@ def _handle_tools_call(request: HttpRequest, request_id: Any, params: dict[str, 
             request_id,
             -32602,
             f"Tool '{tool_name}' requires V2 APIs, which are not enabled in this deployment.",
+        )
+
+    if config.write and not _is_write_enabled():
+        logger.warning("mcp: tools/call tool='%s' rejected, write mode disabled", tool_name)
+        return _error_response(
+            request_id,
+            -32602,
+            f"Tool '{tool_name}' is a write operation. Write mode is disabled (MCP_WRITE_ENABLED=False).",
         )
 
     org_id = getattr(getattr(request, "user", None), "org_id", None)
