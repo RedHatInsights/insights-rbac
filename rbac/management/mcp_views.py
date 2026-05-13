@@ -107,6 +107,14 @@ _workspace_move_view = WorkspaceViewSet.as_view({"post": "move"})
 _cross_account_update_view = CrossAccountRequestViewSet.as_view({"put": "update"})
 _cross_account_patch_view = CrossAccountRequestViewSet.as_view({"patch": "partial_update"})
 
+# Write views (DELETE)
+_group_delete_view = GroupViewSet.as_view({"delete": "destroy"})
+_group_principals_delete_view = GroupViewSet.as_view({"delete": "principals"})
+_group_roles_delete_view = GroupViewSet.as_view({"delete": "roles"})
+_role_v1_delete_view = RoleViewSet.as_view({"delete": "destroy"})
+_role_v2_bulk_delete_view = RoleV2ViewSet.as_view({"post": "bulk_destroy"})
+_workspace_delete_view = WorkspaceViewSet.as_view({"delete": "destroy"})
+
 logger = logging.getLogger(__name__)
 
 PROTOCOL_VERSION = "2025-03-26"
@@ -324,6 +332,30 @@ def _call_view_write(
     return content
 
 
+def _call_view_delete(
+    request: HttpRequest,
+    view: Callable[..., Any],
+    path: str,
+    query_params: dict[str, str] | None = None,
+    **view_kwargs: str,
+) -> str:
+    """Call a Django view with a DELETE request and return the response body."""
+    if query_params:
+        from urllib.parse import urlencode
+
+        path = f"{path}?{urlencode(query_params)}"
+    view_request = _clone_request(request, path, method="DELETE")
+    response = view(view_request, **view_kwargs)
+    if hasattr(response, "render"):
+        response = response.render()
+    if response.status_code == 204:
+        return json.dumps({"status": "deleted"})
+    content = response.content.decode()
+    if response.status_code >= 400:
+        return json.dumps({"error": f"HTTP {response.status_code}", "detail": content})
+    return content
+
+
 def _resolve_group_uuid(group_uuid: str, group_name: str, tenant) -> tuple[str | None, str | None]:
     """Resolve a group to its UUID from either group_uuid or group_name.
 
@@ -471,6 +503,12 @@ def _call_view(
 # │ move_workspace                       │ v2 W      │ POST /api/v2/workspaces/{uuid}/move/              │
 # │ update_cross_account_request         │ common W  │ PUT /api/v1/cross-account-requests/{id}/          │
 # │ patch_cross_account_request          │ common W  │ PATCH /api/v1/cross-account-requests/{id}/        │
+# │ delete_group                         │ common W  │ DELETE /api/v1/groups/{uuid}/                     │
+# │ remove_principals_from_group         │ common W  │ DELETE /api/v1/groups/{uuid}/principals/          │
+# │ remove_roles_from_group              │ v1 W      │ DELETE /api/v1/groups/{uuid}/roles/               │
+# │ delete_role_v1                       │ v1 W      │ DELETE /api/v1/roles/{uuid}/                      │
+# │ bulk_delete_roles                    │ v2 W      │ POST /api/v2/roles/:batchDelete                   │
+# │ delete_workspace                     │ v2 W      │ DELETE /api/v2/workspaces/{uuid}/                 │
 # └──────────────────────────────────────┴───────────┴────────────────────────────────────────────────────┘
 
 
@@ -3694,6 +3732,214 @@ def patch_cross_account_request(
 
     path = reverse("v1_api:cross-detail", kwargs={"pk": request_id})
     return _call_view_write(request, _cross_account_patch_view, path, body, method="PATCH", pk=request_id)
+
+
+# --- DELETE tool implementations ---
+
+# ┌──────────────────────────────────────┬───────────┬─────────────────────────────────────────────────────┐
+# │ MCP Tool                             │ Gating    │ API Endpoint                                        │
+# ├──────────────────────────────────────┼───────────┼─────────────────────────────────────────────────────┤
+# │ delete_group                         │ both      │ DELETE /api/v1/groups/{uuid}/                       │
+# │ remove_principals_from_group         │ both      │ DELETE /api/v1/groups/{uuid}/principals/            │
+# │ remove_roles_from_group              │ v1        │ DELETE /api/v1/groups/{uuid}/roles/                 │
+# │ delete_role_v1                       │ v1        │ DELETE /api/v1/roles/{uuid}/                        │
+# │ bulk_delete_roles                    │ v2        │ POST /api/v2/roles/:batchDelete                    │
+# │ delete_workspace                     │ v2        │ DELETE /api/v2/workspaces/{uuid}/                   │
+# └──────────────────────────────────────┴───────────┴─────────────────────────────────────────────────────┘
+
+
+@register_tool(
+    description=(
+        "DESTRUCTIVE: Permanently delete a custom group. This operation is IRREVERSIBLE. "
+        "All role assignments and principal memberships in the group are removed. "
+        "Provide either group_uuid OR group_name (group_uuid takes precedence). "
+        "System groups (platform_default, admin_default) cannot be deleted. "
+        "Works for both V1 and V2 organizations. "
+        "Example: delete_group(group_name='Old Team') "
+        "Returns: {status: 'deleted'}. "
+        "Calls: DELETE /api/v1/groups/{uuid}/"
+    ),
+    requires_auth=True,
+    write=True,
+)
+def delete_group(
+    request: HttpRequest,
+    *,
+    group_uuid: str = "",
+    group_name: str = "",
+) -> str:
+    """Delete a group by delegating to GroupViewSet."""
+    tenant = getattr(request, "tenant", None)
+    if not tenant:
+        return json.dumps({"error": "No tenant context available"})
+
+    resolved_uuid, error = _resolve_group_uuid(group_uuid, group_name, tenant)
+    if error:
+        return error
+    assert resolved_uuid is not None
+
+    path = reverse("v1_management:group-detail", kwargs={"uuid": resolved_uuid})
+    return _call_view_delete(request, _group_delete_view, path, uuid=resolved_uuid)
+
+
+@register_tool(
+    description=(
+        "DESTRUCTIVE: Remove one or more principals (users) from a group. This is IRREVERSIBLE -- "
+        "re-adding requires a separate call. Provide either group_uuid OR group_name "
+        "(group_uuid takes precedence). At least one of usernames or service_accounts is required. "
+        "usernames: comma-separated list of usernames. "
+        "service_accounts: comma-separated list of service account client IDs. "
+        "Works for both V1 and V2 organizations. "
+        "Example: remove_principals_from_group(group_name='Engineering', usernames='jdoe,jsmith') "
+        "Returns: {status: 'deleted'}. "
+        "Calls: DELETE /api/v1/groups/{uuid}/principals/"
+    ),
+    requires_auth=True,
+    write=True,
+)
+def remove_principals_from_group(
+    request: HttpRequest,
+    *,
+    group_uuid: str = "",
+    group_name: str = "",
+    usernames: str = "",
+    service_accounts: str = "",
+) -> str:
+    """Remove principals from a group by delegating to GroupViewSet.principals."""
+    tenant = getattr(request, "tenant", None)
+    if not tenant:
+        return json.dumps({"error": "No tenant context available"})
+
+    if not usernames and not service_accounts:
+        return json.dumps({"error": "At least one of usernames or service_accounts is required"})
+
+    resolved_uuid, error = _resolve_group_uuid(group_uuid, group_name, tenant)
+    if error:
+        return error
+    assert resolved_uuid is not None
+
+    query_params: dict[str, str] = {}
+    if usernames:
+        query_params["usernames"] = usernames
+    if service_accounts:
+        query_params["service-accounts"] = service_accounts
+
+    path = reverse("v1_management:group-principals", kwargs={"uuid": resolved_uuid})
+    return _call_view_delete(request, _group_principals_delete_view, path, query_params, uuid=resolved_uuid)
+
+
+@register_tool(
+    description=(
+        "DESTRUCTIVE: Remove one or more roles from a group. This is IRREVERSIBLE -- "
+        "the role-group association is deleted (the role itself is NOT deleted). "
+        "V1 only -- blocked for V2 organizations (use update_role_binding instead). "
+        "Provide either group_uuid OR group_name (group_uuid takes precedence). "
+        "Required: roles (comma-separated string of role UUIDs). "
+        "Example: remove_roles_from_group(group_name='Engineering', roles='uuid-1,uuid-2') "
+        "Returns: {status: 'deleted'}. "
+        "Calls: DELETE /api/v1/groups/{uuid}/roles/"
+    ),
+    requires_auth=True,
+    write=True,
+    api_version=ApiVersion.V1,
+)
+def remove_roles_from_group(
+    request: HttpRequest,
+    *,
+    group_uuid: str = "",
+    group_name: str = "",
+    roles: str,
+) -> str:
+    """Remove roles from a group by delegating to GroupViewSet.roles."""
+    tenant = getattr(request, "tenant", None)
+    if not tenant:
+        return json.dumps({"error": "No tenant context available"})
+
+    resolved_uuid, error = _resolve_group_uuid(group_uuid, group_name, tenant)
+    if error:
+        return error
+    assert resolved_uuid is not None
+
+    query_params: dict[str, str] = {"roles": roles}
+    path = reverse("v1_management:group-roles", kwargs={"uuid": resolved_uuid})
+    return _call_view_delete(request, _group_roles_delete_view, path, query_params, uuid=resolved_uuid)
+
+
+@register_tool(
+    description=(
+        "DESTRUCTIVE: Permanently delete a custom role (V1 API). This operation is IRREVERSIBLE. "
+        "All permissions and group assignments for this role are removed. "
+        "V1 only -- blocked for V2 organizations (use bulk_delete_roles for V2). "
+        "System roles cannot be deleted. "
+        "Required: role_uuid. "
+        "Example: delete_role_v1(role_uuid='<uuid>') "
+        "Returns: {status: 'deleted'}. "
+        "Calls: DELETE /api/v1/roles/{uuid}/"
+    ),
+    requires_auth=True,
+    write=True,
+    api_version=ApiVersion.V1,
+)
+def delete_role_v1(
+    request: HttpRequest,
+    *,
+    role_uuid: str,
+) -> str:
+    """Delete a V1 role by delegating to RoleViewSet."""
+    path = reverse("v1_management:role-detail", kwargs={"uuid": role_uuid})
+    return _call_view_delete(request, _role_v1_delete_view, path, uuid=role_uuid)
+
+
+@register_tool(
+    description=(
+        "DESTRUCTIVE: Permanently delete one or more roles in a single atomic operation (V2 API). "
+        "This operation is IRREVERSIBLE. All role bindings referencing the deleted roles are removed. "
+        "V2 only -- requires workspace-enabled organization. "
+        "Atomic: if any UUID is not found, the entire operation fails and no roles are deleted. "
+        "Required: ids (list of role UUID strings). "
+        "Example: bulk_delete_roles(ids=['<uuid-1>', '<uuid-2>']) "
+        "Returns: {status: 'deleted'}. "
+        "Calls: POST /api/v2/roles/:batchDelete"
+    ),
+    requires_auth=True,
+    write=True,
+    api_version=ApiVersion.V2,
+)
+def bulk_delete_roles(
+    request: HttpRequest,
+    *,
+    ids: list[str],
+) -> str:
+    """Bulk-delete V2 roles by delegating to RoleV2ViewSet.bulk_destroy."""
+    body: dict[str, Any] = {"ids": ids}
+    path = reverse("v2_management:roles-bulk-destroy")
+    return _call_view_write(request, _role_v2_bulk_delete_view, path, body)
+
+
+@register_tool(
+    description=(
+        "DESTRUCTIVE: Permanently delete a workspace (V2 API). This operation is IRREVERSIBLE. "
+        "All role bindings scoped to this workspace are removed. "
+        "V2 only -- requires workspace-enabled organization. "
+        "Only STANDARD workspaces can be deleted -- root and ungrouped-hosts workspaces are protected. "
+        "Cannot delete a workspace that has children -- move or delete children first. "
+        "Required: workspace_uuid. "
+        "Example: delete_workspace(workspace_uuid='<uuid>') "
+        "Returns: {status: 'deleted'}. "
+        "Calls: DELETE /api/v2/workspaces/{uuid}/"
+    ),
+    requires_auth=True,
+    write=True,
+    api_version=ApiVersion.V2,
+)
+def delete_workspace(
+    request: HttpRequest,
+    *,
+    workspace_uuid: str,
+) -> str:
+    """Delete a workspace by delegating to WorkspaceViewSet."""
+    path = reverse("v2_management:workspace-detail", kwargs={"pk": workspace_uuid})
+    return _call_view_delete(request, _workspace_delete_view, path, pk=workspace_uuid)
 
 
 # --- JSON-RPC parsing ---
