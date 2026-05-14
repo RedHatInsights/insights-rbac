@@ -33,9 +33,12 @@ from management.mcp_views import (
     _permission_matches,
 )
 from management.models import Access, AuditLog, Group, Permission, Policy, Principal, Role
+from management.workspace.model import Workspace
+from management.relation_replicator.noop_replicator import NoopReplicator
 from management.role.v2_model import RoleV2
 from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
 from management.tenant_mapping.model import TenantMapping
+from management.tenant_service.v2 import V2TenantBootstrapService
 from rest_framework import status
 from rest_framework.test import APIClient
 from tests.identity_request import IdentityRequest
@@ -59,6 +62,12 @@ class MCPToolTestMixin:
         if use_auth:
             kwargs.update(self.headers)
         return self.client.post(self.url, **kwargs)
+
+    def _get_tool_names(self):
+        """Get tool names from tools/list response."""
+        body = {"jsonrpc": "2.0", "method": "tools/list", "id": 2, "params": {}}
+        response = self.client.post(self.url, data=json.dumps(body), content_type="application/json", **self.headers)
+        return [t["name"] for t in response.json()["result"]["tools"]]
 
     def _get_tool_output(self, response):
         """Extract tool output from MCP response."""
@@ -4708,3 +4717,463 @@ class MCPInvestigateUserAccessV2Tests(MCPToolTestMixin, IdentityRequest):
 
         tool_output = self._get_tool_output(response)
         self.assertTrue(tool_output["analysis"]["has_expected_permission"])
+
+
+class MCPWriteGatingTests(MCPToolTestMixin, IdentityRequest):
+    """Test MCP_WRITE_ENABLED flag gating for write tools."""
+
+    def setUp(self):
+        """Set up write gating tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.principal = Principal.objects.create(username="test_user", tenant=self.tenant)
+
+    def tearDown(self):
+        """Tear down write gating tests."""
+        Group.objects.all().delete()
+        Principal.objects.all().delete()
+        super().tearDown()
+
+    def test_write_tools_annotated_when_disabled(self):
+        """Write tools are listed with disabled annotation when MCP_WRITE_ENABLED=False."""
+        body = {"jsonrpc": "2.0", "method": "tools/list", "id": 2, "params": {}}
+        response = self.client.post(self.url, data=json.dumps(body), content_type="application/json", **self.headers)
+        tools = {t["name"]: t["description"] for t in response.json()["result"]["tools"]}
+        self.assertIn("create_group", tools)
+        self.assertTrue(tools["create_group"].startswith("[DISABLED -- write mode off]"))
+        self.assertIn("add_principals_to_group", tools)
+        self.assertTrue(tools["add_principals_to_group"].startswith("[DISABLED -- write mode off]"))
+
+    @override_settings(MCP_WRITE_ENABLED=True)
+    def test_write_tools_visible_when_enabled(self):
+        """Write tools are listed when MCP_WRITE_ENABLED=True."""
+        tool_names = self._get_tool_names()
+        self.assertIn("create_group", tool_names)
+        self.assertIn("add_principals_to_group", tool_names)
+        self.assertIn("create_cross_account_request", tool_names)
+
+    def test_write_tool_call_rejected_when_disabled(self):
+        """Calling a write tool returns error when MCP_WRITE_ENABLED=False."""
+        response = self._call_tool("create_group", {"name": "Test Group"})
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertIn("write mode is disabled", data["error"]["message"].lower())
+
+    @override_settings(MCP_WRITE_ENABLED=True)
+    def test_write_tool_call_requires_auth(self):
+        """Write tools require authentication even when write mode is enabled."""
+        response = self._call_tool("create_group", {"name": "Test Group"}, use_auth=False)
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    def test_read_tools_still_visible_when_write_disabled(self):
+        """Read-only tools remain visible when MCP_WRITE_ENABLED=False."""
+        tool_names = self._get_tool_names()
+        self.assertIn("list_principals", tool_names)
+        self.assertIn("list_groups", tool_names)
+        self.assertIn("hello", tool_names)
+
+    @override_settings(MCP_WRITE_ENABLED=True)
+    def test_v1_write_tools_hidden_when_v2_disabled(self):
+        """V1 write tools are listed, but V2 write tools are hidden when V2 is disabled."""
+        tool_names = self._get_tool_names()
+        self.assertIn("create_group", tool_names)
+        self.assertIn("add_roles_to_group", tool_names)
+        self.assertNotIn("create_role", tool_names)
+        self.assertNotIn("create_role_bindings", tool_names)
+        self.assertNotIn("create_workspace", tool_names)
+
+    def test_write_config_on_tools(self):
+        """All write tools have write=True in their config."""
+        write_tool_names = [
+            "create_group",
+            "add_principals_to_group",
+            "add_roles_to_group",
+            "create_role_v1",
+            "create_role",
+            "create_role_bindings",
+            "create_workspace",
+            "create_cross_account_request",
+        ]
+        for name in write_tool_names:
+            config = _TOOL_CONFIG.get(name)
+            self.assertIsNotNone(config, f"Tool '{name}' not registered")
+            self.assertTrue(config.write, f"Tool '{name}' should have write=True")
+            self.assertTrue(config.requires_auth, f"Tool '{name}' should have requires_auth=True")
+
+
+@override_settings(MCP_WRITE_ENABLED=True)
+class MCPCreateGroupTests(MCPToolTestMixin, IdentityRequest):
+    """Test create_group write tool."""
+
+    def setUp(self):
+        """Set up create group tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.principal = Principal.objects.create(username="test_user", tenant=self.tenant)
+
+    def tearDown(self):
+        """Tear down create group tests."""
+        Group.objects.all().delete()
+        Principal.objects.all().delete()
+        super().tearDown()
+
+    def test_create_group_success(self):
+        """Create a group successfully."""
+        response = self._call_tool("create_group", {"name": "New Test Group", "description": "A test group"})
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        output = json.loads(data["result"]["content"][0]["text"])
+        self.assertEqual(output["name"], "New Test Group")
+        self.assertEqual(output["description"], "A test group")
+        self.assertIn("uuid", output)
+
+    def test_create_group_missing_name(self):
+        """Creating a group without required 'name' returns a param error."""
+        response = self._call_tool("create_group", {})
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32602)
+
+    def test_create_group_no_auth(self):
+        """Creating a group without auth returns auth error."""
+        response = self._call_tool("create_group", {"name": "Test"}, use_auth=False)
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+
+@override_settings(MCP_WRITE_ENABLED=True)
+class MCPAddPrincipalsToGroupTests(MCPToolTestMixin, IdentityRequest):
+    """Test add_principals_to_group write tool."""
+
+    def setUp(self):
+        """Set up add principals tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.principal = Principal.objects.create(username="test_user", tenant=self.tenant)
+        V2TenantBootstrapService(NoopReplicator()).bootstrap_tenant(self.tenant)
+        self.group = Group.objects.create(name="Test Group", tenant=self.tenant)
+
+    def tearDown(self):
+        """Tear down add principals tests."""
+        Group.objects.all().delete()
+        Principal.objects.all().delete()
+        super().tearDown()
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
+    def test_add_principals_by_uuid(self, mock_proxy, mock_replicator):
+        """Add principals to a group by UUID."""
+        mock_proxy.return_value = {
+            "status_code": 200,
+            "data": [
+                {
+                    "username": "newuser",
+                    "email": "new@example.com",
+                    "first_name": "New",
+                    "last_name": "User",
+                    "is_org_admin": False,
+                    "user_id": "12345",
+                }
+            ],
+        }
+        response = self._call_tool(
+            "add_principals_to_group",
+            {"group_uuid": str(self.group.uuid), "principals": ["newuser"]},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("result", data, f"Expected result but got: {data}")
+        self.assertFalse(data["result"]["isError"])
+
+    def test_add_principals_by_name(self):
+        """Resolving group by name works."""
+        response = self._call_tool(
+            "add_principals_to_group",
+            {"group_name": "Test Group", "principals": ["newuser"]},
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("result", data, f"Expected result but got: {data}")
+        self.assertFalse(data["result"]["isError"])
+
+    def test_add_principals_missing_group(self):
+        """Adding to a non-existent group returns error."""
+        response = self._call_tool(
+            "add_principals_to_group",
+            {"group_name": "Nonexistent", "principals": ["user1"]},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        output = json.loads(data["result"]["content"][0]["text"])
+        self.assertIn("error", output)
+        self.assertIn("not found", output["error"])
+
+    def test_add_principals_no_group_specified(self):
+        """Omitting both group_uuid and group_name returns error."""
+        response = self._call_tool(
+            "add_principals_to_group",
+            {"principals": ["user1"]},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        output = json.loads(data["result"]["content"][0]["text"])
+        self.assertIn("error", output)
+        self.assertIn("required", output["error"].lower())
+
+
+@override_settings(MCP_WRITE_ENABLED=True, V2_APIS_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
+class MCPWriteToolsV2Tests(MCPToolTestMixin, IdentityRequest):
+    """Test V2 write tools (create_role, create_workspace).
+
+    Uses ATOMIC_RETRY_DISABLED=True so pgtransaction.atomic(retry=...)
+    falls back to plain transaction.atomic(), avoiding nesting issues
+    with TestCase's wrapping transaction.
+    """
+
+    def setUp(self):
+        """Set up V2 write tool tests."""
+        reload(urls)
+        clear_url_caches()
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.principal = Principal.objects.create(username="test_user", tenant=self.tenant)
+        self.enterContext(
+            patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+        )
+        V2TenantBootstrapService(NoopReplicator()).bootstrap_tenant(self.tenant)
+        TenantMapping.objects.update_or_create(tenant=self.tenant, defaults={"v2_write_activated_at": timezone.now()})
+        Permission.objects.create(
+            application="rbac",
+            resource_type="group",
+            verb="read",
+            permission="rbac:group:read",
+            tenant=self.tenant,
+        )
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.get_kessel_principal_id",
+                return_value="localhost/test-user-id",
+            )
+        )
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.WorkspaceInventoryAccessChecker.check_resource_access",
+                return_value=True,
+            )
+        )
+
+    def tearDown(self):
+        """Tear down V2 write tool tests."""
+        RoleBinding.objects.all().delete()
+        Workspace.objects.filter(type=Workspace.Types.STANDARD).delete()
+        RoleV2.objects.all().delete()
+        Permission.objects.filter(permission="rbac:group:read").delete()
+        Group.objects.all().delete()
+        Principal.objects.all().delete()
+        TenantMapping.objects.filter(tenant=self.tenant).delete()
+        super().tearDown()
+
+    def test_v2_write_tools_visible_when_both_flags_enabled(self):
+        """V2 write tools appear when both MCP_WRITE_ENABLED and V2_APIS_ENABLED are True."""
+        tool_names = self._get_tool_names()
+        self.assertIn("create_role", tool_names)
+        self.assertIn("create_role_bindings", tool_names)
+        self.assertIn("create_workspace", tool_names)
+
+    @patch("management.permissions.role_v2_access.RoleV2KesselAccessPermission.has_permission")
+    def test_create_role_v2_success(self, mock_perm):
+        """Create a V2 role successfully."""
+        mock_perm.return_value = True
+        response = self._call_tool(
+            "create_role",
+            {
+                "name": "Test V2 Role",
+                "description": "A test role",
+                "permissions": [
+                    {"application": "rbac", "resource_type": "group", "operation": "read"},
+                ],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("result", data, f"Expected result but got: {data}")
+        self.assertFalse(data["result"]["isError"], f"Tool returned error: {data['result']}")
+        output = json.loads(data["result"]["content"][0]["text"])
+        self.assertEqual(output.get("name"), "Test V2 Role", f"Got output: {output}")
+
+    @patch("management.permissions.workspace_access.WorkspaceAccessPermission.has_permission")
+    def test_create_workspace_success(self, mock_perm):
+        """Create a workspace successfully."""
+        mock_perm.return_value = True
+        root_ws = Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.ROOT).first()
+        self.assertIsNotNone(root_ws, "Root workspace should exist after bootstrap")
+
+        from management.workspace.view import WorkspaceViewSet
+
+        original_create_atomic = WorkspaceViewSet._create_atomic.__wrapped__
+
+        with patch.object(WorkspaceViewSet, "_create_atomic", original_create_atomic):
+            response = self._call_tool(
+                "create_workspace",
+                {
+                    "name": "Test Workspace",
+                    "description": "A test workspace",
+                    "parent_id": str(root_ws.id),
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("result", data, f"Expected result but got: {data}")
+        self.assertFalse(data["result"]["isError"], f"Tool returned error: {data['result']}")
+        output = json.loads(data["result"]["content"][0]["text"])
+        self.assertEqual(output.get("name"), "Test Workspace", f"Got output: {output}")
+
+    @patch("management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission")
+    @patch("management.permissions.role_binding_access.RoleBindingSystemUserAccessPermission.has_permission")
+    def test_create_role_bindings_success(self, mock_sys_perm, mock_kessel_perm):
+        """Create a role binding successfully."""
+        mock_sys_perm.return_value = True
+        mock_kessel_perm.return_value = True
+        role = RoleV2.objects.create(name="Binding Test Role", tenant=self.tenant)
+        root_ws = Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.ROOT).first()
+        response = self._call_tool(
+            "create_role_bindings",
+            {
+                "bindings": [
+                    {
+                        "role": {"id": str(role.id)},
+                        "resource": {"type": "workspace", "id": str(root_ws.id)},
+                        "subject": {"type": "principal", "id": str(self.principal.uuid)},
+                    }
+                ],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("result", data, f"Expected result but got: {data}")
+        self.assertFalse(data["result"]["isError"], f"Tool returned error: {data['result']}")
+
+
+@override_settings(MCP_WRITE_ENABLED=True)
+class MCPWriteToolsV1Tests(MCPToolTestMixin, IdentityRequest):
+    """Test V1-only write tools (add_roles_to_group, create_role_v1)."""
+
+    def setUp(self):
+        """Set up V1 write tool tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.principal = Principal.objects.create(username="test_user", tenant=self.tenant)
+        V2TenantBootstrapService(NoopReplicator()).bootstrap_tenant(self.tenant)
+        self.group = Group.objects.create(name="Test Group", tenant=self.tenant)
+        self.permission = Permission.objects.create(
+            application="cost-management",
+            resource_type="cost_model",
+            verb="read",
+            permission="cost-management:cost_model:read",
+            tenant=self.tenant,
+        )
+
+    def tearDown(self):
+        """Tear down V1 write tool tests."""
+        Role.objects.all().delete()
+        Group.objects.all().delete()
+        Permission.objects.filter(permission="cost-management:cost_model:read").delete()
+        Principal.objects.all().delete()
+        super().tearDown()
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+    def test_add_roles_to_group_success(self, mock_replicator):
+        """Add roles to a group successfully."""
+        role = Role.objects.create(name="Test Role", tenant=self.tenant, system=False)
+        Access.objects.create(role=role, permission=self.permission, tenant=self.tenant)
+        response = self._call_tool(
+            "add_roles_to_group",
+            {"group_name": "Test Group", "roles": [str(role.uuid)]},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("result", data, f"Expected result but got: {data}")
+        self.assertFalse(data["result"]["isError"], f"Tool returned error: {data['result']}")
+
+    def test_create_role_v1_success(self):
+        """Create a V1 role successfully."""
+        response = self._call_tool(
+            "create_role_v1",
+            {
+                "name": "MCP Created Role",
+                "access": [{"permission": "cost-management:cost_model:read", "resourceDefinitions": []}],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("result", data, f"Expected result but got: {data}")
+        self.assertFalse(data["result"]["isError"], f"Tool returned error: {data['result']}")
+        output = json.loads(data["result"]["content"][0]["text"])
+        self.assertEqual(output.get("name"), "MCP Created Role", f"Got output: {output}")
+
+
+@override_settings(MCP_WRITE_ENABLED=True)
+class MCPCrossAccountRequestTests(MCPToolTestMixin, IdentityRequest):
+    """Test create_cross_account_request write tool."""
+
+    def setUp(self):
+        """Set up cross-account request tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.principal = Principal.objects.create(username="test_user", tenant=self.tenant)
+        self.target_tenant = Tenant.objects.create(
+            tenant_name="target_org",
+            org_id="9999999",
+        )
+        self.role = Role.objects.create(name="CAR Test Role", system=True, tenant=self.tenant)
+
+    def tearDown(self):
+        """Tear down cross-account request tests."""
+        CrossAccountRequest.objects.all().delete()
+        Role.objects.filter(name="CAR Test Role").delete()
+        Principal.objects.all().delete()
+        self.target_tenant.delete()
+        super().tearDown()
+
+    def test_create_cross_account_request_success(self):
+        """Create a cross-account request successfully."""
+        response = self._call_tool(
+            "create_cross_account_request",
+            {
+                "target_account": "9999999",
+                "start_date": "2026-06-01",
+                "end_date": "2026-06-30",
+                "roles": [str(self.role.uuid)],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("result", data, f"Expected result but got: {data}")
