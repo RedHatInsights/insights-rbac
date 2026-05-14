@@ -22,8 +22,13 @@ from unittest.mock import patch
 from django.test import override_settings
 from management.models import CustomRoleV2, Permission
 from management.tasks import run_kessel_parity_checks_in_worker
+from management.tenant_mapping.model import TenantMapping
 from management.workspace.model import Workspace
 from tests.identity_request import IdentityRequest
+
+BOOTSTRAP_CHECKER_PATH = (
+    "management.inventory_checker.inventory_api_check.BootstrappedTenantInventoryChecker.check_bootstrapped_tenant"
+)
 
 
 class ParityCheckTasksTest(IdentityRequest):
@@ -52,6 +57,18 @@ class ParityCheckTasksTest(IdentityRequest):
             tenant=self.tenant,
             parent=self.default_workspace,
         )
+
+        # Create tenant mapping so bootstrap checker path is reachable
+        self.tenant_mapping = TenantMapping.objects.create(tenant=self.tenant)
+
+        # Mock bootstrap checker by default so existing tests aren't affected
+        self._bootstrap_patcher = patch(BOOTSTRAP_CHECKER_PATH, return_value=(True, []))
+        self.mock_bootstrap_checker = self._bootstrap_patcher.start()
+
+    def tearDown(self):
+        """Clean up mocks."""
+        self._bootstrap_patcher.stop()
+        super().tearDown()
 
     @override_settings(PARITY_CHECK_ENABLED=True, PARITY_CHECK_ORG_IDS="")
     def test_parity_check_task_no_org_ids_configured(self):
