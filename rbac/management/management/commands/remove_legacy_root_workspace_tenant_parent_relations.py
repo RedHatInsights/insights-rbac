@@ -62,6 +62,4 @@ class Command(BaseCommand):
             "Processed %s tenants; enqueued %s tuple removals.",
             result["tenants_processed"],
         )
-        self.stdout.write(
-            f"tenants_processed={result['tenants_processed']} relations_enqueued={result['relations_enqueued']}"
-        )
+        self.stdout.write(f"tenants_processed={result['tenants_processed']}")

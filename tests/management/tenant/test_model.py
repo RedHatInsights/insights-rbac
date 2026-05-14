@@ -89,7 +89,7 @@ class V2TenantBootstrapServiceTest(TestCase):
             ),
         )
         self.assertEqual(
-            1,
+            0,
             self.tuples.count_tuples(
                 all_of(
                     resource("rbac", "workspace", root.id),
@@ -305,9 +305,9 @@ class V2TenantBootstrapServiceTest(TestCase):
         # Admins get 2, otherwise 1
         num_group_membership_tuples = 2 + 1 + 2 + 1 + 1 + 1
         # o1 is already bootstrapped, should get 0
-        # existing unbootstrapped custom group tenants get 12
-        # new or otherwise unbootstrapped tenants get 21
-        num_tenant_bootstrapping_tuples = 0 + 21 + 12 + 21
+        # existing unbootstrapped custom group tenants get 11 (one fewer hierarchy tuple vs full bootstrap)
+        # new or otherwise unbootstrapped tenants get 20 (root workspace no longer gets workspace#parent@tenant)
+        num_tenant_bootstrapping_tuples = 0 + 20 + 11 + 20
 
         self.assertEqual(num_group_membership_tuples + num_tenant_bootstrapping_tuples, self.tuples.count_tuples())
 
@@ -645,7 +645,7 @@ class V2TenantBootstrapServiceTest(TestCase):
             f"Expected default workspace to be child of root workspace for tenant {org_id}",
         )
         self.assertEqual(
-            1,
+            0,
             self.tuples.count_tuples(
                 all_of(
                     resource("rbac", "workspace", root.id),
@@ -653,7 +653,7 @@ class V2TenantBootstrapServiceTest(TestCase):
                     subject("rbac", "tenant", f"localhost/{org_id}"),
                 )
             ),
-            f"Expected root workspace to be child of tenant for tenant {org_id}",
+            f"Expected root workspace not to replicate workspace#parent@tenant for tenant {org_id}",
         )
         self.assertEqual(
             1,
