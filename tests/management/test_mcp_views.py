@@ -33,9 +33,12 @@ from management.mcp_views import (
     _permission_matches,
 )
 from management.models import Access, AuditLog, Group, Permission, Policy, Principal, Role
+from management.workspace.model import Workspace
+from management.relation_replicator.noop_replicator import NoopReplicator
 from management.role.v2_model import RoleV2
 from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
 from management.tenant_mapping.model import TenantMapping
+from management.tenant_service.v2 import V2TenantBootstrapService
 from rest_framework import status
 from rest_framework.test import APIClient
 from tests.identity_request import IdentityRequest
@@ -59,6 +62,12 @@ class MCPToolTestMixin:
         if use_auth:
             kwargs.update(self.headers)
         return self.client.post(self.url, **kwargs)
+
+    def _get_tool_names(self):
+        """Get tool names from tools/list response."""
+        body = {"jsonrpc": "2.0", "method": "tools/list", "id": 2, "params": {}}
+        response = self.client.post(self.url, data=json.dumps(body), content_type="application/json", **self.headers)
+        return [t["name"] for t in response.json()["result"]["tools"]]
 
     def _get_tool_output(self, response):
         """Extract tool output from MCP response."""
@@ -3220,3 +3229,1385 @@ class MCPInvestigateTamAccessTests(MCPToolTestMixin, IdentityRequest):
         tool_output = self._get_tool_output(response)
         self.assertIn("permissions_by_application", tool_output["analysis"])
         self.assertIn("subscriptions", tool_output["analysis"]["permissions_by_application"])
+
+
+class AuditRedhatAccessTests(MCPToolTestMixin, IdentityRequest):
+    """Tests for the audit_redhat_access MCP tool."""
+
+    def setUp(self):
+        """Set up audit_redhat_access tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+
+        # Create a public tenant for system roles
+        self.public_tenant, _ = Tenant.objects.get_or_create(tenant_name="public")
+
+        # Create system roles with permissions
+        self.system_role = Role.objects.create(
+            name="Test role 1",
+            display_name="Test role 1",
+            description="Test role for audit tests",
+            system=True,
+            tenant=self.public_tenant,
+        )
+        self.perm = Permission.objects.create(
+            application="test-app",
+            resource_type="resources",
+            verb="read",
+            permission="test-app:resources:read",
+            tenant=self.public_tenant,
+        )
+        Access.objects.create(permission=self.perm, role=self.system_role, tenant=self.public_tenant)
+
+        # Create another role
+        self.other_role = Role.objects.create(
+            name="Test role 2",
+            display_name="Test role 2",
+            description="Another test role",
+            system=True,
+            tenant=self.public_tenant,
+        )
+        self.other_perm = Permission.objects.create(
+            application="other-app",
+            resource_type="items",
+            verb="read",
+            permission="other-app:items:read",
+            tenant=self.public_tenant,
+        )
+        Access.objects.create(permission=self.other_perm, role=self.other_role, tenant=self.public_tenant)
+
+        # Create a cross-account request (not expiring soon)
+        self.car = CrossAccountRequest.objects.create(
+            target_org=self.tenant.org_id,
+            user_id="10001",
+            status="approved",
+            start_date=timezone.now() - timezone.timedelta(days=1),
+            end_date=timezone.now() + timezone.timedelta(days=30),
+        )
+        self.car.roles.add(self.system_role)
+
+        # Create another request expiring soon
+        self.car_expiring = CrossAccountRequest.objects.create(
+            target_org=self.tenant.org_id,
+            user_id="10002",
+            status="approved",
+            start_date=timezone.now() - timezone.timedelta(days=10),
+            end_date=timezone.now() + timezone.timedelta(days=2),
+        )
+        self.car_expiring.roles.add(self.other_role)
+
+    def tearDown(self):
+        """Tear down audit_redhat_access tests."""
+        CrossAccountRequest.objects.all().delete()
+        AuditLog.objects.all().delete()
+        Access.objects.filter(tenant=self.public_tenant).delete()
+        Permission.objects.filter(tenant=self.public_tenant).delete()
+        Role.objects.filter(tenant=self.public_tenant).delete()
+        super().tearDown()
+
+    def test_audit_redhat_access_success(self):
+        """Positive: audit_redhat_access returns cross-account data with summary."""
+        response = self._call_tool("audit_redhat_access")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+        self.assertIn("active_access", tool_output)
+        self.assertIn("summary", tool_output)
+
+    def test_audit_redhat_access_without_auth_returns_error(self):
+        """Permission: audit_redhat_access without auth returns auth error."""
+        response = self._call_tool("audit_redhat_access", use_auth=False)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
+    def test_audit_redhat_access_returns_user_info(self, mock_proxy):
+        """Positive: audit_redhat_access returns user information from BOP."""
+        mock_proxy.return_value = {
+            "status_code": 200,
+            "data": [
+                {
+                    "user_id": "10001",
+                    "first_name": "Test",
+                    "last_name": "User1",
+                    "email": "user1@example.com",
+                    "username": "testuser1",
+                },
+                {
+                    "user_id": "10002",
+                    "first_name": "Test",
+                    "last_name": "User2",
+                    "email": "user2@example.com",
+                    "username": "testuser2",
+                },
+            ],
+        }
+
+        response = self._call_tool("audit_redhat_access")
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(len(tool_output["active_access"]), 2)
+
+        # Check first user
+        user1 = next(u for u in tool_output["active_access"] if "User1" in u["user_info"]["name"])
+        self.assertEqual(user1["user_info"]["email"], "user1@example.com")
+        self.assertIn("Test role 1", [r["name"] for r in user1["roles"]])
+
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
+    def test_audit_redhat_access_shows_expiring_soon(self, mock_proxy):
+        """Positive: audit_redhat_access identifies access expiring within 7 days."""
+        mock_proxy.return_value = {"status_code": 200, "data": []}
+
+        response = self._call_tool("audit_redhat_access")
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["summary"]["expiring_soon"], 1)
+        self.assertIn("warning", tool_output["summary"])
+
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
+    def test_audit_redhat_access_with_audit_activity(self, mock_proxy):
+        """Positive: audit_redhat_access includes audit log activity."""
+        mock_proxy.return_value = {
+            "status_code": 200,
+            "data": [
+                {
+                    "user_id": "10001",
+                    "first_name": "Test",
+                    "last_name": "User1",
+                    "email": "user1@example.com",
+                    "username": "testuser1",
+                }
+            ],
+        }
+
+        # Create some audit log entries for this user
+        AuditLog.objects.create(
+            principal_username="testuser1",
+            action="edit",
+            resource_type="group",
+            description="Edited group: Test Group",
+            tenant=self.tenant,
+        )
+        AuditLog.objects.create(
+            principal_username="testuser1",
+            action="add",
+            resource_type="user",
+            description="Added user to group",
+            tenant=self.tenant,
+        )
+
+        response = self._call_tool("audit_redhat_access")
+
+        tool_output = self._get_tool_output(response)
+        user_access = tool_output["active_access"][0]
+        self.assertEqual(user_access["audit_activity"]["total_actions"], 2)
+        self.assertIn("edit", user_access["audit_activity"]["summary"])
+        self.assertIn("add", user_access["audit_activity"]["summary"])
+
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
+    def test_audit_redhat_access_identifies_unused_access(self, mock_proxy):
+        """Positive: audit_redhat_access identifies users with no audit activity."""
+        mock_proxy.return_value = {
+            "status_code": 200,
+            "data": [
+                {
+                    "user_id": "10001",
+                    "first_name": "Test",
+                    "last_name": "User1",
+                    "email": "user1@example.com",
+                    "username": "testuser1",
+                },
+                {
+                    "user_id": "10002",
+                    "first_name": "Test",
+                    "last_name": "User2",
+                    "email": "user2@example.com",
+                    "username": "testuser2",
+                },
+            ],
+        }
+
+        response = self._call_tool("audit_redhat_access")
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["summary"]["unused_access"], 2)
+        self.assertIn("note", tool_output["summary"])
+
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
+    def test_audit_redhat_access_permissions_by_application(self, mock_proxy):
+        """Positive: audit_redhat_access groups permissions by application."""
+        mock_proxy.return_value = {"status_code": 200, "data": []}
+
+        response = self._call_tool("audit_redhat_access")
+
+        tool_output = self._get_tool_output(response)
+        self.assertIn("permissions_by_application", tool_output["summary"])
+        self.assertIn("test-app", tool_output["summary"]["permissions_by_application"])
+        self.assertIn("other-app", tool_output["summary"]["permissions_by_application"])
+
+    def test_audit_redhat_access_no_requests(self):
+        """Negative: audit_redhat_access returns empty when no requests exist."""
+        CrossAccountRequest.objects.all().delete()
+
+        response = self._call_tool("audit_redhat_access")
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(len(tool_output["active_access"]), 0)
+        self.assertIn("message", tool_output["summary"])
+        self.assertIn("hint", tool_output["summary"])
+
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
+    def test_audit_redhat_access_include_inactive(self, mock_proxy):
+        """Positive: audit_redhat_access includes expired requests when include_inactive=true."""
+        mock_proxy.return_value = {"status_code": 200, "data": []}
+
+        # Create an expired request
+        expired_car = CrossAccountRequest.objects.create(
+            target_org=self.tenant.org_id,
+            user_id="10003",
+            status="expired",
+            start_date=timezone.now() - timezone.timedelta(days=30),
+            end_date=timezone.now() - timezone.timedelta(days=1),
+        )
+        expired_car.roles.add(self.system_role)
+
+        response = self._call_tool("audit_redhat_access", {"include_inactive": True})
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(len(tool_output["active_access"]), 3)
+
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
+    def test_audit_redhat_access_custom_audit_days(self, mock_proxy):
+        """Positive: audit_redhat_access respects custom audit_days parameter."""
+        mock_proxy.return_value = {
+            "status_code": 200,
+            "data": [
+                {
+                    "user_id": "10001",
+                    "first_name": "Test",
+                    "last_name": "User1",
+                    "email": "user1@example.com",
+                    "username": "testuser1",
+                }
+            ],
+        }
+
+        response = self._call_tool("audit_redhat_access", {"audit_days": 7})
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["summary"]["audit_period_days"], 7)
+
+
+@override_settings(BYPASS_BOP_VERIFICATION=True)
+class MCPInvestigateUserAccessTests(MCPToolTestMixin, IdentityRequest):
+    """Tests for investigate_user_access MCP tool."""
+
+    def setUp(self):
+        """Set up investigate_user_access tests with groups, roles, and permissions."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.test_username = "sarah"
+        self.principal = Principal.objects.create(username=self.test_username, tenant=self.tenant)
+
+        # Create two groups - "Compliance Auditors" and "Compliance Admins"
+        self.auditors_group = Group.objects.create(
+            name="Compliance Auditors",
+            description="Read-only access to compliance data",
+            tenant=self.tenant,
+        )
+        self.admins_group = Group.objects.create(
+            name="Compliance Admins",
+            description="Administrative access to compliance",
+            tenant=self.tenant,
+        )
+
+        # Add principal to both groups
+        self.auditors_group.principals.add(self.principal)
+        self.admins_group.principals.add(self.principal)
+
+        # Create roles
+        self.auditor_role = Role.objects.create(
+            name="Compliance Auditor",
+            display_name="Compliance Auditor",
+            description="Read-only compliance access",
+            tenant=self.tenant,
+        )
+        self.admin_role = Role.objects.create(
+            name="Compliance administrator",
+            display_name="Compliance administrator",
+            description="Compliance administration (misleading - only has read)",
+            tenant=self.tenant,
+        )
+
+        # Create permissions
+        self.read_perm = Permission.objects.create(
+            application="compliance",
+            resource_type="policies",
+            verb="read",
+            permission="compliance:policies:read",
+            tenant=self.tenant,
+        )
+        self.write_perm = Permission.objects.create(
+            application="compliance",
+            resource_type="policies",
+            verb="write",
+            permission="compliance:policies:write",
+            tenant=self.tenant,
+        )
+
+        # Auditor role only has read permission
+        Access.objects.create(permission=self.read_perm, role=self.auditor_role, tenant=self.tenant)
+
+        # Admin role ALSO only has read permission (this is the "gotcha")
+        Access.objects.create(permission=self.read_perm, role=self.admin_role, tenant=self.tenant)
+
+        # Assign roles to groups via policies
+        auditors_policy = Policy.objects.create(name="auditors_policy", group=self.auditors_group, tenant=self.tenant)
+        auditors_policy.roles.add(self.auditor_role)
+
+        admins_policy = Policy.objects.create(name="admins_policy", group=self.admins_group, tenant=self.tenant)
+        admins_policy.roles.add(self.admin_role)
+
+    def tearDown(self):
+        """Tear down investigate_user_access tests."""
+        Access.objects.all().delete()
+        Policy.objects.all().delete()
+        Role.objects.all().delete()
+        Permission.objects.all().delete()
+        Group.objects.all().delete()
+        Principal.objects.all().delete()
+        super().tearDown()
+
+    def test_investigate_user_access_success(self):
+        """Positive: investigate_user_access returns comprehensive user access info."""
+        response = self._call_tool("investigate_user_access", {"username": self.test_username})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+
+        # Verify structure
+        self.assertIn("user", tool_output)
+        self.assertIn("groups", tool_output)
+        self.assertIn("analysis", tool_output)
+        self.assertIn("permission_sources", tool_output)
+        self.assertIn("hints", tool_output)
+
+        # Verify user info
+        self.assertEqual(tool_output["user"]["username"], self.test_username)
+        self.assertTrue(tool_output["user"]["exists"])
+
+    def test_investigate_user_access_without_auth_returns_error(self):
+        """Permission: investigate_user_access without auth returns auth error."""
+        response = self._call_tool("investigate_user_access", {"username": self.test_username}, use_auth=False)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    def test_investigate_user_access_user_not_found(self):
+        """Negative: investigate_user_access returns error for non-existent user."""
+        response = self._call_tool("investigate_user_access", {"username": "nonexistent_user"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+
+        self.assertIn("error", tool_output)
+        self.assertIn("not found", tool_output["error"])
+        self.assertIn("hint", tool_output)
+
+    def test_investigate_user_access_lists_all_groups(self):
+        """Positive: investigate_user_access lists all groups the user belongs to."""
+        response = self._call_tool("investigate_user_access", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["analysis"]["total_groups"], 2)
+        self.assertEqual(len(tool_output["groups"]), 2)
+
+        group_names = [g["name"] for g in tool_output["groups"]]
+        self.assertIn("Compliance Auditors", group_names)
+        self.assertIn("Compliance Admins", group_names)
+
+    def test_investigate_user_access_lists_roles_per_group(self):
+        """Positive: investigate_user_access lists roles assigned to each group."""
+        response = self._call_tool("investigate_user_access", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        for group in tool_output["groups"]:
+            self.assertIn("roles", group)
+            self.assertEqual(group["role_count"], 1)
+            self.assertEqual(len(group["roles"]), 1)
+
+            if group["name"] == "Compliance Auditors":
+                self.assertEqual(group["roles"][0]["display_name"], "Compliance Auditor")
+            elif group["name"] == "Compliance Admins":
+                self.assertEqual(group["roles"][0]["display_name"], "Compliance administrator")
+
+    def test_investigate_user_access_expands_role_permissions(self):
+        """Positive: investigate_user_access expands roles to show actual permissions."""
+        response = self._call_tool("investigate_user_access", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        for group in tool_output["groups"]:
+            for role in group["roles"]:
+                self.assertIn("permissions", role)
+                self.assertIn("permission_count", role)
+                self.assertGreaterEqual(role["permission_count"], 1)
+                self.assertIn("compliance:policies:read", role["permissions"])
+
+    def test_investigate_user_access_tracks_permission_sources(self):
+        """Positive: investigate_user_access tracks which groups/roles grant each permission."""
+        response = self._call_tool("investigate_user_access", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        # compliance:policies:read should come from both groups/roles
+        self.assertIn("compliance:policies:read", tool_output["permission_sources"])
+        sources = tool_output["permission_sources"]["compliance:policies:read"]
+        self.assertEqual(len(sources), 2)
+
+        source_groups = [s["group"] for s in sources]
+        self.assertIn("Compliance Auditors", source_groups)
+        self.assertIn("Compliance Admins", source_groups)
+
+    def test_investigate_user_access_filter_by_application(self):
+        """Positive: investigate_user_access filters by application."""
+        response = self._call_tool(
+            "investigate_user_access",
+            {"username": self.test_username, "application": "compliance"},
+        )
+
+        tool_output = self._get_tool_output(response)
+
+        self.assertIn("permissions_for_application", tool_output["analysis"])
+        self.assertEqual(tool_output["analysis"]["application_permission_count"], 1)
+        self.assertIn("compliance:policies:read", tool_output["analysis"]["permissions_for_application"])
+
+    def test_investigate_user_access_expected_permission_found(self):
+        """Positive: investigate_user_access identifies when expected permission is present."""
+        response = self._call_tool(
+            "investigate_user_access",
+            {
+                "username": self.test_username,
+                "application": "compliance",
+                "expected_permission": "read",
+            },
+        )
+
+        tool_output = self._get_tool_output(response)
+
+        self.assertTrue(tool_output["analysis"]["has_expected_permission"])
+        check = tool_output["analysis"]["expected_permission_check"]
+        self.assertTrue(check["found"])
+        self.assertEqual(check["matched_permission"], "compliance:policies:read")
+        self.assertIn("granted_via", check)
+
+    def test_investigate_user_access_expected_permission_missing(self):
+        """Positive: investigate_user_access identifies when expected permission is missing."""
+        response = self._call_tool(
+            "investigate_user_access",
+            {
+                "username": self.test_username,
+                "application": "compliance",
+                "expected_permission": "write",
+            },
+        )
+
+        tool_output = self._get_tool_output(response)
+
+        self.assertFalse(tool_output["analysis"]["has_expected_permission"])
+        check = tool_output["analysis"]["expected_permission_check"]
+        self.assertFalse(check["found"])
+        self.assertIn("available_verbs_for_app", check)
+        self.assertIn("read", check["available_verbs_for_app"])
+        self.assertNotIn("write", check["available_verbs_for_app"])
+
+    def test_investigate_user_access_identifies_gaps(self):
+        """Positive: investigate_user_access explains why expected permission is missing."""
+        response = self._call_tool(
+            "investigate_user_access",
+            {
+                "username": self.test_username,
+                "application": "compliance",
+                "expected_permission": "write",
+            },
+        )
+
+        tool_output = self._get_tool_output(response)
+
+        self.assertIn("gaps", tool_output["analysis"])
+        self.assertIn("diagnosis", tool_output["analysis"])
+        self.assertGreater(len(tool_output["analysis"]["gaps"]), 0)
+
+        # Should mention that the groups don't grant write
+        gaps_text = " ".join(tool_output["analysis"]["gaps"])
+        self.assertIn("NOT", gaps_text)
+        self.assertIn("write", gaps_text)
+
+    def test_investigate_user_access_expected_verb_parameter(self):
+        """Positive: investigate_user_access accepts expected_verb as alternative."""
+        response = self._call_tool(
+            "investigate_user_access",
+            {
+                "username": self.test_username,
+                "application": "compliance",
+                "expected_verb": "read",
+            },
+        )
+
+        tool_output = self._get_tool_output(response)
+        self.assertTrue(tool_output["analysis"]["has_expected_permission"])
+
+    def test_investigate_user_access_user_with_no_groups(self):
+        """Positive: investigate_user_access handles user with no groups."""
+        # Create a user with no group memberships
+        lonely_user = Principal.objects.create(username="lonely_user", tenant=self.tenant)
+
+        response = self._call_tool("investigate_user_access", {"username": "lonely_user"})
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(len(tool_output["groups"]), 0)
+        self.assertIn("not a member of any groups", tool_output["analysis"]["message"])
+
+        # Cleanup
+        lonely_user.delete()
+
+    def test_investigate_user_access_includes_hints(self):
+        """Positive: investigate_user_access includes helpful hints."""
+        response = self._call_tool("investigate_user_access", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        self.assertIn("hints", tool_output)
+        self.assertIn("verify_specific_permission", tool_output["hints"])
+        self.assertIn("find_role_with_permission", tool_output["hints"])
+        self.assertIn("check_role_contents", tool_output["hints"])
+        self.assertIn("add_user_to_group", tool_output["hints"])
+
+    def test_investigate_user_access_analysis_summary(self):
+        """Positive: investigate_user_access returns summary statistics."""
+        response = self._call_tool("investigate_user_access", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        analysis = tool_output["analysis"]
+        self.assertEqual(analysis["total_groups"], 2)
+        self.assertEqual(analysis["total_roles"], 2)
+        self.assertEqual(analysis["total_unique_permissions"], 1)  # Only read, not write
+
+    @patch(
+        "management.mcp_views.PrincipalProxy.request_filtered_principals",
+        return_value={"status_code": 200, "data": [{"is_org_admin": True}]},
+    )
+    def test_investigate_user_access_org_admin_bypass(self, mock_proxy):
+        """Positive: investigate_user_access notes org admin has implicit access."""
+        response = self._call_tool(
+            "investigate_user_access",
+            {
+                "username": self.test_username,
+                "application": "compliance",
+                "expected_permission": "write",
+            },
+        )
+
+        tool_output = self._get_tool_output(response)
+
+        # Org admin should bypass permission checks
+        self.assertTrue(tool_output["user"]["is_org_admin"])
+        self.assertIn("note", tool_output["user"])
+        self.assertIn("bypasses", tool_output["user"]["note"])
+
+        # Should still report permission as available due to org admin
+        self.assertTrue(tool_output["analysis"]["has_expected_permission"])
+
+    def test_investigate_user_access_scenario_conflicting_groups(self):
+        """Integration: Full scenario test for conflicting group access."""
+        # This tests the exact scenario from the requirements:
+        # "Sarah is in 'Compliance Auditors' AND 'Compliance Admins' but can't edit compliance policies"
+
+        response = self._call_tool(
+            "investigate_user_access",
+            {
+                "username": "sarah",
+                "application": "compliance",
+                "expected_permission": "write",
+            },
+        )
+
+        tool_output = self._get_tool_output(response)
+
+        # Verify user is in both groups
+        self.assertEqual(tool_output["analysis"]["total_groups"], 2)
+        group_names = [g["name"] for g in tool_output["groups"]]
+        self.assertIn("Compliance Auditors", group_names)
+        self.assertIn("Compliance Admins", group_names)
+
+        # Verify write permission is NOT found
+        self.assertFalse(tool_output["analysis"]["has_expected_permission"])
+
+        # Verify the diagnosis explains the issue
+        self.assertIn("diagnosis", tool_output["analysis"])
+        self.assertIn("does not have", tool_output["analysis"]["diagnosis"])
+
+        # Verify gaps identify both groups lack write
+        gaps = tool_output["analysis"]["gaps"]
+        self.assertEqual(len(gaps), 2)  # Both groups should be mentioned
+
+        # Verify the "misleading name" issue is discoverable:
+        # The Compliance Admins group has "Compliance administrator" role
+        # but that role only has read, not write
+        admins_group = next(g for g in tool_output["groups"] if g["name"] == "Compliance Admins")
+        admin_role = admins_group["roles"][0]
+        self.assertEqual(admin_role["display_name"], "Compliance administrator")
+        self.assertIn("compliance:policies:read", admin_role["permissions"])
+        self.assertNotIn("compliance:policies:write", admin_role["permissions"])
+
+    def test_investigate_user_access_full_permission_format(self):
+        """Positive: investigate_user_access handles full permission format."""
+        response = self._call_tool(
+            "investigate_user_access",
+            {
+                "username": self.test_username,
+                "application": "compliance",
+                "expected_permission": "compliance:policies:read",
+            },
+        )
+
+        tool_output = self._get_tool_output(response)
+        self.assertTrue(tool_output["analysis"]["has_expected_permission"])
+
+    def test_investigate_user_access_multiple_permissions_per_role(self):
+        """Positive: investigate_user_access handles roles with multiple permissions."""
+        # Add another permission to the admin role
+        delete_perm = Permission.objects.create(
+            application="compliance",
+            resource_type="policies",
+            verb="delete",
+            permission="compliance:policies:delete",
+            tenant=self.tenant,
+        )
+        Access.objects.create(permission=delete_perm, role=self.admin_role, tenant=self.tenant)
+
+        response = self._call_tool(
+            "investigate_user_access",
+            {"username": self.test_username, "application": "compliance"},
+        )
+
+        tool_output = self._get_tool_output(response)
+
+        # Should now have 2 unique permissions
+        self.assertEqual(tool_output["analysis"]["application_permission_count"], 2)
+        self.assertIn("compliance:policies:read", tool_output["analysis"]["permissions_for_application"])
+        self.assertIn("compliance:policies:delete", tool_output["analysis"]["permissions_for_application"])
+
+
+@override_settings(BYPASS_BOP_VERIFICATION=True, V2_APIS_ENABLED=True)
+class MCPInvestigateUserAccessV2Tests(MCPToolTestMixin, IdentityRequest):
+    """Tests for investigate_user_access on V2 organizations."""
+
+    def setUp(self):
+        """Set up V2 investigate_user_access tests."""
+        reload(urls)
+        clear_url_caches()
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.test_username = "sarah_v2"
+        self.principal = Principal.objects.create(username=self.test_username, tenant=self.tenant)
+
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.get_kessel_principal_id",
+                return_value="localhost/test-user-id",
+            )
+        )
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.WorkspaceInventoryAccessChecker.check_resource_access",
+                return_value=True,
+            )
+        )
+
+        # Activate V2 for this tenant
+        TenantMapping.objects.create(tenant=self.tenant, v2_write_activated_at=timezone.now())
+
+        # Create groups
+        self.auditors_group = Group.objects.create(
+            name="V2 Compliance Auditors",
+            description="Read-only compliance access",
+            tenant=self.tenant,
+        )
+        self.admins_group = Group.objects.create(
+            name="V2 Compliance Admins",
+            description="Admin compliance access",
+            tenant=self.tenant,
+        )
+        self.auditors_group.principals.add(self.principal)
+        self.admins_group.principals.add(self.principal)
+
+        # Create V2 roles with permissions
+        self.read_perm = Permission.objects.create(
+            application="compliance",
+            resource_type="policies",
+            verb="read",
+            permission="compliance:policies:read",
+            tenant=self.tenant,
+        )
+
+        self.auditor_role = RoleV2.objects.create(
+            name="V2 Compliance Auditor",
+            tenant=self.tenant,
+        )
+        self.auditor_role.permissions.add(self.read_perm)
+
+        self.admin_role = RoleV2.objects.create(
+            name="V2 Compliance Administrator",
+            tenant=self.tenant,
+        )
+        self.admin_role.permissions.add(self.read_perm)
+
+        # Create role bindings
+        self.auditor_binding = RoleBinding.objects.create(
+            role=self.auditor_role,
+            resource_type="workspace",
+            resource_id="default",
+            tenant=self.tenant,
+        )
+        RoleBindingGroup.objects.create(binding=self.auditor_binding, group=self.auditors_group)
+
+        self.admin_binding = RoleBinding.objects.create(
+            role=self.admin_role,
+            resource_type="workspace",
+            resource_id="default",
+            tenant=self.tenant,
+        )
+        RoleBindingGroup.objects.create(binding=self.admin_binding, group=self.admins_group)
+
+    def tearDown(self):
+        """Tear down V2 investigate_user_access tests."""
+        RoleBindingGroup.objects.all().delete()
+        RoleBindingPrincipal.objects.all().delete()
+        RoleBinding.objects.all().delete()
+        RoleV2.objects.all().delete()
+        Permission.objects.all().delete()
+        Group.objects.all().delete()
+        Principal.objects.all().delete()
+        TenantMapping.objects.filter(tenant=self.tenant).delete()
+        reload(urls)
+        clear_url_caches()
+        super().tearDown()
+
+    def test_investigate_user_access_v2_returns_org_version(self):
+        """Positive: investigate_user_access returns org_version='v2' for V2 orgs."""
+        response = self._call_tool("investigate_user_access", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["org_version"], "v2")
+
+    def test_investigate_user_access_v2_includes_role_bindings(self):
+        """Positive: investigate_user_access V2 includes role_bindings instead of group.roles."""
+        response = self._call_tool("investigate_user_access", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+        self.assertIn("role_bindings", tool_output)
+        self.assertEqual(len(tool_output["role_bindings"]), 2)
+
+        # Check binding structure
+        binding = tool_output["role_bindings"][0]
+        self.assertIn("role", binding)
+        self.assertIn("permissions", binding["role"])
+        self.assertIn("binding_source", binding)
+        self.assertIn("resource_type", binding)
+
+    def test_investigate_user_access_v2_shows_binding_source(self):
+        """Positive: investigate_user_access V2 shows whether binding is via group or direct."""
+        response = self._call_tool("investigate_user_access", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        # All our bindings are via groups
+        for binding in tool_output["role_bindings"]:
+            self.assertEqual(binding["binding_source"], "group")
+            self.assertIsNotNone(binding["source_group"])
+
+    def test_investigate_user_access_v2_expected_permission_found(self):
+        """Positive: investigate_user_access V2 finds expected permission."""
+        response = self._call_tool(
+            "investigate_user_access",
+            {
+                "username": self.test_username,
+                "application": "compliance",
+                "expected_permission": "read",
+            },
+        )
+
+        tool_output = self._get_tool_output(response)
+        self.assertTrue(tool_output["analysis"]["has_expected_permission"])
+
+    def test_investigate_user_access_v2_expected_permission_missing(self):
+        """Positive: investigate_user_access V2 identifies missing permission."""
+        response = self._call_tool(
+            "investigate_user_access",
+            {
+                "username": self.test_username,
+                "application": "compliance",
+                "expected_permission": "write",
+            },
+        )
+
+        tool_output = self._get_tool_output(response)
+        self.assertFalse(tool_output["analysis"]["has_expected_permission"])
+        self.assertIn("gaps", tool_output["analysis"])
+        self.assertIn("diagnosis", tool_output["analysis"])
+
+    def test_investigate_user_access_v2_direct_binding(self):
+        """Positive: investigate_user_access V2 handles direct principal bindings."""
+        # Create a direct binding to the principal
+        direct_role = RoleV2.objects.create(name="Direct Role", tenant=self.tenant)
+        write_perm, _ = Permission.objects.get_or_create(
+            permission="compliance:policies:write",
+            defaults={"tenant": self.tenant},
+        )
+        direct_role.permissions.add(write_perm)
+
+        direct_binding = RoleBinding.objects.create(
+            role=direct_role,
+            resource_type="workspace",
+            resource_id="default",
+            tenant=self.tenant,
+        )
+        RoleBindingPrincipal.objects.create(binding=direct_binding, principal=self.principal, source="system")
+
+        response = self._call_tool(
+            "investigate_user_access",
+            {
+                "username": self.test_username,
+                "application": "compliance",
+                "expected_permission": "write",
+            },
+        )
+
+        tool_output = self._get_tool_output(response)
+
+        # Should now find write permission via direct binding
+        self.assertTrue(tool_output["analysis"]["has_expected_permission"])
+
+        # Should have a direct binding
+        direct_bindings = [b for b in tool_output["role_bindings"] if b["binding_source"] == "direct"]
+        self.assertEqual(len(direct_bindings), 1)
+
+    def test_investigate_user_access_v2_includes_resource_scope(self):
+        """Positive: investigate_user_access V2 includes resource scope in bindings."""
+        response = self._call_tool("investigate_user_access", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        for binding in tool_output["role_bindings"]:
+            self.assertIn("resource_type", binding)
+            self.assertIn("resource_id", binding)
+            self.assertEqual(binding["resource_type"], "workspace")
+            self.assertEqual(binding["resource_id"], "default")
+
+    def test_investigate_user_access_v2_permission_sources_include_scope(self):
+        """Positive: investigate_user_access V2 permission sources include resource scope."""
+        response = self._call_tool("investigate_user_access", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        self.assertIn("compliance:policies:read", tool_output["permission_sources"])
+        sources = tool_output["permission_sources"]["compliance:policies:read"]
+        self.assertGreater(len(sources), 0)
+
+        for source in sources:
+            self.assertIn("resource_scope", source)
+
+    def test_investigate_user_access_v2_hints_include_role_bindings(self):
+        """Positive: investigate_user_access V2 hints reference role bindings."""
+        response = self._call_tool("investigate_user_access", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        self.assertIn("list_user_bindings", tool_output["hints"])
+
+    def test_investigate_user_access_v2_full_permission_format(self):
+        """Positive: investigate_user_access V2 handles full permission format."""
+        response = self._call_tool(
+            "investigate_user_access",
+            {
+                "username": self.test_username,
+                "application": "compliance",
+                "expected_permission": "compliance:policies:read",
+            },
+        )
+
+        tool_output = self._get_tool_output(response)
+        self.assertTrue(tool_output["analysis"]["has_expected_permission"])
+
+
+class MCPWriteGatingTests(MCPToolTestMixin, IdentityRequest):
+    """Test MCP_WRITE_ENABLED flag gating for write tools."""
+
+    def setUp(self):
+        """Set up write gating tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.principal = Principal.objects.create(username="test_user", tenant=self.tenant)
+
+    def tearDown(self):
+        """Tear down write gating tests."""
+        Group.objects.all().delete()
+        Principal.objects.all().delete()
+        super().tearDown()
+
+    def test_write_tools_annotated_when_disabled(self):
+        """Write tools are listed with disabled annotation when MCP_WRITE_ENABLED=False."""
+        body = {"jsonrpc": "2.0", "method": "tools/list", "id": 2, "params": {}}
+        response = self.client.post(self.url, data=json.dumps(body), content_type="application/json", **self.headers)
+        tools = {t["name"]: t["description"] for t in response.json()["result"]["tools"]}
+        self.assertIn("create_group", tools)
+        self.assertTrue(tools["create_group"].startswith("[DISABLED -- write mode off]"))
+        self.assertIn("add_principals_to_group", tools)
+        self.assertTrue(tools["add_principals_to_group"].startswith("[DISABLED -- write mode off]"))
+
+    @override_settings(MCP_WRITE_ENABLED=True)
+    def test_write_tools_visible_when_enabled(self):
+        """Write tools are listed when MCP_WRITE_ENABLED=True."""
+        tool_names = self._get_tool_names()
+        self.assertIn("create_group", tool_names)
+        self.assertIn("add_principals_to_group", tool_names)
+        self.assertIn("create_cross_account_request", tool_names)
+
+    def test_write_tool_call_rejected_when_disabled(self):
+        """Calling a write tool returns error when MCP_WRITE_ENABLED=False."""
+        response = self._call_tool("create_group", {"name": "Test Group"})
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertIn("write mode is disabled", data["error"]["message"].lower())
+
+    @override_settings(MCP_WRITE_ENABLED=True)
+    def test_write_tool_call_requires_auth(self):
+        """Write tools require authentication even when write mode is enabled."""
+        response = self._call_tool("create_group", {"name": "Test Group"}, use_auth=False)
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    def test_read_tools_still_visible_when_write_disabled(self):
+        """Read-only tools remain visible when MCP_WRITE_ENABLED=False."""
+        tool_names = self._get_tool_names()
+        self.assertIn("list_principals", tool_names)
+        self.assertIn("list_groups", tool_names)
+        self.assertIn("hello", tool_names)
+
+    @override_settings(MCP_WRITE_ENABLED=True)
+    def test_v1_write_tools_hidden_when_v2_disabled(self):
+        """V1 write tools are listed, but V2 write tools are hidden when V2 is disabled."""
+        tool_names = self._get_tool_names()
+        self.assertIn("create_group", tool_names)
+        self.assertIn("add_roles_to_group", tool_names)
+        self.assertNotIn("create_role", tool_names)
+        self.assertNotIn("create_role_bindings", tool_names)
+        self.assertNotIn("create_workspace", tool_names)
+
+    def test_write_config_on_tools(self):
+        """All write tools have write=True in their config."""
+        write_tool_names = [
+            "create_group",
+            "add_principals_to_group",
+            "add_roles_to_group",
+            "create_role_v1",
+            "create_role",
+            "create_role_bindings",
+            "create_workspace",
+            "create_cross_account_request",
+        ]
+        for name in write_tool_names:
+            config = _TOOL_CONFIG.get(name)
+            self.assertIsNotNone(config, f"Tool '{name}' not registered")
+            self.assertTrue(config.write, f"Tool '{name}' should have write=True")
+            self.assertTrue(config.requires_auth, f"Tool '{name}' should have requires_auth=True")
+
+
+@override_settings(MCP_WRITE_ENABLED=True)
+class MCPCreateGroupTests(MCPToolTestMixin, IdentityRequest):
+    """Test create_group write tool."""
+
+    def setUp(self):
+        """Set up create group tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.principal = Principal.objects.create(username="test_user", tenant=self.tenant)
+
+    def tearDown(self):
+        """Tear down create group tests."""
+        Group.objects.all().delete()
+        Principal.objects.all().delete()
+        super().tearDown()
+
+    def test_create_group_success(self):
+        """Create a group successfully."""
+        response = self._call_tool("create_group", {"name": "New Test Group", "description": "A test group"})
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        output = json.loads(data["result"]["content"][0]["text"])
+        self.assertEqual(output["name"], "New Test Group")
+        self.assertEqual(output["description"], "A test group")
+        self.assertIn("uuid", output)
+
+    def test_create_group_missing_name(self):
+        """Creating a group without required 'name' returns a param error."""
+        response = self._call_tool("create_group", {})
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32602)
+
+    def test_create_group_no_auth(self):
+        """Creating a group without auth returns auth error."""
+        response = self._call_tool("create_group", {"name": "Test"}, use_auth=False)
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+
+@override_settings(MCP_WRITE_ENABLED=True)
+class MCPAddPrincipalsToGroupTests(MCPToolTestMixin, IdentityRequest):
+    """Test add_principals_to_group write tool."""
+
+    def setUp(self):
+        """Set up add principals tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.principal = Principal.objects.create(username="test_user", tenant=self.tenant)
+        V2TenantBootstrapService(NoopReplicator()).bootstrap_tenant(self.tenant)
+        self.group = Group.objects.create(name="Test Group", tenant=self.tenant)
+
+    def tearDown(self):
+        """Tear down add principals tests."""
+        Group.objects.all().delete()
+        Principal.objects.all().delete()
+        super().tearDown()
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
+    def test_add_principals_by_uuid(self, mock_proxy, mock_replicator):
+        """Add principals to a group by UUID."""
+        mock_proxy.return_value = {
+            "status_code": 200,
+            "data": [
+                {
+                    "username": "newuser",
+                    "email": "new@example.com",
+                    "first_name": "New",
+                    "last_name": "User",
+                    "is_org_admin": False,
+                    "user_id": "12345",
+                }
+            ],
+        }
+        response = self._call_tool(
+            "add_principals_to_group",
+            {"group_uuid": str(self.group.uuid), "principals": ["newuser"]},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("result", data, f"Expected result but got: {data}")
+        self.assertFalse(data["result"]["isError"])
+
+    def test_add_principals_by_name(self):
+        """Resolving group by name works."""
+        response = self._call_tool(
+            "add_principals_to_group",
+            {"group_name": "Test Group", "principals": ["newuser"]},
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("result", data, f"Expected result but got: {data}")
+        self.assertFalse(data["result"]["isError"])
+
+    def test_add_principals_missing_group(self):
+        """Adding to a non-existent group returns error."""
+        response = self._call_tool(
+            "add_principals_to_group",
+            {"group_name": "Nonexistent", "principals": ["user1"]},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        output = json.loads(data["result"]["content"][0]["text"])
+        self.assertIn("error", output)
+        self.assertIn("not found", output["error"])
+
+    def test_add_principals_no_group_specified(self):
+        """Omitting both group_uuid and group_name returns error."""
+        response = self._call_tool(
+            "add_principals_to_group",
+            {"principals": ["user1"]},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        output = json.loads(data["result"]["content"][0]["text"])
+        self.assertIn("error", output)
+        self.assertIn("required", output["error"].lower())
+
+
+@override_settings(MCP_WRITE_ENABLED=True, V2_APIS_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
+class MCPWriteToolsV2Tests(MCPToolTestMixin, IdentityRequest):
+    """Test V2 write tools (create_role, create_workspace).
+
+    Uses ATOMIC_RETRY_DISABLED=True so pgtransaction.atomic(retry=...)
+    falls back to plain transaction.atomic(), avoiding nesting issues
+    with TestCase's wrapping transaction.
+    """
+
+    def setUp(self):
+        """Set up V2 write tool tests."""
+        reload(urls)
+        clear_url_caches()
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.principal = Principal.objects.create(username="test_user", tenant=self.tenant)
+        self.enterContext(
+            patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+        )
+        V2TenantBootstrapService(NoopReplicator()).bootstrap_tenant(self.tenant)
+        TenantMapping.objects.update_or_create(tenant=self.tenant, defaults={"v2_write_activated_at": timezone.now()})
+        Permission.objects.create(
+            application="rbac",
+            resource_type="group",
+            verb="read",
+            permission="rbac:group:read",
+            tenant=self.tenant,
+        )
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.get_kessel_principal_id",
+                return_value="localhost/test-user-id",
+            )
+        )
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.WorkspaceInventoryAccessChecker.check_resource_access",
+                return_value=True,
+            )
+        )
+
+    def tearDown(self):
+        """Tear down V2 write tool tests."""
+        RoleBinding.objects.all().delete()
+        Workspace.objects.filter(type=Workspace.Types.STANDARD).delete()
+        RoleV2.objects.all().delete()
+        Permission.objects.filter(permission="rbac:group:read").delete()
+        Group.objects.all().delete()
+        Principal.objects.all().delete()
+        TenantMapping.objects.filter(tenant=self.tenant).delete()
+        super().tearDown()
+
+    def test_v2_write_tools_visible_when_both_flags_enabled(self):
+        """V2 write tools appear when both MCP_WRITE_ENABLED and V2_APIS_ENABLED are True."""
+        tool_names = self._get_tool_names()
+        self.assertIn("create_role", tool_names)
+        self.assertIn("create_role_bindings", tool_names)
+        self.assertIn("create_workspace", tool_names)
+
+    @patch("management.permissions.role_v2_access.RoleV2KesselAccessPermission.has_permission")
+    def test_create_role_v2_success(self, mock_perm):
+        """Create a V2 role successfully."""
+        mock_perm.return_value = True
+        response = self._call_tool(
+            "create_role",
+            {
+                "name": "Test V2 Role",
+                "description": "A test role",
+                "permissions": [
+                    {"application": "rbac", "resource_type": "group", "operation": "read"},
+                ],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("result", data, f"Expected result but got: {data}")
+        self.assertFalse(data["result"]["isError"], f"Tool returned error: {data['result']}")
+        output = json.loads(data["result"]["content"][0]["text"])
+        self.assertEqual(output.get("name"), "Test V2 Role", f"Got output: {output}")
+
+    @patch("management.permissions.workspace_access.WorkspaceAccessPermission.has_permission")
+    def test_create_workspace_success(self, mock_perm):
+        """Create a workspace successfully."""
+        mock_perm.return_value = True
+        root_ws = Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.ROOT).first()
+        self.assertIsNotNone(root_ws, "Root workspace should exist after bootstrap")
+
+        from management.workspace.view import WorkspaceViewSet
+
+        original_create_atomic = WorkspaceViewSet._create_atomic.__wrapped__
+
+        with patch.object(WorkspaceViewSet, "_create_atomic", original_create_atomic):
+            response = self._call_tool(
+                "create_workspace",
+                {
+                    "name": "Test Workspace",
+                    "description": "A test workspace",
+                    "parent_id": str(root_ws.id),
+                },
+            )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("result", data, f"Expected result but got: {data}")
+        self.assertFalse(data["result"]["isError"], f"Tool returned error: {data['result']}")
+        output = json.loads(data["result"]["content"][0]["text"])
+        self.assertEqual(output.get("name"), "Test Workspace", f"Got output: {output}")
+
+    @patch("management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission")
+    @patch("management.permissions.role_binding_access.RoleBindingSystemUserAccessPermission.has_permission")
+    def test_create_role_bindings_success(self, mock_sys_perm, mock_kessel_perm):
+        """Create a role binding successfully."""
+        mock_sys_perm.return_value = True
+        mock_kessel_perm.return_value = True
+        role = RoleV2.objects.create(name="Binding Test Role", tenant=self.tenant)
+        root_ws = Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.ROOT).first()
+        response = self._call_tool(
+            "create_role_bindings",
+            {
+                "bindings": [
+                    {
+                        "role": {"id": str(role.id)},
+                        "resource": {"type": "workspace", "id": str(root_ws.id)},
+                        "subject": {"type": "principal", "id": str(self.principal.uuid)},
+                    }
+                ],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("result", data, f"Expected result but got: {data}")
+        self.assertFalse(data["result"]["isError"], f"Tool returned error: {data['result']}")
+
+
+@override_settings(MCP_WRITE_ENABLED=True)
+class MCPWriteToolsV1Tests(MCPToolTestMixin, IdentityRequest):
+    """Test V1-only write tools (add_roles_to_group, create_role_v1)."""
+
+    def setUp(self):
+        """Set up V1 write tool tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.principal = Principal.objects.create(username="test_user", tenant=self.tenant)
+        V2TenantBootstrapService(NoopReplicator()).bootstrap_tenant(self.tenant)
+        self.group = Group.objects.create(name="Test Group", tenant=self.tenant)
+        self.permission = Permission.objects.create(
+            application="cost-management",
+            resource_type="cost_model",
+            verb="read",
+            permission="cost-management:cost_model:read",
+            tenant=self.tenant,
+        )
+
+    def tearDown(self):
+        """Tear down V1 write tool tests."""
+        Role.objects.all().delete()
+        Group.objects.all().delete()
+        Permission.objects.filter(permission="cost-management:cost_model:read").delete()
+        Principal.objects.all().delete()
+        super().tearDown()
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+    def test_add_roles_to_group_success(self, mock_replicator):
+        """Add roles to a group successfully."""
+        role = Role.objects.create(name="Test Role", tenant=self.tenant, system=False)
+        Access.objects.create(role=role, permission=self.permission, tenant=self.tenant)
+        response = self._call_tool(
+            "add_roles_to_group",
+            {"group_name": "Test Group", "roles": [str(role.uuid)]},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("result", data, f"Expected result but got: {data}")
+        self.assertFalse(data["result"]["isError"], f"Tool returned error: {data['result']}")
+
+    def test_create_role_v1_success(self):
+        """Create a V1 role successfully."""
+        response = self._call_tool(
+            "create_role_v1",
+            {
+                "name": "MCP Created Role",
+                "access": [{"permission": "cost-management:cost_model:read", "resourceDefinitions": []}],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("result", data, f"Expected result but got: {data}")
+        self.assertFalse(data["result"]["isError"], f"Tool returned error: {data['result']}")
+        output = json.loads(data["result"]["content"][0]["text"])
+        self.assertEqual(output.get("name"), "MCP Created Role", f"Got output: {output}")
+
+
+@override_settings(MCP_WRITE_ENABLED=True)
+class MCPCrossAccountRequestTests(MCPToolTestMixin, IdentityRequest):
+    """Test create_cross_account_request write tool."""
+
+    def setUp(self):
+        """Set up cross-account request tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.principal = Principal.objects.create(username="test_user", tenant=self.tenant)
+        self.target_tenant = Tenant.objects.create(
+            tenant_name="target_org",
+            org_id="9999999",
+        )
+        self.role = Role.objects.create(name="CAR Test Role", system=True, tenant=self.tenant)
+
+    def tearDown(self):
+        """Tear down cross-account request tests."""
+        CrossAccountRequest.objects.all().delete()
+        Role.objects.filter(name="CAR Test Role").delete()
+        Principal.objects.all().delete()
+        self.target_tenant.delete()
+        super().tearDown()
+
+    def test_create_cross_account_request_success(self):
+        """Create a cross-account request successfully."""
+        response = self._call_tool(
+            "create_cross_account_request",
+            {
+                "target_account": "9999999",
+                "start_date": "2026-06-01",
+                "end_date": "2026-06-30",
+                "roles": [str(self.role.uuid)],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("result", data, f"Expected result but got: {data}")

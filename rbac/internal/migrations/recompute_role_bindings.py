@@ -19,6 +19,7 @@ from management.role.model import BindingMapping
 from management.role.v2_model import RoleV2, CustomRoleV2
 from management.role_binding.model import RoleBinding
 from management.tenant_mapping.v2_activation import lock_tenant_version, TenantVersion
+from management.tenant_service.v2 import lock_tenant_for_bootstrap
 from management.workspace.model import Workspace
 from migration_tool.migrate_binding_scope import migrate_all_role_bindings
 
@@ -32,8 +33,11 @@ def _do_tear_down_tenant(tenant: Tenant, replicator: RelationReplicator):
     if tenant_resource_id is None:
         raise ValueError(f"Expected tenant to have resource ID; pk={tenant.pk!r}")
 
+    tenant_lock = lock_tenant_for_bootstrap(tenant)
+
     role_bindings = list(
         RoleBinding.objects.filter(tenant=tenant)
+        .exclude(uuid__in=tenant_lock.tenant_mapping.role_binding_ids())
         .prefetch_related("role", "role__permissions", "principal_entries", "group_entries")
         .select_for_update(of=["self"])
     )
