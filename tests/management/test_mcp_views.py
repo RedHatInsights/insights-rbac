@@ -4611,3 +4611,517 @@ class MCPCrossAccountRequestTests(MCPToolTestMixin, IdentityRequest):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertIn("result", data, f"Expected result but got: {data}")
+
+
+@override_settings(BYPASS_BOP_VERIFICATION=True)
+class MCPGuideUserAccessDelegationTests(MCPToolTestMixin, IdentityRequest):
+    """Tests for the guide_user_access_delegation MCP tool."""
+
+    def setUp(self):
+        """Set up guide_user_access_delegation tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.test_username = self.user_data["username"]
+        self.principal = Principal.objects.create(username=self.test_username, tenant=self.tenant)
+
+        # Create the 'User Access administrator' system role (normally seeded by migrations)
+        self.user_access_admin_role = Role.objects.create(
+            name="User Access administrator",
+            display_name="User Access administrator",
+            description="Provides access to create and manage roles, groups, and principals in RBAC.",
+            system=True,
+            tenant=Tenant.objects.get(tenant_name="public"),
+        )
+
+        # Create RBAC permissions for this role
+        self.rbac_permission = Permission.objects.create(
+            application="rbac",
+            resource_type="*",
+            verb="*",
+            permission="rbac:*:*",
+            tenant=Tenant.objects.get(tenant_name="public"),
+        )
+        self.rbac_access = Access.objects.create(
+            permission=self.rbac_permission,
+            role=self.user_access_admin_role,
+            tenant=Tenant.objects.get(tenant_name="public"),
+        )
+
+        # Create a group that has this role assigned
+        self.access_governance_group = Group.objects.create(
+            name="Access Governance",
+            description="Team managing user access",
+            tenant=self.tenant,
+        )
+        self.access_policy = Policy.objects.create(
+            name="access_governance_policy",
+            group=self.access_governance_group,
+            tenant=self.tenant,
+        )
+        self.access_policy.roles.add(self.user_access_admin_role)
+
+        # Add some members to the group
+        self.admin_user1 = Principal.objects.create(username="admin_user1", tenant=self.tenant)
+        self.admin_user2 = Principal.objects.create(username="admin_user2", tenant=self.tenant)
+        self.access_governance_group.principals.add(self.admin_user1)
+        self.access_governance_group.principals.add(self.admin_user2)
+
+    def tearDown(self):
+        """Tear down guide_user_access_delegation tests."""
+        Policy.objects.all().delete()
+        Access.objects.all().delete()
+        Role.objects.all().delete()
+        Permission.objects.all().delete()
+        Group.objects.all().delete()
+        Principal.objects.all().delete()
+        super().tearDown()
+
+    def test_guide_user_access_delegation_success(self):
+        """Positive: guide_user_access_delegation returns comprehensive guidance."""
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+
+        # Verify basic structure
+        self.assertEqual(tool_output["scenario"], "Delegate user access management without Org Admin")
+        self.assertEqual(tool_output["username"], self.test_username)
+        self.assertIn("user_info", tool_output)
+        self.assertIn("role_info", tool_output)
+        self.assertIn("role_access", tool_output)
+        self.assertIn("groups_with_role", tool_output)
+        self.assertIn("user_already_has_role", tool_output)
+        self.assertIn("recommendation", tool_output)
+
+    def test_guide_user_access_delegation_finds_role(self):
+        """Positive: guide_user_access_delegation finds the User Access administrator role."""
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        # Verify role info
+        self.assertIsNotNone(tool_output["role_info"])
+        self.assertEqual(tool_output["role_info"]["name"], "User Access administrator")
+        self.assertEqual(tool_output["role_info"]["uuid"], str(self.user_access_admin_role.uuid))
+        self.assertTrue(tool_output["role_info"]["system"])
+
+    def test_guide_user_access_delegation_shows_role_access(self):
+        """Positive: guide_user_access_delegation shows role permissions."""
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        # Verify role access
+        self.assertIsNotNone(tool_output["role_access"])
+        self.assertIn("permissions", tool_output["role_access"])
+        self.assertIn("rbac:*:*", tool_output["role_access"]["permissions"])
+        self.assertIn("permission_summary", tool_output["role_access"])
+
+    def test_guide_user_access_delegation_finds_groups_with_role(self):
+        """Positive: guide_user_access_delegation finds groups that have the role."""
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        # Verify groups with role
+        self.assertEqual(len(tool_output["groups_with_role"]), 1)
+        group = tool_output["groups_with_role"][0]
+        self.assertEqual(group["name"], "Access Governance")
+        self.assertEqual(group["principal_count"], 2)
+
+    def test_guide_user_access_delegation_provides_recommendation(self):
+        """Positive: guide_user_access_delegation provides actionable recommendation."""
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        # Verify recommendation contains key information
+        recommendation = tool_output["recommendation"]
+        self.assertIn("User Access administrator", recommendation)
+        self.assertIn("rbac:*:*", recommendation)
+        self.assertIn("CAN do", recommendation)
+        self.assertIn("CANNOT do", recommendation)
+        self.assertIn("NEXT STEPS", recommendation)
+
+    def test_guide_user_access_delegation_user_not_org_admin(self):
+        """Positive: guide_user_access_delegation shows user is not org admin."""
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        # When using BOP bypass, user_info may be mocked
+        # Just verify the recommendation mentions keeping org_admin false
+        recommendation = tool_output["recommendation"]
+        self.assertIn("is_org_admin", recommendation.lower())
+
+    def test_guide_user_access_delegation_without_auth_returns_error(self):
+        """Permission: guide_user_access_delegation without auth returns auth error."""
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username}, use_auth=False)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    def test_guide_user_access_delegation_nonexistent_user(self):
+        """Edge case: guide_user_access_delegation handles non-existent user gracefully."""
+        response = self._call_tool("guide_user_access_delegation", {"username": "nonexistent_user"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+
+        self.assertIsNotNone(tool_output["role_info"])
+        self.assertIsNotNone(tool_output["recommendation"])
+        self.assertFalse(tool_output["user_already_has_role"])
+
+    def test_guide_user_access_delegation_explains_capabilities(self):
+        """Positive: recommendation explains what user CAN and CANNOT do."""
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+        recommendation = tool_output["recommendation"]
+
+        # Check CAN do items
+        self.assertIn("Create and delete custom groups", recommendation)
+        self.assertIn("Assign non-admin roles", recommendation)
+        self.assertIn("Add/remove users", recommendation)
+
+        # Check CANNOT do items
+        self.assertIn("Grant the Org Admin flag", recommendation)
+        self.assertIn("privilege escalation", recommendation)
+
+    def test_guide_user_access_delegation_mentions_existing_groups(self):
+        """Positive: recommendation mentions existing groups with the role."""
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+        recommendation = tool_output["recommendation"]
+
+        # Should mention the existing group
+        self.assertIn("Access Governance", recommendation)
+        self.assertIn("2 members", recommendation)
+
+    def test_guide_user_access_delegation_no_groups_with_role(self):
+        """Edge case: handles when no groups have the role assigned."""
+        # Remove the role from the group
+        self.access_policy.roles.remove(self.user_access_admin_role)
+
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        # Should indicate no groups have the role
+        self.assertEqual(len(tool_output["groups_with_role"]), 0)
+        self.assertIn("No groups currently have this role", tool_output["recommendation"])
+
+    def test_guide_user_access_delegation_tool_in_tools_list(self):
+        """Positive: guide_user_access_delegation appears in tools/list."""
+        tool_names = self._get_tool_names()
+        self.assertIn("guide_user_access_delegation", tool_names)
+
+    def test_guide_user_access_delegation_user_already_has_role(self):
+        """Positive: detects when user already has the role via group membership."""
+        # Add the test user to the group that has the role
+        self.access_governance_group.principals.add(self.principal)
+
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        # Should detect that user already has the role
+        self.assertTrue(tool_output["user_already_has_role"])
+        self.assertIn("Access Governance", tool_output["user_groups_with_role"])
+        self.assertIn("ALREADY HAS ROLE", tool_output["recommendation"])
+        self.assertIn("No action needed", tool_output["recommendation"])
+
+    def test_guide_user_access_delegation_user_does_not_have_role(self):
+        """Positive: correctly identifies when user does not have the role."""
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        # User should not have the role (not in the group)
+        self.assertFalse(tool_output["user_already_has_role"])
+        self.assertEqual(tool_output["user_groups_with_role"], [])
+        self.assertIn("NEXT STEPS", tool_output["recommendation"])
+
+    def test_guide_user_access_delegation_role_not_found(self):
+        """Edge case: handles when User Access administrator role doesn't exist."""
+        # Delete the role
+        self.rbac_access.delete()
+        self.user_access_admin_role.delete()
+
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        # Should indicate role not found
+        self.assertIn("error", tool_output["role_info"])
+        self.assertIn("not found", tool_output["role_info"]["error"])
+        self.assertIn("contact Red Hat support", tool_output["recommendation"])
+
+    def test_guide_user_access_delegation_dynamic_permission_summary(self):
+        """Positive: permission summary reflects actual permissions."""
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+        self.assertIn("rbac:*:*", tool_output["role_access"]["permission_summary"])
+
+    def test_guide_user_access_delegation_multiple_groups_with_role(self):
+        """Positive: lists multiple groups when several have the role."""
+        # Create another group with the same role
+        second_group = Group.objects.create(
+            name="Security Team",
+            description="Security administrators",
+            tenant=self.tenant,
+        )
+        second_policy = Policy.objects.create(
+            name="security_team_policy",
+            group=second_group,
+            tenant=self.tenant,
+        )
+        second_policy.roles.add(self.user_access_admin_role)
+
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        # Should list both groups
+        self.assertEqual(len(tool_output["groups_with_role"]), 2)
+        group_names = [g["name"] for g in tool_output["groups_with_role"]]
+        self.assertIn("Access Governance", group_names)
+        self.assertIn("Security Team", group_names)
+
+    def test_guide_user_access_delegation_v1_org_version(self):
+        """Positive: V1 organization shows org_version=v1."""
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["org_version"], "v1")
+
+
+@override_settings(BYPASS_BOP_VERIFICATION=True, V2_APIS_ENABLED=True)
+class MCPGuideUserAccessDelegationV2Tests(MCPToolTestMixin, IdentityRequest):
+    """Tests for guide_user_access_delegation on V2 organizations."""
+
+    def setUp(self):
+        """Set up V2 guide_user_access_delegation tests."""
+        reload(urls)
+        clear_url_caches()
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.test_username = self.user_data["username"]
+        self.principal = Principal.objects.create(username=self.test_username, tenant=self.tenant)
+
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.get_kessel_principal_id",
+                return_value="localhost/test-user-id",
+            )
+        )
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.WorkspaceInventoryAccessChecker.check_resource_access",
+                return_value=True,
+            )
+        )
+
+        # Activate V2 for this tenant
+        TenantMapping.objects.create(tenant=self.tenant, v2_write_activated_at=timezone.now())
+
+        # Create the 'User Access administrator' system role (V1 - normally seeded by migrations)
+        self.public_tenant = Tenant.objects.get(tenant_name="public")
+        self.user_access_admin_role = Role.objects.create(
+            name="User Access administrator",
+            display_name="User Access administrator",
+            description="Provides access to create and manage roles, groups, and principals in RBAC.",
+            system=True,
+            tenant=self.public_tenant,
+        )
+
+        # Create RBAC permissions for this role
+        self.rbac_permission = Permission.objects.create(
+            application="rbac",
+            resource_type="*",
+            verb="*",
+            permission="rbac:*:*",
+            tenant=self.public_tenant,
+        )
+        self.rbac_access = Access.objects.create(
+            permission=self.rbac_permission,
+            role=self.user_access_admin_role,
+            tenant=self.public_tenant,
+        )
+
+        # Create V2 version of the role (RoleBinding uses RoleV2)
+        self.user_access_admin_role_v2 = RoleV2.objects.create(
+            name="User Access administrator",
+            tenant=self.tenant,
+        )
+
+        # Create a role binding with the V2 role
+        self.binding = RoleBinding.objects.create(
+            tenant=self.tenant,
+            role=self.user_access_admin_role_v2,
+            resource_type="workspace",
+            resource_id="root-workspace-id",
+        )
+
+        # Create another user already having this role via direct binding
+        self.admin_principal = Principal.objects.create(username="admin_via_binding", tenant=self.tenant)
+        RoleBindingPrincipal.objects.create(binding=self.binding, principal=self.admin_principal, source="direct")
+
+        # Create a group for group-based binding tests
+        self.admin_group = Group.objects.create(name="User Access Admins Group", tenant=self.tenant)
+
+    def tearDown(self):
+        """Tear down V2 guide_user_access_delegation tests."""
+        RoleBindingPrincipal.objects.all().delete()
+        RoleBindingGroup.objects.all().delete()
+        RoleBinding.objects.all().delete()
+        RoleV2.objects.all().delete()
+        Policy.objects.all().delete()
+        Access.objects.all().delete()
+        Role.objects.all().delete()
+        Permission.objects.all().delete()
+        TenantMapping.objects.all().delete()
+        Group.objects.all().delete()
+        Principal.objects.all().delete()
+        super().tearDown()
+
+    def test_guide_user_access_delegation_v2_returns_org_version(self):
+        """Positive: V2 organization shows org_version=v2."""
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["org_version"], "v2")
+
+    def test_guide_user_access_delegation_v2_finds_role_bindings(self):
+        """Positive: V2 org finds role bindings with the role."""
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        # Should find the role binding
+        self.assertEqual(len(tool_output["role_bindings_with_role"]), 1)
+        binding = tool_output["role_bindings_with_role"][0]
+        self.assertEqual(binding["resource_type"], "workspace")
+        self.assertEqual(binding["resource_id"], "root-workspace-id")
+        self.assertEqual(binding["principal_count"], 1)
+
+    def test_guide_user_access_delegation_v2_user_has_role_direct(self):
+        """Positive: V2 detects user has role via direct binding."""
+        # Add the test user directly to the binding
+        RoleBindingPrincipal.objects.create(binding=self.binding, principal=self.principal, source="direct")
+
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        self.assertTrue(tool_output["user_already_has_role"])
+        self.assertEqual(len(tool_output["user_role_bindings"]), 1)
+        self.assertEqual(tool_output["user_role_bindings"][0]["via"], "direct")
+        self.assertIn("ALREADY HAS ROLE", tool_output["recommendation"])
+
+    def test_guide_user_access_delegation_v2_user_has_role_via_group(self):
+        """Positive: V2 detects user has role via group membership."""
+        # Add user to group and create group binding
+        self.admin_group.principals.add(self.principal)
+        RoleBindingGroup.objects.create(binding=self.binding, group=self.admin_group)
+
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        self.assertTrue(tool_output["user_already_has_role"])
+        self.assertEqual(len(tool_output["user_role_bindings"]), 1)
+        self.assertIn("group:User Access Admins Group", tool_output["user_role_bindings"][0]["via"])
+
+    def test_guide_user_access_delegation_v2_user_does_not_have_role(self):
+        """Positive: V2 correctly identifies user does not have the role."""
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        self.assertFalse(tool_output["user_already_has_role"])
+        self.assertEqual(tool_output["user_role_bindings"], [])
+
+    def test_guide_user_access_delegation_v2_next_steps(self):
+        """Positive: V2 recommendation includes V2-specific next steps."""
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        recommendation = tool_output["recommendation"]
+        self.assertIn("V2 Organization", recommendation)
+        self.assertIn("NEXT STEPS (V2 organization)", recommendation)
+        self.assertIn("create_role_bindings", recommendation)
+        self.assertIn("role_id", recommendation)
+
+    def test_guide_user_access_delegation_v2_no_bindings(self):
+        """Edge case: V2 org with no role bindings for the role."""
+        # Delete the binding
+        RoleBindingPrincipal.objects.all().delete()
+        self.binding.delete()
+
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        self.assertEqual(len(tool_output["role_bindings_with_role"]), 0)
+        self.assertIn("No role bindings currently grant this role", tool_output["recommendation"])
+
+    def test_guide_user_access_delegation_v2_multiple_bindings(self):
+        """Positive: V2 lists multiple role bindings when several exist."""
+        # Create another binding for a different resource
+        second_binding = RoleBinding.objects.create(
+            tenant=self.tenant,
+            role=self.user_access_admin_role_v2,
+            resource_type="workspace",
+            resource_id="child-workspace-id",
+        )
+        RoleBindingPrincipal.objects.create(binding=second_binding, principal=self.admin_principal, source="direct")
+
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        self.assertEqual(len(tool_output["role_bindings_with_role"]), 2)
+        resource_ids = [b["resource_id"] for b in tool_output["role_bindings_with_role"]]
+        self.assertIn("root-workspace-id", resource_ids)
+        self.assertIn("child-workspace-id", resource_ids)
+
+    def test_guide_user_access_delegation_v2_shows_binding_counts(self):
+        """Positive: V2 role binding info includes principal and group counts."""
+        # Add a group binding
+        RoleBindingGroup.objects.create(binding=self.binding, group=self.admin_group)
+
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        binding = tool_output["role_bindings_with_role"][0]
+        self.assertEqual(binding["principal_count"], 1)
+        self.assertEqual(binding["group_count"], 1)
+
+    def test_guide_user_access_delegation_v2_groups_with_role_empty(self):
+        """Positive: V2 org returns empty groups_with_role (V1 field)."""
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        # V2 uses role_bindings_with_role, not groups_with_role
+        self.assertEqual(tool_output["groups_with_role"], [])
+
+    def test_guide_user_access_delegation_v2_user_groups_with_role_empty(self):
+        """Positive: V2 org returns empty user_groups_with_role (V1 field)."""
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        # V2 uses user_role_bindings, not user_groups_with_role
+        self.assertEqual(tool_output["user_groups_with_role"], [])

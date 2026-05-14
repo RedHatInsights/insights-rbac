@@ -42,11 +42,12 @@ from management.access.view import AccessView
 from management.audit_log.view import AuditLogViewSet
 from management.cache import _connection_pool
 from management.group.view import GroupViewSet
-from management.models import Access, AuditLog, Group
+from management.models import Access, AuditLog, Group, Role
 from management.permission.view import PermissionViewSet
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
 from management.principal.view import PrincipalView
+from management.role.v2_model import RoleV2
 from management.role.v2_view import RoleV2ViewSet
 from management.role.view import RoleViewSet
 from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
@@ -59,7 +60,7 @@ from redis import Redis, exceptions as redis_exceptions
 
 from api.common import RH_IDENTITY_HEADER
 from api.cross_access.view import CrossAccountRequestViewSet
-from api.models import CrossAccountRequest
+from api.models import CrossAccountRequest, Tenant
 from api.status.view import status as status_view_fn
 
 # Cache view functions — .as_view() returns a new callable each time,
@@ -3340,6 +3341,307 @@ def create_cross_account_request(
 
     path = reverse("v1_api:cross-list")
     return _call_view_write(request, _cross_account_create_view, path, body)
+
+
+@register_tool(
+    description=(
+        "Guide for delegating user access management without making someone an Org Admin. "
+        "Provide a username (e.g., 'dana') to get a complete analysis including: "
+        "(1) Whether the user exists and their current org admin status, "
+        "(2) Details about the 'User Access administrator' role (the purpose-built role for this delegation), "
+        "(3) What permissions it grants and what the user can/cannot do with it, "
+        "(4) Existing groups that already have this role assigned, "
+        "(5) Whether the user already has this role via group membership. "
+        "This is the #1 governance question from security/compliance teams - customers consistently "
+        "don't know the 'User Access administrator' role exists. "
+        "BEST FOR: Answering 'How do I let someone manage user access without making them Org Admin?' "
+        "Returns: {user_info, role_info, role_access, groups_with_role, user_already_has_role, recommendation}."
+    ),
+    requires_auth=True,
+    api_version=ApiVersion.UNIFIED,
+)
+def guide_user_access_delegation(
+    request: HttpRequest,
+    *,
+    username: str,
+) -> str:
+    """Provide guidance on delegating user access management without Org Admin privileges."""
+    try:
+        return _guide_user_access_delegation_impl(request, username)
+    except Exception as e:
+        logger.exception("guide_user_access_delegation failed")
+        return json.dumps({"error": f"Internal error: {type(e).__name__}: {str(e)}"})
+
+
+def _guide_user_access_delegation_impl(request: HttpRequest, username: str) -> str:
+    """Implementation of guide_user_access_delegation."""
+    tenant = getattr(request, "tenant", None)
+    org_id = getattr(request.user, "org_id", None) if hasattr(request, "user") else None
+
+    if not tenant:
+        return json.dumps({"error": "No tenant context available"})
+
+    # Detect V1/V2 mode
+    is_v2 = is_v2_write_activated(tenant)
+    org_version = "v2" if is_v2 else "v1"
+
+    result: dict[str, Any] = {
+        "scenario": "Delegate user access management without Org Admin",
+        "username": username,
+        "org_version": org_version,
+        "user_info": None,
+        "role_info": None,
+        "role_access": None,
+        "groups_with_role": [],
+        "role_bindings_with_role": [],  # V2 only
+        "user_already_has_role": False,
+        "user_groups_with_role": [],
+        "user_role_bindings": [],  # V2 only
+        "recommendation": None,
+    }
+
+    # Step 1: Check if user exists and get their org admin status
+    if org_id:
+        proxy = PrincipalProxy()
+        try:
+            proxy_resp = proxy.request_filtered_principals([username], org_id=org_id, limit=1)
+            if proxy_resp.get("status_code") == 200 and proxy_resp.get("data"):
+                user_data = proxy_resp["data"][0] if proxy_resp["data"] else None
+                if user_data:
+                    result["user_info"] = {
+                        "username": user_data.get("username"),
+                        "email": user_data.get("email"),
+                        "first_name": user_data.get("first_name"),
+                        "last_name": user_data.get("last_name"),
+                        "is_org_admin": user_data.get("is_org_admin", False),
+                        "is_active": user_data.get("is_active", True),
+                    }
+                else:
+                    result["user_info"] = {"error": f"User '{username}' not found in this organization"}
+            else:
+                result["user_info"] = {"error": f"Could not verify user '{username}'"}
+        except Exception as e:
+            logger.warning("guide_user_access_delegation: Failed to verify user %s: %s", username, e)
+            result["user_info"] = {"error": f"Could not verify user '{username}'"}
+    else:
+        result["user_info"] = {"error": "No org_id available to verify user"}
+
+    # Step 2: Find the 'User Access administrator' role (direct DB query for system role)
+    user_access_admin_role_name = "User Access administrator"
+    try:
+        public_tenant = Tenant.objects.get(tenant_name="public")
+        role = Role.objects.filter(name__iexact=user_access_admin_role_name, tenant=public_tenant).first()
+    except Tenant.DoesNotExist:
+        role = None
+
+    if not role:
+        result["role_info"] = {"error": f"Role '{user_access_admin_role_name}' not found"}
+        result["recommendation"] = (
+            f"The '{user_access_admin_role_name}' role was not found. "
+            "This is a system role that should exist by default. "
+            "Please contact Red Hat support if this role is missing."
+        )
+        return json.dumps(result)
+
+    role_uuid = str(role.uuid)
+    result["role_info"] = {
+        "uuid": role_uuid,
+        "name": role.name,
+        "display_name": role.display_name,
+        "description": role.description,
+        "system": role.system,
+    }
+
+    # Step 3: Get the access permissions for this role (direct DB query)
+    permissions_list = list(Access.objects.filter(role=role).values_list("permission__permission", flat=True))
+    permission_summary = ", ".join(permissions_list) if permissions_list else "No permissions found"
+
+    result["role_access"] = {
+        "permissions": permissions_list,
+        "permission_summary": f"{permission_summary} — create/read/update/delete on all RBAC resources",
+    }
+
+    # Step 4: Find assignments for this role (V1: groups/policies, V2: role bindings)
+    principal = Principal.objects.filter(username__iexact=username, tenant=tenant).first()
+
+    if is_v2:
+        # V2: RoleBinding uses RoleV2, so find the V2 equivalent of this role by name
+        v2_role = RoleV2.objects.filter(name__iexact=user_access_admin_role_name, tenant=tenant).first()
+
+        if v2_role:
+            # V2: Find role bindings that grant this role
+            role_bindings_with_this_role = RoleBinding.objects.filter(role=v2_role, tenant=tenant).select_related(
+                "role"
+            )
+
+            for binding in role_bindings_with_this_role:
+                binding_info = {
+                    "id": str(binding.id),
+                    "resource_type": binding.resource_type,
+                    "resource_id": binding.resource_id,
+                }
+                # Get principal count for this binding
+                principal_count = RoleBindingPrincipal.objects.filter(binding=binding).count()
+                group_count = RoleBindingGroup.objects.filter(binding=binding).count()
+                binding_info["principal_count"] = principal_count
+                binding_info["group_count"] = group_count
+                result["role_bindings_with_role"].append(binding_info)
+
+            # Step 5 (V2): Check if the target user already has this role via role bindings
+            if principal:
+                # Direct bindings
+                direct_bindings = RoleBindingPrincipal.objects.filter(
+                    principal=principal, binding__role=v2_role, binding__tenant=tenant
+                ).select_related("binding")
+                for rbp in direct_bindings:
+                    result["user_already_has_role"] = True
+                    result["user_role_bindings"].append(
+                        {
+                            "binding_id": str(rbp.binding.id),
+                            "via": "direct",
+                            "resource_type": rbp.binding.resource_type,
+                            "resource_id": rbp.binding.resource_id,
+                        }
+                    )
+
+                # Group-based bindings
+                user_groups = principal.group.filter(tenant=tenant)
+                group_bindings = RoleBindingGroup.objects.filter(
+                    group__in=user_groups, binding__role=v2_role, binding__tenant=tenant
+                ).select_related("binding", "group")
+                for rbg in group_bindings:
+                    result["user_already_has_role"] = True
+                    result["user_role_bindings"].append(
+                        {
+                            "binding_id": str(rbg.binding.id),
+                            "via": f"group:{rbg.group.name}",
+                            "resource_type": rbg.binding.resource_type,
+                            "resource_id": rbg.binding.resource_id,
+                        }
+                    )
+        # If no V2 role exists, role_bindings_with_role stays empty
+    else:
+        # V1: Find groups that have this role assigned via policies
+        groups_with_role = (
+            Group.objects.filter(policies__roles=role, tenant=tenant)
+            .distinct()
+            .annotate(principal_count=Count("principals", distinct=True))
+        )
+
+        for group in groups_with_role:
+            result["groups_with_role"].append(
+                {
+                    "uuid": str(group.uuid),
+                    "name": group.name,
+                    "description": group.description,
+                    "principal_count": group.principal_count,
+                }
+            )
+
+        # Step 5 (V1): Check if the target user already has this role via group membership
+        if principal:
+            user_groups_with_this_role = (
+                Group.objects.filter(principals=principal, policies__roles=role, tenant=tenant)
+                .distinct()
+                .values_list("name", flat=True)
+            )
+            if user_groups_with_this_role:
+                result["user_already_has_role"] = True
+                result["user_groups_with_role"] = list(user_groups_with_this_role)
+
+    # Step 6: Build the recommendation
+    user_is_org_admin = (
+        result["user_info"].get("is_org_admin", False)
+        if isinstance(result["user_info"], dict) and "error" not in result["user_info"]
+        else None
+    )
+
+    can_do = [
+        "Create and delete custom groups",
+        "Assign non-admin roles to groups",
+        "Add/remove users from groups",
+        "Invite users to the organization",
+        "Create custom roles (for allowed applications)",
+    ]
+
+    cannot_do = [
+        "Grant the Org Admin flag (controlled in IT/account portal, not RBAC)",
+        "Manage any group that contains the 'User Access administrator' role itself (prevents privilege escalation)",
+        "Access resources outside RBAC (cost management, subscriptions, etc.)",
+    ]
+
+    existing_assignments_summary = ""
+    if is_v2:
+        if result["role_bindings_with_role"]:
+            binding_descs = [
+                f"binding on {b['resource_type']}:{b['resource_id']} "
+                f"({b['principal_count']} principals, {b['group_count']} groups)"
+                for b in result["role_bindings_with_role"]
+            ]
+            existing_assignments_summary = f"Existing role bindings with this role: {'; '.join(binding_descs)}."
+        else:
+            existing_assignments_summary = "No role bindings currently grant this role."
+    else:
+        if result["groups_with_role"]:
+            group_names = [f"'{g['name']}' ({g['principal_count']} members)" for g in result["groups_with_role"]]
+            existing_assignments_summary = f"Existing groups with this role: {', '.join(group_names)}."
+        else:
+            existing_assignments_summary = "No groups currently have this role assigned."
+
+    user_status = ""
+    if result["user_already_has_role"]:
+        if is_v2:
+            bindings_desc = []
+            for rb in result["user_role_bindings"]:
+                via = rb["via"]
+                scope = f"{rb['resource_type']}:{rb['resource_id']}"
+                bindings_desc.append(f"{via} on {scope}")
+            bindings_str = ", ".join(bindings_desc)
+            user_status = (
+                f"ALREADY HAS ROLE: {username} already has the '{user_access_admin_role_name}' role "
+                f"via role bindings: {bindings_str}. No action needed."
+            )
+        else:
+            groups_str = ", ".join(f"'{g}'" for g in result["user_groups_with_role"])
+            user_status = (
+                f"ALREADY HAS ROLE: {username} already has the '{user_access_admin_role_name}' role "
+                f"via membership in: {groups_str}. No action needed."
+            )
+    elif user_is_org_admin is True:
+        user_status = f"Note: {username} is currently an Org Admin. Assigning this role would be redundant."
+    elif user_is_org_admin is False:
+        user_status = f"{username}'s current is_org_admin flag is false, and this approach keeps it that way."
+    elif isinstance(result["user_info"], dict) and "error" in result["user_info"]:
+        user_status = f"User verification: {result['user_info']['error']}"
+
+    next_steps = ""
+    if result["user_already_has_role"]:
+        next_steps = f"No action needed — {username} already has the required access."
+    elif is_v2:
+        next_steps = (
+            f"NEXT STEPS (V2 organization): Create a role binding that assigns the "
+            f"'{user_access_admin_role_name}' role to {username}. Use create_role_bindings() with "
+            f"role_id='{role_uuid}' and either subjects (for direct assignment) or groups "
+            f"(for group-based assignment). Specify resource_type and resource_id for the scope."
+        )
+    else:
+        next_steps = (
+            f"NEXT STEPS (V1 organization): Either add {username} to an existing group that has this role, "
+            f"or create a new group, assign this role to it, then add {username} to the group."
+        )
+
+    result["recommendation"] = (
+        f"[{org_version.upper()} Organization] The role you want is '{user_access_admin_role_name}'. "
+        f"It grants {permission_summary} — create/read/update/delete on all RBAC resources "
+        f"(groups, roles, principals in groups, etc.).\n\n"
+        f"What {username} CAN do with this role:\n"
+        + "\n".join(f"  - {item}" for item in can_do)
+        + f"\n\nWhat {username} CANNOT do:\n"
+        + "\n".join(f"  - {item}" for item in cannot_do)
+        + f"\n\n{user_status}\n\n{existing_assignments_summary}\n\n{next_steps}"
+    )
+
+    return json.dumps(result)
 
 
 # --- JSON-RPC parsing ---
