@@ -1610,6 +1610,234 @@ def audit_redhat_access(
 
 @register_tool(
     description=(
+        "Audit a group before dissolving it. Shows all members (users + service accounts), "
+        "roles/permissions they'd lose, and identifies who would be left stranded (losing all "
+        "non-default access). Essential for org changes, contractor offboarding, or acquisitions. "
+        "Provide either group_uuid OR group_name to identify the group. "
+        "Returns: {group: {...}, members: [{username, type, other_groups, access_impact}], "
+        "roles: [{name, permissions}], analysis: {stranded_users, stranded_service_accounts, ...}}. "
+        "STRANDED means the member is ONLY in this group plus platform_default — they'd be demoted "
+        "to default access only. Service accounts with no other groups would start 403'ing. "
+        "Calls: GET /groups/, GET /groups/{uuid}/principals/, GET /groups/{uuid}/roles/, "
+        "GET /access/?username= for each member"
+    ),
+    requires_auth=True,
+)
+def audit_group_for_dissolution(
+    request: HttpRequest,
+    *,
+    group_uuid: str = "",
+    group_name: str = "",
+) -> str:
+    """Audit a group before dissolving it to identify stranded members."""
+    tenant = getattr(request, "tenant", None)
+    if not tenant:
+        return json.dumps({"error": "No tenant context available"})
+
+    # Resolve group by UUID or name
+    resolved_uuid, error = _resolve_group_uuid(group_uuid, group_name, tenant)
+    if error:
+        return error
+    assert resolved_uuid is not None
+
+    # Get the group with prefetched data
+    group = (
+        Group.objects.filter(uuid=resolved_uuid, tenant=tenant)
+        .prefetch_related(
+            "principals",
+            "policies__roles__access__permission",
+        )
+        .first()
+    )
+
+    if not group:
+        return json.dumps({"error": f"Group with UUID '{resolved_uuid}' not found"})
+
+    # Get all members (users and service accounts)
+    all_principals = list(group.principals.all())
+    users = [p for p in all_principals if p.type == Principal.Types.USER]
+    service_accounts = [p for p in all_principals if p.type == Principal.Types.SERVICE_ACCOUNT]
+
+    # Get roles assigned to this group with their permissions
+    group_roles: list[dict[str, Any]] = []
+    all_permissions_in_group: set[str] = set()
+
+    for policy in group.policies.all():
+        for role in policy.roles.all():
+            role_perms: list[str] = []
+            for access in role.access.all():
+                if access.permission:
+                    perm_str = access.permission.permission
+                    role_perms.append(perm_str)
+                    all_permissions_in_group.add(perm_str)
+
+            group_roles.append(
+                {
+                    "uuid": str(role.uuid),
+                    "name": role.display_name or role.name,
+                    "description": role.description or "",
+                    "system": getattr(role, "system", False),
+                    "permissions": sorted(role_perms),
+                    "permission_count": len(role_perms),
+                }
+            )
+
+    # Analyze each member's other group memberships and access impact
+    members_data: list[dict[str, Any]] = []
+    stranded_users: list[str] = []
+    stranded_service_accounts: list[str] = []
+    users_with_overlap: list[str] = []
+
+    for principal in all_principals:
+        # Get all groups this principal belongs to (excluding the target group)
+        other_groups = (
+            Group.objects.filter(principals=principal, tenant=tenant)
+            .exclude(uuid=resolved_uuid)
+            .prefetch_related("policies__roles__access__permission")
+        )
+        other_groups_list = list(other_groups)
+
+        # Check what permissions they'd retain from other groups
+        retained_permissions: set[str] = set()
+        other_groups_info: list[dict[str, Any]] = []
+
+        for other_group in other_groups_list:
+            group_perms: list[str] = []
+            for policy in other_group.policies.all():
+                for role in policy.roles.all():
+                    for access in role.access.all():
+                        if access.permission:
+                            perm_str = access.permission.permission
+                            group_perms.append(perm_str)
+                            retained_permissions.add(perm_str)
+
+            other_groups_info.append(
+                {
+                    "uuid": str(other_group.uuid),
+                    "name": other_group.name,
+                    "is_platform_default": other_group.platform_default,
+                    "is_admin_default": other_group.admin_default,
+                    "permission_count": len(group_perms),
+                }
+            )
+
+        # Calculate lost permissions (permissions in target group but not in other groups)
+        lost_permissions = all_permissions_in_group - retained_permissions
+
+        # Determine if stranded (only in target group + platform_default, or no other groups at all)
+        non_default_other_groups = [g for g in other_groups_info if not g["is_platform_default"]]
+        is_stranded = len(non_default_other_groups) == 0
+
+        # Categorize access impact
+        if is_stranded:
+            if lost_permissions:
+                access_impact = "stranded - will lose all non-default access"
+            else:
+                access_impact = "stranded - no permissions to lose (target group grants none)"
+        elif lost_permissions:
+            overlap_perms = all_permissions_in_group & retained_permissions
+            if overlap_perms:
+                access_impact = (
+                    f"partial - loses {len(lost_permissions)} perm(s), retains {len(overlap_perms)} overlapping"
+                )
+            else:
+                access_impact = f"loses {len(lost_permissions)} permission(s), retains access via other groups"
+        else:
+            access_impact = "no impact - all permissions retained via other groups"
+
+        member_info: dict[str, Any] = {
+            "username": principal.username,
+            "uuid": str(principal.uuid),
+            "type": principal.type,
+            "other_groups": other_groups_info,
+            "other_group_count": len(other_groups_info),
+            "non_default_group_count": len(non_default_other_groups),
+            "is_stranded": is_stranded,
+            "access_impact": access_impact,
+            "permissions_lost": sorted(lost_permissions) if lost_permissions else [],
+            "permissions_retained": len(retained_permissions),
+        }
+
+        if principal.type == Principal.Types.SERVICE_ACCOUNT:
+            member_info["service_account_id"] = principal.service_account_id
+
+        members_data.append(member_info)
+
+        # Track stranded members
+        if is_stranded:
+            if principal.type == Principal.Types.USER:
+                stranded_users.append(principal.username)
+            else:
+                stranded_service_accounts.append(principal.username)
+        elif lost_permissions and retained_permissions:
+            users_with_overlap.append(principal.username)
+
+    # Group permissions by application for summary
+    perm_by_app: dict[str, int] = {}
+    for perm in all_permissions_in_group:
+        parts = perm.split(":")
+        if len(parts) >= 1:
+            app = parts[0]
+            perm_by_app[app] = perm_by_app.get(app, 0) + 1
+
+    # Build analysis summary
+    analysis: dict[str, Any] = {
+        "total_members": len(all_principals),
+        "total_users": len(users),
+        "total_service_accounts": len(service_accounts),
+        "total_roles": len(group_roles),
+        "total_unique_permissions": len(all_permissions_in_group),
+        "permissions_by_application": dict(sorted(perm_by_app.items())),
+        "stranded_users": stranded_users,
+        "stranded_user_count": len(stranded_users),
+        "stranded_service_accounts": stranded_service_accounts,
+        "stranded_service_account_count": len(stranded_service_accounts),
+        "users_with_overlapping_access": users_with_overlap,
+        "users_with_overlapping_count": len(users_with_overlap),
+    }
+
+    # Add warnings/recommendations
+    warnings: list[str] = []
+    if stranded_users:
+        warnings.append(
+            f"{len(stranded_users)} user(s) ({', '.join(stranded_users)}) will be demoted to default access only"
+        )
+    if stranded_service_accounts:
+        warnings.append(
+            f"{len(stranded_service_accounts)} service account(s) ({', '.join(stranded_service_accounts)}) "
+            f"will lose all access — automated processes using them will start 403'ing"
+        )
+    if not stranded_users and not stranded_service_accounts:
+        if len(all_principals) == 0:
+            warnings.append("Group has no members — safe to delete")
+        else:
+            warnings.append(
+                f"All {len(all_principals)} member(s) have other group memberships — "
+                f"access impact is partial or none"
+            )
+
+    analysis["warnings"] = warnings
+
+    return json.dumps(
+        {
+            "group": {
+                "uuid": str(group.uuid),
+                "name": group.name,
+                "description": group.description or "",
+                "platform_default": group.platform_default,
+                "admin_default": group.admin_default,
+                "system": group.system,
+            },
+            "members": members_data,
+            "roles": group_roles,
+            "analysis": analysis,
+        },
+        default=str,
+    )
+
+
+@register_tool(
+    description=(
         "List workspaces for the authenticated organization (V2 API). Workspaces are hierarchical "
         "containers used to scope role bindings to specific resource boundaries. "
         "Order by: 'name', 'created', 'modified', 'type' (prefix with '-' to reverse). "
