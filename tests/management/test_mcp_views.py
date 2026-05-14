@@ -4234,6 +4234,21 @@ class MCPWriteGatingTests(MCPToolTestMixin, IdentityRequest):
             "create_role_bindings",
             "create_workspace",
             "create_cross_account_request",
+            "update_group",
+            "update_role_v1",
+            "patch_role_v1",
+            "update_role",
+            "update_role_binding",
+            "update_workspace",
+            "move_workspace",
+            "update_cross_account_request",
+            "patch_cross_account_request",
+            "delete_group",
+            "remove_principals_from_group",
+            "remove_roles_from_group",
+            "delete_role_v1",
+            "bulk_delete_roles",
+            "delete_workspace",
         ]
         for name in write_tool_names:
             config = _TOOL_CONFIG.get(name)
@@ -4611,3 +4626,679 @@ class MCPCrossAccountRequestTests(MCPToolTestMixin, IdentityRequest):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         self.assertIn("result", data, f"Expected result but got: {data}")
+
+
+# --- UPDATE tool tests ---
+
+
+@override_settings(MCP_WRITE_ENABLED=True)
+class MCPUpdateGroupTests(MCPToolTestMixin, IdentityRequest):
+    """Test update_group write tool."""
+
+    def setUp(self):
+        """Set up update group tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.principal = Principal.objects.create(username="test_user", tenant=self.tenant)
+        V2TenantBootstrapService(NoopReplicator()).bootstrap_tenant(self.tenant)
+        self.group = Group.objects.create(name="Test Group", description="Original desc", tenant=self.tenant)
+
+    def tearDown(self):
+        """Tear down update group tests."""
+        Group.objects.all().delete()
+        Principal.objects.all().delete()
+        super().tearDown()
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+    def test_update_group_success(self, mock_replicator):
+        """Update a group successfully."""
+        response = self._call_tool(
+            "update_group",
+            {"group_uuid": str(self.group.uuid), "name": "Updated Group", "description": "New desc"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("result", data, f"Expected result but got: {data}")
+        self.assertFalse(data["result"]["isError"])
+        output = json.loads(data["result"]["content"][0]["text"])
+        self.assertEqual(output["name"], "Updated Group")
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+    def test_update_group_by_name(self, mock_replicator):
+        """Update a group resolved by name."""
+        response = self._call_tool(
+            "update_group",
+            {"group_name": "Test Group", "name": "Renamed Group"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("result", data, f"Expected result but got: {data}")
+        self.assertFalse(data["result"]["isError"])
+
+    def test_update_group_no_auth(self):
+        """Updating a group without auth returns auth error."""
+        response = self._call_tool("update_group", {"name": "Test"}, use_auth=False)
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    def test_update_group_not_found(self):
+        """Updating a non-existent group returns error."""
+        response = self._call_tool(
+            "update_group",
+            {"group_name": "Nonexistent", "name": "New Name"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        output = self._get_tool_output(response)
+        self.assertIn("error", output)
+
+
+@override_settings(MCP_WRITE_ENABLED=True)
+class MCPUpdateRoleV1Tests(MCPToolTestMixin, IdentityRequest):
+    """Test update_role_v1 and patch_role_v1 write tools."""
+
+    def setUp(self):
+        """Set up V1 role update tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.principal = Principal.objects.create(username="test_user", tenant=self.tenant)
+        V2TenantBootstrapService(NoopReplicator()).bootstrap_tenant(self.tenant)
+        self.permission = Permission.objects.create(
+            application="cost-management",
+            resource_type="cost_model",
+            verb="read",
+            permission="cost-management:cost_model:read",
+            tenant=self.tenant,
+        )
+        self.role = Role.objects.create(name="Test Role", tenant=self.tenant, system=False)
+        Access.objects.create(role=self.role, permission=self.permission, tenant=self.tenant)
+
+    def tearDown(self):
+        """Tear down V1 role update tests."""
+        Role.objects.all().delete()
+        Permission.objects.filter(permission="cost-management:cost_model:read").delete()
+        Principal.objects.all().delete()
+        super().tearDown()
+
+    def test_update_role_v1_success(self):
+        """Update a V1 role successfully."""
+        response = self._call_tool(
+            "update_role_v1",
+            {
+                "role_uuid": str(self.role.uuid),
+                "name": "Updated Role",
+                "access": [{"permission": "cost-management:cost_model:read", "resourceDefinitions": []}],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("result", data, f"Expected result but got: {data}")
+        self.assertFalse(data["result"]["isError"], f"Tool returned error: {data['result']}")
+        output = json.loads(data["result"]["content"][0]["text"])
+        self.assertEqual(output.get("name"), "Updated Role")
+
+    def test_update_role_v1_no_auth(self):
+        """Updating a role without auth returns auth error."""
+        response = self._call_tool(
+            "update_role_v1",
+            {"role_uuid": str(self.role.uuid), "name": "X", "access": []},
+            use_auth=False,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    def test_patch_role_v1_success(self):
+        """Partially update a V1 role successfully."""
+        response = self._call_tool(
+            "patch_role_v1",
+            {"role_uuid": str(self.role.uuid), "display_name": "New Display Name"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("result", data, f"Expected result but got: {data}")
+        self.assertFalse(data["result"]["isError"], f"Tool returned error: {data['result']}")
+
+    def test_patch_role_v1_no_fields(self):
+        """Patching a role without any fields returns error."""
+        response = self._call_tool(
+            "patch_role_v1",
+            {"role_uuid": str(self.role.uuid)},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        output = self._get_tool_output(response)
+        self.assertIn("error", output)
+        self.assertIn("required", output["error"].lower())
+
+
+@override_settings(MCP_WRITE_ENABLED=True, V2_APIS_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
+class MCPUpdateToolsV2Tests(MCPToolTestMixin, IdentityRequest):
+    """Test V2 update tools (update_role, update_role_binding, update_workspace, move_workspace)."""
+
+    def setUp(self):
+        """Set up V2 update tool tests."""
+        reload(urls)
+        clear_url_caches()
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.principal = Principal.objects.create(username="test_user", tenant=self.tenant)
+        self.enterContext(
+            patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+        )
+        V2TenantBootstrapService(NoopReplicator()).bootstrap_tenant(self.tenant)
+        TenantMapping.objects.update_or_create(tenant=self.tenant, defaults={"v2_write_activated_at": timezone.now()})
+        self.permission_obj = Permission.objects.create(
+            application="rbac",
+            resource_type="group",
+            verb="read",
+            permission="rbac:group:read",
+            tenant=self.tenant,
+        )
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.get_kessel_principal_id",
+                return_value="localhost/test-user-id",
+            )
+        )
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.WorkspaceInventoryAccessChecker.check_resource_access",
+                return_value=True,
+            )
+        )
+
+    def tearDown(self):
+        """Tear down V2 update tool tests."""
+        RoleBinding.objects.all().delete()
+        for ws in Workspace.objects.filter(type=Workspace.Types.STANDARD).order_by("-parent_id"):
+            ws.delete()
+        RoleV2.objects.all().delete()
+        Permission.objects.filter(permission="rbac:group:read").delete()
+        Group.objects.all().delete()
+        Principal.objects.all().delete()
+        TenantMapping.objects.filter(tenant=self.tenant).delete()
+        super().tearDown()
+
+    @patch("management.permissions.role_v2_access.RoleV2KesselAccessPermission.has_permission")
+    def test_update_role_v2_success(self, mock_perm):
+        """Update a V2 role successfully."""
+        mock_perm.return_value = True
+        role = RoleV2.objects.create(name="Original Role", tenant=self.tenant)
+
+        response = self._call_tool(
+            "update_role",
+            {
+                "role_uuid": str(role.uuid),
+                "name": "Updated V2 Role",
+                "permissions": [
+                    {"application": "rbac", "resource_type": "group", "operation": "read"},
+                ],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("result", data, f"Expected result but got: {data}")
+        self.assertFalse(data["result"]["isError"], f"Tool returned error: {data['result']}")
+        output = json.loads(data["result"]["content"][0]["text"])
+        self.assertEqual(output.get("name"), "Updated V2 Role")
+
+    def test_update_role_v2_no_auth(self):
+        """Updating a V2 role without auth returns auth error."""
+        response = self._call_tool(
+            "update_role",
+            {"role_uuid": "fake", "name": "X", "permissions": []},
+            use_auth=False,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    @patch("management.permissions.workspace_access.WorkspaceAccessPermission.has_permission")
+    def test_update_workspace_success(self, mock_perm):
+        """Update a workspace successfully."""
+        mock_perm.return_value = True
+        root_ws = Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.ROOT).first()
+        ws = Workspace.objects.create(
+            name="Test WS", tenant=self.tenant, type=Workspace.Types.STANDARD, parent=root_ws
+        )
+
+        response = self._call_tool(
+            "update_workspace",
+            {
+                "workspace_id": str(ws.id),
+                "name": "Updated WS",
+                "description": "Updated",
+                "parent_id": str(root_ws.id),
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("result", data, f"Expected result but got: {data}")
+        self.assertFalse(data["result"]["isError"], f"Tool returned error: {data['result']}")
+        output = json.loads(data["result"]["content"][0]["text"])
+        self.assertEqual(output.get("name"), "Updated WS")
+
+    @patch("management.permissions.workspace_access.WorkspaceAccessPermission.has_permission")
+    def test_move_workspace_success(self, mock_perm):
+        """Move a workspace to a new parent."""
+        mock_perm.return_value = True
+        root_ws = Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.ROOT).first()
+        parent1 = Workspace.objects.create(
+            name="Parent 1", tenant=self.tenant, type=Workspace.Types.STANDARD, parent=root_ws
+        )
+        child = Workspace.objects.create(
+            name="Child WS", tenant=self.tenant, type=Workspace.Types.STANDARD, parent=parent1
+        )
+        parent2 = Workspace.objects.create(
+            name="Parent 2", tenant=self.tenant, type=Workspace.Types.STANDARD, parent=root_ws
+        )
+
+        from management.workspace.view import WorkspaceViewSet
+
+        original_move = WorkspaceViewSet._move_atomic.__wrapped__
+        with patch.object(WorkspaceViewSet, "_move_atomic", original_move):
+            response = self._call_tool(
+                "move_workspace",
+                {"workspace_id": str(child.id), "parent_id": str(parent2.id)},
+            )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("result", data, f"Expected result but got: {data}")
+        self.assertFalse(data["result"]["isError"], f"Tool returned error: {data['result']}")
+
+    @patch("management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission")
+    @patch("management.permissions.role_binding_access.RoleBindingSystemUserAccessPermission.has_permission")
+    def test_update_role_binding_success(self, mock_sys_perm, mock_kessel_perm):
+        """Update role bindings for a subject."""
+        mock_sys_perm.return_value = True
+        mock_kessel_perm.return_value = True
+        role = RoleV2.objects.create(name="Binding Role", tenant=self.tenant)
+        root_ws = Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.ROOT).first()
+
+        response = self._call_tool(
+            "update_role_binding",
+            {
+                "resource_id": str(root_ws.id),
+                "resource_type": "workspace",
+                "subject_id": str(self.principal.uuid),
+                "subject_type": "principal",
+                "roles": [{"id": str(role.uuid)}],
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("result", data, f"Expected result but got: {data}")
+        self.assertFalse(data["result"]["isError"], f"Tool returned error: {data['result']}")
+
+
+@override_settings(MCP_WRITE_ENABLED=True)
+class MCPUpdateCrossAccountTests(MCPToolTestMixin, IdentityRequest):
+    """Test update_cross_account_request and patch_cross_account_request."""
+
+    def setUp(self):
+        """Set up cross-account update tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.principal = Principal.objects.create(username="test_user", tenant=self.tenant)
+
+    def tearDown(self):
+        """Tear down cross-account update tests."""
+        Principal.objects.all().delete()
+        super().tearDown()
+
+    def test_patch_cross_account_request_no_auth(self):
+        """Patching without auth returns auth error."""
+        response = self._call_tool(
+            "patch_cross_account_request",
+            {"request_id": "00000000-0000-0000-0000-000000000000", "status": "cancelled"},
+            use_auth=False,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    def test_update_cross_account_request_no_auth(self):
+        """Updating without auth returns auth error."""
+        response = self._call_tool(
+            "update_cross_account_request",
+            {
+                "request_id": "00000000-0000-0000-0000-000000000000",
+                "target_org": "12345",
+                "start_date": "06/01/2026",
+                "end_date": "06/30/2026",
+                "roles": ["Vulnerability administrator"],
+            },
+            use_auth=False,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    def test_patch_cross_account_request_registered(self):
+        """patch_cross_account_request is registered as a write tool."""
+        config = _TOOL_CONFIG.get("patch_cross_account_request")
+        self.assertIsNotNone(config)
+        self.assertTrue(config.write)
+        self.assertTrue(config.requires_auth)
+
+    def test_update_cross_account_request_registered(self):
+        """update_cross_account_request is registered as a write tool."""
+        config = _TOOL_CONFIG.get("update_cross_account_request")
+        self.assertIsNotNone(config)
+        self.assertTrue(config.write)
+        self.assertTrue(config.requires_auth)
+
+    def test_patch_cross_account_request_rejects_invalid_status(self):
+        """patch_cross_account_request rejects invalid status values."""
+        response = self._call_tool(
+            "patch_cross_account_request",
+            {"request_id": "00000000-0000-0000-0000-000000000000", "status": "foo"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        output = self._get_tool_output(response)
+        self.assertIn("error", output)
+        self.assertIn("foo", output["error"])
+        self.assertIn("approved", output["error"])
+
+
+# --- DELETE tool tests ---
+
+
+@override_settings(MCP_WRITE_ENABLED=True)
+class MCPDeleteGroupTests(MCPToolTestMixin, IdentityRequest):
+    """Test delete_group and remove_principals_from_group write tools."""
+
+    def setUp(self):
+        """Set up delete group tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.principal = Principal.objects.create(username="test_user", tenant=self.tenant)
+        V2TenantBootstrapService(NoopReplicator()).bootstrap_tenant(self.tenant)
+        self.group = Group.objects.create(name="Delete Me", tenant=self.tenant)
+
+    def tearDown(self):
+        """Tear down delete group tests."""
+        Group.objects.all().delete()
+        Principal.objects.all().delete()
+        super().tearDown()
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+    def test_delete_group_success(self, mock_replicator):
+        """Delete a group successfully."""
+        response = self._call_tool(
+            "delete_group",
+            {"group_uuid": str(self.group.uuid)},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("result", data, f"Expected result but got: {data}")
+        self.assertFalse(data["result"]["isError"])
+        output = json.loads(data["result"]["content"][0]["text"])
+        self.assertEqual(output["status"], "no_content")
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+    def test_delete_group_by_name(self, mock_replicator):
+        """Delete a group resolved by name."""
+        response = self._call_tool(
+            "delete_group",
+            {"group_name": "Delete Me"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("result", data, f"Expected result but got: {data}")
+        self.assertFalse(data["result"]["isError"])
+
+    def test_delete_group_no_auth(self):
+        """Deleting without auth returns auth error."""
+        response = self._call_tool("delete_group", {"group_name": "Delete Me"}, use_auth=False)
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    def test_delete_group_not_found(self):
+        """Deleting a non-existent group returns error."""
+        response = self._call_tool(
+            "delete_group",
+            {"group_name": "Nonexistent"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        output = self._get_tool_output(response)
+        self.assertIn("error", output)
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+    @patch("management.principal.proxy.PrincipalProxy.request_filtered_principals")
+    def test_remove_principals_from_group_success(self, mock_proxy, mock_replicator):
+        """Remove principals from a group."""
+        mock_proxy.return_value = {
+            "status_code": 200,
+            "data": [{"username": "testuser", "user_id": "12345", "is_org_admin": False}],
+        }
+        self.group.principals.add(self.principal)
+
+        response = self._call_tool(
+            "remove_principals_from_group",
+            {"group_uuid": str(self.group.uuid), "usernames": "test_user"},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("result", data, f"Expected result but got: {data}")
+        self.assertFalse(data["result"]["isError"])
+        output = json.loads(data["result"]["content"][0]["text"])
+        self.assertEqual(output["status"], "no_content")
+
+    def test_remove_principals_missing_params(self):
+        """Removing without usernames or service_accounts returns error."""
+        response = self._call_tool(
+            "remove_principals_from_group",
+            {"group_uuid": str(self.group.uuid)},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        output = self._get_tool_output(response)
+        self.assertIn("error", output)
+        self.assertIn("required", output["error"].lower())
+
+
+@override_settings(MCP_WRITE_ENABLED=True)
+class MCPDeleteRoleV1Tests(MCPToolTestMixin, IdentityRequest):
+    """Test remove_roles_from_group and delete_role_v1 write tools."""
+
+    def setUp(self):
+        """Set up V1 role delete tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.principal = Principal.objects.create(username="test_user", tenant=self.tenant)
+        V2TenantBootstrapService(NoopReplicator()).bootstrap_tenant(self.tenant)
+        self.group = Group.objects.create(name="Test Group", tenant=self.tenant)
+        self.permission = Permission.objects.create(
+            application="cost-management",
+            resource_type="cost_model",
+            verb="read",
+            permission="cost-management:cost_model:read",
+            tenant=self.tenant,
+        )
+        self.role = Role.objects.create(name="Delete Me Role", tenant=self.tenant, system=False)
+        Access.objects.create(role=self.role, permission=self.permission, tenant=self.tenant)
+
+    def tearDown(self):
+        """Tear down V1 role delete tests."""
+        Role.objects.all().delete()
+        Group.objects.all().delete()
+        Permission.objects.filter(permission="cost-management:cost_model:read").delete()
+        Principal.objects.all().delete()
+        super().tearDown()
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+    def test_remove_roles_from_group_success(self, mock_replicator):
+        """Remove roles from a group successfully."""
+        policy = Policy.objects.create(name="test-policy", group=self.group, tenant=self.tenant)
+        policy.roles.add(self.role)
+
+        response = self._call_tool(
+            "remove_roles_from_group",
+            {"group_name": "Test Group", "roles": str(self.role.uuid)},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("result", data, f"Expected result but got: {data}")
+        self.assertFalse(data["result"]["isError"])
+        output = json.loads(data["result"]["content"][0]["text"])
+        self.assertEqual(output["status"], "no_content")
+
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+    def test_delete_role_v1_success(self, mock_replicator):
+        """Delete a V1 role successfully."""
+        response = self._call_tool(
+            "delete_role_v1",
+            {"role_uuid": str(self.role.uuid)},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("result", data, f"Expected result but got: {data}")
+        self.assertFalse(data["result"]["isError"])
+        output = json.loads(data["result"]["content"][0]["text"])
+        self.assertEqual(output["status"], "no_content")
+
+    def test_delete_role_v1_no_auth(self):
+        """Deleting a role without auth returns auth error."""
+        response = self._call_tool("delete_role_v1", {"role_uuid": str(self.role.uuid)}, use_auth=False)
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+
+@override_settings(MCP_WRITE_ENABLED=True, V2_APIS_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
+class MCPDeleteToolsV2Tests(MCPToolTestMixin, IdentityRequest):
+    """Test V2 delete tools (bulk_delete_roles, delete_workspace)."""
+
+    def setUp(self):
+        """Set up V2 delete tool tests."""
+        reload(urls)
+        clear_url_caches()
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.principal = Principal.objects.create(username="test_user", tenant=self.tenant)
+        self.enterContext(
+            patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+        )
+        V2TenantBootstrapService(NoopReplicator()).bootstrap_tenant(self.tenant)
+        TenantMapping.objects.update_or_create(tenant=self.tenant, defaults={"v2_write_activated_at": timezone.now()})
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.get_kessel_principal_id",
+                return_value="localhost/test-user-id",
+            )
+        )
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.WorkspaceInventoryAccessChecker.check_resource_access",
+                return_value=True,
+            )
+        )
+
+    def tearDown(self):
+        """Tear down V2 delete tool tests."""
+        RoleBinding.objects.all().delete()
+        for ws in Workspace.objects.filter(type=Workspace.Types.STANDARD).order_by("-parent_id"):
+            ws.delete()
+        RoleV2.objects.all().delete()
+        Group.objects.all().delete()
+        Principal.objects.all().delete()
+        TenantMapping.objects.filter(tenant=self.tenant).delete()
+        super().tearDown()
+
+    @patch("management.permissions.role_v2_access.RoleV2KesselAccessPermission.has_permission")
+    def test_bulk_delete_roles_success(self, mock_perm):
+        """Bulk-delete V2 roles successfully."""
+        mock_perm.return_value = True
+        role1 = RoleV2.objects.create(name="Delete Role 1", tenant=self.tenant)
+        role2 = RoleV2.objects.create(name="Delete Role 2", tenant=self.tenant)
+
+        response = self._call_tool(
+            "bulk_delete_roles",
+            {"ids": [str(role1.uuid), str(role2.uuid)]},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("result", data, f"Expected result but got: {data}")
+        self.assertFalse(data["result"]["isError"], f"Tool returned error: {data['result']}")
+        output = json.loads(data["result"]["content"][0]["text"])
+        self.assertEqual(output["status"], "no_content")
+
+    def test_bulk_delete_roles_no_auth(self):
+        """Bulk-deleting roles without auth returns auth error."""
+        response = self._call_tool("bulk_delete_roles", {"ids": ["fake"]}, use_auth=False)
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    @patch("management.permissions.workspace_access.WorkspaceAccessPermission.has_permission")
+    def test_delete_workspace_success(self, mock_perm):
+        """Delete a workspace successfully."""
+        mock_perm.return_value = True
+        root_ws = Workspace.objects.filter(tenant=self.tenant, type=Workspace.Types.ROOT).first()
+        ws = Workspace.objects.create(
+            name="Delete WS", tenant=self.tenant, type=Workspace.Types.STANDARD, parent=root_ws
+        )
+
+        response = self._call_tool(
+            "delete_workspace",
+            {"workspace_uuid": str(ws.id)},
+        )
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("result", data, f"Expected result but got: {data}")
+        self.assertFalse(data["result"]["isError"], f"Tool returned error: {data['result']}")
+        output = json.loads(data["result"]["content"][0]["text"])
+        self.assertEqual(output["status"], "no_content")
+
+    def test_delete_workspace_no_auth(self):
+        """Deleting a workspace without auth returns auth error."""
+        response = self._call_tool("delete_workspace", {"workspace_uuid": "fake"}, use_auth=False)
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
