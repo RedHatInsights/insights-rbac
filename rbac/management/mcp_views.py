@@ -3571,7 +3571,7 @@ def guide_user_access_delegation(
                         result["user_role_bindings"].append(
                             {
                                 "binding_id": str(rbp.binding.id),
-                                "via": "direct",
+                                "source": rbp.source,
                                 "resource_type": rbp.binding.resource_type,
                                 "resource_id": rbp.binding.resource_id,
                             }
@@ -3587,7 +3587,7 @@ def guide_user_access_delegation(
                         result["user_role_bindings"].append(
                             {
                                 "binding_id": str(rbg.binding.id),
-                                "via": f"group:{rbg.group.name}",
+                                "source": f"group:{rbg.group.name}",
                                 "resource_type": rbg.binding.resource_type,
                                 "resource_id": rbg.binding.resource_id,
                             }
@@ -3665,9 +3665,9 @@ def guide_user_access_delegation(
             if is_v2:
                 bindings_desc = []
                 for rb in result["user_role_bindings"]:
-                    via = rb["via"]
+                    source = rb["source"]
                     scope = f"{rb['resource_type']}:{rb['resource_id']}"
-                    bindings_desc.append(f"{via} on {scope}")
+                    bindings_desc.append(f"{source} on {scope}")
                 bindings_str = ", ".join(bindings_desc)
                 user_status = (
                     f"ALREADY HAS ROLE: {username} already has the '{user_access_admin_role_name}' role "

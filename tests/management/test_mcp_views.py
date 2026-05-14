@@ -5030,7 +5030,7 @@ class MCPGuideUserAccessDelegationV2Tests(MCPToolTestMixin, IdentityRequest):
 
         self.assertTrue(tool_output["user_already_has_role"])
         self.assertEqual(len(tool_output["user_role_bindings"]), 1)
-        self.assertEqual(tool_output["user_role_bindings"][0]["via"], "direct")
+        self.assertEqual(tool_output["user_role_bindings"][0]["source"], "direct")
         self.assertIn("ALREADY HAS ROLE", tool_output["recommendation"])
 
     def test_guide_user_access_delegation_v2_user_has_role_via_group(self):
@@ -5044,7 +5044,7 @@ class MCPGuideUserAccessDelegationV2Tests(MCPToolTestMixin, IdentityRequest):
 
         self.assertTrue(tool_output["user_already_has_role"])
         self.assertEqual(len(tool_output["user_role_bindings"]), 1)
-        self.assertIn("group:User Access Admins Group", tool_output["user_role_bindings"][0]["via"])
+        self.assertIn("group:User Access Admins Group", tool_output["user_role_bindings"][0]["source"])
 
     def test_guide_user_access_delegation_v2_user_does_not_have_role(self):
         """Positive: V2 correctly identifies user does not have the role."""
