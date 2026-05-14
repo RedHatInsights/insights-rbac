@@ -38,14 +38,17 @@ from internal.utils import (
 from management.health.healthcheck import redis_health
 from management.inventory_checker.inventory_api_check import (
     CustomRolePermissionChecker,
+    SeededRoleHierarchyChecker,
     WorkspaceRelationInventoryChecker,
+    generate_seeded_role_hierarchy_tuples,
 )
+from management.permission.scope_service import ImplicitResourceService
 from management.parity_check import run_parity_checks
 from management.principal.cleaner import (
     clean_tenants_principals,
     process_principal_events_from_umb,
 )
-from management.role.v2_model import CustomRoleV2
+from management.role.v2_model import CustomRoleV2, SeededRoleV2
 from management.workspace.model import Workspace
 from migration_tool.migrate import migrate_data
 from migration_tool.migrate_binding_scope import migrate_all_role_bindings
@@ -253,15 +256,72 @@ def run_kessel_parity_checks_in_worker():
         "total_tenants": 0,
         "total_workspace_pairs_checked": 0,
         "total_custom_roles_checked": 0,
+        "total_seeded_roles_checked": 0,
         "passed_tenants": 0,
         "failed_tenants": 0,
         "tenants_not_found": 0,
+        "seeded_role_hierarchy": {},
         "tenants_checked": [],
     }
     tenant_durations = []
 
     workspace_checker = WorkspaceRelationInventoryChecker()
     role_permission_checker = CustomRolePermissionChecker()
+    hierarchy_checker = SeededRoleHierarchyChecker()
+
+    # Seeded role hierarchy check (global, not per-tenant)
+    seeded_start = time.monotonic()
+    seeded_role_results = []
+    seeded_hierarchy_passed = True
+
+    seeded_roles = SeededRoleV2.objects.select_related("v1_source").prefetch_related("v1_source__access")
+    implicit_resource_service = ImplicitResourceService.from_settings() if seeded_roles.exists() else None
+
+    for seeded_role in seeded_roles:
+        try:
+            hierarchy_tuples = generate_seeded_role_hierarchy_tuples(seeded_role, implicit_resource_service)
+            if not hierarchy_tuples:
+                continue
+            role_passed = hierarchy_checker.check_seeded_role_hierarchy(hierarchy_tuples, str(seeded_role.uuid))
+            seeded_role_results.append(
+                {
+                    "role_uuid": str(seeded_role.uuid),
+                    "role_name": seeded_role.name,
+                    "v1_role_name": seeded_role.v1_source.name if seeded_role.v1_source else None,
+                    "tuple_count": len(hierarchy_tuples),
+                    "passed": role_passed,
+                }
+            )
+            if not role_passed:
+                seeded_hierarchy_passed = False
+        except Exception as e:
+            logger.exception("Error checking seeded role hierarchy for role %s", seeded_role.name)
+            seeded_hierarchy_passed = False
+            seeded_role_results.append(
+                {
+                    "role_uuid": str(seeded_role.uuid),
+                    "role_name": seeded_role.name,
+                    "v1_role_name": seeded_role.v1_source.name if seeded_role.v1_source else None,
+                    "passed": False,
+                    "error": str(e),
+                }
+            )
+
+    seeded_elapsed = time.monotonic() - seeded_start
+    stats["total_seeded_roles_checked"] = len(seeded_role_results)
+    stats["seeded_role_hierarchy"] = {
+        "total_seeded_roles": seeded_roles.count(),
+        "roles_with_hierarchy_checked": len(seeded_role_results),
+        "passed": seeded_hierarchy_passed,
+        "role_results": seeded_role_results,
+        "duration_seconds": round(seeded_elapsed, 3),
+    }
+
+    if seeded_role_results:
+        logger.info(
+            f"Seeded role hierarchy check: {len(seeded_role_results)} role(s) with hierarchy checked, "
+            f"passed={seeded_hierarchy_passed}, took {seeded_elapsed:.3f}s"
+        )
 
     # Bulk fetch all tenants to avoid N+1 queries
     tenants = {t.org_id: t for t in Tenant.objects.filter(org_id__in=org_ids)}
@@ -391,7 +451,8 @@ def run_kessel_parity_checks_in_worker():
         f"Failed: {stats['failed_tenants']}, "
         f"Not Found: {stats['tenants_not_found']}, "
         f"Total workspace pairs: {stats['total_workspace_pairs_checked']}, "
-        f"Total custom roles: {stats['total_custom_roles_checked']}"
+        f"Total custom roles: {stats['total_custom_roles_checked']}, "
+        f"Total seeded roles: {stats['total_seeded_roles_checked']}"
     )
 
     stats["timing"] = timing_stats
