@@ -1378,7 +1378,9 @@ class RebuildTenantWorkspaceRelationsTest(DualWriteTestCase):
             dry_run=True,
         )
 
-        # Verify DFS discovered all 4 workspaces (traverses all 4 layers)
+        # Verification traverses parent edges only; root has no parent tuple so it is not counted.
         self.assertEqual(
-            cleanup_result["workspaces_discovered_count"], 4, "DFS should discover all 4 workspaces after rebuild"
+            cleanup_result["workspaces_discovered_count"],
+            3,
+            "DFS records workspaces reached via workspace#parent@workspace (not the root)",
         )

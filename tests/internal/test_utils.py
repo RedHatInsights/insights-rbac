@@ -1116,12 +1116,12 @@ class RemoveLegacyRootWorkspaceTenantParentRelationsTest(TestCase):
             result = remove_legacy_root_workspace_tenant_parent_relations()
         self.assertTrue(result["skipped"])
 
-    @patch("internal.utils.OutboxReplicator")
-    def test_enqueues_delete_for_legacy_tuple(self, mock_outbox_cls):
+    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    def test_enqueues_delete_for_legacy_tuple(self, mock_replicate):
         from internal.utils import remove_legacy_root_workspace_tenant_parent_relations
 
         root = Workspace.objects.root(tenant=self.tenant)
-        mock_outbox_cls.return_value = InMemoryRelationReplicator(self.tuples)
+        mock_replicate.side_effect = InMemoryRelationReplicator(self.tuples).replicate
 
         tenant_rid = self.tenant.tenant_resource_id()
         self.tuples.add(

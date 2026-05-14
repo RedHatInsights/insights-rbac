@@ -270,8 +270,7 @@ class WorkspaceProcessResult:
 
 def _process_workspace_in_transaction(
     ws_id_uuid,
-    expected_parent_type: str,
-    expected_parent_id: str,
+    expected_parent_workspace_id: str,
     tenant,
     read_tuples_fn,
     replicator,
@@ -280,13 +279,12 @@ def _process_workspace_in_transaction(
     """
     Process a single workspace within a transaction.
 
-    Locks parent (if workspace) and child, verifies parent hasn't changed,
+    Locks parent workspace then child, verifies parent hasn't changed,
     checks if parent relation exists in Kessel, and replicates if missing.
 
     Args:
         ws_id_uuid: The workspace UUID to process
-        expected_parent_type: "tenant" or "workspace"
-        expected_parent_id: The expected parent ID
+        expected_parent_workspace_id: Expected parent workspace UUID (DB `parent_id`)
         tenant: The Tenant object
         read_tuples_fn: Function to read tuples from Kessel
         replicator: The replicator to use for writing relations
@@ -298,13 +296,13 @@ def _process_workspace_in_transaction(
     result = WorkspaceProcessResult()
 
     with transaction.atomic():
-        # Lock parent first (if it's a workspace, not tenant)
-        if expected_parent_type == "workspace":
-            try:
-                Workspace.objects.select_for_update().get(id=expected_parent_id)
-            except Workspace.DoesNotExist:
-                logger.warning(f"Parent workspace {expected_parent_id} no longer exists, skipping child {ws_id_uuid}")
-                return result
+        try:
+            Workspace.objects.select_for_update().get(id=expected_parent_workspace_id)
+        except Workspace.DoesNotExist:
+            logger.warning(
+                f"Parent workspace {expected_parent_workspace_id} no longer exists, skipping child {ws_id_uuid}"
+            )
+            return result
 
         # Lock the child workspace
         try:
@@ -318,17 +316,14 @@ def _process_workspace_in_transaction(
 
         # Verify parent hasn't changed (in case of concurrent modification)
         actual_parent_id = str(ws.parent_id) if ws.parent_id else None
-        if expected_parent_type == "tenant" and actual_parent_id is not None:
-            logger.warning(f"Workspace {ws_id} parent changed from tenant to {actual_parent_id}, skipping")
-            return result
-        if expected_parent_type == "workspace" and actual_parent_id != expected_parent_id:
+        if actual_parent_id != expected_parent_workspace_id:
             logger.warning(
-                f"Workspace {ws_id} parent changed from {expected_parent_id} to {actual_parent_id}, skipping"
+                f"Workspace {ws_id} parent changed from {expected_parent_workspace_id} to {actual_parent_id}, skipping"
             )
             return result
 
         # Check if parent relation exists in Kessel
-        parent_tuples = read_tuples_fn("workspace", ws_id, "parent", expected_parent_type, expected_parent_id)
+        parent_tuples = read_tuples_fn("workspace", ws_id, "parent", "workspace", expected_parent_workspace_id)
         if parent_tuples:
             return result
 
@@ -339,8 +334,8 @@ def _process_workspace_in_transaction(
         relation = create_relationship(
             ("rbac", "workspace"),
             ws_id,
-            ("rbac", expected_parent_type),
-            expected_parent_id,
+            ("rbac", "workspace"),
+            expected_parent_workspace_id,
             "parent",
         )
 
@@ -355,10 +350,10 @@ def _process_workspace_in_transaction(
                 )
             )
             result.relations_added = 1
-            logger.info(f"Added parent relation: workspace:{ws_id}#parent@{expected_parent_type}:{expected_parent_id}")
+            logger.info(f"Added parent relation: workspace:{ws_id}#parent@workspace:{expected_parent_workspace_id}")
         else:
             result.relations_to_add_count = 1
-            logger.info(f"DRY RUN: Would add: workspace:{ws_id}#parent@{expected_parent_type}:{expected_parent_id}")
+            logger.info(f"DRY RUN: Would add: workspace:{ws_id}#parent@workspace:{expected_parent_workspace_id}")
 
     return result
 
@@ -406,17 +401,16 @@ def rebuild_tenant_workspace_relations(
     queue = deque()
     for root_id in root_workspace_ids:
         for child_id in children_by_parent.get(root_id, []):
-            queue.append((child_id, "workspace", str(root_id)))
+            queue.append((child_id, str(root_id)))
 
     # BFS traversal - process each workspace in transaction
     while queue:
-        ws_id_uuid, expected_parent_type, expected_parent_id = queue.popleft()
+        ws_id_uuid, expected_parent_workspace_id = queue.popleft()
 
         # Process workspace in transaction (locks parent then child)
         result = _process_workspace_in_transaction(
             ws_id_uuid,
-            expected_parent_type,
-            expected_parent_id,
+            expected_parent_workspace_id,
             tenant,
             read_tuples_fn,
             replicator,
@@ -433,7 +427,7 @@ def rebuild_tenant_workspace_relations(
         # Add children to queue for BFS (outside transaction to release locks)
         if ws_id_uuid in children_by_parent:
             for child_id in children_by_parent[ws_id_uuid]:
-                queue.append((child_id, "workspace", str(ws_id_uuid)))
+                queue.append((child_id, str(ws_id_uuid)))
 
     if dry_run and relations_to_add_count:
         logger.info(f"DRY RUN: Would add {relations_to_add_count} parent relations for tenant {tenant.org_id}")
