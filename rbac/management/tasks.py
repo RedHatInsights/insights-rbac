@@ -43,8 +43,8 @@ from management.inventory_checker.inventory_api_check import (
     WorkspaceRelationInventoryChecker,
     generate_seeded_role_hierarchy_tuples,
 )
-from management.permission.scope_service import ImplicitResourceService
 from management.parity_check import run_parity_checks
+from management.permission.scope_service import ImplicitResourceService
 from management.principal.cleaner import (
     clean_tenants_principals,
     process_principal_events_from_umb,
@@ -332,6 +332,12 @@ def run_kessel_parity_checks_in_worker():
     # Bulk fetch tenant mappings
     tenant_mappings = {tm.tenant_id: tm for tm in TenantMapping.objects.filter(tenant__in=tenants.values())}
 
+    # Bulk fetch workspaces for bootstrap checks to avoid N+1 queries
+    relevant_workspace_types = (Workspace.Types.ROOT, Workspace.Types.DEFAULT, Workspace.Types.UNGROUPED_HOSTS)
+    workspace_index: dict[tuple[int, str], Workspace] = {}
+    for ws in Workspace.objects.filter(tenant__in=tenants.values(), type__in=relevant_workspace_types):
+        workspace_index[(ws.tenant_id, ws.type)] = ws
+
     for org_id in org_ids:
         tenant = tenants.get(org_id)
         if not tenant:
@@ -394,9 +400,9 @@ def run_kessel_parity_checks_in_worker():
             # Bootstrap completeness check
             mapping = tenant_mappings.get(tenant.id)
             if mapping:
-                root_ws = Workspace.objects.filter(tenant=tenant, type=Workspace.Types.ROOT).first()
-                default_ws = Workspace.objects.filter(tenant=tenant, type=Workspace.Types.DEFAULT).first()
-                ungrouped_ws = Workspace.objects.filter(tenant=tenant, type=Workspace.Types.UNGROUPED_HOSTS).first()
+                root_ws = workspace_index.get((tenant.id, Workspace.Types.ROOT))
+                default_ws = workspace_index.get((tenant.id, Workspace.Types.DEFAULT))
+                ungrouped_ws = workspace_index.get((tenant.id, Workspace.Types.UNGROUPED_HOSTS))
 
                 if root_ws and default_ws:
                     bootstrap_check_passed, bootstrap_details = bootstrap_checker.check_bootstrapped_tenant(

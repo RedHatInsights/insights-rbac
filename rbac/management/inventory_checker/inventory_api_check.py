@@ -126,17 +126,6 @@ class BootstrappedTenantInventoryChecker(InventoryApiBaseChecker):
         Scope.TENANT: "tenant",
     }
 
-    _SCOPE_LABEL: dict[Scope, str] = {
-        Scope.DEFAULT: "default",
-        Scope.ROOT: "root",
-        Scope.TENANT: "tenant",
-    }
-
-    _ACCESS_LABEL: dict[DefaultAccessType, str] = {
-        DefaultAccessType.USER: "user",
-        DefaultAccessType.ADMIN: "admin",
-    }
-
     def _build_named_tuples(
         self,
         tenant_mapping: TenantMapping,
@@ -160,12 +149,6 @@ class BootstrappedTenantInventoryChecker(InventoryApiBaseChecker):
         )
         named_tuples.append(
             (
-                "root_workspace_parent",
-                create_relationship(("rbac", "workspace"), root_workspace_id, ("rbac", "tenant"), tenant_id, "parent"),
-            )
-        )
-        named_tuples.append(
-            (
                 "tenant_platform",
                 create_relationship(
                     ("rbac", "tenant"), tenant_id, ("rbac", "platform"), settings.ENV_NAME, "platform"
@@ -175,10 +158,10 @@ class BootstrappedTenantInventoryChecker(InventoryApiBaseChecker):
 
         for access_type in DefaultAccessType:
             group_uuid = str(tenant_mapping.group_uuid_for(access_type))
-            access_label = self._ACCESS_LABEL[access_type]
+            access_label = access_type.value
 
             for scope in Scope:
-                scope_label = self._SCOPE_LABEL[scope]
+                scope_label = scope.name.lower()
                 rb_uuid = str(tenant_mapping.default_role_binding_uuid_for(access_type, scope))
                 resource_type = self._SCOPE_RESOURCE_TYPE[scope]
                 resource_id = scope_resource_ids[scope]

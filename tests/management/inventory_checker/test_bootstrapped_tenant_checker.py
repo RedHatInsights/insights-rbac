@@ -29,9 +29,9 @@ from tests.identity_request import IdentityRequest
 INVENTORY_STUB_PATH = "management.inventory_checker.inventory_api_check.inventory_service_pb2_grpc.KesselInventoryServiceStub"  # noqa: E501
 PLATFORM_ROLE_UUID_PATH = "management.inventory_checker.inventory_api_check.platform_v2_role_uuid_for"
 
-# 3 hierarchy + 6 binding combos x 3 tuples each = 21 base checks
-EXPECTED_BASE_CHECK_COUNT = 21
-EXPECTED_WITH_UNGROUPED = 22
+# 2 hierarchy + 6 binding combos x 3 tuples each = 20 base checks
+EXPECTED_BASE_CHECK_COUNT = 20
+EXPECTED_WITH_UNGROUPED = 21
 
 
 class BootstrappedTenantCheckerTest(IdentityRequest):
@@ -125,14 +125,14 @@ class BootstrappedTenantCheckerTest(IdentityRequest):
     @patch("management.inventory_checker.inventory_api_check.json_format.MessageToDict")
     @override_settings(ENV_NAME="stage", PRINCIPAL_USER_DOMAIN="localhost")
     def test_missing_hierarchy_tuple(self, mock_message_to_dict, mock_create_channel, mock_role_uuid):
-        """Fails when the root_workspace_parent hierarchy tuple is missing."""
+        """Fails when the default_workspace_parent hierarchy tuple is missing."""
         self._mock_platform_role_uuid(mock_role_uuid)
 
         responses = [MagicMock(spec=CheckResponse) for _ in range(EXPECTED_BASE_CHECK_COUNT)]
         mock_stub = self._setup_inventory_mocks(mock_create_channel, responses)
         allowed_results = [{"allowed": "ALLOWED_TRUE"}] * EXPECTED_BASE_CHECK_COUNT
-        # root_workspace_parent is index 1
-        allowed_results[1] = {"allowed": "ALLOWED_FALSE"}
+        # default_workspace_parent is index 0
+        allowed_results[0] = {"allowed": "ALLOWED_FALSE"}
         mock_message_to_dict.side_effect = allowed_results
 
         with patch(INVENTORY_STUB_PATH, return_value=mock_stub):
@@ -146,7 +146,7 @@ class BootstrappedTenantCheckerTest(IdentityRequest):
         self.assertFalse(passed)
         failed = [c for c in checks if not c["exists"]]
         self.assertEqual(len(failed), 1)
-        self.assertEqual(failed[0]["name"], "root_workspace_parent")
+        self.assertEqual(failed[0]["name"], "default_workspace_parent")
 
     @patch(PLATFORM_ROLE_UUID_PATH)
     @patch("management.inventory_checker.inventory_api_check.create_client_channel_inventory")
@@ -159,8 +159,8 @@ class BootstrappedTenantCheckerTest(IdentityRequest):
         responses = [MagicMock(spec=CheckResponse) for _ in range(EXPECTED_BASE_CHECK_COUNT)]
         mock_stub = self._setup_inventory_mocks(mock_create_channel, responses)
         allowed_results = [{"allowed": "ALLOWED_TRUE"}] * EXPECTED_BASE_CHECK_COUNT
-        # user_root_binding: 3 hierarchy + 3 user_default = index 6
-        allowed_results[6] = {"allowed": "ALLOWED_FALSE"}
+        # user_root_binding: 2 hierarchy + 3 user_default = index 5
+        allowed_results[5] = {"allowed": "ALLOWED_FALSE"}
         mock_message_to_dict.side_effect = allowed_results
 
         with patch(INVENTORY_STUB_PATH, return_value=mock_stub):
@@ -187,8 +187,8 @@ class BootstrappedTenantCheckerTest(IdentityRequest):
         responses = [MagicMock(spec=CheckResponse) for _ in range(EXPECTED_BASE_CHECK_COUNT)]
         mock_stub = self._setup_inventory_mocks(mock_create_channel, responses)
         allowed_results = [{"allowed": "ALLOWED_TRUE"}] * EXPECTED_BASE_CHECK_COUNT
-        # admin_tenant_subject: 3 hierarchy + 15 (user 9 + admin default 3 + admin root 3) + 2 = index 20
-        allowed_results[20] = {"allowed": "ALLOWED_FALSE"}
+        # admin_tenant_subject: 2 hierarchy + 15 (user 9 + admin default 3 + admin root 3) + 2 = index 19
+        allowed_results[19] = {"allowed": "ALLOWED_FALSE"}
         mock_message_to_dict.side_effect = allowed_results
 
         with patch(INVENTORY_STUB_PATH, return_value=mock_stub):
@@ -278,7 +278,7 @@ class BootstrappedTenantCheckerTest(IdentityRequest):
             )
 
         check_names = {c["name"] for c in checks}
-        expected_names = {"default_workspace_parent", "root_workspace_parent", "tenant_platform"}
+        expected_names = {"default_workspace_parent", "tenant_platform"}
         for access_type in DefaultAccessType:
             for scope in Scope:
                 prefix = f"{access_type.value}_{scope.name.lower()}"
@@ -307,10 +307,15 @@ class BootstrappedTenantCheckerTest(IdentityRequest):
             )
 
         self.assertTrue(passed)
-        # tenant_platform check is at index 2
         calls = mock_stub.Check.call_args_list
-        check_request = calls[2][0][0]
-        self.assertEqual(check_request.object.resource_id, f"localhost/{self.tenant.org_id}")
+        tenant_calls = [
+            c[0][0]
+            for c in calls
+            if getattr(getattr(c[0][0], "object", None), "resource_type", None) == "tenant"
+            and c[0][0].object.resource_id == f"localhost/{self.tenant.org_id}"
+        ]
+        self.assertTrue(len(tenant_calls) > 0, "Expected a Check call for the tenant resource")
+        check_request = tenant_calls[0]
         self.assertEqual(check_request.object.resource_type, "tenant")
         self.assertEqual(check_request.subject.resource.resource_id, "stage")
         self.assertEqual(check_request.subject.resource.resource_type, "platform")
@@ -336,12 +341,15 @@ class BootstrappedTenantCheckerTest(IdentityRequest):
             )
 
         self.assertTrue(passed)
-        # user_default_binding is at index 3 (after 3 hierarchy checks)
         calls = mock_stub.Check.call_args_list
-        check_request = calls[3][0][0]
         expected_rb_uuid = str(self.tenant_mapping.default_role_binding_uuid)
-        self.assertEqual(check_request.subject.resource.resource_id, expected_rb_uuid)
-        self.assertEqual(check_request.subject.resource.resource_type, "role_binding")
+        rb_calls = [
+            c[0][0]
+            for c in calls
+            if getattr(getattr(c[0][0].subject, "resource", None), "resource_type", None) == "role_binding"
+            and c[0][0].subject.resource.resource_id == expected_rb_uuid
+        ]
+        self.assertTrue(len(rb_calls) > 0, "Expected a Check call for the user's default role binding UUID")
 
     @patch(PLATFORM_ROLE_UUID_PATH)
     @patch("management.inventory_checker.inventory_api_check.create_client_channel_inventory")
@@ -364,12 +372,15 @@ class BootstrappedTenantCheckerTest(IdentityRequest):
             )
 
         self.assertTrue(passed)
-        # user_default_role is at index 4 (3 hierarchy + 1 binding)
         calls = mock_stub.Check.call_args_list
-        check_request = calls[4][0][0]
         expected_role_uuid = str(self.role_uuids[(DefaultAccessType.USER, Scope.DEFAULT)])
-        self.assertEqual(check_request.subject.resource.resource_id, expected_role_uuid)
-        self.assertEqual(check_request.subject.resource.resource_type, "role")
+        role_calls = [
+            c[0][0]
+            for c in calls
+            if getattr(getattr(c[0][0].subject, "resource", None), "resource_type", None) == "role"
+            and c[0][0].subject.resource.resource_id == expected_role_uuid
+        ]
+        self.assertTrue(len(role_calls) > 0, "Expected a Check call for the platform role UUID")
 
     @patch(PLATFORM_ROLE_UUID_PATH)
     @patch("management.inventory_checker.inventory_api_check.create_client_channel_inventory")
@@ -392,13 +403,16 @@ class BootstrappedTenantCheckerTest(IdentityRequest):
             )
 
         self.assertTrue(passed)
-        # user_default_subject is at index 5 (3 hierarchy + 2)
         calls = mock_stub.Check.call_args_list
-        check_request = calls[5][0][0]
         expected_group_uuid = str(self.tenant_mapping.default_group_uuid)
-        self.assertEqual(check_request.subject.resource.resource_id, expected_group_uuid)
-        self.assertEqual(check_request.subject.resource.resource_type, "group")
-        self.assertEqual(check_request.subject.relation, "member")
+        group_calls = [
+            c[0][0]
+            for c in calls
+            if getattr(getattr(c[0][0].subject, "resource", None), "resource_type", None) == "group"
+            and c[0][0].subject.resource.resource_id == expected_group_uuid
+            and c[0][0].subject.relation == "member"
+        ]
+        self.assertTrue(len(group_calls) > 0, "Expected a Check call for the group UUID with member relation")
 
     @patch(PLATFORM_ROLE_UUID_PATH)
     @patch("management.inventory_checker.inventory_api_check.create_client_channel_inventory")

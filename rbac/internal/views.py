@@ -1954,7 +1954,6 @@ def check_bootstrapped_tenants(request, org_id):
                 "bootstrapped_correct": bootstrap_tenants_correct,
                 "relations_checked": checks,
             },
-            safe=False,
         )
     except RpcError as e:
         return JsonResponse(
