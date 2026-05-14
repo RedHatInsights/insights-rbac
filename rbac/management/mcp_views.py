@@ -3528,11 +3528,11 @@ def guide_user_access_delegation(
 
         # Step 3: Get the access permissions for this role (direct DB query)
         permissions_list = list(Access.objects.filter(role=role).values_list("permission__permission", flat=True))
-        permission_summary = ", ".join(permissions_list) if permissions_list else "No permissions found"
+        permission_summary = ", ".join(permissions_list) if permissions_list else "No permissions configured"
 
         result["role_access"] = {
             "permissions": permissions_list,
-            "permission_summary": f"{permission_summary} — create/read/update/delete on all RBAC resources",
+            "permission_summary": permission_summary,
         }
 
         # Step 4: Find assignments for this role (V1: groups/policies, V2: role bindings)
@@ -3544,21 +3544,25 @@ def guide_user_access_delegation(
 
             if v2_role:
                 # V2: Find role bindings that grant this role
-                role_bindings_with_this_role = RoleBinding.objects.filter(role=v2_role, tenant=tenant).select_related(
-                    "role"
+                role_bindings_with_this_role = (
+                    RoleBinding.objects.filter(role=v2_role, tenant=tenant)
+                    .select_related("role")
+                    .annotate(
+                        principal_count=Count("principal_entries", distinct=True),
+                        group_count=Count("group_entries", distinct=True),
+                    )
                 )
 
                 for binding in role_bindings_with_this_role:
-                    binding_info = {
-                        "id": str(binding.id),
-                        "resource_type": binding.resource_type,
-                        "resource_id": binding.resource_id,
-                    }
-                    principal_count = RoleBindingPrincipal.objects.filter(binding=binding).count()
-                    group_count = RoleBindingGroup.objects.filter(binding=binding).count()
-                    binding_info["principal_count"] = principal_count
-                    binding_info["group_count"] = group_count
-                    result["role_bindings_with_role"].append(binding_info)
+                    result["role_bindings_with_role"].append(
+                        {
+                            "id": str(binding.id),
+                            "resource_type": binding.resource_type,
+                            "resource_id": binding.resource_id,
+                            "principal_count": binding.principal_count,
+                            "group_count": binding.group_count,
+                        }
+                    )
 
                 # Step 5 (V2): Check if the target user already has this role via role bindings
                 if principal:
@@ -3704,8 +3708,7 @@ def guide_user_access_delegation(
 
         result["recommendation"] = (
             f"[{org_version.upper()} Organization] The role you want is '{user_access_admin_role_name}'. "
-            f"It grants {permission_summary} — create/read/update/delete on all RBAC resources "
-            f"(groups, roles, principals in groups, etc.).\n\n"
+            f"It grants: {permission_summary}.\n\n"
             f"What {username} CAN do with this role:\n"
             + "\n".join(f"  - {item}" for item in can_do)
             + f"\n\nWhat {username} CANNOT do:\n"
@@ -3714,9 +3717,9 @@ def guide_user_access_delegation(
         )
 
         return json.dumps(result)
-    except Exception as e:
+    except Exception:
         logger.exception("guide_user_access_delegation failed")
-        return json.dumps({"error": f"Internal error: {type(e).__name__}: {str(e)}"})
+        return json.dumps({"error": "An internal error occurred. Please try again or contact support."})
 
 
 # --- UPDATE tool implementations ---
