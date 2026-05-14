@@ -3101,6 +3101,97 @@ class RoleBindingViewSetTest(IdentityRequest):
         role_ids = {str(r["id"]) for r in response.data["data"][0]["roles"]}
         self.assertIn(str(seeded_role.uuid), role_ids)
 
+    # --- resource.tenant.org_id on by-subject ---
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_by_subject_filter_by_resource_tenant_org_id(self, mock_permission):
+        """Test that resource.tenant.org_id resolves and returns tenant bindings."""
+        url = self._get_by_subject_url()
+        org_id = self.tenant.org_id
+        tenant_resource_id = Tenant.org_id_to_tenant_resource_id(org_id)
+
+        role = RoleV2.objects.create(name="tenant_role_bs", tenant=self.tenant)
+        role.permissions.add(self.permission)
+        binding = RoleBinding.objects.create(
+            role=role,
+            resource_type="tenant",
+            resource_id=tenant_resource_id,
+            tenant=self.tenant,
+        )
+        group = Group.objects.create(name="tenant_group_bs", tenant=self.tenant)
+        RoleBindingGroup.objects.create(group=group, binding=binding)
+
+        try:
+            response = self.client.get(
+                f"{url}?resource.tenant.org_id={org_id}&limit=100",
+                **self.headers,
+            )
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+            self.assertGreaterEqual(len(response.data["data"]), 1)
+            resource_id = response.data["data"][0]["resource"]["id"]
+            self.assertEqual(resource_id, tenant_resource_id)
+        finally:
+            RoleBindingGroup.objects.filter(binding=binding).delete()
+            binding.delete()
+            group.delete()
+            role.delete()
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_by_subject_resource_tenant_org_id_no_match(self, mock_permission):
+        """Test that resource.tenant.org_id with non-matching org returns empty."""
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource.tenant.org_id=nonexistent-org&limit=100",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data["data"]), 0)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_by_subject_resource_tenant_org_id_with_resource_id_returns_400(self, mock_permission):
+        """Test that combining resource.tenant.org_id with resource_id returns 400."""
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource.tenant.org_id=12345&resource_id=redhat/12345",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_by_subject_resource_tenant_org_id_with_wrong_resource_type_returns_400(self, mock_permission):
+        """Test that resource.tenant.org_id with resource_type != 'tenant' returns 400."""
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?resource.tenant.org_id=12345&resource_type=workspace",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_by_subject_no_resource_params_returns_400(self, mock_permission):
+        """Test that omitting all resource params returns 400."""
+        url = self._get_by_subject_url()
+        response = self.client.get(
+            f"{url}?subject_type=group",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
 
 @override_settings(V2_APIS_ENABLED=True, ATOMIC_RETRY_DISABLED=True)
 class DefaultBindingsAPITests(TestCase):
@@ -3948,31 +4039,35 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
         url = self._get_by_subject_url()
         body = {"roles": [{"id": str(self.role1.uuid)}]}
 
-        # Each case: (query_string, missing_field)
+        # Each case: (query_string, missing_field, expected_message)
         test_cases = [
             # Missing resource_id
             (
                 f"resource_type=workspace&subject_id={self.group.uuid}&subject_type=group",
                 "resource_id",
+                "resource_id is required (or use resource.tenant.org_id).",
             ),
             # Missing resource_type
             (
                 f"resource_id={self.workspace.id}&subject_id={self.group.uuid}&subject_type=group",
                 "resource_type",
+                "resource_type is required (or use resource.tenant.org_id).",
             ),
             # Missing subject_id
             (
                 f"resource_id={self.workspace.id}&resource_type=workspace&subject_type=group",
                 "subject_id",
+                "This field is required.",
             ),
             # Missing subject_type
             (
                 f"resource_id={self.workspace.id}&resource_type=workspace&subject_id={self.group.uuid}",
                 "subject_type",
+                "This field is required.",
             ),
         ]
 
-        for query_string, missing_field in test_cases:
+        for query_string, missing_field, expected_message in test_cases:
             with self.subTest(missing_field=missing_field):
                 response = self.client.put(
                     f"{url}?{query_string}",
@@ -3985,8 +4080,8 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
                 expected = {
                     "status": 400,
                     "title": "The request payload contains invalid syntax.",
-                    "detail": "This field is required.",
-                    "errors": [{"message": "This field is required.", "field": missing_field}],
+                    "detail": expected_message,
+                    "errors": [{"message": expected_message, "field": missing_field}],
                     "instance": "/api/rbac/v2/role-bindings/by-subject/",
                 }
                 self.assertEqual(response.data, expected)
@@ -4227,6 +4322,61 @@ class UpdateRoleBindingsBySubjectAPITests(IdentityRequest):
             tenant=self.tenant,
         ).count()
         self.assertEqual(binding_count, 1)
+
+    # --- resource.tenant.org_id on PUT by-subject ---
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    @patch("management.role_binding.service.RoleBindingService._validate_role_scopes")
+    def test_update_with_resource_tenant_org_id(self, mock_scope_validation, mock_permission):
+        """Test that PUT by-subject works with resource.tenant.org_id."""
+        url = self._get_by_subject_url()
+        org_id = self.tenant.org_id
+        tenant_resource_id = Tenant.org_id_to_tenant_resource_id(org_id)
+
+        response = self.client.put(
+            f"{url}?resource.tenant.org_id={org_id}&subject_id={self.group.uuid}&subject_type=group",
+            data={"roles": [{"id": str(self.role1.uuid)}]},
+            format="json",
+            **self.headers,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["resource"]["id"], tenant_resource_id)
+        self.assertEqual(response.data["roles"], [{"id": self.role1.uuid}])
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_update_with_resource_tenant_org_id_and_resource_id_returns_400(self, mock_permission):
+        """Test that combining resource.tenant.org_id with resource_id returns 400."""
+        url = self._get_by_subject_url()
+        response = self.client.put(
+            f"{url}?resource.tenant.org_id=12345&resource_id=redhat/12345"
+            f"&subject_id={self.group.uuid}&subject_type=group",
+            data={"roles": [{"id": str(self.role1.uuid)}]},
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch(
+        "management.permissions.role_binding_access.RoleBindingKesselAccessPermission.has_permission",
+        return_value=True,
+    )
+    def test_update_without_resource_params_returns_400(self, mock_permission):
+        """Test that omitting all resource params returns 400 on PUT."""
+        url = self._get_by_subject_url()
+        response = self.client.put(
+            f"{url}?subject_id={self.group.uuid}&subject_type=group",
+            data={"roles": [{"id": str(self.role1.uuid)}]},
+            format="json",
+            **self.headers,
+        )
+        self.assertEqual(response.status_code, status.HTTP_400_BAD_REQUEST)
 
 
 _SENTINEL = RuntimeError("_atomic_action sentinel")
