@@ -18,9 +18,12 @@
 
 from __future__ import absolute_import, unicode_literals
 
+import logging
+import time
 from typing import Optional
 
 from celery import shared_task
+from django.conf import settings
 from django.core.management import call_command
 from internal.migrations.recompute_role_bindings import recompute_tenant_role_bindings
 from internal.migrations.remove_deleted_workspace_bindings import remove_deleted_workspace_bindings
@@ -33,14 +36,23 @@ from internal.utils import (
     replicate_missing_binding_tuples,
 )
 from management.health.healthcheck import redis_health
+from management.inventory_checker.inventory_api_check import (
+    CustomRolePermissionChecker,
+    WorkspaceRelationInventoryChecker,
+)
+from management.parity_check import run_parity_checks
 from management.principal.cleaner import (
     clean_tenants_principals,
     process_principal_events_from_umb,
 )
+from management.role.v2_model import CustomRoleV2
+from management.workspace.model import Workspace
 from migration_tool.migrate import migrate_data
 from migration_tool.migrate_binding_scope import migrate_all_role_bindings
 
 from api.models import Tenant
+
+logger = logging.getLogger(__name__)
 
 
 @shared_task
@@ -179,3 +191,208 @@ def replicate_default_workspaces_in_worker(limit: Optional[int] = None):
 def recompute_tenant_role_bindings_in_worker(org_id: str):
     """Celery task to recompute role bindings for tenant."""
     return recompute_tenant_role_bindings(tenant=Tenant.objects.get(org_id=org_id))
+
+
+@shared_task
+def run_parity_access_checks_in_worker(
+    tenant_sample_size: Optional[int] = None,
+    principal_sample_size: Optional[int] = None,
+) -> dict:
+    """Celery task to run parity access checks between RBAC and Kessel PDP.
+
+    This task compares workspace access permissions computed by RBAC with those
+    returned by the Kessel Inventory API (PDP). Any discrepancies are logged
+    as metrics and warnings for monitoring and alerting.
+
+    Args:
+        tenant_sample_size: Maximum number of v2-enabled tenants to check per run.
+        principal_sample_size: Maximum number of principals per tenant to check.
+
+    Returns:
+        dict: Summary of check results including counts and any discrepancies found.
+    """
+    result = run_parity_checks(
+        tenant_sample_size=tenant_sample_size,
+        principal_sample_size=principal_sample_size,
+    )
+
+    return {
+        "tenants_checked": result.tenants_checked,
+        "principals_checked": result.principals_checked,
+        "checks_passed": result.checks_passed,
+        "checks_failed": result.checks_failed,
+        "discrepancies_count": len(result.discrepancies),
+        "errors_count": len(result.errors),
+        "duration_seconds": result.duration_seconds,
+    }
+
+
+@shared_task
+def run_kessel_parity_checks_in_worker():
+    """
+    Celery task to run Kessel-RBAC parity checks for configured tenants.
+
+    Returns:
+        dict: Summary statistics with checks performed, passed, and failed counts.
+    """
+    if not getattr(settings, "PARITY_CHECK_ENABLED", False):
+        return {"message": "Parity checks disabled"}
+
+    org_ids_str = settings.PARITY_CHECK_ORG_IDS
+    org_ids = [org_id.strip() for org_id in org_ids_str.split(",") if org_id.strip()]
+    # Deduplicate org_ids while preserving order to avoid redundant work and double-counting
+    org_ids = list(dict.fromkeys(org_ids))
+
+    if not org_ids:
+        logger.info("PARITY_CHECK_ORG_IDS not configured, skipping parity checks")
+        return {"message": "No org_ids configured"}
+
+    logger.info(f"Starting Kessel parity checks for {len(org_ids)} org(s): {org_ids}")
+
+    stats = {
+        "total_tenants": 0,
+        "total_workspace_pairs_checked": 0,
+        "total_custom_roles_checked": 0,
+        "passed_tenants": 0,
+        "failed_tenants": 0,
+        "tenants_not_found": 0,
+        "tenants_checked": [],
+    }
+    tenant_durations = []
+
+    workspace_checker = WorkspaceRelationInventoryChecker()
+    role_permission_checker = CustomRolePermissionChecker()
+
+    # Bulk fetch all tenants to avoid N+1 queries
+    tenants = {t.org_id: t for t in Tenant.objects.filter(org_id__in=org_ids)}
+
+    for org_id in org_ids:
+        tenant = tenants.get(org_id)
+        if not tenant:
+            logger.warning(f"Tenant not found for org_id: {org_id}")
+            stats["tenants_not_found"] += 1
+            continue
+
+        pairs_count = 0
+        workspace_check_passed = False
+        role_results = []
+        custom_role_check_passed = True
+
+        try:
+            tenant_start = time.monotonic()
+            logger.info(f"Running parity check for tenant {org_id}")
+            stats["total_tenants"] += 1
+
+            workspaces = (
+                Workspace.objects.filter(tenant=tenant, parent_id__isnull=False)
+                .exclude(type=Workspace.Types.ROOT)
+                .values_list("id", "parent_id")
+            )
+
+            workspace_pairs = [(str(w_id), str(parent_id)) for (w_id, parent_id) in workspaces]
+            pairs_count = len(workspace_pairs)
+
+            if workspace_pairs:
+                logger.info(f"Checking {pairs_count} workspace parent relations for tenant {org_id}")
+                workspace_check_passed = workspace_checker.check_workspace_descendants(workspace_pairs)
+            else:
+                # No pairs means no default workspace with a parent — this is unexpected and should be flagged
+                logger.warning(f"No workspace pairs to check for tenant {org_id} — missing default workspace?")
+                workspace_check_passed = False
+
+            stats["total_workspace_pairs_checked"] += pairs_count
+
+            custom_roles = CustomRoleV2.objects.filter(tenant=tenant).prefetch_related("permissions")
+            custom_role_check_passed = True
+            role_results = []
+
+            for role in custom_roles:
+                permission_tuples = [CustomRoleV2._permission_tuple(role, perm) for perm in role.permissions.all()]
+                role_passed = role_permission_checker.check_custom_role_permissions(permission_tuples, str(role.uuid))
+                role_results.append(
+                    {
+                        "role_uuid": str(role.uuid),
+                        "role_name": role.name,
+                        "permission_count": len(permission_tuples),
+                        "passed": role_passed,
+                    }
+                )
+                if not role_passed:
+                    custom_role_check_passed = False
+
+            stats["total_custom_roles_checked"] += len(role_results)
+            if role_results:
+                logger.info(f"Checked {len(role_results)} custom role(s) for tenant {org_id}")
+
+            # Tenant passes only if BOTH workspace and custom role checks pass
+            tenant_passed = workspace_check_passed and custom_role_check_passed
+
+            if tenant_passed:
+                stats["passed_tenants"] += 1
+                logger.info(f"Parity check PASSED for tenant {org_id}")
+            else:
+                stats["failed_tenants"] += 1
+                logger.warning(f"Parity check FAILED for tenant {org_id}")
+
+            tenant_elapsed = time.monotonic() - tenant_start
+            tenant_durations.append(tenant_elapsed)
+            logger.info(f"Tenant {org_id} parity check took {tenant_elapsed:.3f}s")
+
+            stats["tenants_checked"].append(
+                {
+                    "org_id": org_id,
+                    "workspace_pairs_checked": pairs_count,
+                    "workspace_check_passed": workspace_check_passed,
+                    "custom_roles_checked": len(role_results),
+                    "custom_role_check_passed": custom_role_check_passed,
+                    "role_results": role_results,
+                    "passed": tenant_passed,
+                    "duration_seconds": round(tenant_elapsed, 3),
+                }
+            )
+
+        except Exception as e:
+            tenant_elapsed = time.monotonic() - tenant_start
+            tenant_durations.append(tenant_elapsed)
+            logger.error(f"Error checking parity for tenant {org_id}: {e}", exc_info=True)
+            stats["failed_tenants"] += 1
+            stats["tenants_checked"].append(
+                {
+                    "org_id": org_id,
+                    "workspace_pairs_checked": pairs_count,
+                    "workspace_check_passed": workspace_check_passed,
+                    "custom_roles_checked": len(role_results),
+                    "custom_role_check_passed": custom_role_check_passed,
+                    "role_results": role_results,
+                    "passed": False,
+                    "error": str(e),
+                    "duration_seconds": round(tenant_elapsed, 3),
+                }
+            )
+
+    timing_stats = {}
+    if tenant_durations:
+        sorted_durations = sorted(tenant_durations)
+        n = len(sorted_durations)
+        timing_stats = {
+            "avg_seconds": round(sum(sorted_durations) / n, 3),
+            "p95_seconds": round(sorted_durations[min(int(n * 0.95), n - 1)], 3),
+            "p99_seconds": round(sorted_durations[min(int(n * 0.99), n - 1)], 3),
+        }
+        logger.info(
+            f"Timing: avg={timing_stats['avg_seconds']}s "
+            f"p95={timing_stats['p95_seconds']}s "
+            f"p99={timing_stats['p99_seconds']}s"
+        )
+
+    logger.info(
+        f"Parity check complete. Checked: {stats['total_tenants']}, "
+        f"Passed: {stats['passed_tenants']}, "
+        f"Failed: {stats['failed_tenants']}, "
+        f"Not Found: {stats['tenants_not_found']}, "
+        f"Total workspace pairs: {stats['total_workspace_pairs_checked']}, "
+        f"Total custom roles: {stats['total_custom_roles_checked']}"
+    )
+
+    stats["timing"] = timing_stats
+    return stats
