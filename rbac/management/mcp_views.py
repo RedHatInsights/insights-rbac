@@ -97,6 +97,25 @@ _role_binding_batch_create_view = RoleBindingViewSet.as_view({"post": "batch_cre
 _workspace_create_view = WorkspaceViewSet.as_view({"post": "create"})
 _cross_account_create_view = CrossAccountRequestViewSet.as_view({"post": "create"})
 
+# Write views (PUT/PATCH)
+_group_update_view = GroupViewSet.as_view({"put": "update"})
+_role_v1_update_view = RoleViewSet.as_view({"put": "update"})
+_role_v1_patch_view = RoleViewSet.as_view({"patch": "partial_update"})
+_role_v2_update_view = RoleV2ViewSet.as_view({"put": "update"})
+_role_binding_update_view = RoleBindingViewSet.as_view({"put": "by_subject"})
+_workspace_update_view = WorkspaceViewSet.as_view({"put": "update"})
+_workspace_move_view = WorkspaceViewSet.as_view({"post": "move"})
+_cross_account_update_view = CrossAccountRequestViewSet.as_view({"put": "update"})
+_cross_account_patch_view = CrossAccountRequestViewSet.as_view({"patch": "partial_update"})
+
+# Write views (DELETE)
+_group_delete_view = GroupViewSet.as_view({"delete": "destroy"})
+_group_principals_delete_view = GroupViewSet.as_view({"delete": "principals"})
+_group_roles_delete_view = GroupViewSet.as_view({"delete": "roles"})
+_role_v1_delete_view = RoleViewSet.as_view({"delete": "destroy"})
+_role_v2_bulk_delete_view = RoleV2ViewSet.as_view({"post": "bulk_destroy"})
+_workspace_delete_view = WorkspaceViewSet.as_view({"delete": "destroy"})
+
 logger = logging.getLogger(__name__)
 
 PROTOCOL_VERSION = "2025-03-26"
@@ -257,10 +276,16 @@ def _clone_request(
     selected tracing headers from the source request so that the target
     view applies the same permission checks and is observable in traces.
     """
-    if method.upper() == "POST":
-        view_request = _request_factory.post(
-            path, data=json.dumps(body) if body is not None else "", content_type="application/json"
-        )
+    method_upper = method.upper()
+    body_data = json.dumps(body) if body is not None else ""
+    if method_upper == "POST":
+        view_request = _request_factory.post(path, data=body_data, content_type="application/json")
+    elif method_upper == "PUT":
+        view_request = _request_factory.put(path, data=body_data, content_type="application/json")
+    elif method_upper == "PATCH":
+        view_request = _request_factory.patch(path, data=body_data, content_type="application/json")
+    elif method_upper == "DELETE":
+        view_request = _request_factory.delete(path, **kwargs)
     else:
         view_request = _request_factory.get(path, **kwargs)
 
@@ -281,27 +306,60 @@ def _clone_request(
     return view_request
 
 
+def _call_view_json(
+    request: HttpRequest,
+    view: Callable[..., Any],
+    path: str,
+    *,
+    method: str = "GET",
+    body: dict[str, Any] | None = None,
+    query_params: dict[str, str] | None = None,
+    **view_kwargs: str,
+) -> str:
+    """Call a Django view and return the response body as a string.
+
+    Handles response rendering, 204 No Content, and 4xx/5xx error wrapping
+    so MCP clients can distinguish success from failure without parsing
+    the view's raw output.
+    """
+    if query_params:
+        from urllib.parse import urlencode
+
+        path = f"{path}?{urlencode(query_params)}"
+    view_request = _clone_request(request, path, method=method, body=body)
+    response = view(view_request, **view_kwargs)
+    if hasattr(response, "render"):
+        response = response.render()
+    if response.status_code == 204:
+        return json.dumps({"status": "no_content"})
+    content = response.content.decode()
+    if response.status_code >= 400:
+        return json.dumps({"error": f"HTTP {response.status_code}", "detail": content})
+    return content
+
+
 def _call_view_write(
     request: HttpRequest,
     view: Callable[..., Any],
     path: str,
     body: dict[str, Any],
-    **view_kwargs: str,
+    *,
+    method: str = "POST",
+    **view_kwargs: Any,
 ) -> str:
-    """Call a Django view with a POST request and return the response body.
+    """Call a Django view with a write request (POST/PUT/PATCH)."""
+    return _call_view_json(request, view, path, method=method, body=body, **view_kwargs)
 
-    For 4xx/5xx responses, wraps the response body in an error structure
-    so MCP clients can distinguish success from failure without parsing
-    the view's raw output.
-    """
-    view_request = _clone_request(request, path, method="POST", body=body)
-    response = view(view_request, **view_kwargs)
-    if hasattr(response, "render"):
-        response = response.render()
-    content = response.content.decode()
-    if response.status_code >= 400:
-        return json.dumps({"error": f"HTTP {response.status_code}", "detail": content})
-    return content
+
+def _call_view_delete(
+    request: HttpRequest,
+    view: Callable[..., Any],
+    path: str,
+    query_params: dict[str, str] | None = None,
+    **view_kwargs: Any,
+) -> str:
+    """Call a Django view with a DELETE request."""
+    return _call_view_json(request, view, path, method="DELETE", query_params=query_params, **view_kwargs)
 
 
 def _resolve_group_uuid(group_uuid: str, group_name: str, tenant) -> tuple[str | None, str | None]:
@@ -318,6 +376,14 @@ def _resolve_group_uuid(group_uuid: str, group_name: str, tenant) -> tuple[str |
             return None, json.dumps({"error": f"Group '{group_name}' not found"})
         return str(group.uuid), None
     return None, json.dumps({"error": "Either group_uuid or group_name is required"})
+
+
+def _resolve_group_for_tool(request: HttpRequest, group_uuid: str, group_name: str) -> tuple[str | None, str | None]:
+    """Resolve a group UUID from a tool request, checking tenant context first."""
+    tenant = getattr(request, "tenant", None)
+    if not tenant:
+        return None, json.dumps({"error": "No tenant context available"})
+    return _resolve_group_uuid(group_uuid, group_name, tenant)
 
 
 # --- Tool implementations ---
@@ -401,39 +467,63 @@ def _call_view(
     return response.content.decode()
 
 
-# ┌──────────────────────────────────┬───────────┬────────────────────────────────────────────┐
-# │ MCP Tool                         │ Version   │ API Endpoint                               │
-# ├──────────────────────────────────┼───────────┼────────────────────────────────────────────┤
-# │ hello                            │ unver.    │ (none — in-process greeting)               │
-# │ get_status                       │ unver.    │ GET /api/v1/status/                        │
-# │ list_principals                  │ common    │ GET /api/v1/principals/                    │
-# │ list_permissions                 │ common    │ GET /api/v1/permissions/                   │
-# │ list_permission_options          │ common    │ GET /api/v1/permissions/options/           │
-# │ list_audit_logs                  │ common    │ GET /api/v1/auditlogs/                     │
-# │ get_rbac_recent_changes          │ common    │ (in-process audit log analysis)            │
-# │ investigate_group_changes        │ common    │ (orchestrates audit log + authorization)   │
-# │ investigate_user_access          │ common    │ (groups + roles + permissions analysis)    │
-# │ list_groups                      │ common    │ GET /api/v1/groups/                        │
-# │ get_group                        │ common    │ GET /api/v1/groups/{uuid}/                 │
-# │ list_group_principals            │ common    │ GET /api/v1/groups/{uuid}/principals/      │
-# │ list_cross_account_requests      │ common    │ GET /api/v1/cross-account-requests/        │
-# │ get_cross_account_request        │ common    │ GET /api/v1/cross-account-requests/{id}/   │
-# │ investigate_tam_access           │ common    │ (orchestrates cross-account + roles)       │
-# │ audit_redhat_access              │ common    │ (cross-account + roles + audit logs)       │
-# │ list_workspaces                  │ common    │ GET /api/v2/workspaces/                    │
-# │ get_workspace                    │ common    │ GET /api/v2/workspaces/{uuid}/             │
-# │ search_roles                     │ unified   │ V1: GET /api/v1/roles/                     │
-# │                                  │           │ V2: GET /api/v2/roles/                     │
-# │ get_role                         │ unified   │ V1: GET /api/v1/roles/{uuid}/ + /access/   │
-# │                                  │           │ V2: GET /api/v2/roles/{uuid}/              │
-# │ check_user_permission            │ unified   │ V1: GET /api/v1/access/                    │
-# │                                  │           │ V2: role-bindings → roles                  │
-# │ list_access                      │ v1        │ GET /api/v1/access/                        │
-# │ list_group_roles                 │ v1        │ GET /api/v1/groups/{uuid}/roles/           │
-# │ list_role_access                 │ v1        │ GET /api/v1/roles/{uuid}/access/           │
-# │ list_role_bindings               │ v2        │ GET /api/v2/role-bindings/                 │
-# │ list_role_bindings_by_subject    │ v2        │ GET /api/v2/role-bindings/by-subject/      │
-# └──────────────────────────────────┴───────────┴────────────────────────────────────────────┘
+# ┌──────────────────────────────────────┬───────────┬────────────────────────────────────────────────────┐
+# │ MCP Tool                             │ Version   │ API Endpoint                                       │
+# ├──────────────────────────────────────┼───────────┼────────────────────────────────────────────────────┤
+# │ hello                                │ unver.    │ (none -- in-process greeting)                      │
+# │ get_status                           │ unver.    │ GET /api/v1/status/                                │
+# │ list_principals                      │ common    │ GET /api/v1/principals/                            │
+# │ list_permissions                     │ common    │ GET /api/v1/permissions/                           │
+# │ list_permission_options              │ common    │ GET /api/v1/permissions/options/                   │
+# │ list_audit_logs                      │ common    │ GET /api/v1/auditlogs/                             │
+# │ get_rbac_recent_changes              │ common    │ (in-process audit log analysis)                    │
+# │ investigate_group_changes            │ common    │ (orchestrates audit log + authorization)           │
+# │ investigate_user_access              │ common    │ (groups + roles + permissions analysis)            │
+# │ list_groups                          │ common    │ GET /api/v1/groups/                                │
+# │ get_group                            │ common    │ GET /api/v1/groups/{uuid}/                         │
+# │ list_group_principals                │ common    │ GET /api/v1/groups/{uuid}/principals/              │
+# │ list_cross_account_requests          │ common    │ GET /api/v1/cross-account-requests/                │
+# │ get_cross_account_request            │ common    │ GET /api/v1/cross-account-requests/{id}/           │
+# │ investigate_tam_access               │ common    │ (orchestrates cross-account + roles)               │
+# │ audit_redhat_access                  │ common    │ (cross-account + roles + audit logs)               │
+# │ list_workspaces                      │ common    │ GET /api/v2/workspaces/                            │
+# │ get_workspace                        │ common    │ GET /api/v2/workspaces/{uuid}/                     │
+# │ search_roles                         │ unified   │ V1: GET /api/v1/roles/                             │
+# │                                      │           │ V2: GET /api/v2/roles/                             │
+# │ get_role                             │ unified   │ V1: GET /api/v1/roles/{uuid}/ + /access/           │
+# │                                      │           │ V2: GET /api/v2/roles/{uuid}/                      │
+# │ check_user_permission                │ unified   │ V1: GET /api/v1/access/                            │
+# │                                      │           │ V2: role-bindings -> roles                         │
+# │ list_access                          │ v1        │ GET /api/v1/access/                                │
+# │ list_group_roles                     │ v1        │ GET /api/v1/groups/{uuid}/roles/                   │
+# │ list_role_access                     │ v1        │ GET /api/v1/roles/{uuid}/access/                   │
+# │ list_role_bindings                   │ v2        │ GET /api/v2/role-bindings/                         │
+# │ list_role_bindings_by_subject        │ v2        │ GET /api/v2/role-bindings/by-subject/              │
+# ├──────────────────────────────────────┼───────────┼────────────────────────────────────────────────────┤
+# │ create_group                         │ common W  │ POST /api/v1/groups/                              │
+# │ add_principals_to_group              │ common W  │ POST /api/v1/groups/{uuid}/principals/            │
+# │ add_roles_to_group                   │ v1 W      │ POST /api/v1/groups/{uuid}/roles/                 │
+# │ create_role_v1                       │ v1 W      │ POST /api/v1/roles/                               │
+# │ create_role                          │ v2 W      │ POST /api/v2/roles/                               │
+# │ create_role_bindings                 │ v2 W      │ POST /api/v2/role-bindings/:batchCreate           │
+# │ create_workspace                     │ v2 W      │ POST /api/v2/workspaces/                          │
+# │ create_cross_account_request         │ common W  │ POST /api/v1/cross-account-requests/              │
+# │ update_group                         │ common W  │ PUT /api/v1/groups/{uuid}/                        │
+# │ update_role_v1                       │ v1 W      │ PUT /api/v1/roles/{uuid}/                         │
+# │ patch_role_v1                        │ v1 W      │ PATCH /api/v1/roles/{uuid}/                       │
+# │ update_role                          │ v2 W      │ PUT /api/v2/roles/{uuid}/                         │
+# │ update_role_binding                  │ v2 W      │ PUT /api/v2/role-bindings/by-subject/              │
+# │ update_workspace                     │ v2 W      │ PUT /api/v2/workspaces/{uuid}/                    │
+# │ move_workspace                       │ v2 W      │ POST /api/v2/workspaces/{uuid}/move/              │
+# │ update_cross_account_request         │ common W  │ PUT /api/v1/cross-account-requests/{id}/          │
+# │ patch_cross_account_request          │ common W  │ PATCH /api/v1/cross-account-requests/{id}/        │
+# │ delete_group                         │ common W  │ DELETE /api/v1/groups/{uuid}/                     │
+# │ remove_principals_from_group         │ common W  │ DELETE /api/v1/groups/{uuid}/principals/          │
+# │ remove_roles_from_group              │ v1 W      │ DELETE /api/v1/groups/{uuid}/roles/               │
+# │ delete_role_v1                       │ v1 W      │ DELETE /api/v1/roles/{uuid}/                      │
+# │ bulk_delete_roles                    │ v2 W      │ POST /api/v2/roles/:batchDelete                   │
+# │ delete_workspace                     │ v2 W      │ DELETE /api/v2/workspaces/{uuid}/                 │
+# └──────────────────────────────────────┴───────────┴────────────────────────────────────────────────────┘
 
 
 @register_tool(
@@ -3136,11 +3226,7 @@ def add_principals_to_group(
     principals: list[str],
 ) -> str:
     """Add principals to a group by delegating to GroupViewSet.principals."""
-    tenant = getattr(request, "tenant", None)
-    if not tenant:
-        return json.dumps({"error": "No tenant context available"})
-
-    resolved_uuid, error = _resolve_group_uuid(group_uuid, group_name, tenant)
+    resolved_uuid, error = _resolve_group_for_tool(request, group_uuid, group_name)
     if error:
         return error
     assert resolved_uuid is not None
@@ -3172,11 +3258,7 @@ def add_roles_to_group(
     roles: list[str],
 ) -> str:
     """Add roles to a group by delegating to GroupViewSet.roles."""
-    tenant = getattr(request, "tenant", None)
-    if not tenant:
-        return json.dumps({"error": "No tenant context available"})
-
-    resolved_uuid, error = _resolve_group_uuid(group_uuid, group_name, tenant)
+    resolved_uuid, error = _resolve_group_for_tool(request, group_uuid, group_name)
     if error:
         return error
     assert resolved_uuid is not None
@@ -3642,6 +3724,521 @@ def _guide_user_access_delegation_impl(request: HttpRequest, username: str) -> s
     )
 
     return json.dumps(result)
+
+
+# --- UPDATE tool implementations ---
+
+# ┌──────────────────────────────────────┬───────────┬─────────────────────────────────────────────────────┐
+# │ MCP Tool                             │ Gating    │ API Endpoint                                        │
+# ├──────────────────────────────────────┼───────────┼─────────────────────────────────────────────────────┤
+# │ update_group                         │ both      │ PUT /api/v1/groups/{uuid}/                          │
+# │ update_role_v1                       │ v1        │ PUT /api/v1/roles/{uuid}/                           │
+# │ patch_role_v1                        │ v1        │ PATCH /api/v1/roles/{uuid}/                         │
+# │ update_role                          │ v2        │ PUT /api/v2/roles/{uuid}/                           │
+# │ update_role_binding                  │ v2        │ PUT /api/v2/role-bindings/by-subject/                │
+# │ update_workspace                     │ v2        │ PUT /api/v2/workspaces/{uuid}/                      │
+# │ move_workspace                       │ v2        │ POST /api/v2/workspaces/{uuid}/move/                │
+# │ update_cross_account_request         │ both      │ PUT /api/v1/cross-account-requests/{id}/            │
+# │ patch_cross_account_request          │ both      │ PATCH /api/v1/cross-account-requests/{id}/          │
+# └──────────────────────────────────────┴───────────┴─────────────────────────────────────────────────────┘
+
+
+@register_tool(
+    description=(
+        "Update a custom group (full replacement). Provide either group_uuid OR group_name "
+        "(group_uuid takes precedence). Works for both V1 and V2 organizations. "
+        "System groups (platform_default, admin_default) cannot be modified. "
+        "Required: name. Optional: description. "
+        "Example: update_group(group_name='Engineering', name='Engineering Team', description='Updated desc') "
+        "Returns: the updated group object. "
+        "Calls: PUT /api/v1/groups/{uuid}/"
+    ),
+    requires_auth=True,
+    write=True,
+)
+def update_group(
+    request: HttpRequest,
+    *,
+    group_uuid: str = "",
+    group_name: str = "",
+    name: str,
+    description: str = "",
+) -> str:
+    """Update a group by delegating to GroupViewSet."""
+    resolved_uuid, error = _resolve_group_for_tool(request, group_uuid, group_name)
+    if error:
+        return error
+    assert resolved_uuid is not None
+
+    body: dict[str, Any] = {"name": name}
+    if description:
+        body["description"] = description
+
+    path = reverse("v1_management:group-detail", kwargs={"uuid": resolved_uuid})
+    return _call_view_write(request, _group_update_view, path, body, method="PUT", uuid=resolved_uuid)
+
+
+@register_tool(
+    description=(
+        "Update a custom role (V1 API, full replacement). V1 only -- blocked for V2 organizations "
+        "(use update_role for V2). Replaces the entire role including permissions. "
+        "Required: role_uuid, name, access (list of permission objects). "
+        "Each access entry needs: permission (string 'app:resource:verb') and optionally "
+        "resourceDefinitions. System roles cannot be modified. "
+        "Example: update_role_v1(role_uuid='<uuid>', name='Cost Reader', "
+        "access=[{'permission': 'cost-management:cost_model:read'}]) "
+        "Returns: the updated role object. "
+        "Calls: PUT /api/v1/roles/{uuid}/"
+    ),
+    requires_auth=True,
+    write=True,
+    api_version=ApiVersion.V1,
+)
+def update_role_v1(
+    request: HttpRequest,
+    *,
+    role_uuid: str,
+    name: str,
+    display_name: str = "",
+    description: str = "",
+    access: list[dict[str, Any]],
+) -> str:
+    """Update a V1 role by delegating to RoleViewSet."""
+    body: dict[str, Any] = {"name": name, "access": access}
+    if display_name:
+        body["display_name"] = display_name
+    if description:
+        body["description"] = description
+
+    path = reverse("v1_management:role-detail", kwargs={"uuid": role_uuid})
+    return _call_view_write(request, _role_v1_update_view, path, body, method="PUT", uuid=role_uuid)
+
+
+@register_tool(
+    description=(
+        "Partially update a custom role (V1 API). V1 only. Updates only the fields provided "
+        "(name, display_name, description). Does NOT update permissions -- use update_role_v1 "
+        "for full replacement including permissions. System roles cannot be modified. "
+        "Required: role_uuid. At least one of: name, display_name, description. "
+        "Example: patch_role_v1(role_uuid='<uuid>', display_name='New Display Name') "
+        "Returns: the updated role object. "
+        "Calls: PATCH /api/v1/roles/{uuid}/"
+    ),
+    requires_auth=True,
+    write=True,
+    api_version=ApiVersion.V1,
+)
+def patch_role_v1(
+    request: HttpRequest,
+    *,
+    role_uuid: str,
+    name: str = "",
+    display_name: str = "",
+    description: str = "",
+) -> str:
+    """Patch a V1 role by delegating to RoleViewSet."""
+    body: dict[str, Any] = {}
+    if name:
+        body["name"] = name
+    if display_name:
+        body["display_name"] = display_name
+    if description:
+        body["description"] = description
+
+    if not body:
+        return json.dumps({"error": "At least one of name, display_name, or description is required"})
+
+    path = reverse("v1_management:role-detail", kwargs={"uuid": role_uuid})
+    return _call_view_write(request, _role_v1_patch_view, path, body, method="PATCH", uuid=role_uuid)
+
+
+@register_tool(
+    description=(
+        "Update a custom role (V2 API, full replacement). V2 only -- requires workspace-enabled organization. "
+        "Replaces the entire role including permissions. "
+        "Required: role_uuid, name, permissions (list of permission objects). "
+        "Each permission needs: application, resource_type, operation. "
+        "Example: update_role(role_uuid='<uuid>', name='Cost Reader', "
+        "permissions=[{'application': 'cost-management', 'resource_type': 'cost_model', 'operation': 'read'}]) "
+        "Returns: the updated role object. "
+        "Calls: PUT /api/v2/roles/{uuid}/"
+    ),
+    requires_auth=True,
+    write=True,
+    api_version=ApiVersion.V2,
+)
+def update_role(
+    request: HttpRequest,
+    *,
+    role_uuid: str,
+    name: str,
+    description: str = "",
+    permissions: list[dict[str, str]],
+) -> str:
+    """Update a V2 role by delegating to RoleV2ViewSet."""
+    body: dict[str, Any] = {"name": name, "permissions": permissions}
+    if description:
+        body["description"] = description
+
+    path = reverse("v2_management:roles-detail", kwargs={"uuid": role_uuid})
+    return _call_view_write(request, _role_v2_update_view, path, body, method="PUT", uuid=role_uuid)
+
+
+@register_tool(
+    description=(
+        "Update role bindings for a specific subject on a resource (V2 API). V2 only. "
+        "Sets the exact list of roles for the given subject on the resource -- any existing "
+        "bindings not in the list are removed. "
+        "Required: resource_id, subject_id, subject_type ('principal' or 'group'), "
+        "roles (list of objects with 'id' key). "
+        "Optional: resource_type (default 'workspace'). "
+        "Example: update_role_binding(resource_id='<ws-uuid>', subject_id='<user-uuid>', "
+        "subject_type='principal', roles=[{'id': '<role-uuid>'}]) "
+        "Returns: the updated role binding state. "
+        "Calls: PUT /api/v2/role-bindings/by-subject/"
+    ),
+    requires_auth=True,
+    write=True,
+    api_version=ApiVersion.V2,
+)
+def update_role_binding(
+    request: HttpRequest,
+    *,
+    resource_id: str,
+    resource_type: str = "workspace",
+    subject_id: str,
+    subject_type: str,
+    roles: list[dict[str, str]],
+) -> str:
+    """Update role bindings by subject by delegating to RoleBindingViewSet.by_subject."""
+    path = reverse("v2_management:role-bindings-by-subject")
+    query_params = {
+        "resource_id": resource_id,
+        "resource_type": resource_type,
+        "subject_id": subject_id,
+        "subject_type": subject_type,
+    }
+    body: dict[str, Any] = {"roles": roles}
+    return _call_view_json(
+        request, _role_binding_update_view, path, method="PUT", body=body, query_params=query_params
+    )
+
+
+@register_tool(
+    description=(
+        "Update a workspace (V2 API, full replacement). V2 only. "
+        "Required: workspace_id, name. Optional: description, parent_id (required for "
+        "standard workspaces). Root and ungrouped-hosts workspaces cannot be modified. "
+        "Example: update_workspace(workspace_id='<uuid>', name='EMEA Engineering', "
+        "description='Updated', parent_id='<parent-uuid>') "
+        "Returns: the updated workspace object. "
+        "Calls: PUT /api/v2/workspaces/{uuid}/"
+    ),
+    requires_auth=True,
+    write=True,
+    api_version=ApiVersion.V2,
+)
+def update_workspace(
+    request: HttpRequest,
+    *,
+    workspace_id: str,
+    name: str,
+    description: str = "",
+    parent_id: str = "",
+) -> str:
+    """Update a workspace by delegating to WorkspaceViewSet."""
+    body: dict[str, Any] = {"name": name}
+    if description:
+        body["description"] = description
+    if parent_id:
+        body["parent_id"] = parent_id
+
+    path = reverse("v2_management:workspace-detail", kwargs={"pk": workspace_id})
+    return _call_view_write(request, _workspace_update_view, path, body, method="PUT", pk=workspace_id)
+
+
+@register_tool(
+    description=(
+        "Move a workspace to a new parent (V2 API). V2 only. Changes the parent of a workspace "
+        "in the hierarchy. Root and ungrouped-hosts workspaces cannot be moved. "
+        "Required: workspace_id, parent_id (UUID of the new parent workspace). "
+        "Example: move_workspace(workspace_id='<uuid>', parent_id='<new-parent-uuid>') "
+        "Returns: the moved workspace object. "
+        "Calls: POST /api/v2/workspaces/{uuid}/move/"
+    ),
+    requires_auth=True,
+    write=True,
+    api_version=ApiVersion.V2,
+)
+def move_workspace(
+    request: HttpRequest,
+    *,
+    workspace_id: str,
+    parent_id: str,
+) -> str:
+    """Move a workspace by delegating to WorkspaceViewSet.move."""
+    body: dict[str, Any] = {"parent_id": parent_id}
+    path = reverse("v2_management:workspace-move", kwargs={"pk": workspace_id})
+    return _call_view_write(request, _workspace_move_view, path, body, pk=workspace_id)
+
+
+@register_tool(
+    description=(
+        "Update a cross-account access request (full replacement). "
+        "Required: request_id, target_org (org ID), start_date (MM/DD/YYYY), "
+        "end_date (MM/DD/YYYY), roles (list of role display name strings, NOT UUIDs). "
+        "Example: update_cross_account_request(request_id='<uuid>', target_org='12345', "
+        "start_date='06/01/2026', end_date='06/30/2026', roles=['Vulnerability administrator']) "
+        "Returns: the updated request object. "
+        "Calls: PUT /api/v1/cross-account-requests/{id}/"
+    ),
+    requires_auth=True,
+    write=True,
+)
+def update_cross_account_request(
+    request: HttpRequest,
+    *,
+    request_id: str,
+    target_org: str,
+    start_date: str,
+    end_date: str,
+    roles: list[str],
+) -> str:
+    """Update a cross-account request by delegating to CrossAccountRequestViewSet."""
+    body: dict[str, Any] = {
+        "target_org": target_org,
+        "start_date": start_date,
+        "end_date": end_date,
+        "roles": roles,
+    }
+
+    path = reverse("v1_api:cross-detail", kwargs={"pk": request_id})
+    return _call_view_write(request, _cross_account_update_view, path, body, method="PUT", pk=request_id)
+
+
+@register_tool(
+    description=(
+        "Partially update a cross-account access request (status change). "
+        "Used to approve, deny, or cancel a request. "
+        "Required: request_id, status (one of: pending, approved, denied, cancelled, expired). "
+        "Example: patch_cross_account_request(request_id='<uuid>', status='approved') "
+        "Returns: the updated request object. "
+        "Calls: PATCH /api/v1/cross-account-requests/{id}/"
+    ),
+    requires_auth=True,
+    write=True,
+)
+def patch_cross_account_request(
+    request: HttpRequest,
+    *,
+    request_id: str,
+    status: str,
+) -> str:
+    """Patch a cross-account request status."""
+    allowed_statuses = {"pending", "approved", "denied", "cancelled", "expired"}
+    if status not in allowed_statuses:
+        return json.dumps({"error": f"Invalid status '{status}'. Must be one of: {sorted(allowed_statuses)}"})
+
+    body: dict[str, Any] = {"status": status}
+
+    path = reverse("v1_api:cross-detail", kwargs={"pk": request_id})
+    return _call_view_write(request, _cross_account_patch_view, path, body, method="PATCH", pk=request_id)
+
+
+# --- DELETE tool implementations ---
+
+# ┌──────────────────────────────────────┬───────────┬─────────────────────────────────────────────────────┐
+# │ MCP Tool                             │ Gating    │ API Endpoint                                        │
+# ├──────────────────────────────────────┼───────────┼─────────────────────────────────────────────────────┤
+# │ delete_group                         │ both      │ DELETE /api/v1/groups/{uuid}/                       │
+# │ remove_principals_from_group         │ both      │ DELETE /api/v1/groups/{uuid}/principals/            │
+# │ remove_roles_from_group              │ v1        │ DELETE /api/v1/groups/{uuid}/roles/                 │
+# │ delete_role_v1                       │ v1        │ DELETE /api/v1/roles/{uuid}/                        │
+# │ bulk_delete_roles                    │ v2        │ POST /api/v2/roles/:batchDelete                    │
+# │ delete_workspace                     │ v2        │ DELETE /api/v2/workspaces/{uuid}/                   │
+# └──────────────────────────────────────┴───────────┴─────────────────────────────────────────────────────┘
+
+
+@register_tool(
+    description=(
+        "DESTRUCTIVE: Permanently delete a custom group. This operation is IRREVERSIBLE. "
+        "All role assignments and principal memberships in the group are removed. "
+        "Provide either group_uuid OR group_name (group_uuid takes precedence). "
+        "System groups (platform_default, admin_default) cannot be deleted. "
+        "Works for both V1 and V2 organizations. "
+        "Example: delete_group(group_name='Old Team') "
+        "Returns: {status: 'deleted'}. "
+        "Calls: DELETE /api/v1/groups/{uuid}/"
+    ),
+    requires_auth=True,
+    write=True,
+)
+def delete_group(
+    request: HttpRequest,
+    *,
+    group_uuid: str = "",
+    group_name: str = "",
+) -> str:
+    """Delete a group by delegating to GroupViewSet."""
+    resolved_uuid, error = _resolve_group_for_tool(request, group_uuid, group_name)
+    if error:
+        return error
+    assert resolved_uuid is not None
+
+    path = reverse("v1_management:group-detail", kwargs={"uuid": resolved_uuid})
+    return _call_view_delete(request, _group_delete_view, path, uuid=resolved_uuid)
+
+
+@register_tool(
+    description=(
+        "DESTRUCTIVE: Remove one or more principals (users) from a group. This is IRREVERSIBLE -- "
+        "re-adding requires a separate call. Provide either group_uuid OR group_name "
+        "(group_uuid takes precedence). At least one of usernames or service_accounts is required. "
+        "usernames: comma-separated list of usernames. "
+        "service_accounts: comma-separated list of service account client IDs. "
+        "Works for both V1 and V2 organizations. "
+        "Example: remove_principals_from_group(group_name='Engineering', usernames='jdoe,jsmith') "
+        "Returns: {status: 'deleted'}. "
+        "Calls: DELETE /api/v1/groups/{uuid}/principals/"
+    ),
+    requires_auth=True,
+    write=True,
+)
+def remove_principals_from_group(
+    request: HttpRequest,
+    *,
+    group_uuid: str = "",
+    group_name: str = "",
+    usernames: str = "",
+    service_accounts: str = "",
+) -> str:
+    """Remove principals from a group by delegating to GroupViewSet.principals."""
+    if not usernames and not service_accounts:
+        return json.dumps({"error": "At least one of usernames or service_accounts is required"})
+
+    resolved_uuid, error = _resolve_group_for_tool(request, group_uuid, group_name)
+    if error:
+        return error
+    assert resolved_uuid is not None
+
+    query_params: dict[str, str] = {}
+    if usernames:
+        query_params["usernames"] = usernames
+    if service_accounts:
+        query_params["service-accounts"] = service_accounts
+
+    path = reverse("v1_management:group-principals", kwargs={"uuid": resolved_uuid})
+    return _call_view_delete(request, _group_principals_delete_view, path, query_params, uuid=resolved_uuid)
+
+
+@register_tool(
+    description=(
+        "DESTRUCTIVE: Remove one or more roles from a group. This is IRREVERSIBLE -- "
+        "the role-group association is deleted (the role itself is NOT deleted). "
+        "V1 only -- blocked for V2 organizations (use update_role_binding instead). "
+        "Provide either group_uuid OR group_name (group_uuid takes precedence). "
+        "Required: roles (comma-separated string of role UUIDs). "
+        "Example: remove_roles_from_group(group_name='Engineering', roles='uuid-1,uuid-2') "
+        "Returns: {status: 'deleted'}. "
+        "Calls: DELETE /api/v1/groups/{uuid}/roles/"
+    ),
+    requires_auth=True,
+    write=True,
+    api_version=ApiVersion.V1,
+)
+def remove_roles_from_group(
+    request: HttpRequest,
+    *,
+    group_uuid: str = "",
+    group_name: str = "",
+    roles: str,
+) -> str:
+    """Remove roles from a group by delegating to GroupViewSet.roles."""
+    resolved_uuid, error = _resolve_group_for_tool(request, group_uuid, group_name)
+    if error:
+        return error
+    assert resolved_uuid is not None
+
+    query_params: dict[str, str] = {"roles": roles}
+    path = reverse("v1_management:group-roles", kwargs={"uuid": resolved_uuid})
+    return _call_view_delete(request, _group_roles_delete_view, path, query_params, uuid=resolved_uuid)
+
+
+@register_tool(
+    description=(
+        "DESTRUCTIVE: Permanently delete a custom role (V1 API). This operation is IRREVERSIBLE. "
+        "All permissions and group assignments for this role are removed. "
+        "V1 only -- blocked for V2 organizations (use bulk_delete_roles for V2). "
+        "System roles cannot be deleted. "
+        "Required: role_uuid. "
+        "Example: delete_role_v1(role_uuid='<uuid>') "
+        "Returns: {status: 'deleted'}. "
+        "Calls: DELETE /api/v1/roles/{uuid}/"
+    ),
+    requires_auth=True,
+    write=True,
+    api_version=ApiVersion.V1,
+)
+def delete_role_v1(
+    request: HttpRequest,
+    *,
+    role_uuid: str,
+) -> str:
+    """Delete a V1 role by delegating to RoleViewSet."""
+    path = reverse("v1_management:role-detail", kwargs={"uuid": role_uuid})
+    return _call_view_delete(request, _role_v1_delete_view, path, uuid=role_uuid)
+
+
+@register_tool(
+    description=(
+        "DESTRUCTIVE: Permanently delete one or more roles in a single atomic operation (V2 API). "
+        "This operation is IRREVERSIBLE. All role bindings referencing the deleted roles are removed. "
+        "V2 only -- requires workspace-enabled organization. "
+        "Atomic: if any UUID is not found, the entire operation fails and no roles are deleted. "
+        "Required: ids (list of role UUID strings). "
+        "Example: bulk_delete_roles(ids=['<uuid-1>', '<uuid-2>']) "
+        "Returns: {status: 'deleted'}. "
+        "Calls: POST /api/v2/roles/:batchDelete"
+    ),
+    requires_auth=True,
+    write=True,
+    api_version=ApiVersion.V2,
+)
+def bulk_delete_roles(
+    request: HttpRequest,
+    *,
+    ids: list[str],
+) -> str:
+    """Bulk-delete V2 roles by delegating to RoleV2ViewSet.bulk_destroy."""
+    body: dict[str, Any] = {"ids": ids}
+    path = reverse("v2_management:roles-bulk-destroy")
+    return _call_view_write(request, _role_v2_bulk_delete_view, path, body)
+
+
+@register_tool(
+    description=(
+        "DESTRUCTIVE: Permanently delete a workspace (V2 API). This operation is IRREVERSIBLE. "
+        "All role bindings scoped to this workspace are removed. "
+        "V2 only -- requires workspace-enabled organization. "
+        "Only STANDARD workspaces can be deleted -- root and ungrouped-hosts workspaces are protected. "
+        "Cannot delete a workspace that has children -- move or delete children first. "
+        "Required: workspace_uuid. "
+        "Example: delete_workspace(workspace_uuid='<uuid>') "
+        "Returns: {status: 'deleted'}. "
+        "Calls: DELETE /api/v2/workspaces/{uuid}/"
+    ),
+    requires_auth=True,
+    write=True,
+    api_version=ApiVersion.V2,
+)
+def delete_workspace(
+    request: HttpRequest,
+    *,
+    workspace_uuid: str,
+) -> str:
+    """Delete a workspace by delegating to WorkspaceViewSet."""
+    path = reverse("v2_management:workspace-detail", kwargs={"pk": workspace_uuid})
+    return _call_view_delete(request, _workspace_delete_view, path, pk=workspace_uuid)
 
 
 # --- JSON-RPC parsing ---
