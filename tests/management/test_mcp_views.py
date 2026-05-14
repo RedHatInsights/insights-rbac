@@ -3667,15 +3667,15 @@ class AuditGroupForDissolutionTests(MCPToolTestMixin, IdentityRequest):
         self.assertIn("svc-legacy-patcher", analysis["stranded_service_accounts"])
         self.assertIn("svc-legacy-remediation", analysis["stranded_service_accounts"])
 
-    def test_audit_group_for_dissolution_identifies_users_with_overlapping_access(self):
-        """Positive: identifies users who have overlapping access via other groups."""
+    def test_audit_group_for_dissolution_identifies_members_with_overlapping_access(self):
+        """Positive: identifies members who have overlapping access via other groups."""
         response = self._call_tool("audit_group_for_dissolution", {"group_name": "Legacy Ops"})
         tool_output = self._get_tool_output(response)
 
         analysis = tool_output["analysis"]
         # User4 (alex.chen) is also in Engineering group
-        self.assertIn("alex.chen", analysis["users_with_overlapping_access"])
-        self.assertEqual(analysis["users_with_overlapping_count"], 1)
+        self.assertIn("alex.chen", analysis["members_with_overlapping_access"])
+        self.assertEqual(analysis["members_with_overlapping_count"], 1)
 
     def test_audit_group_for_dissolution_shows_roles_and_permissions(self):
         """Positive: returns roles assigned to the group with their permissions."""

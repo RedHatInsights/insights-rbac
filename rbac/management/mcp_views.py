@@ -1618,8 +1618,7 @@ def audit_redhat_access(
         "roles: [{name, permissions}], analysis: {stranded_users, stranded_service_accounts, ...}}. "
         "STRANDED means the member is ONLY in this group plus platform_default — they'd be demoted "
         "to default access only. Service accounts with no other groups would start 403'ing. "
-        "Calls: GET /groups/, GET /groups/{uuid}/principals/, GET /groups/{uuid}/roles/, "
-        "GET /access/?username= for each member"
+        "Queries: Group, Principal, Policy, Role, Access models directly (no per-member API calls)"
     ),
     requires_auth=True,
 )
@@ -1682,20 +1681,30 @@ def audit_group_for_dissolution(
                 }
             )
 
+    # Precompute all group memberships for all principals
+    principal_ids = set(p.id for p in all_principals)
+    all_memberships = (
+        Group.objects.filter(principals__id__in=principal_ids, tenant=tenant)
+        .exclude(uuid=resolved_uuid)
+        .prefetch_related("policies__roles__access__permission", "principals")
+        .distinct()
+    )
+    # Build a mapping of principal_id -> list of other groups
+    principal_to_groups: dict[int, list[Group]] = {pid: [] for pid in principal_ids}
+    for grp in all_memberships:
+        for p in grp.principals.all():
+            if p.id in principal_to_groups:
+                principal_to_groups[p.id].append(grp)
+
     # Analyze each member's other group memberships and access impact
     members_data: list[dict[str, Any]] = []
     stranded_users: list[str] = []
     stranded_service_accounts: list[str] = []
-    users_with_overlap: list[str] = []
+    members_with_overlap: list[str] = []
 
     for principal in all_principals:
-        # Get all groups this principal belongs to (excluding the target group)
-        other_groups = (
-            Group.objects.filter(principals=principal, tenant=tenant)
-            .exclude(uuid=resolved_uuid)
-            .prefetch_related("policies__roles__access__permission")
-        )
-        other_groups_list = list(other_groups)
+        # Get precomputed groups for this principal
+        other_groups_list = principal_to_groups.get(principal.id, [])
 
         # Check what permissions they'd retain from other groups
         retained_permissions: set[str] = set()
@@ -1770,15 +1779,13 @@ def audit_group_for_dissolution(
             else:
                 stranded_service_accounts.append(principal.username)
         elif lost_permissions and retained_permissions:
-            users_with_overlap.append(principal.username)
+            members_with_overlap.append(principal.username)
 
     # Group permissions by application for summary
     perm_by_app: dict[str, int] = {}
     for perm in all_permissions_in_group:
-        parts = perm.split(":")
-        if len(parts) >= 1:
-            app = parts[0]
-            perm_by_app[app] = perm_by_app.get(app, 0) + 1
+        app = perm.split(":")[0]
+        perm_by_app[app] = perm_by_app.get(app, 0) + 1
 
     # Build analysis summary
     analysis: dict[str, Any] = {
@@ -1792,19 +1799,25 @@ def audit_group_for_dissolution(
         "stranded_user_count": len(stranded_users),
         "stranded_service_accounts": stranded_service_accounts,
         "stranded_service_account_count": len(stranded_service_accounts),
-        "users_with_overlapping_access": users_with_overlap,
-        "users_with_overlapping_count": len(users_with_overlap),
+        "members_with_overlapping_access": members_with_overlap,
+        "members_with_overlapping_count": len(members_with_overlap),
     }
 
-    # Add warnings/recommendations
+    # Add warnings/recommendations (truncate long lists to avoid huge messages)
     warnings: list[str] = []
     if stranded_users:
-        warnings.append(
-            f"{len(stranded_users)} user(s) ({', '.join(stranded_users)}) will be demoted to default access only"
-        )
+        if len(stranded_users) <= 5:
+            user_list = ", ".join(stranded_users)
+        else:
+            user_list = ", ".join(stranded_users[:5]) + f", +{len(stranded_users) - 5} more"
+        warnings.append(f"{len(stranded_users)} user(s) ({user_list}) will be demoted to default access only")
     if stranded_service_accounts:
+        if len(stranded_service_accounts) <= 5:
+            svc_list = ", ".join(stranded_service_accounts)
+        else:
+            svc_list = ", ".join(stranded_service_accounts[:5]) + f", +{len(stranded_service_accounts) - 5} more"
         warnings.append(
-            f"{len(stranded_service_accounts)} service account(s) ({', '.join(stranded_service_accounts)}) "
+            f"{len(stranded_service_accounts)} service account(s) ({svc_list}) "
             f"will lose all access — automated processes using them will start 403'ing"
         )
     if not stranded_users and not stranded_service_accounts:
