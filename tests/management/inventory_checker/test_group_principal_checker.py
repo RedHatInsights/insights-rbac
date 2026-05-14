@@ -82,7 +82,7 @@ class GroupPrincipalInventoryCheckerTest(IdentityRequest):
         mock_stub = self._setup_inventory_mocks(mock_create_channel, mock_response)
         mock_message_to_dict.return_value = {"allowed": "ALLOWED_TRUE"}
 
-        with patch(INVENTORY_STUB_PATH, return_value=mock_stub):
+        with patch(INVENTORY_STUB_PATH, return_value=mock_stub) as mock_stub_class:
             relationships = [self.group.relationship_to_principal(p) for p in self.group.principals.all()]
             relationships = [r for r in relationships if r is not None]
             result = self.checker.check_relationships(relationships)
@@ -91,6 +91,8 @@ class GroupPrincipalInventoryCheckerTest(IdentityRequest):
             self.assertEqual(len(result["principal_relations"]), 3)
             self.assertTrue(all(pr["relation_exists"] for pr in result["principal_relations"]))
             self.assertEqual(mock_stub.Check.call_count, 3)
+            mock_create_channel.assert_called_once()
+            mock_stub_class.assert_called_once()
 
     @patch("management.inventory_checker.inventory_api_check.create_client_channel_inventory")
     @patch("management.inventory_checker.inventory_api_check.json_format.MessageToDict")
