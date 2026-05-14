@@ -1081,7 +1081,7 @@ def _check_role_permissions_v1(
 ) -> str:
     """Pre-flight check for a V1 custom role."""
     # Step 1: Find the custom role by name (case-insensitive exact match first, then partial)
-    role = Role.objects.filter(name__iexact=role_name, tenant=tenant).first()
+    role = Role.objects.filter(name__iexact=role_name, tenant=tenant, system=False).first()
 
     if not role:
         # Try partial match and suggest (custom roles only)
@@ -1130,7 +1130,9 @@ def _check_role_permissions_v2(
 
     if not role:
         # Try partial match and suggest (custom roles only)
-        roles = RoleV2.objects.filter(name__icontains=role_name, tenant=tenant).values("uuid", "name", "type")[:5]
+        roles = RoleV2.objects.filter(name__icontains=role_name, tenant=tenant, type=RoleV2.Types.CUSTOM).values(
+            "uuid", "name", "type"
+        )[:5]
         if roles:
             suggestions = [
                 {"uuid": str(r["uuid"]), "name": r["name"], "type": r["type"], "system": r["type"] != "custom"}
