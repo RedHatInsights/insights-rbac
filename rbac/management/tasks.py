@@ -54,7 +54,43 @@ logger = logging.getLogger(__name__)
 @shared_task
 def principal_cleanup():
     """Celery task to clean up principals no longer existing."""
-    clean_tenants_principals()
+    # Log task start - SEC-MON-REQ-1 compliance (#3 admin_action)
+    logger.info(
+        "Principal cleanup task starting",
+        extra={
+            "action": "PRINCIPAL_CLEANUP",
+            "principal": "celery_task",
+            "resource_type": "principal",
+            "outcome": "in_progress",
+        },
+    )
+
+    try:
+        clean_tenants_principals()
+
+        # Log task completion
+        logger.info(
+            "Principal cleanup task completed successfully",
+            extra={
+                "action": "PRINCIPAL_CLEANUP",
+                "principal": "celery_task",
+                "resource_type": "principal",
+                "outcome": "success",
+            },
+        )
+    except Exception as e:
+        # Log task failure
+        logger.error(
+            "Principal cleanup task failed",
+            extra={
+                "action": "PRINCIPAL_CLEANUP",
+                "principal": "celery_task",
+                "resource_type": "principal",
+                "outcome": "failure",
+                "reason": str(e),
+            },
+        )
+        raise
 
 
 @shared_task
@@ -72,7 +108,46 @@ def run_migrations_in_worker():
 @shared_task
 def run_seeds_in_worker(kwargs):
     """Celery task to run seeds."""
-    call_command("seeds", **kwargs)
+    # Log task start - SEC-MON-REQ-1 compliance (#2 system_object_manipulation)
+    logger.info(
+        "Data seeding task starting",
+        extra={
+            "action": "SEED",
+            "principal": "celery_task",
+            "resource_type": "system_object",
+            "outcome": "in_progress",
+            "seed_options": kwargs,
+        },
+    )
+
+    try:
+        call_command("seeds", **kwargs)
+
+        # Log task completion
+        logger.info(
+            "Data seeding task completed successfully",
+            extra={
+                "action": "SEED",
+                "principal": "celery_task",
+                "resource_type": "system_object",
+                "outcome": "success",
+                "seed_options": kwargs,
+            },
+        )
+    except Exception as e:
+        # Log task failure
+        logger.error(
+            "Data seeding task failed",
+            extra={
+                "action": "SEED",
+                "principal": "celery_task",
+                "resource_type": "system_object",
+                "outcome": "failure",
+                "reason": str(e),
+                "seed_options": kwargs,
+            },
+        )
+        raise
 
 
 @shared_task
@@ -96,7 +171,47 @@ def run_redis_cache_health():
 @shared_task
 def migrate_data_in_worker(kwargs):
     """Celery task to migrate data from V1 to V2 spiceDB schema."""
-    migrate_data(**kwargs)
+    # Log task start - SEC-MON-REQ-1 compliance (#2 system_object_manipulation, #3 admin_action)
+    logger.info(
+        "Data migration task starting (V1 to V2 SpiceDB schema)",
+        extra={
+            "action": "MIGRATE",
+            "principal": "celery_task",
+            "resource_type": "system_object",
+            "outcome": "in_progress",
+            "migration_options": kwargs,
+        },
+    )
+
+    try:
+        result = migrate_data(**kwargs)
+
+        # Log task completion
+        logger.info(
+            "Data migration task completed successfully",
+            extra={
+                "action": "MIGRATE",
+                "principal": "celery_task",
+                "resource_type": "system_object",
+                "outcome": "success",
+                "migration_options": kwargs,
+            },
+        )
+        return result
+    except Exception as e:
+        # Log task failure
+        logger.error(
+            "Data migration task failed",
+            extra={
+                "action": "MIGRATE",
+                "principal": "celery_task",
+                "resource_type": "system_object",
+                "outcome": "failure",
+                "reason": str(e),
+                "migration_options": kwargs,
+            },
+        )
+        raise
 
 
 @shared_task
@@ -145,7 +260,51 @@ def cleanup_tenant_orphan_bindings_in_worker(org_id, dry_run=False):
     Returns:
         dict: Results with cleanup counts and migration results
     """
-    return cleanup_tenant_orphan_bindings(org_id=org_id, dry_run=dry_run)
+    # Log task start - SEC-MON-REQ-1 compliance (#3 admin_action)
+    logger.info(
+        "Orphan bindings cleanup task starting",
+        extra={
+            "action": "CLEANUP_ORPHAN_BINDINGS",
+            "principal": "celery_task",
+            "resource_type": "role_binding",
+            "org_id": org_id,
+            "dry_run": dry_run,
+            "outcome": "in_progress",
+        },
+    )
+
+    try:
+        result = cleanup_tenant_orphan_bindings(org_id=org_id, dry_run=dry_run)
+
+        # Log task completion
+        logger.info(
+            "Orphan bindings cleanup task completed successfully",
+            extra={
+                "action": "CLEANUP_ORPHAN_BINDINGS",
+                "principal": "celery_task",
+                "resource_type": "role_binding",
+                "org_id": org_id,
+                "dry_run": dry_run,
+                "outcome": "success",
+                "bindings_cleaned": result.get("bindings_deleted", 0) if isinstance(result, dict) else None,
+            },
+        )
+        return result
+    except Exception as e:
+        # Log task failure
+        logger.error(
+            "Orphan bindings cleanup task failed",
+            extra={
+                "action": "CLEANUP_ORPHAN_BINDINGS",
+                "principal": "celery_task",
+                "resource_type": "role_binding",
+                "org_id": org_id,
+                "dry_run": dry_run,
+                "outcome": "failure",
+                "reason": str(e),
+            },
+        )
+        raise
 
 
 @shared_task

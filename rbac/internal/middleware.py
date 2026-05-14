@@ -67,29 +67,70 @@ class InternalIdentityHeaderMiddleware(MiddlewareMixin):
             user = build_user_from_psk(request) or build_system_user_from_token(request, self.token_validator)
 
             if not user:
-                logger.error(
-                    "S2S auth failed: no identity (PSK/token failed) [request_id=%s, method=%s, path=%s]",
-                    req_id,
-                    request.method,
-                    request.path,
+                # Log authentication failure - SEC-MON-REQ-1 compliance (#7 invalid_login)
+                logger.warning(
+                    "S2S authentication failed: PSK and JWT token validation failed",
+                    extra={
+                        "event": "authentication_failure",
+                        "reason": "PSK and JWT token validation failed",
+                        "endpoint": request.path,
+                        "method": request.method,
+                        "source_ip": request.META.get("REMOTE_ADDR"),
+                        "outcome": "failure",
+                        "request_id": req_id,
+                    },
                 )
                 return HttpResponseForbidden()
         else:
             try:
                 _, json_rh_auth = extract_header(request, self.header)
-            except (JSONDecodeError, binascii.Error, KeyError):
-                logger.exception("Invalid X-RH-Identity header.")
+            except (JSONDecodeError, binascii.Error, KeyError) as e:
+                # Log authentication failure - SEC-MON-REQ-1 compliance (#7 invalid_login)
+                logger.warning(
+                    "Authentication failed: Invalid X-RH-Identity header",
+                    extra={
+                        "event": "authentication_failure",
+                        "reason": f"Invalid X-RH-Identity header: {type(e).__name__}",
+                        "endpoint": request.path,
+                        "method": request.method,
+                        "source_ip": request.META.get("REMOTE_ADDR"),
+                        "outcome": "failure",
+                    },
+                )
                 return HttpResponseForbidden()
             user = build_internal_user(request, json_rh_auth)
             if not user:
-                logger.error("Malformed X-RH-Identity header.")
+                # Log authentication failure - SEC-MON-REQ-1 compliance (#7 invalid_login)
+                logger.warning(
+                    "Authentication failed: Malformed X-RH-Identity header (user build failed)",
+                    extra={
+                        "event": "authentication_failure",
+                        "reason": "Malformed X-RH-Identity header: user build failed",
+                        "endpoint": request.path,
+                        "method": request.method,
+                        "source_ip": request.META.get("REMOTE_ADDR"),
+                        "outcome": "failure",
+                    },
+                )
                 return HttpResponseForbidden()
             try:
                 path_org_id = resolve(request.path).kwargs.get("org_id")
                 if path_org_id:
                     request.tenant = get_object_or_404(Tenant, org_id=user.org_id)
-            except (KeyError, TypeError):
-                logger.error("Malformed X-RH-Identity header.")
+            except (KeyError, TypeError) as e:
+                # Log authentication failure - SEC-MON-REQ-1 compliance (#7 invalid_login)
+                logger.warning(
+                    "Authentication failed: Malformed X-RH-Identity header (org_id resolution failed)",
+                    extra={
+                        "event": "authentication_failure",
+                        "reason": f"Malformed X-RH-Identity header: org_id resolution failed - {type(e).__name__}",
+                        "endpoint": request.path,
+                        "method": request.method,
+                        "source_ip": request.META.get("REMOTE_ADDR"),
+                        "org_id": getattr(user, "org_id", None),
+                        "outcome": "failure",
+                    },
+                )
                 return HttpResponseForbidden()
 
         request.user = user

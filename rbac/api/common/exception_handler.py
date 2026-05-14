@@ -18,6 +18,7 @@
 """Common exception handler class."""
 
 import copy
+import logging
 
 from django.db import IntegrityError
 from django.http import Http404
@@ -29,6 +30,8 @@ from management.role.v2_exceptions import RolesNotFoundError
 from management.utils import api_path_prefix, v2response_error_from_errors
 from rest_framework import status
 from rest_framework.views import Response, exception_handler
+
+logger = logging.getLogger(__name__)
 
 
 def _generate_errors_from_list(data, **kwargs):
@@ -115,6 +118,18 @@ def custom_exception_handler_v2(exc, context):
             status=status.HTTP_400_BAD_REQUEST,
         )
     elif isinstance(exc, InvalidTokenError):
+        # Log authentication failure - SEC-MON-REQ-1 compliance (#7 invalid_login)
+        request = context.get("request")
+        logger.warning(
+            "Authentication failed: Invalid token",
+            extra={
+                "event": "authentication_failure",
+                "reason": "Invalid token provided",
+                "endpoint": request.path if request else None,
+                "method": request.method if request else None,
+                "outcome": "failure",
+            },
+        )
         response = Response(
             data=_v2_generate_error_data_payload_response(
                 detail="Invalid token provided.", context=context, http_status_code=status.HTTP_401_UNAUTHORIZED
@@ -123,6 +138,18 @@ def custom_exception_handler_v2(exc, context):
             status=status.HTTP_401_UNAUTHORIZED,
         )
     elif isinstance(exc, MissingAuthorizationError):
+        # Log authentication failure - SEC-MON-REQ-1 compliance (#7 invalid_login)
+        request = context.get("request")
+        logger.warning(
+            "Authentication failed: Missing authorization header",
+            extra={
+                "event": "authentication_failure",
+                "reason": "Missing Bearer token in authorization header",
+                "endpoint": request.path if request else None,
+                "method": request.method if request else None,
+                "outcome": "failure",
+            },
+        )
         response = Response(
             data=_v2_generate_error_data_payload_response(
                 detail="A Bearer token in an authorization header is required when performing service account"
@@ -202,6 +229,18 @@ def custom_exception_handler(exc, context):
             status=status.HTTP_400_BAD_REQUEST,
         )
     elif isinstance(exc, InvalidTokenError):
+        # Log authentication failure - SEC-MON-REQ-1 compliance (#7 invalid_login)
+        request = context.get("request")
+        logger.warning(
+            "Authentication failed: Invalid token (v1)",
+            extra={
+                "event": "authentication_failure",
+                "reason": "Invalid token provided",
+                "endpoint": request.path if request else None,
+                "method": request.method if request else None,
+                "outcome": "failure",
+            },
+        )
         response = Response(
             data=_generate_error_data_payload_response(
                 detail="Invalid token provided.", context=context, http_status_code=status.HTTP_401_UNAUTHORIZED
@@ -210,6 +249,18 @@ def custom_exception_handler(exc, context):
             status=status.HTTP_401_UNAUTHORIZED,
         )
     elif isinstance(exc, MissingAuthorizationError):
+        # Log authentication failure - SEC-MON-REQ-1 compliance (#7 invalid_login)
+        request = context.get("request")
+        logger.warning(
+            "Authentication failed: Missing authorization header (v1)",
+            extra={
+                "event": "authentication_failure",
+                "reason": "Missing Bearer token in authorization header",
+                "endpoint": request.path if request else None,
+                "method": request.method if request else None,
+                "outcome": "failure",
+            },
+        )
         response = Response(
             data=_generate_error_data_payload_response(
                 detail="A Bearer token in an authorization header is required when performing service account"

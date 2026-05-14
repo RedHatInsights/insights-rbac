@@ -141,7 +141,26 @@ class WorkspaceAccessPermission(permissions.BasePermission):
             return True
         if system_check.result == SystemUserAccessResult.DENIED:
             log_ctx = _build_s2s_log_context(request, view, ws_id)
-            logger.info("S2S system user access denied: not admin (v2) %s", log_ctx)
+            # Log authorization failure - SEC-MON-REQ-1 compliance (#8 authorization_failure)
+            logger.warning(
+                "S2S system user access denied: not admin (v2)",
+                extra={
+                    "event": "authorization_failure",
+                    "principal": {
+                        "org_id": getattr(request.user, "org_id", None),
+                        "user_id": getattr(request.user, "user_id", None),
+                        "system": True,
+                        "admin": False,
+                    },
+                    "resource_type": "workspace",
+                    "resource_id": ws_id,
+                    "required_permission": perm,
+                    "outcome": "failure",
+                    "reason": "System user without admin privileges",
+                    "endpoint": request.path,
+                    "context": log_ctx,
+                },
+            )
             return False
         if system_check.result == SystemUserAccessResult.CHECK_MOVE_TARGET:
             result = self._check_move_target_exists_v1(request)
@@ -157,6 +176,23 @@ class WorkspaceAccessPermission(permissions.BasePermission):
         # ws_id is the parent workspace ID where the new workspace will be created
         if view.action == "create":
             if not is_user_allowed_v2(request, perm, ws_id):
+                # Log authorization failure - SEC-MON-REQ-1 compliance (#8 authorization_failure)
+                logger.warning(
+                    "Authorization denied for workspace create operation",
+                    extra={
+                        "event": "authorization_failure",
+                        "principal": {
+                            "org_id": getattr(request.user, "org_id", None),
+                            "user_id": getattr(request.user, "user_id", None),
+                        },
+                        "resource_type": "workspace",
+                        "resource_id": ws_id,
+                        "required_permission": perm,
+                        "outcome": "failure",
+                        "reason": "User lacks create permission on parent workspace",
+                        "endpoint": request.path,
+                    },
+                )
                 return False
             return True
 
@@ -201,10 +237,45 @@ class WorkspaceAccessPermission(permissions.BasePermission):
         # Non-admin user (including system users without admin)
         if is_system_user:
             log_ctx = _build_s2s_log_context(request, view, ws_id)
-            logger.info("S2S system user access denied: not admin %s", log_ctx)
+            # Log authorization failure - SEC-MON-REQ-1 compliance (#8 authorization_failure)
+            logger.warning(
+                "S2S system user access denied: not admin (v1)",
+                extra={
+                    "event": "authorization_failure",
+                    "principal": {
+                        "org_id": getattr(request.user, "org_id", None),
+                        "user_id": getattr(request.user, "user_id", None),
+                        "system": True,
+                        "admin": False,
+                    },
+                    "resource_type": "workspace",
+                    "resource_id": ws_id,
+                    "outcome": "failure",
+                    "reason": "System user without admin privileges",
+                    "endpoint": request.path,
+                    "context": log_ctx,
+                },
+            )
 
         op = operation_from_request(request)
         if not is_user_allowed_v1(request, op, ws_id):
+            # Log authorization failure - SEC-MON-REQ-1 compliance (#8 authorization_failure)
+            logger.warning(
+                "Authorization denied by V1 role-based check",
+                extra={
+                    "event": "authorization_failure",
+                    "principal": {
+                        "org_id": getattr(request.user, "org_id", None),
+                        "user_id": getattr(request.user, "user_id", None),
+                    },
+                    "resource_type": "workspace",
+                    "resource_id": ws_id,
+                    "required_permission": op,
+                    "outcome": "failure",
+                    "reason": "User lacks required permission for workspace operation",
+                    "endpoint": request.path,
+                },
+            )
             return False
 
         # For move operations, also check target workspace access (V1 non-admin only)
@@ -261,6 +332,23 @@ class WorkspaceAccessPermission(permissions.BasePermission):
 
         # V2: Check 'create' permission on target workspace via Inventory API
         if not is_user_allowed_v2(request, "create", target_workspace_id):
+            # Log authorization failure - SEC-MON-REQ-1 compliance (#8 authorization_failure)
+            logger.warning(
+                "Authorization denied for workspace move: no access to target workspace",
+                extra={
+                    "event": "authorization_failure",
+                    "principal": {
+                        "org_id": getattr(request.user, "org_id", None),
+                        "user_id": getattr(request.user, "user_id", None),
+                    },
+                    "resource_type": "workspace",
+                    "resource_id": target_workspace_id,
+                    "required_permission": "create",
+                    "outcome": "failure",
+                    "reason": "User lacks create permission on target workspace for move operation",
+                    "endpoint": request.path,
+                },
+            )
             self.message = TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE
             return False
 
@@ -285,6 +373,23 @@ class WorkspaceAccessPermission(permissions.BasePermission):
 
         # V1: Check 'write' operation on target workspace
         if not is_user_allowed_v1(request, "write", target_workspace_id):
+            # Log authorization failure - SEC-MON-REQ-1 compliance (#8 authorization_failure)
+            logger.warning(
+                "Authorization denied for workspace move: no write access to target workspace",
+                extra={
+                    "event": "authorization_failure",
+                    "principal": {
+                        "org_id": getattr(request.user, "org_id", None),
+                        "user_id": getattr(request.user, "user_id", None),
+                    },
+                    "resource_type": "workspace",
+                    "resource_id": target_workspace_id,
+                    "required_permission": "write",
+                    "outcome": "failure",
+                    "reason": "User lacks write permission on target workspace for move operation",
+                    "endpoint": request.path,
+                },
+            )
             self.message = TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE
             return False
 

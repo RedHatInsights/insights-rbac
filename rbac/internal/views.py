@@ -988,7 +988,6 @@ def bootstrap_tenant(request):
     """
     if request.method != "POST":
         return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
-    logger.info("Running bootstrap tenant.")
 
     if not request.body:
         return HttpResponse('Invalid request, must supply the "org_ids" in body.', status=400)
@@ -1014,14 +1013,68 @@ def bootstrap_tenant(request):
 
     # Handle force_admin_only separately - this is safe even with replication on
     if force_admin_only:
+        # Log admin-only bootstrap - SEC-MON-REQ-1 compliance (#3 admin_action)
+        logger.info(
+            "Internal API: Admin-only bootstrap starting",
+            extra={
+                "action": "BOOTSTRAP_ADMIN",
+                "api_type": "internal",
+                "principal": getattr(request.user, "username", "unknown"),
+                "resource_type": "tenant",
+                "org_ids": org_ids,
+                "outcome": "in_progress",
+                "endpoint": request.path,
+            },
+        )
         results = [fix_admin_default_bindings(org_id) for org_id in org_ids]
+        logger.info(
+            "Internal API: Admin-only bootstrap completed",
+            extra={
+                "action": "BOOTSTRAP_ADMIN",
+                "api_type": "internal",
+                "principal": getattr(request.user, "username", "unknown"),
+                "resource_type": "tenant",
+                "org_ids": org_ids,
+                "outcome": "success",
+                "endpoint": request.path,
+            },
+        )
         return JsonResponse({"results": results}, status=200)
+
+    # Log full bootstrap - SEC-MON-REQ-1 compliance (#3 admin_action)
+    logger.info(
+        "Internal API: Tenant bootstrap starting",
+        extra={
+            "action": "BOOTSTRAP_TENANT",
+            "api_type": "internal",
+            "principal": getattr(request.user, "username", "unknown"),
+            "resource_type": "tenant",
+            "org_ids": org_ids,
+            "force": force,
+            "outcome": "in_progress",
+            "endpoint": request.path,
+        },
+    )
 
     with transaction.atomic():
         bootstrap_service = V2TenantBootstrapService(OutboxReplicator())
         for org_id in org_ids:
             tenant = get_object_or_404(Tenant, org_id=org_id)
             bootstrap_service.bootstrap_tenant(tenant, force=force)
+
+    logger.info(
+        "Internal API: Tenant bootstrap completed",
+        extra={
+            "action": "BOOTSTRAP_TENANT",
+            "api_type": "internal",
+            "principal": getattr(request.user, "username", "unknown"),
+            "resource_type": "tenant",
+            "org_ids": org_ids,
+            "force": force,
+            "outcome": "success",
+            "endpoint": request.path,
+        },
+    )
     return HttpResponse(f"Bootstrapping tenants with org_ids {org_ids} were finished.", status=200)
 
 
@@ -1053,7 +1106,37 @@ def list_or_delete_bindings_for_role(request, role_uuid):
         result = serializer.data or []
         return HttpResponse(json.dumps(result), content_type="application/json", status=200)
     else:
+        # DELETE operation - SEC-MON-REQ-1 compliance (#3 admin_action)
+        bindings_count = bindings.count()
+        logger.info(
+            "Internal API: Deleting role bindings",
+            extra={
+                "action": "DELETE",
+                "api_type": "internal",
+                "principal": getattr(request.user, "username", "unknown"),
+                "resource_type": "role_binding",
+                "resource_id": role_uuid,
+                "bindings_count": bindings_count,
+                "outcome": "in_progress",
+                "endpoint": request.path,
+            },
+        )
+
         info = delete_bindings(bindings)
+
+        logger.info(
+            "Internal API: Role bindings deleted successfully",
+            extra={
+                "action": "DELETE",
+                "api_type": "internal",
+                "principal": getattr(request.user, "username", "unknown"),
+                "resource_type": "role_binding",
+                "resource_id": role_uuid,
+                "bindings_deleted": info.get("deleted", 0) if isinstance(info, dict) else bindings_count,
+                "outcome": "success",
+                "endpoint": request.path,
+            },
+        )
         return HttpResponse(json.dumps(info), status=200)
 
 

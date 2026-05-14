@@ -16,11 +16,15 @@
 #
 """Defines the Group Access Permissions class."""
 
+import logging
+
 from management.permissions.utils import is_scope_principal
 from rest_framework import permissions
 from rest_framework.request import Request
 
 from rbac.env import ENVIRONMENT
+
+logger = logging.getLogger(__name__)
 
 # Allowed methods to be able to modify principals from a group.
 ALLOWED_METHODS = ["DELETE", "POST"]
@@ -55,9 +59,43 @@ class GroupAccessPermission(permissions.BasePermission):
                 if group_write and principal_write:
                     return True
                 else:
+                    # Log authorization failure - SEC-MON-REQ-1 compliance (#8 authorization_failure)
+                    logger.warning(
+                        "Authorization denied: User lacks group write or principal write permission",
+                        extra={
+                            "event": "authorization_failure",
+                            "principal": {
+                                "username": request.user.username,
+                                "org_id": getattr(request.user, "org_id", None),
+                                "user_id": getattr(request.user, "user_id", None),
+                            },
+                            "resource_type": "group",
+                            "required_permission": "group.write and principal.write",
+                            "outcome": "failure",
+                            "reason": "User Access Administrator rights required to modify group principals",
+                            "endpoint": request.path,
+                        },
+                    )
                     return False
 
             if group_write:
                 return True
 
+        # Log authorization failure - SEC-MON-REQ-1 compliance (#8 authorization_failure)
+        logger.warning(
+            "Authorization denied: User lacks required group permissions",
+            extra={
+                "event": "authorization_failure",
+                "principal": {
+                    "username": request.user.username,
+                    "org_id": getattr(request.user, "org_id", None),
+                    "user_id": getattr(request.user, "user_id", None),
+                },
+                "resource_type": "group",
+                "required_permission": "group.read" if request.method in permissions.SAFE_METHODS else "group.write",
+                "outcome": "failure",
+                "reason": "User lacks required group permissions",
+                "endpoint": request.path,
+            },
+        )
         return False

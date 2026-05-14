@@ -64,24 +64,92 @@ class RoleV2KesselAccessPermission(permissions.BasePermission):
         """
         tenant = getattr(request, "tenant", None)
         if tenant is None:
-            logger.debug("Denied role access: no tenant on request")
+            # Log authorization failure - SEC-MON-REQ-1 compliance (#8 authorization_failure)
+            logger.warning(
+                "Authorization denied: No tenant on request",
+                extra={
+                    "event": "authorization_failure",
+                    "principal": {
+                        "username": getattr(request.user, "username", None),
+                        "org_id": getattr(request.user, "org_id", None),
+                        "user_id": getattr(request.user, "user_id", None),
+                    },
+                    "resource_type": "role_v2",
+                    "outcome": "failure",
+                    "reason": "No tenant on request",
+                    "endpoint": request.path,
+                },
+            )
             return False
 
         org_resource_id = tenant.tenant_resource_id()
         if not org_resource_id:
-            logger.debug("Denied role access: tenant has no resource ID")
+            # Log authorization failure - SEC-MON-REQ-1 compliance (#8 authorization_failure)
+            logger.warning(
+                "Authorization denied: Tenant has no resource ID",
+                extra={
+                    "event": "authorization_failure",
+                    "principal": {
+                        "username": getattr(request.user, "username", None),
+                        "org_id": getattr(request.user, "org_id", None),
+                        "user_id": getattr(request.user, "user_id", None),
+                    },
+                    "resource_type": "role_v2",
+                    "outcome": "failure",
+                    "reason": "Tenant has no resource ID",
+                    "endpoint": request.path,
+                },
+            )
             return False
 
         principal_id = get_kessel_principal_id(request)
         if not principal_id:
-            logger.debug("Denied role access: could not determine principal ID")
+            # Log authorization failure - SEC-MON-REQ-1 compliance (#8 authorization_failure)
+            logger.warning(
+                "Authorization denied: Could not determine principal ID",
+                extra={
+                    "event": "authorization_failure",
+                    "principal": {
+                        "username": getattr(request.user, "username", None),
+                        "org_id": getattr(request.user, "org_id", None),
+                        "user_id": getattr(request.user, "user_id", None),
+                    },
+                    "resource_type": "role_v2",
+                    "outcome": "failure",
+                    "reason": "Could not determine Kessel principal ID",
+                    "endpoint": request.path,
+                },
+            )
             return False
 
         relation = self._get_relation(view)
         checker = WorkspaceInventoryAccessChecker()
-        return checker.check_resource_access(
+        has_access = checker.check_resource_access(
             resource_type=self.RESOURCE_TYPE,
             resource_id=org_resource_id,
             principal_id=principal_id,
             relation=relation,
         )
+
+        if not has_access:
+            # Log authorization failure - SEC-MON-REQ-1 compliance (#8 authorization_failure)
+            logger.warning(
+                "Authorization denied by Kessel permission check for Role V2 API",
+                extra={
+                    "event": "authorization_failure",
+                    "principal": {
+                        "username": getattr(request.user, "username", None),
+                        "org_id": getattr(request.user, "org_id", None),
+                        "user_id": getattr(request.user, "user_id", None),
+                        "kessel_principal_id": principal_id,
+                    },
+                    "resource_type": "role_v2",
+                    "resource_id": org_resource_id,
+                    "required_permission": relation,
+                    "outcome": "failure",
+                    "reason": "Kessel Inventory permission check denied",
+                    "endpoint": request.path,
+                },
+            )
+
+        return has_access

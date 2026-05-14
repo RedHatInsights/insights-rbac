@@ -17,6 +17,8 @@
 
 """Model for audit logging."""
 
+import logging
+
 from django.db import models
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -27,6 +29,8 @@ from management.role.v2_model import RoleV2
 from management.workspace.model import Workspace
 
 from api.models import Tenant, TenantAwareModel
+
+logger = logging.getLogger(__name__)
 
 
 class AuditLog(TenantAwareModel):
@@ -190,6 +194,22 @@ class AuditLog(TenantAwareModel):
         self.tenant_id = self.get_tenant_id(request)
         super(AuditLog, self).save()
 
+        # Emit structured security log to stdout - SEC-MON-REQ-1 compliance (#1 pii_manipulation)
+        logger.info(
+            description,
+            extra={
+                "action": action,
+                "resource_type": resource_type,
+                "resource_id": str(resource_uuid) if resource_uuid else None,
+                "outcome": "success",
+                "principal": {
+                    "username": request.user.username,
+                    "org_id": getattr(request.user, "org_id", None),
+                    "user_id": getattr(request.user, "user_id", None),
+                },
+            },
+        )
+
     def log_create(self, request, resource):
         """Audit Log when a role or a group is created."""
         self.principal_username = request.user.username
@@ -202,6 +222,22 @@ class AuditLog(TenantAwareModel):
         self.action = AuditLog.CREATE
         self.tenant_id = self.get_tenant_id(request)
         super(AuditLog, self).save()
+
+        # Emit structured security log to stdout - SEC-MON-REQ-1 compliance (#1 pii_manipulation)
+        logger.info(
+            self.description,
+            extra={
+                "action": "CREATE",
+                "resource_type": resource,
+                "resource_id": str(self.resource_uuid) if self.resource_uuid else str(self.resource_id),
+                "outcome": "success",
+                "principal": {
+                    "username": request.user.username,
+                    "org_id": getattr(request.user, "org_id", None),
+                    "user_id": getattr(request.user, "user_id", None),
+                },
+            },
+        )
 
     def log_delete(self, request, resource, object):
         """Audit Log when a role or a group is deleted."""
@@ -218,6 +254,22 @@ class AuditLog(TenantAwareModel):
         self.tenant_id = self.get_tenant_id(request)
         super(AuditLog, self).save()
 
+        # Emit structured security log to stdout - SEC-MON-REQ-1 compliance (#1 pii_manipulation)
+        logger.info(
+            self.description,
+            extra={
+                "action": "DELETE",
+                "resource_type": resource,
+                "resource_id": str(self.resource_uuid) if self.resource_uuid else str(self.resource_id),
+                "outcome": "success",
+                "principal": {
+                    "username": request.user.username,
+                    "org_id": getattr(request.user, "org_id", None),
+                    "user_id": getattr(request.user, "user_id", None),
+                },
+            },
+        )
+
     def log_edit(self, request, resource, object):
         """Audit Log when a role or a group is edit."""
         self.principal_username = request.user.username
@@ -232,6 +284,22 @@ class AuditLog(TenantAwareModel):
         self.action = AuditLog.EDIT
         self.tenant_id = self.get_tenant_id(request)
         super(AuditLog, self).save()
+
+        # Emit structured security log to stdout - SEC-MON-REQ-1 compliance (#1 pii_manipulation)
+        logger.info(
+            self.description,
+            extra={
+                "action": "UPDATE",
+                "resource_type": resource,
+                "resource_id": str(self.resource_uuid) if self.resource_uuid else str(self.resource_id),
+                "outcome": "success",
+                "principal": {
+                    "username": request.user.username,
+                    "org_id": getattr(request.user, "org_id", None),
+                    "user_id": getattr(request.user, "user_id", None),
+                },
+            },
+        )
 
     def log_group_assignment(
         self, request, resource_type, resource, secondary_resource_object, assigned_resource_type
@@ -263,6 +331,24 @@ class AuditLog(TenantAwareModel):
         self.tenant_id = self.get_tenant_id(request)
         super(AuditLog, self).save()
 
+        # Emit structured security log to stdout - SEC-MON-REQ-1 compliance (#1 pii_manipulation)
+        logger.info(
+            self.description,
+            extra={
+                "action": "ADD",
+                "resource_type": resource_type,
+                "resource_id": str(self.resource_uuid) if self.resource_uuid else str(self.resource_id),
+                "secondary_resource_id": str(self.secondary_resource_uuid) if self.secondary_resource_uuid else None,
+                "secondary_resource_type": assigned_resource_type,
+                "outcome": "success",
+                "principal": {
+                    "username": request.user.username,
+                    "org_id": getattr(request.user, "org_id", None),
+                    "user_id": getattr(request.user, "user_id", None),
+                },
+            },
+        )
+
     def log_group_remove(self, request, resource_type, resource, secondary_resource_object, assigned_resource_type):
         """Audit Log when a role, user/principal, or service account is removed from a group."""
         self.principal_username = request.user.username
@@ -292,3 +378,21 @@ class AuditLog(TenantAwareModel):
         self.action = AuditLog.REMOVE
         self.tenant_id = self.get_tenant_id(request)
         super(AuditLog, self).save()
+
+        # Emit structured security log to stdout - SEC-MON-REQ-1 compliance (#1 pii_manipulation)
+        logger.info(
+            self.description,
+            extra={
+                "action": "REMOVE",
+                "resource_type": resource_type,
+                "resource_id": str(self.resource_uuid) if self.resource_uuid else str(self.resource_id),
+                "secondary_resource_id": str(self.secondary_resource_uuid) if self.secondary_resource_uuid else None,
+                "secondary_resource_type": assigned_resource_type,
+                "outcome": "success",
+                "principal": {
+                    "username": request.user.username,
+                    "org_id": getattr(request.user, "org_id", None),
+                    "user_id": getattr(request.user, "user_id", None),
+                },
+            },
+        )

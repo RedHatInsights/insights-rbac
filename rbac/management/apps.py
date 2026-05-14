@@ -17,9 +17,11 @@
 """Management application configuration module."""
 
 import logging
+import signal
 import sys
 
 from django.apps import AppConfig
+from django.conf import settings
 from django.db.utils import OperationalError, ProgrammingError
 from management.seeds import group_seeding, permission_seeding, role_seeding
 
@@ -32,6 +34,21 @@ from rbac.settings import (
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
 
 
+def _shutdown_handler(signum, frame):
+    """Handle graceful shutdown signals - SEC-MON-REQ-1 compliance (#5 process_status)."""
+    signal_name = (
+        "SIGTERM" if signum == signal.SIGTERM else "SIGINT" if signum == signal.SIGINT else f"Signal {signum}"
+    )
+    logger.info(
+        "RBAC service shutting down",
+        extra={
+            "event": "shutdown",
+            "signal": signal_name,
+            "version": settings.GIT_COMMIT,
+        },
+    )
+
+
 class ManagementConfig(AppConfig):
     """Management application configuration."""
 
@@ -42,6 +59,32 @@ class ManagementConfig(AppConfig):
         # Don't run on Django tab completion commands
         if "manage.py" in sys.argv[0] and "runserver" not in sys.argv:
             return
+
+        # Register shutdown signal handlers - SEC-MON-REQ-1 compliance (#5 process_status)
+        signal.signal(signal.SIGTERM, _shutdown_handler)
+        signal.signal(signal.SIGINT, _shutdown_handler)
+
+        # Log startup configuration - SEC-MON-REQ-1 compliance (#5 process_status)
+        logger.info(
+            "RBAC service starting",
+            extra={
+                "event": "startup",
+                "version": settings.GIT_COMMIT,
+                "config": {
+                    "v2_apis_enabled": settings.V2_APIS_ENABLED,
+                    "v2_edit_api_enabled": settings.V2_EDIT_API_ENABLED,
+                    "workspace_access_check_v2_enabled": settings.WORKSPACE_ACCESS_CHECK_V2_ENABLED,
+                    "kessel_relations_server": settings.RELATION_API_SERVER,
+                    "kessel_inventory_server": settings.INVENTORY_API_SERVER,
+                    "kafka_enabled": settings.KAFKA_ENABLED,
+                    "replication_to_relation_enabled": settings.REPLICATION_TO_RELATION_ENABLED,
+                    "read_only_api_mode": settings.READ_ONLY_API_MODE,
+                    "clowder_enabled": settings.CLOWDER_ENABLED,
+                    "env_name": settings.ENV_NAME,
+                },
+            },
+        )
+
         try:
             if PERMISSION_SEEDING_ENABLED:
                 permission_seeding()

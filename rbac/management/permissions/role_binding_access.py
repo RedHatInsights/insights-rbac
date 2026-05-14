@@ -70,6 +70,23 @@ class RoleBindingSystemUserAccessPermission(permissions.BasePermission):
 
         # System users without admin are denied
         if _is_system_user_without_admin(user):
+            # Log authorization failure - SEC-MON-REQ-1 compliance (#8 authorization_failure)
+            logger.warning(
+                "Authorization denied for system user without admin privileges",
+                extra={
+                    "event": "authorization_failure",
+                    "principal": {
+                        "org_id": getattr(user, "org_id", None),
+                        "system": True,
+                        "admin": False,
+                    },
+                    "resource_type": "role_binding",
+                    "required_permission": "admin",
+                    "outcome": "failure",
+                    "reason": "System user without admin privileges",
+                    "endpoint": request.path,
+                },
+            )
             return False
 
         # All other users pass through to next permission class (Kessel check)
@@ -236,24 +253,84 @@ class RoleBindingKesselAccessPermission(permissions.BasePermission):
                          don't pre-resolve).
         """
         if resource_type not in self.ALLOWED_RESOURCE_TYPES:
-            logger.debug("Denied access for unknown resource_type: %s", resource_type)
+            # Log authorization failure - SEC-MON-REQ-1 compliance (#8 authorization_failure)
+            logger.warning(
+                "Authorization denied for unknown resource type",
+                extra={
+                    "event": "authorization_failure",
+                    "principal": {
+                        "org_id": getattr(request.user, "org_id", None),
+                        "user_id": getattr(request.user, "user_id", None),
+                    },
+                    "resource_type": resource_type,
+                    "resource_id": resource_id,
+                    "required_permission": relation,
+                    "outcome": "failure",
+                    "reason": f"Unknown resource type: {resource_type}",
+                    "endpoint": request.path,
+                },
+            )
             return False
 
         if resource_type == "tenant":
             is_org_admin = getattr(request.user, "admin", False)
             if not is_org_admin:
-                logger.debug("Denied access for tenant resource: only org admins allowed")
+                # Log authorization failure - SEC-MON-REQ-1 compliance (#8 authorization_failure)
+                logger.warning(
+                    "Authorization denied for tenant resource: non-admin user",
+                    extra={
+                        "event": "authorization_failure",
+                        "principal": {
+                            "org_id": getattr(request.user, "org_id", None),
+                            "user_id": getattr(request.user, "user_id", None),
+                            "admin": False,
+                        },
+                        "resource_type": "tenant",
+                        "resource_id": resource_id,
+                        "required_permission": "admin",
+                        "outcome": "failure",
+                        "reason": "Only org admins allowed for tenant resources",
+                        "endpoint": request.path,
+                    },
+                )
                 return False
             tenant = getattr(request, "tenant", None)
             if tenant is None:
-                logger.debug("Denied access for tenant resource: no tenant on request")
+                # Log authorization failure - SEC-MON-REQ-1 compliance (#8 authorization_failure)
+                logger.warning(
+                    "Authorization denied: no tenant on request",
+                    extra={
+                        "event": "authorization_failure",
+                        "principal": {
+                            "org_id": getattr(request.user, "org_id", None),
+                            "user_id": getattr(request.user, "user_id", None),
+                        },
+                        "resource_type": "tenant",
+                        "resource_id": resource_id,
+                        "outcome": "failure",
+                        "reason": "No tenant on request",
+                        "endpoint": request.path,
+                    },
+                )
                 return False
             expected_resource_id = tenant.tenant_resource_id()
             if expected_resource_id is None or resource_id != expected_resource_id:
-                logger.debug(
-                    "Denied access for tenant resource: resource_id %s does not match tenant %s",
-                    resource_id,
-                    expected_resource_id,
+                # Log authorization failure - SEC-MON-REQ-1 compliance (#8 authorization_failure)
+                logger.warning(
+                    "Authorization denied: tenant resource ID mismatch",
+                    extra={
+                        "event": "authorization_failure",
+                        "principal": {
+                            "org_id": getattr(request.user, "org_id", None),
+                            "user_id": getattr(request.user, "user_id", None),
+                        },
+                        "resource_type": "tenant",
+                        "resource_id": resource_id,
+                        "expected_resource_id": expected_resource_id,
+                        "outcome": "failure",
+                        "reason": "Resource ID does not match tenant",
+                        "endpoint": request.path,
+                    },
                 )
                 return False
             return True
@@ -261,12 +338,51 @@ class RoleBindingKesselAccessPermission(permissions.BasePermission):
         if principal_id is None:
             principal_id = get_kessel_principal_id(request)
         if not principal_id:
+            # Log authorization failure - SEC-MON-REQ-1 compliance (#8 authorization_failure)
+            logger.warning(
+                "Authorization denied: unable to resolve principal ID",
+                extra={
+                    "event": "authorization_failure",
+                    "principal": {
+                        "org_id": getattr(request.user, "org_id", None),
+                        "user_id": getattr(request.user, "user_id", None),
+                    },
+                    "resource_type": resource_type,
+                    "resource_id": resource_id,
+                    "required_permission": relation,
+                    "outcome": "failure",
+                    "reason": "Unable to resolve Kessel principal ID",
+                    "endpoint": request.path,
+                },
+            )
             return False
 
         checker = WorkspaceInventoryAccessChecker()
-        return checker.check_resource_access(
+        has_access = checker.check_resource_access(
             resource_type=resource_type,
             resource_id=resource_id,
             principal_id=principal_id,
             relation=relation,
         )
+
+        if not has_access:
+            # Log authorization failure - SEC-MON-REQ-1 compliance (#8 authorization_failure)
+            logger.warning(
+                "Authorization denied by Kessel permission check",
+                extra={
+                    "event": "authorization_failure",
+                    "principal": {
+                        "org_id": getattr(request.user, "org_id", None),
+                        "user_id": getattr(request.user, "user_id", None),
+                        "kessel_principal_id": principal_id,
+                    },
+                    "resource_type": resource_type,
+                    "resource_id": resource_id,
+                    "required_permission": relation,
+                    "outcome": "failure",
+                    "reason": "Kessel Inventory permission check denied",
+                    "endpoint": request.path,
+                },
+            )
+
+        return has_access
