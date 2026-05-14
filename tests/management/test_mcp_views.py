@@ -4945,8 +4945,6 @@ class MCPGuideUserAccessDelegationV2Tests(MCPToolTestMixin, IdentityRequest):
             )
         )
 
-        TenantMapping.objects.create(tenant=self.tenant, v2_write_activated_at=timezone.now())
-
         self.public_tenant = Tenant.objects.get(tenant_name="public")
         self.user_access_admin_role = Role.objects.create(
             name="User Access administrator",
