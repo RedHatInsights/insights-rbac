@@ -86,6 +86,16 @@ _workspace_detail_view = WorkspaceViewSet.as_view({"get": "retrieve"})
 _role_binding_list_view = RoleBindingViewSet.as_view({"get": "list"})
 _role_binding_by_subject_view = RoleBindingViewSet.as_view({"get": "by_subject"})
 
+# Write views (POST)
+_group_create_view = GroupViewSet.as_view({"post": "create"})
+_group_principals_write_view = GroupViewSet.as_view({"post": "principals"})
+_group_roles_write_view = GroupViewSet.as_view({"post": "roles"})
+_role_v1_create_view = RoleViewSet.as_view({"post": "create"})
+_role_v2_create_view = RoleV2ViewSet.as_view({"post": "create"})
+_role_binding_batch_create_view = RoleBindingViewSet.as_view({"post": "batch_create"})
+_workspace_create_view = WorkspaceViewSet.as_view({"post": "create"})
+_cross_account_create_view = CrossAccountRequestViewSet.as_view({"post": "create"})
+
 logger = logging.getLogger(__name__)
 
 PROTOCOL_VERSION = "2025-03-26"
@@ -181,6 +191,7 @@ class ToolConfig:
     requires_auth: bool = False
     passes_request: bool = False
     api_version: str = ApiVersion.COMMON
+    write: bool = False
 
 
 _TOOL_CONFIG: dict[str, ToolConfig] = {}
@@ -191,6 +202,7 @@ def register_tool(
     description: str,
     requires_auth: bool = False,
     api_version: str = ApiVersion.COMMON,
+    write: bool = False,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Register a tool with both FastMCP and _TOOL_CONFIG.
 
@@ -212,6 +224,7 @@ def register_tool(
             requires_auth=requires_auth,
             passes_request=passes_request,
             api_version=api_version,
+            write=write,
         )
 
         if passes_request:
@@ -234,14 +247,23 @@ def register_tool(
     return decorator
 
 
-def _clone_request(source: HttpRequest, path: str, **kwargs: Any) -> HttpRequest:
+def _clone_request(
+    source: HttpRequest, path: str, *, method: str = "GET", body: Any = None, **kwargs: Any
+) -> HttpRequest:
     """Clone a Django request for internal view delegation.
 
     Copies authentication context (user, tenant, identity header) and
     selected tracing headers from the source request so that the target
     view applies the same permission checks and is observable in traces.
     """
-    view_request = _request_factory.get(path, **kwargs)
+    if method.upper() == "POST":
+        view_request = _request_factory.post(
+            path, data=json.dumps(body) if body is not None else "", content_type="application/json"
+        )
+    else:
+        view_request = _request_factory.get(path, **kwargs)
+
+    view_request._dont_enforce_csrf_checks = True
     view_request.user = source.user
     view_request.tenant = getattr(source, "tenant", None)
     view_request.req_id = getattr(source, "req_id", None)
@@ -256,6 +278,45 @@ def _clone_request(source: HttpRequest, path: str, **kwargs: Any) -> HttpRequest
             view_request.META[header] = value
 
     return view_request
+
+
+def _call_view_write(
+    request: HttpRequest,
+    view: Callable[..., Any],
+    path: str,
+    body: dict[str, Any],
+    **view_kwargs: str,
+) -> str:
+    """Call a Django view with a POST request and return the response body.
+
+    For 4xx/5xx responses, wraps the response body in an error structure
+    so MCP clients can distinguish success from failure without parsing
+    the view's raw output.
+    """
+    view_request = _clone_request(request, path, method="POST", body=body)
+    response = view(view_request, **view_kwargs)
+    if hasattr(response, "render"):
+        response = response.render()
+    content = response.content.decode()
+    if response.status_code >= 400:
+        return json.dumps({"error": f"HTTP {response.status_code}", "detail": content})
+    return content
+
+
+def _resolve_group_uuid(group_uuid: str, group_name: str, tenant) -> tuple[str | None, str | None]:
+    """Resolve a group to its UUID from either group_uuid or group_name.
+
+    Returns (resolved_uuid, error_json). On success error_json is None;
+    on failure resolved_uuid is None and error_json is a JSON error string.
+    """
+    if group_uuid:
+        return group_uuid, None
+    if group_name:
+        group = Group.objects.filter(name__iexact=group_name, tenant=tenant).only("uuid").first()
+        if not group:
+            return None, json.dumps({"error": f"Group '{group_name}' not found"})
+        return str(group.uuid), None
+    return None, json.dumps({"error": "Either group_uuid or group_name is required"})
 
 
 # --- Tool implementations ---
@@ -350,6 +411,7 @@ def _call_view(
 # │ list_audit_logs                  │ common    │ GET /api/v1/auditlogs/                     │
 # │ get_rbac_recent_changes          │ common    │ (in-process audit log analysis)            │
 # │ investigate_group_changes        │ common    │ (orchestrates audit log + authorization)   │
+# │ investigate_user_access          │ common    │ (groups + roles + permissions analysis)    │
 # │ list_groups                      │ common    │ GET /api/v1/groups/                        │
 # │ get_group                        │ common    │ GET /api/v1/groups/{uuid}/                 │
 # │ list_group_principals            │ common    │ GET /api/v1/groups/{uuid}/principals/      │
@@ -773,15 +835,10 @@ def list_group_roles(
     if not tenant:
         return json.dumps({"error": "No tenant context available"})
 
-    resolved_uuid = group_uuid
-    if not resolved_uuid and group_name:
-        group = Group.objects.filter(name__iexact=group_name, tenant=tenant).only("uuid").first()
-        if not group:
-            return json.dumps({"error": f"Group '{group_name}' not found"})
-        resolved_uuid = str(group.uuid)
-
-    if not resolved_uuid:
-        return json.dumps({"error": "Either group_uuid or group_name is required"})
+    resolved_uuid, error = _resolve_group_uuid(group_uuid, group_name, tenant)
+    if error:
+        return error
+    assert resolved_uuid is not None
 
     query_params: dict[str, str] = {
         "limit": str(limit),
@@ -2453,6 +2510,518 @@ def investigate_group_changes(
     return json.dumps(result, default=str)
 
 
+def _build_expected_perm_full(application: str, expected_permission: str, expected_verb: str) -> str:
+    """Build the full permission string to search for."""
+    if expected_permission and application:
+        if ":" in expected_permission:
+            return expected_permission
+        return f"{application}:*:{expected_permission}"
+    elif expected_verb and application:
+        return f"{application}:*:{expected_verb}"
+    return ""
+
+
+def _check_permission_match(
+    expected_perm_full: str,
+    expected_verb: str,
+    application: str,
+    all_permissions: set[str],
+    permission_sources: dict[str, list[dict[str, Any]]],
+) -> tuple[bool, str | None, list[dict[str, Any]]]:
+    """Check if expected permission is granted. Returns (found, matched_perm, sources)."""
+    for perm in all_permissions:
+        if (
+            _permission_matches(perm, expected_perm_full)
+            or _permission_matches(expected_perm_full, perm)
+            or (expected_verb and perm.endswith(f":{expected_verb}") and perm.startswith(f"{application}:"))
+        ):
+            return True, perm, permission_sources.get(perm, [])
+    return False, None, []
+
+
+def _get_available_verbs(application: str, all_permissions: set[str]) -> list[str]:
+    """Extract available verbs for an application from permissions."""
+    available_verbs: set[str] = set()
+    for perm in all_permissions:
+        if perm.startswith(f"{application}:"):
+            parts = perm.split(":")
+            if len(parts) >= 3:
+                available_verbs.add(parts[2])
+    return sorted(available_verbs)
+
+
+def _analyze_expected_permission(
+    application: str,
+    expected_permission: str,
+    expected_verb: str,
+    all_permissions: set[str],
+    permission_sources: dict[str, list[dict[str, Any]]],
+    is_org_admin: bool,
+    analysis: dict[str, Any],
+) -> None:
+    """Analyze whether expected permission is granted and update analysis dict in place."""
+    expected_perm_full = _build_expected_perm_full(application, expected_permission, expected_verb)
+    if not expected_perm_full:
+        return
+
+    has_permission, matched_permission, matched_sources = _check_permission_match(
+        expected_perm_full, expected_verb, application, all_permissions, permission_sources
+    )
+
+    if has_permission or is_org_admin:
+        analysis["has_expected_permission"] = True
+        analysis["expected_permission_check"] = {
+            "looking_for": expected_perm_full,
+            "found": True,
+            "matched_permission": matched_permission if not is_org_admin else "(org admin bypass)",
+            "granted_via": matched_sources if not is_org_admin else [{"role": "Org Admin"}],
+        }
+        if is_org_admin:
+            analysis["note"] = "User is org admin and has implicit access to everything"
+    else:
+        analysis["has_expected_permission"] = False
+        analysis["expected_permission_check"] = {
+            "looking_for": expected_perm_full,
+            "found": False,
+            "available_verbs_for_app": _get_available_verbs(application, all_permissions),
+        }
+
+
+@register_tool(
+    description=(
+        "Investigate why a user has or lacks expected permissions, especially when they belong to "
+        "multiple groups. Supports both V1 and V2 organizations (auto-detected). "
+        "Use this when a user reports they can't do something despite being in a group that should grant access. "
+        "SCENARIO: 'User is in Compliance Auditors AND Compliance Admins but can't edit compliance policies' "
+        "→ call investigate_user_access(username='user', application='compliance', expected_permission='write'). "
+        "The tool will: (1) confirm the user exists and check org admin status, (2) list ALL groups/role bindings, "
+        "(3) expand each role to show actual permissions, (4) check effective access for the application, "
+        "(5) identify if the expected permission is missing and explain why. "
+        "RBAC is additive, so users get the most permissive access from all their memberships. "
+        "Common causes: role doesn't contain the assumed permission, group doesn't have the expected role. "
+        "V1 RETURNS: {user, org_version, groups: [{roles: [{permissions}]}], effective_access, analysis}. "
+        "V2 RETURNS: {user, org_version, groups, role_bindings: [{role: {permissions}}], effective_access, analysis}."
+    ),
+    requires_auth=True,
+    api_version=ApiVersion.COMMON,
+)
+def investigate_user_access(
+    request: HttpRequest,
+    *,
+    username: str,
+    application: str = "",
+    expected_permission: str = "",
+    expected_verb: str = "",
+) -> str:
+    """Investigate why a user has or lacks expected permissions across multiple groups."""
+    tenant = getattr(request, "tenant", None)
+    if not tenant:
+        return json.dumps({"error": "No tenant context available"})
+
+    org_id = getattr(request.user, "org_id", None)
+    is_v2 = is_v2_write_activated(tenant)
+    org_version = "v2" if is_v2 else "v1"
+
+    # Step 1: Check if user exists and get org admin status
+    principal = Principal.objects.filter(username=username, tenant=tenant).first()
+    is_org_admin = False
+
+    if not principal:
+        return json.dumps(
+            {
+                "error": f"User '{username}' not found in this organization",
+                "hint": "Use list_principals(usernames='<partial>', match_criteria='partial') to search for the user.",
+            }
+        )
+
+    # Check org admin status via BOP
+    if org_id:
+        is_org_admin = _is_org_admin(username, org_id)
+
+    user_info: dict[str, Any] = {
+        "username": username,
+        "uuid": str(principal.uuid),
+        "exists": True,
+        "is_org_admin": is_org_admin,
+    }
+
+    if is_org_admin:
+        user_info["note"] = "User is an org admin and bypasses all RBAC checks"
+
+    # Branch based on V1 or V2
+    if is_v2:
+        return _investigate_user_access_v2(
+            request,
+            principal,
+            tenant,
+            username,
+            application,
+            expected_permission,
+            expected_verb,
+            user_info,
+            is_org_admin,
+            org_version,
+        )
+
+    # V1 path: Get all groups the user belongs to
+    groups = (
+        Group.objects.filter(principals=principal, tenant=tenant)
+        .prefetch_related("policies__roles__access__permission")
+        .order_by("name")
+    )
+    groups_list = list(groups)
+
+    if not groups_list and not is_org_admin:
+        return json.dumps(
+            {
+                "user": user_info,
+                "org_version": org_version,
+                "groups": [],
+                "effective_access": [],
+                "analysis": {
+                    "has_expected_permission": False,
+                    "message": f"User '{username}' is not a member of any groups. No permissions are granted.",
+                    "hint": "Use list_groups() to see available groups, then add the user to appropriate groups.",
+                },
+            }
+        )
+
+    # Step 3: For each group, get roles and expand to permissions (V1)
+    groups_data: list[dict[str, Any]] = []
+    all_permissions: set[str] = set()
+    permission_sources: dict[str, list[dict[str, str]]] = {}
+
+    for group in groups_list:
+        group_info: dict[str, Any] = {
+            "uuid": str(group.uuid),
+            "name": group.name,
+            "description": group.description or "",
+            "roles": [],
+        }
+
+        for policy in group.policies.all():
+            for role in policy.roles.all():
+                role_info: dict[str, Any] = {
+                    "uuid": str(role.uuid),
+                    "name": role.name,
+                    "display_name": role.display_name or role.name,
+                    "system": getattr(role, "system", False),
+                    "permissions": [],
+                }
+
+                for access in role.access.all():
+                    if access.permission:
+                        perm_str = access.permission.permission
+                        role_info["permissions"].append(perm_str)
+                        all_permissions.add(perm_str)
+
+                        if perm_str not in permission_sources:
+                            permission_sources[perm_str] = []
+                        permission_sources[perm_str].append(
+                            {
+                                "group": group.name,
+                                "role": role.display_name or role.name,
+                            }
+                        )
+
+                role_info["permission_count"] = len(role_info["permissions"])
+                group_info["roles"].append(role_info)
+
+        group_info["role_count"] = len(group_info["roles"])
+        groups_data.append(group_info)
+
+    # Step 4: Get effective access for the user (filtered by application if provided) - V1
+    effective_access: list[dict[str, Any]] = []
+    effective_access_error: str | None = None
+    if application:
+        path = reverse("v1_management:access")
+        query_params: dict[str, str] = {
+            "application": application,
+            "username": username,
+            "limit": "1000",
+        }
+        try:
+            raw = _call_view(request, _access_view, path, query_params)
+            data = json.loads(raw)
+            effective_access = data.get("data", [])
+        except Exception as e:
+            effective_access_error = str(e)
+            logger.warning("mcp: failed to get effective access for user=%s app=%s: %s", username, application, e)
+
+    # Step 5: Analyze the expected permission
+    analysis: dict[str, Any] = {
+        "total_groups": len(groups_data),
+        "total_roles": sum(g["role_count"] for g in groups_data),
+        "total_unique_permissions": len(all_permissions),
+    }
+
+    if effective_access_error:
+        analysis["effective_access_error"] = effective_access_error
+
+    if application:
+        app_permissions = [p for p in all_permissions if p.startswith(f"{application}:")]
+        analysis["permissions_for_application"] = sorted(app_permissions)
+        analysis["application_permission_count"] = len(app_permissions)
+
+    # Use shared helper for permission analysis
+    _analyze_expected_permission(
+        application, expected_permission, expected_verb, all_permissions, permission_sources, is_org_admin, analysis
+    )
+
+    # Add V1-specific gap analysis if permission not found
+    expected_perm_full = _build_expected_perm_full(application, expected_permission, expected_verb)
+    if expected_perm_full and analysis.get("has_expected_permission") is False:
+        gaps: list[str] = []
+        for group_data in groups_data:
+            group_name = group_data["name"]
+            has_any_app_access = False
+            for role_data in group_data["roles"]:
+                for perm in role_data["permissions"]:
+                    if perm.startswith(f"{application}:"):
+                        has_any_app_access = True
+                        break
+            if not has_any_app_access and application:
+                gaps.append(
+                    f"Group '{group_name}' has {len(group_data['roles'])} role(s) but none grant "
+                    f"any {application} permissions"
+                )
+            elif has_any_app_access:
+                app_perms_in_group = []
+                for role_data in group_data["roles"]:
+                    for perm in role_data["permissions"]:
+                        if perm.startswith(f"{application}:"):
+                            app_perms_in_group.append(f"{role_data['display_name']}: {perm}")
+                missing = expected_verb or expected_permission
+                avail = ", ".join(app_perms_in_group[:5])
+                suffix = f" (+{len(app_perms_in_group) - 5} more)" if len(app_perms_in_group) > 5 else ""
+                gaps.append(
+                    f"Group '{group_name}' grants {application} access but NOT '{missing}'. "
+                    f"Available: {avail}{suffix}"
+                )
+
+        analysis["gaps"] = gaps
+        analysis["diagnosis"] = (
+            f"User '{username}' does not have '{expected_perm_full}' permission. "
+            f"Neither of their {len(groups_data)} group memberships grants this specific access."
+        )
+
+    # Build final result (V1)
+    result: dict[str, Any] = {
+        "user": user_info,
+        "org_version": org_version,
+        "groups": groups_data,
+        "effective_access": effective_access if application else [],
+        "analysis": analysis,
+        "permission_sources": permission_sources,
+    }
+
+    # Add hints
+    result["hints"] = {
+        "verify_specific_permission": (
+            f"Use check_user_permission(username='{username}', permission='app:resource:verb')"
+        ),
+        "find_role_with_permission": "Use search_roles(permission='...') to find roles granting a permission",
+        "check_role_contents": "Use get_role(role_uuid='...') to see all permissions in a role",
+        "add_user_to_group": "Use list_groups(role_names='...') to find groups with a specific role",
+    }
+
+    return json.dumps(result, default=str)
+
+
+def _investigate_user_access_v2(
+    request: HttpRequest,
+    principal: Principal,
+    tenant: Any,
+    username: str,
+    application: str,
+    expected_permission: str,
+    expected_verb: str,
+    user_info: dict[str, Any],
+    is_org_admin: bool,
+    org_version: str,
+) -> str:
+    """Investigate user access for V2 organizations using role bindings."""
+    # Get groups the user belongs to
+    groups = Group.objects.filter(principals=principal, tenant=tenant).order_by("name")
+    groups_list = list(groups)
+
+    # Get direct role bindings for the principal
+    direct_binding_ids = set(
+        RoleBindingPrincipal.objects.filter(principal=principal).values_list("binding_id", flat=True)
+    )
+
+    # Get group-based role bindings with group info
+    group_bindings_qs = RoleBindingGroup.objects.filter(group__in=groups_list).select_related("group")
+    group_binding_ids: set[int] = set()
+    binding_to_group: dict[int, str] = {}
+    for rbg in group_bindings_qs:
+        group_binding_ids.add(rbg.binding_id)
+        binding_to_group[rbg.binding_id] = rbg.group.name
+
+    # Combine all binding IDs
+    all_binding_ids = direct_binding_ids | group_binding_ids
+
+    if not all_binding_ids and not groups_list and not is_org_admin:
+        return json.dumps(
+            {
+                "user": user_info,
+                "org_version": org_version,
+                "groups": [],
+                "role_bindings": [],
+                "effective_access": [],
+                "analysis": {
+                    "has_expected_permission": False,
+                    "message": f"User '{username}' has no role bindings or group memberships.",
+                    "hint": "Use list_role_bindings() to see available bindings.",
+                },
+            }
+        )
+
+    # Get all bindings with their roles and permissions
+    bindings = (
+        RoleBinding.objects.filter(id__in=all_binding_ids, tenant=tenant)
+        .select_related("role")
+        .prefetch_related("role__permissions")
+    )
+
+    # Build groups data
+    groups_data: list[dict[str, Any]] = []
+    for group in groups_list:
+        groups_data.append(
+            {
+                "uuid": str(group.uuid),
+                "name": group.name,
+                "description": group.description or "",
+            }
+        )
+
+    # Build role bindings data and collect permissions
+    bindings_data: list[dict[str, Any]] = []
+    all_permissions: set[str] = set()
+    permission_sources: dict[str, list[dict[str, str | None]]] = {}
+
+    for binding in bindings:
+        role = binding.role
+        if not role:
+            continue
+
+        # Determine binding source (direct or via group)
+        if binding.id in binding_to_group:
+            binding_source = "group"
+            source_group = binding_to_group[binding.id]
+        else:
+            binding_source = "direct"
+            source_group = None
+
+        permissions_list: list[str] = []
+        for perm in role.permissions.all():
+            perm_str = f"{perm.application}:{perm.resource_type}:{perm.verb}"
+            permissions_list.append(perm_str)
+            all_permissions.add(perm_str)
+
+            if perm_str not in permission_sources:
+                permission_sources[perm_str] = []
+            permission_sources[perm_str].append(
+                {
+                    "role": role.name,
+                    "binding_source": binding_source,
+                    "group": source_group,
+                    "resource_scope": f"{binding.resource_type}:{binding.resource_id}",
+                }
+            )
+
+        bindings_data.append(
+            {
+                "uuid": str(binding.uuid),
+                "role": {
+                    "uuid": str(role.uuid),
+                    "name": role.name,
+                    "permissions": permissions_list,
+                    "permission_count": len(permissions_list),
+                },
+                "binding_source": binding_source,
+                "source_group": source_group,
+                "resource_type": binding.resource_type,
+                "resource_id": binding.resource_id,
+            }
+        )
+
+    # Get effective access
+    effective_access = _get_user_access_v2(request, principal, tenant)
+    if application:
+        effective_access = [a for a in effective_access if a.get("application") == application]
+
+    # Build analysis
+    analysis: dict[str, Any] = {
+        "total_groups": len(groups_data),
+        "total_role_bindings": len(bindings_data),
+        "total_unique_permissions": len(all_permissions),
+    }
+
+    if application:
+        app_permissions = [p for p in all_permissions if p.startswith(f"{application}:")]
+        analysis["permissions_for_application"] = sorted(app_permissions)
+        analysis["application_permission_count"] = len(app_permissions)
+
+    # Use shared helper for permission analysis
+    _analyze_expected_permission(
+        application, expected_permission, expected_verb, all_permissions, permission_sources, is_org_admin, analysis
+    )
+
+    # Add V2-specific gap analysis if permission not found
+    expected_perm_full = _build_expected_perm_full(application, expected_permission, expected_verb)
+    if expected_perm_full and analysis.get("has_expected_permission") is False:
+        gaps: list[str] = []
+        for binding_data in bindings_data:
+            role_perms = binding_data["role"]["permissions"]
+            has_any_app_access = any(p.startswith(f"{application}:") for p in role_perms)
+            role_name = binding_data["role"]["name"]
+            source = binding_data["source_group"] or "direct binding"
+
+            if not has_any_app_access and application:
+                gaps.append(f"Role '{role_name}' (via {source}) has no {application} permissions")
+            elif has_any_app_access:
+                app_perms = [p for p in role_perms if p.startswith(f"{application}:")]
+                missing = expected_verb or expected_permission
+                gaps.append(
+                    f"Role '{role_name}' (via {source}) grants {application} access but NOT '{missing}'. "
+                    f"Has: {', '.join(app_perms[:3])}"
+                    + (f" (+{len(app_perms) - 3} more)" if len(app_perms) > 3 else "")
+                )
+
+        analysis["gaps"] = gaps
+        analysis["diagnosis"] = (
+            f"User '{username}' does not have '{expected_perm_full}' permission. "
+            f"None of their {len(bindings_data)} role binding(s) grants this access."
+        )
+
+    # Build result
+    result: dict[str, Any] = {
+        "user": user_info,
+        "org_version": org_version,
+        "groups": groups_data,
+        "role_bindings": bindings_data,
+        "effective_access": effective_access,
+        "analysis": analysis,
+        "permission_sources": permission_sources,
+    }
+
+    # Add hints
+    result["hints"] = {
+        "verify_specific_permission": (
+            f"Use check_user_permission(username='{username}', permission='app:resource:verb')"
+        ),
+        "list_user_bindings": (
+            f"Use list_role_bindings(granted_subject_type='principal', "
+            f"granted_subject_principal_user_id='{username}')"
+        ),
+        "find_role_with_permission": "Use search_roles(permission='...') to find roles granting a permission",
+        "check_role_contents": "Use get_role(role_uuid='...') to see all permissions in a role",
+    }
+
+    return json.dumps(result, default=str)
+
+
 def _get_user_access_v2(request: HttpRequest, principal: Principal, tenant: Any) -> list[dict[str, Any]]:
     """Get user's access permissions using V2 role bindings."""
     access_list: list[dict[str, Any]] = []
@@ -2501,6 +3070,276 @@ def _get_user_access_v2(request: HttpRequest, principal: Principal, tenant: Any)
                 )
 
     return access_list
+
+
+# --- Write tool implementations (gated by MCP_WRITE_ENABLED) ---
+
+# ┌──────────────────────────────────────┬───────────┬─────────────────────────────────────────────────────┐
+# │ MCP Tool                             │ Gating    │ API Endpoint                                        │
+# ├──────────────────────────────────────┼───────────┼─────────────────────────────────────────────────────┤
+# │ create_group                         │ both      │ POST /api/v1/groups/                                │
+# │ add_principals_to_group              │ both      │ POST /api/v1/groups/{uuid}/principals/              │
+# │ add_roles_to_group                   │ v1        │ POST /api/v1/groups/{uuid}/roles/                   │
+# │ create_role_v1                       │ v1        │ POST /api/v1/roles/                                 │
+# │ create_role                          │ v2        │ POST /api/v2/roles/                                 │
+# │ create_role_bindings                 │ v2        │ POST /api/v2/role-bindings/:batchCreate              │
+# │ create_workspace                     │ v2        │ POST /api/v2/workspaces/                            │
+# │ create_cross_account_request         │ both      │ POST /api/v1/cross-account-requests/                │
+# └──────────────────────────────────────┴───────────┴─────────────────────────────────────────────────────┘
+
+
+@register_tool(
+    description=(
+        "Create a new custom group. Groups are collections of principals (users) that can be "
+        "assigned roles. Works for both V1 and V2 organizations. "
+        "Required: name (string). Optional: description (string). "
+        "Example: create_group(name='Engineering Team', description='Backend engineers') "
+        "Returns: the created group object with uuid, name, description. "
+        "Calls: POST /api/v1/groups/"
+    ),
+    requires_auth=True,
+    write=True,
+)
+def create_group(
+    request: HttpRequest,
+    *,
+    name: str,
+    description: str = "",
+) -> str:
+    """Create a group by delegating to GroupViewSet."""
+    body: dict[str, Any] = {"name": name}
+    if description:
+        body["description"] = description
+
+    path = reverse("v1_management:group-list")
+    return _call_view_write(request, _group_create_view, path, body)
+
+
+@register_tool(
+    description=(
+        "Add one or more principals (users) to a group. Provide either group_uuid OR group_name "
+        "(group_uuid takes precedence). Works for both V1 and V2 organizations. "
+        "Required: principals (list of usernames to add). "
+        "Example: add_principals_to_group(group_name='Engineering', principals=['jdoe', 'jsmith']) "
+        "Returns: {principals: [{username}], ...}. "
+        "Calls: POST /api/v1/groups/{uuid}/principals/"
+    ),
+    requires_auth=True,
+    write=True,
+)
+def add_principals_to_group(
+    request: HttpRequest,
+    *,
+    group_uuid: str = "",
+    group_name: str = "",
+    principals: list[str],
+) -> str:
+    """Add principals to a group by delegating to GroupViewSet.principals."""
+    tenant = getattr(request, "tenant", None)
+    if not tenant:
+        return json.dumps({"error": "No tenant context available"})
+
+    resolved_uuid, error = _resolve_group_uuid(group_uuid, group_name, tenant)
+    if error:
+        return error
+    assert resolved_uuid is not None
+
+    body = {"principals": [{"username": u} for u in principals]}
+    path = reverse("v1_management:group-principals", kwargs={"uuid": resolved_uuid})
+    return _call_view_write(request, _group_principals_write_view, path, body, uuid=resolved_uuid)
+
+
+@register_tool(
+    description=(
+        "Assign one or more roles to a group. Provide either group_uuid OR group_name "
+        "(group_uuid takes precedence). V1 only -- blocked for V2 organizations "
+        "(use create_role_bindings instead). "
+        "Required: roles (list of role UUIDs to assign). "
+        "Example: add_roles_to_group(group_name='Engineering', roles=['uuid-1', 'uuid-2']) "
+        "Returns: the updated group-roles mapping. "
+        "Calls: POST /api/v1/groups/{uuid}/roles/"
+    ),
+    requires_auth=True,
+    write=True,
+    api_version=ApiVersion.V1,
+)
+def add_roles_to_group(
+    request: HttpRequest,
+    *,
+    group_uuid: str = "",
+    group_name: str = "",
+    roles: list[str],
+) -> str:
+    """Add roles to a group by delegating to GroupViewSet.roles."""
+    tenant = getattr(request, "tenant", None)
+    if not tenant:
+        return json.dumps({"error": "No tenant context available"})
+
+    resolved_uuid, error = _resolve_group_uuid(group_uuid, group_name, tenant)
+    if error:
+        return error
+    assert resolved_uuid is not None
+
+    body = {"roles": [{"uuid": r} for r in roles]}
+    path = reverse("v1_management:group-roles", kwargs={"uuid": resolved_uuid})
+    return _call_view_write(request, _group_roles_write_view, path, body, uuid=resolved_uuid)
+
+
+@register_tool(
+    description=(
+        "Create a custom role (V1 API). V1 only -- blocked for V2 organizations "
+        "(use create_role for V2). "
+        "Required: name, access (list of permission objects). "
+        "Each access entry needs: permission (string 'app:resource:verb') and optionally "
+        "resourceDefinitions (list of resource definition filters). "
+        "Example: create_role_v1(name='Cost Reader', access=[{'permission': 'cost-management:cost_model:read'}]) "
+        "Returns: the created role object with uuid, name, access list. "
+        "Calls: POST /api/v1/roles/"
+    ),
+    requires_auth=True,
+    write=True,
+    api_version=ApiVersion.V1,
+)
+def create_role_v1(
+    request: HttpRequest,
+    *,
+    name: str,
+    display_name: str = "",
+    description: str = "",
+    access: list[dict[str, Any]],
+) -> str:
+    """Create a V1 role by delegating to RoleViewSet."""
+    body: dict[str, Any] = {"name": name, "access": access}
+    if display_name:
+        body["display_name"] = display_name
+    if description:
+        body["description"] = description
+
+    path = reverse("v1_management:role-list")
+    return _call_view_write(request, _role_v1_create_view, path, body)
+
+
+@register_tool(
+    description=(
+        "Create a custom role (V2 API). V2 only -- requires workspace-enabled organization. "
+        "Required: name, permissions (list of permission objects). "
+        "Each permission needs: application, resource_type, operation. "
+        "Example: create_role(name='Cost Reader', permissions=[{'application': 'cost-management', "
+        "'resource_type': 'cost_model', 'operation': 'read'}]) "
+        "Returns: the created role object with uuid, name, permissions list. "
+        "Calls: POST /api/v2/roles/"
+    ),
+    requires_auth=True,
+    write=True,
+    api_version=ApiVersion.V2,
+)
+def create_role(
+    request: HttpRequest,
+    *,
+    name: str,
+    description: str = "",
+    permissions: list[dict[str, str]],
+) -> str:
+    """Create a V2 role by delegating to RoleV2ViewSet."""
+    body: dict[str, Any] = {"name": name, "permissions": permissions}
+    if description:
+        body["description"] = description
+
+    path = reverse("v2_management:roles-list")
+    return _call_view_write(request, _role_v2_create_view, path, body)
+
+
+@register_tool(
+    description=(
+        "Create role bindings (V2 API). Assigns roles to subjects (users/groups) "
+        "within resource scopes (workspaces). V2 only. Can create one or many bindings. "
+        "Required: bindings (list of binding objects, each with role, resource, subject). "
+        "Each binding needs: role (UUID string), resource (object with type and id), "
+        "subject (object with type and id -- type is 'principal' or 'group'). "
+        "Example: create_role_bindings(bindings=[{"
+        "'role': '<role-uuid>', 'resource': {'type': 'workspace', 'id': '<ws-uuid>'}, "
+        "'subject': {'type': 'principal', 'id': '<user-uuid>'}}]) "
+        "Returns: list of created role binding objects. "
+        "Calls: POST /api/v2/role-bindings/:batchCreate"
+    ),
+    requires_auth=True,
+    write=True,
+    api_version=ApiVersion.V2,
+)
+def create_role_bindings(
+    request: HttpRequest,
+    *,
+    bindings: list[dict[str, Any]],
+) -> str:
+    """Create role bindings by delegating to RoleBindingViewSet.batch_create."""
+    body: dict[str, Any] = {"requests": bindings}
+    path = reverse("v2_management:role-bindings-batch-create")
+    return _call_view_write(request, _role_binding_batch_create_view, path, body)
+
+
+@register_tool(
+    description=(
+        "Create a workspace (V2 API). Workspaces are hierarchical containers used to scope "
+        "role bindings. V2 only. "
+        "Required: name (string). Optional: description (string), parent_id (UUID of parent workspace). "
+        "Example: create_workspace(name='EMEA Engineering', parent_id='<root-workspace-uuid>') "
+        "Returns: the created workspace object with uuid, name, type, parent_id. "
+        "Calls: POST /api/v2/workspaces/"
+    ),
+    requires_auth=True,
+    write=True,
+    api_version=ApiVersion.V2,
+)
+def create_workspace(
+    request: HttpRequest,
+    *,
+    name: str,
+    description: str = "",
+    parent_id: str = "",
+) -> str:
+    """Create a workspace by delegating to WorkspaceViewSet."""
+    body: dict[str, Any] = {"name": name}
+    if description:
+        body["description"] = description
+    if parent_id:
+        body["parent_id"] = parent_id
+
+    path = reverse("v2_management:workspace-list")
+    return _call_view_write(request, _workspace_create_view, path, body)
+
+
+@register_tool(
+    description=(
+        "Create a cross-account access request. Allows users from one org (e.g. TAMs) "
+        "to request temporary access to another org's resources. "
+        "Required: target_account (the account number to request access to), "
+        "start_date (YYYY-MM-DD), end_date (YYYY-MM-DD), roles (list of role UUIDs). "
+        "Example: create_cross_account_request(target_account='12345', "
+        "start_date='2026-06-01', end_date='2026-06-30', roles=['<role-uuid>']) "
+        "Returns: the created request with request_id, status, dates. "
+        "Calls: POST /api/v1/cross-account-requests/"
+    ),
+    requires_auth=True,
+    write=True,
+)
+def create_cross_account_request(
+    request: HttpRequest,
+    *,
+    target_account: str,
+    start_date: str,
+    end_date: str,
+    roles: list[str],
+) -> str:
+    """Create a cross-account request by delegating to CrossAccountRequestViewSet."""
+    body: dict[str, Any] = {
+        "target_account": target_account,
+        "start_date": start_date,
+        "end_date": end_date,
+        "roles": roles,
+    }
+
+    path = reverse("v1_api:cross-list")
+    return _call_view_write(request, _cross_account_create_view, path, body)
 
 
 # --- JSON-RPC parsing ---
@@ -2658,19 +3497,31 @@ def _is_v2_available() -> bool:
     return getattr(settings, "V2_APIS_ENABLED", False)
 
 
+def _is_write_enabled() -> bool:
+    """Check whether MCP write tools are enabled."""
+    return getattr(settings, "MCP_WRITE_ENABLED", False)
+
+
 def _handle_tools_list(request: HttpRequest, request_id: Any, params: dict[str, Any]) -> JsonResponse:
     """Handle MCP tools/list request using FastMCP's registered tools."""
     v2_available = _is_v2_available()
+    write_enabled = _is_write_enabled()
     overrides = _get_all_description_overrides()
-    tools_data = [
-        {
-            "name": tool.name,
-            "description": overrides.get(tool.name, tool.description or ""),
-            "inputSchema": tool.inputSchema,
-        }
-        for tool in _get_tools()
-        if v2_available or _TOOL_CONFIG.get(tool.name, ToolConfig(fn=lambda: "")).api_version != ApiVersion.V2
-    ]
+    tools_data = []
+    for tool in _get_tools():
+        config = _TOOL_CONFIG.get(tool.name, ToolConfig(fn=lambda: ""))
+        if not v2_available and config.api_version == ApiVersion.V2:
+            continue
+        description = overrides.get(tool.name, tool.description or "")
+        if config.write and not write_enabled:
+            description = f"[DISABLED -- write mode off] {description}"
+        tools_data.append(
+            {
+                "name": tool.name,
+                "description": description,
+                "inputSchema": tool.inputSchema,
+            }
+        )
     return _success_response(request_id, {"tools": tools_data})
 
 
@@ -2745,6 +3596,14 @@ def _handle_tools_call(request: HttpRequest, request_id: Any, params: dict[str, 
             request_id,
             -32602,
             f"Tool '{tool_name}' requires V2 APIs, which are not enabled in this deployment.",
+        )
+
+    if config.write and not _is_write_enabled():
+        logger.warning("mcp: tools/call tool='%s' rejected, write mode disabled", tool_name)
+        return _error_response(
+            request_id,
+            -32602,
+            f"Tool '{tool_name}' is a write operation. Write mode is disabled (MCP_WRITE_ENABLED=False).",
         )
 
     org_id = getattr(getattr(request, "user", None), "org_id", None)
