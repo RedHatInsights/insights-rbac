@@ -42,11 +42,13 @@ from management.access.view import AccessView
 from management.audit_log.view import AuditLogViewSet
 from management.cache import _connection_pool
 from management.group.view import GroupViewSet
-from management.models import Access, AuditLog, Group
+from management.models import Access, AuditLog, Group, Permission
 from management.permission.view import PermissionViewSet
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
 from management.principal.view import PrincipalView
+from management.role.model import Role
+from management.role.v2_model import RoleV2
 from management.role.v2_view import RoleV2ViewSet
 from management.role.view import RoleViewSet
 from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
@@ -59,7 +61,7 @@ from redis import Redis, exceptions as redis_exceptions
 
 from api.common import RH_IDENTITY_HEADER
 from api.cross_access.view import CrossAccountRequestViewSet
-from api.models import CrossAccountRequest
+from api.models import CrossAccountRequest, Tenant
 from api.status.view import status as status_view_fn
 
 # Cache view functions — .as_view() returns a new callable each time,
@@ -1122,6 +1124,257 @@ def _get_role_v2(request: HttpRequest, role_uuid: str) -> str:
     result = json.loads(raw)
     result["org_version"] = "v2"
     return json.dumps(result)
+
+
+@register_tool(
+    description=(
+        "Pre-flight check for a custom role: analyze what permissions it grants before assigning it to users. "
+        "Best tool for answering 'What will users with this custom role be able to do?' or validating custom roles. "
+        "NOTE: This tool only checks custom roles (tenant-specific), not system/seeded roles. "
+        "SCENARIO: Before assigning a new 'Patch Reviewer' custom role to 200 users, call "
+        "check_role_permissions(role_name='Patch Reviewer') to see exactly what it grants. "
+        "Takes a role name (required) and finds the custom role, lists all its permissions grouped by application, "
+        "expands wildcards, identifies what verbs are NOT included (e.g., no :write or :create), "
+        "and checks for potential cross-app permissions. "
+        "Automatically detects whether the organization uses V1 or V2 and routes accordingly. "
+        "Set include_available_permissions=true to also list what permissions exist in each application "
+        "that the role does NOT include. "
+        "Returns: {role: {uuid, name, description, system/type}, permissions: {summary, by_application, "
+        "expanded_permissions, verbs_included, verbs_not_included}, coverage_analysis, recommendations, org_version}."
+    ),
+    requires_auth=True,
+    api_version=ApiVersion.UNIFIED,
+)
+def check_role_permissions(
+    request: HttpRequest,
+    *,
+    role_name: str,
+    include_available_permissions: bool = False,
+) -> str:
+    """Pre-flight check for a role: analyze what permissions it grants."""
+    tenant = getattr(request, "tenant", None)
+    if not tenant:
+        return json.dumps({"error": "No tenant context available"})
+
+    # Detect V1 vs V2
+    is_v2 = is_v2_write_activated(tenant)
+
+    if is_v2:
+        return _check_role_permissions_v2(tenant, role_name, include_available_permissions)
+    return _check_role_permissions_v1(tenant, role_name, include_available_permissions)
+
+
+def _check_role_permissions_v1(
+    tenant: Tenant,
+    role_name: str,
+    include_available_permissions: bool,
+) -> str:
+    """Pre-flight check for a V1 custom role."""
+    # Step 1: Find the custom role by name (case-insensitive exact match first, then partial)
+    role = Role.objects.filter(name__iexact=role_name, tenant=tenant, system=False).first()
+
+    if not role:
+        # Try partial match and suggest (custom roles only)
+        roles = Role.objects.filter(name__icontains=role_name, tenant=tenant).values("uuid", "name", "system")[:5]
+        if roles:
+            suggestions = [{"uuid": str(r["uuid"]), "name": r["name"], "system": r["system"]} for r in roles]
+            return json.dumps(
+                {
+                    "error": f"Role '{role_name}' not found (exact match)",
+                    "did_you_mean": suggestions,
+                    "hint": "Use the exact role name from the suggestions above.",
+                }
+            )
+        return json.dumps(
+            {
+                "error": f"Role '{role_name}' not found",
+                "hint": "Use search_roles(name='<partial>') to search for roles.",
+            }
+        )
+
+    # Step 2: Get all access entries (permissions) for the role
+    access_entries = Access.objects.filter(role=role).select_related("permission").all()
+    permissions = [access.permission for access in access_entries if access.permission]
+
+    # Build role info for V1
+    role_info = {
+        "uuid": str(role.uuid),
+        "name": role.name,
+        "display_name": role.display_name or role.name,
+        "description": role.description or "",
+        "system": getattr(role, "system", False),
+        "platform_default": getattr(role, "platform_default", False),
+    }
+
+    return _build_role_permissions_result(role_info, permissions, include_available_permissions, "v1")
+
+
+def _check_role_permissions_v2(
+    tenant: Tenant,
+    role_name: str,
+    include_available_permissions: bool,
+) -> str:
+    """Pre-flight check for a V2 custom role."""
+    # Step 1: Find the custom role by name (case-insensitive exact match first, then partial)
+    role = RoleV2.objects.filter(name__iexact=role_name, tenant=tenant).first()
+
+    if not role:
+        # Try partial match and suggest (custom roles only)
+        roles = RoleV2.objects.filter(name__icontains=role_name, tenant=tenant, type=RoleV2.Types.CUSTOM).values(
+            "uuid", "name", "type"
+        )[:5]
+        if roles:
+            suggestions = [
+                {"uuid": str(r["uuid"]), "name": r["name"], "type": r["type"], "system": r["type"] != "custom"}
+                for r in roles
+            ]
+            return json.dumps(
+                {
+                    "error": f"Role '{role_name}' not found (exact match)",
+                    "did_you_mean": suggestions,
+                    "hint": "Use the exact role name from the suggestions above.",
+                }
+            )
+        return json.dumps(
+            {
+                "error": f"Role '{role_name}' not found",
+                "hint": "Use search_roles(name='<partial>') to search for roles.",
+            }
+        )
+
+    # Step 2: Get permissions directly from the role (V2 uses M2M)
+    permissions = list(role.permissions.all())
+
+    # Build role info for V2
+    role_info = {
+        "uuid": str(role.uuid),
+        "name": role.name,
+        "description": role.description or "",
+        "type": role.type,
+        "system": role.type != RoleV2.Types.CUSTOM,
+    }
+
+    return _build_role_permissions_result(role_info, permissions, include_available_permissions, "v2")
+
+
+def _build_role_permissions_result(
+    role_info: dict[str, Any],
+    permissions: list[Permission],
+    include_available_permissions: bool,
+    org_version: str,
+) -> str:
+    """Build the analysis result for a role's permissions (shared by V1 and V2)."""
+    permissions_list = []
+    by_application: dict[str, list[str]] = {}
+    verbs_included: set[str] = set()
+    has_wildcard_resource = False
+    has_wildcard_verb = False
+
+    for perm in permissions:
+        perm_str = f"{perm.application}:{perm.resource_type}:{perm.verb}"
+        permissions_list.append(perm_str)
+
+        if perm.application not in by_application:
+            by_application[perm.application] = []
+        by_application[perm.application].append(perm_str)
+
+        verbs_included.add(perm.verb)
+
+        if perm.resource_type == "*":
+            has_wildcard_resource = True
+        if perm.verb == "*":
+            has_wildcard_verb = True
+
+    # Analyze what verbs are NOT included
+    common_verbs = {"read", "write", "create", "delete", "execute", "order", "link", "unlink"}
+    verbs_not_included = common_verbs - verbs_included
+
+    # Build expanded permissions explanation
+    expanded_permissions = []
+    for perm_str in permissions_list:
+        parts = perm_str.split(":")
+        if len(parts) == 3:
+            app, resource, verb = parts
+            if resource == "*" and verb == "*":
+                expanded_permissions.append(f"{perm_str} → full access to all {app} resources")
+            elif resource == "*":
+                expanded_permissions.append(f"{perm_str} → {verb} access to all {app} resources")
+            elif verb == "*":
+                expanded_permissions.append(f"{perm_str} → full access to {app} {resource} resources")
+            else:
+                expanded_permissions.append(f"{perm_str} → {verb} access to {app} {resource} resources")
+
+    # Check for available permissions in covered applications (if requested)
+    available_but_not_granted: dict[str, list[str]] = {}
+    if include_available_permissions and by_application:
+        for app in by_application.keys():
+            app_permissions = Permission.objects.filter(application=app).values_list(
+                "application", "resource_type", "verb"
+            )
+            app_perm_strings = {f"{p[0]}:{p[1]}:{p[2]}" for p in app_permissions}
+            not_included = app_perm_strings - set(permissions_list)
+            if not_included:
+                available_but_not_granted[app] = sorted(not_included)
+
+    # Build coverage analysis
+    coverage_analysis = {
+        "applications_covered": list(by_application.keys()),
+        "total_permissions": len(permissions_list),
+        "has_wildcard_resource": has_wildcard_resource,
+        "has_wildcard_verb": has_wildcard_verb,
+        "is_read_only": verbs_included <= {"read"} and not has_wildcard_verb,
+        "can_modify": bool(verbs_included & {"write", "create", "delete"}) or has_wildcard_verb,
+    }
+
+    # Generate recommendations
+    recommendations = []
+    if not permissions_list:
+        recommendations.append("WARNING: This role has no permissions. Users with only this role cannot do anything.")
+    if coverage_analysis["is_read_only"]:
+        recommendations.append(
+            "This is a read-only role. Users can view but not modify resources in: " + ", ".join(by_application.keys())
+        )
+    if has_wildcard_resource and has_wildcard_verb:
+        recommendations.append(
+            "CAUTION: This role grants full access (*:*) to some applications. "
+            "Consider if narrower permissions would be more appropriate."
+        )
+    if len(by_application) > 3:
+        recommendations.append(
+            f"This role spans {len(by_application)} applications. "
+            "Consider if users need access to all of them or if separate roles would be better."
+        )
+    if verbs_not_included and not has_wildcard_verb:
+        recommendations.append(
+            f"Verbs NOT granted by this role: {', '.join(sorted(verbs_not_included))}. "
+            "Users will not be able to perform these actions."
+        )
+
+    # Build final result
+    result: dict[str, Any] = {
+        "role": role_info,
+        "permissions": {
+            "summary": f"This role contains {len(permissions_list)} permission(s) across "
+            f"{len(by_application)} application(s).",
+            "total_count": len(permissions_list),
+            "by_application": {app: sorted(perms) for app, perms in sorted(by_application.items())},
+            "expanded_permissions": expanded_permissions,
+            "verbs_included": sorted(verbs_included),
+            "verbs_not_included": sorted(verbs_not_included) if not has_wildcard_verb else [],
+        },
+        "coverage_analysis": coverage_analysis,
+        "recommendations": recommendations,
+        "org_version": org_version,
+    }
+
+    if include_available_permissions and available_but_not_granted:
+        result["available_but_not_granted"] = available_but_not_granted
+        result["permissions"]["note"] = (
+            f"The applications field on the role lists: {', '.join(sorted(by_application.keys()))}. "
+            "See 'available_but_not_granted' for permissions in these apps that this role does NOT include."
+        )
+
+    return json.dumps(result, default=str)
 
 
 @register_tool(
