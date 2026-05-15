@@ -5255,7 +5255,7 @@ class MCPGuideUserAccessDelegationTests(MCPToolTestMixin, IdentityRequest):
         super().tearDown()
 
     def test_guide_user_access_delegation_success(self):
-        """Positive: guide_user_access_delegation returns comprehensive guidance."""
+        """Positive: guide_user_access_delegation returns factual data."""
         response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -5263,15 +5263,12 @@ class MCPGuideUserAccessDelegationTests(MCPToolTestMixin, IdentityRequest):
         self.assertFalse(data["result"]["isError"])
         tool_output = self._get_tool_output(response)
 
-        # Verify basic structure
-        self.assertEqual(tool_output["scenario"], "Delegate user access management without Org Admin")
-        self.assertEqual(tool_output["username"], self.test_username)
+        # Verify simplified structure
+        self.assertIn("org_version", tool_output)
         self.assertIn("user_info", tool_output)
         self.assertIn("role_info", tool_output)
-        self.assertIn("role_access", tool_output)
-        self.assertIn("groups_with_role", tool_output)
         self.assertIn("user_already_has_role", tool_output)
-        self.assertIn("recommendation", tool_output)
+        self.assertIn("existing_assignments", tool_output)
 
     def test_guide_user_access_delegation_finds_role(self):
         """Positive: guide_user_access_delegation finds the User Access administrator role."""
@@ -5279,23 +5276,10 @@ class MCPGuideUserAccessDelegationTests(MCPToolTestMixin, IdentityRequest):
 
         tool_output = self._get_tool_output(response)
 
-        # Verify role info
+        # Verify role info (simplified - only uuid and name)
         self.assertIsNotNone(tool_output["role_info"])
         self.assertEqual(tool_output["role_info"]["name"], "User Access administrator")
         self.assertEqual(tool_output["role_info"]["uuid"], str(self.user_access_admin_role.uuid))
-        self.assertTrue(tool_output["role_info"]["system"])
-
-    def test_guide_user_access_delegation_shows_role_access(self):
-        """Positive: guide_user_access_delegation shows role permissions."""
-        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
-
-        tool_output = self._get_tool_output(response)
-
-        # Verify role access
-        self.assertIsNotNone(tool_output["role_access"])
-        self.assertIn("permissions", tool_output["role_access"])
-        self.assertIn("rbac:*:*", tool_output["role_access"]["permissions"])
-        self.assertIn("permission_summary", tool_output["role_access"])
 
     def test_guide_user_access_delegation_finds_groups_with_role(self):
         """Positive: guide_user_access_delegation finds groups that have the role."""
@@ -5303,25 +5287,11 @@ class MCPGuideUserAccessDelegationTests(MCPToolTestMixin, IdentityRequest):
 
         tool_output = self._get_tool_output(response)
 
-        # Verify groups with role
-        self.assertEqual(len(tool_output["groups_with_role"]), 1)
-        group = tool_output["groups_with_role"][0]
-        self.assertEqual(group["name"], "Access Governance")
-        self.assertEqual(group["principal_count"], 2)
-
-    def test_guide_user_access_delegation_provides_recommendation(self):
-        """Positive: guide_user_access_delegation provides actionable recommendation."""
-        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
-
-        tool_output = self._get_tool_output(response)
-
-        # Verify recommendation contains key information
-        recommendation = tool_output["recommendation"]
-        self.assertIn("User Access administrator", recommendation)
-        self.assertIn("rbac:*:*", recommendation)
-        self.assertIn("CAN do", recommendation)
-        self.assertIn("CANNOT do", recommendation)
-        self.assertIn("NEXT STEPS", recommendation)
+        # Verify existing_assignments contains the group
+        self.assertEqual(len(tool_output["existing_assignments"]), 1)
+        assignment = tool_output["existing_assignments"][0]
+        self.assertEqual(assignment["type"], "group")
+        self.assertEqual(assignment["name"], "Access Governance")
 
     def test_guide_user_access_delegation_user_not_org_admin(self):
         """Positive: guide_user_access_delegation shows user is not org admin."""
@@ -5329,10 +5299,8 @@ class MCPGuideUserAccessDelegationTests(MCPToolTestMixin, IdentityRequest):
 
         tool_output = self._get_tool_output(response)
 
-        # When using BOP bypass, user_info may be mocked
-        # Just verify the recommendation mentions keeping org_admin false
-        recommendation = tool_output["recommendation"]
-        self.assertIn("is_org_admin", recommendation.lower())
+        # Verify user_info shows is_org_admin status
+        self.assertIn("is_org_admin", tool_output["user_info"])
 
     def test_guide_user_access_delegation_without_auth_returns_error(self):
         """Permission: guide_user_access_delegation without auth returns auth error."""
@@ -5351,35 +5319,8 @@ class MCPGuideUserAccessDelegationTests(MCPToolTestMixin, IdentityRequest):
         tool_output = self._get_tool_output(response)
 
         self.assertIsNotNone(tool_output["role_info"])
-        self.assertIsNotNone(tool_output["recommendation"])
         self.assertFalse(tool_output["user_already_has_role"])
-
-    def test_guide_user_access_delegation_explains_capabilities(self):
-        """Positive: recommendation explains what user CAN and CANNOT do."""
-        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
-
-        tool_output = self._get_tool_output(response)
-        recommendation = tool_output["recommendation"]
-
-        # Check CAN do items
-        self.assertIn("Create and delete custom groups", recommendation)
-        self.assertIn("Assign non-admin roles", recommendation)
-        self.assertIn("Add/remove users", recommendation)
-
-        # Check CANNOT do items
-        self.assertIn("Grant the Org Admin flag", recommendation)
-        self.assertIn("privilege escalation", recommendation)
-
-    def test_guide_user_access_delegation_mentions_existing_groups(self):
-        """Positive: recommendation mentions existing groups with the role."""
-        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
-
-        tool_output = self._get_tool_output(response)
-        recommendation = tool_output["recommendation"]
-
-        # Should mention the existing group
-        self.assertIn("Access Governance", recommendation)
-        self.assertIn("2 members", recommendation)
+        self.assertIn("error", tool_output["user_info"])
 
     def test_guide_user_access_delegation_no_groups_with_role(self):
         """Edge case: handles when no groups have the role assigned."""
@@ -5390,9 +5331,8 @@ class MCPGuideUserAccessDelegationTests(MCPToolTestMixin, IdentityRequest):
 
         tool_output = self._get_tool_output(response)
 
-        # Should indicate no groups have the role
-        self.assertEqual(len(tool_output["groups_with_role"]), 0)
-        self.assertIn("No groups currently have this role", tool_output["recommendation"])
+        # Should have empty existing_assignments
+        self.assertEqual(len(tool_output["existing_assignments"]), 0)
 
     def test_guide_user_access_delegation_tool_in_tools_list(self):
         """Positive: guide_user_access_delegation appears in tools/list."""
@@ -5410,9 +5350,6 @@ class MCPGuideUserAccessDelegationTests(MCPToolTestMixin, IdentityRequest):
 
         # Should detect that user already has the role
         self.assertTrue(tool_output["user_already_has_role"])
-        self.assertIn("Access Governance", tool_output["user_groups_with_role"])
-        self.assertIn("ALREADY HAS ROLE", tool_output["recommendation"])
-        self.assertIn("No action needed", tool_output["recommendation"])
 
     def test_guide_user_access_delegation_user_does_not_have_role(self):
         """Positive: correctly identifies when user does not have the role."""
@@ -5422,8 +5359,6 @@ class MCPGuideUserAccessDelegationTests(MCPToolTestMixin, IdentityRequest):
 
         # User should not have the role (not in the group)
         self.assertFalse(tool_output["user_already_has_role"])
-        self.assertEqual(tool_output["user_groups_with_role"], [])
-        self.assertIn("NEXT STEPS", tool_output["recommendation"])
 
     def test_guide_user_access_delegation_role_not_found(self):
         """Edge case: handles when User Access administrator role doesn't exist."""
@@ -5437,15 +5372,7 @@ class MCPGuideUserAccessDelegationTests(MCPToolTestMixin, IdentityRequest):
 
         # Should indicate role not found
         self.assertIn("error", tool_output["role_info"])
-        self.assertIn("not found", tool_output["role_info"]["error"])
-        self.assertIn("contact Red Hat support", tool_output["recommendation"])
-
-    def test_guide_user_access_delegation_dynamic_permission_summary(self):
-        """Positive: permission summary reflects actual permissions."""
-        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
-
-        tool_output = self._get_tool_output(response)
-        self.assertIn("rbac:*:*", tool_output["role_access"]["permission_summary"])
+        self.assertIn("not found", tool_output["role_info"]["error"].lower())
 
     def test_guide_user_access_delegation_multiple_groups_with_role(self):
         """Positive: lists multiple groups when several have the role."""
@@ -5466,9 +5393,9 @@ class MCPGuideUserAccessDelegationTests(MCPToolTestMixin, IdentityRequest):
 
         tool_output = self._get_tool_output(response)
 
-        # Should list both groups
-        self.assertEqual(len(tool_output["groups_with_role"]), 2)
-        group_names = [g["name"] for g in tool_output["groups_with_role"]]
+        # Should list both groups in existing_assignments
+        self.assertEqual(len(tool_output["existing_assignments"]), 2)
+        group_names = [a["name"] for a in tool_output["existing_assignments"]]
         self.assertIn("Access Governance", group_names)
         self.assertIn("Security Team", group_names)
 
@@ -5578,11 +5505,10 @@ class MCPGuideUserAccessDelegationV2Tests(MCPToolTestMixin, IdentityRequest):
 
         tool_output = self._get_tool_output(response)
 
-        self.assertEqual(len(tool_output["role_bindings_with_role"]), 1)
-        binding = tool_output["role_bindings_with_role"][0]
-        self.assertEqual(binding["resource_type"], "workspace")
-        self.assertEqual(binding["resource_id"], "root-workspace-id")
-        self.assertEqual(binding["principal_count"], 1)
+        self.assertEqual(len(tool_output["existing_assignments"]), 1)
+        assignment = tool_output["existing_assignments"][0]
+        self.assertEqual(assignment["type"], "role_binding")
+        self.assertEqual(assignment["principals"], 1)
 
     def test_guide_user_access_delegation_v2_user_has_role_direct(self):
         """Positive: V2 detects user has role via direct binding."""
@@ -5593,9 +5519,6 @@ class MCPGuideUserAccessDelegationV2Tests(MCPToolTestMixin, IdentityRequest):
         tool_output = self._get_tool_output(response)
 
         self.assertTrue(tool_output["user_already_has_role"])
-        self.assertEqual(len(tool_output["user_role_bindings"]), 1)
-        self.assertEqual(tool_output["user_role_bindings"][0]["source"], "direct")
-        self.assertIn("ALREADY HAS ROLE", tool_output["recommendation"])
 
     def test_guide_user_access_delegation_v2_user_has_role_via_group(self):
         """Positive: V2 detects user has role via group membership."""
@@ -5607,8 +5530,6 @@ class MCPGuideUserAccessDelegationV2Tests(MCPToolTestMixin, IdentityRequest):
         tool_output = self._get_tool_output(response)
 
         self.assertTrue(tool_output["user_already_has_role"])
-        self.assertEqual(len(tool_output["user_role_bindings"]), 1)
-        self.assertIn("group:User Access Admins Group", tool_output["user_role_bindings"][0]["source"])
 
     def test_guide_user_access_delegation_v2_user_does_not_have_role(self):
         """Positive: V2 correctly identifies user does not have the role."""
@@ -5617,19 +5538,6 @@ class MCPGuideUserAccessDelegationV2Tests(MCPToolTestMixin, IdentityRequest):
         tool_output = self._get_tool_output(response)
 
         self.assertFalse(tool_output["user_already_has_role"])
-        self.assertEqual(tool_output["user_role_bindings"], [])
-
-    def test_guide_user_access_delegation_v2_next_steps(self):
-        """Positive: V2 recommendation includes V2-specific next steps."""
-        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
-
-        tool_output = self._get_tool_output(response)
-
-        recommendation = tool_output["recommendation"]
-        self.assertIn("V2 Organization", recommendation)
-        self.assertIn("NEXT STEPS (V2 organization)", recommendation)
-        self.assertIn("create_role_bindings", recommendation)
-        self.assertIn("role_id", recommendation)
 
     def test_guide_user_access_delegation_v2_no_bindings(self):
         """Edge case: V2 org with no role bindings for the role."""
@@ -5640,8 +5548,7 @@ class MCPGuideUserAccessDelegationV2Tests(MCPToolTestMixin, IdentityRequest):
 
         tool_output = self._get_tool_output(response)
 
-        self.assertEqual(len(tool_output["role_bindings_with_role"]), 0)
-        self.assertIn("No role bindings currently grant this role", tool_output["recommendation"])
+        self.assertEqual(len(tool_output["existing_assignments"]), 0)
 
     def test_guide_user_access_delegation_v2_multiple_bindings(self):
         """Positive: V2 lists multiple role bindings when several exist."""
@@ -5657,10 +5564,7 @@ class MCPGuideUserAccessDelegationV2Tests(MCPToolTestMixin, IdentityRequest):
 
         tool_output = self._get_tool_output(response)
 
-        self.assertEqual(len(tool_output["role_bindings_with_role"]), 2)
-        resource_ids = [b["resource_id"] for b in tool_output["role_bindings_with_role"]]
-        self.assertIn("root-workspace-id", resource_ids)
-        self.assertIn("child-workspace-id", resource_ids)
+        self.assertEqual(len(tool_output["existing_assignments"]), 2)
 
     def test_guide_user_access_delegation_v2_shows_binding_counts(self):
         """Positive: V2 role binding info includes principal and group counts."""
@@ -5670,25 +5574,9 @@ class MCPGuideUserAccessDelegationV2Tests(MCPToolTestMixin, IdentityRequest):
 
         tool_output = self._get_tool_output(response)
 
-        binding = tool_output["role_bindings_with_role"][0]
-        self.assertEqual(binding["principal_count"], 1)
-        self.assertEqual(binding["group_count"], 1)
-
-    def test_guide_user_access_delegation_v2_groups_with_role_empty(self):
-        """Positive: V2 org returns empty groups_with_role (V1 field)."""
-        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
-
-        tool_output = self._get_tool_output(response)
-
-        self.assertEqual(tool_output["groups_with_role"], [])
-
-    def test_guide_user_access_delegation_v2_user_groups_with_role_empty(self):
-        """Positive: V2 org returns empty user_groups_with_role (V1 field)."""
-        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
-
-        tool_output = self._get_tool_output(response)
-
-        self.assertEqual(tool_output["user_groups_with_role"], [])
+        assignment = tool_output["existing_assignments"][0]
+        self.assertEqual(assignment["principals"], 1)
+        self.assertEqual(assignment["groups"], 1)
 
 
 # --- UPDATE tool tests ---
