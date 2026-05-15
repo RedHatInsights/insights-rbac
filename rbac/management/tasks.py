@@ -42,8 +42,8 @@ from management.inventory_checker.inventory_api_check import (
     WorkspaceRelationInventoryChecker,
     generate_seeded_role_hierarchy_tuples,
 )
-from management.permission.scope_service import ImplicitResourceService
 from management.parity_check import run_parity_checks
+from management.permission.scope_service import ImplicitResourceService
 from management.principal.cleaner import (
     clean_tenants_principals,
     process_principal_events_from_umb,
