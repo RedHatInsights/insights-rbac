@@ -32,7 +32,12 @@ from kessel.inventory.v1beta2 import (
 )
 from kessel.inventory.v1beta2.check_request_pb2 import CheckRequest
 from management.cache import JWTCache
+from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
+from management.permission.scope_service import ImplicitResourceService
 from management.relation_replicator.types import RelationTuple
+from management.role.platform import admin_platform_parent_scope_for_seeded_system_role, platform_v2_role_uuid_for
+from management.role.relations import role_child_relationship
+from management.tenant_mapping.model import DefaultAccessType
 from management.utils import create_client_channel_inventory
 
 jwt_cache = JWTCache()
@@ -399,3 +404,81 @@ class CustomRolePermissionChecker(InventoryApiBaseChecker):
         else:
             logger.info(f"CustomRole: {role_uuid} has the correct permission relations in inventory.")
         return permission_check
+
+
+def generate_seeded_role_hierarchy_tuples(
+    seeded_role, implicit_resource_service: ImplicitResourceService | None = None
+) -> list[RelationTuple]:
+    """Generate expected parent-child tuples for a seeded role.
+
+    Replicates the logic from SeedingRelationApiDualWriteHandler._check_create_admin_platform_relation()
+    to determine what parent-child relationships should exist in Kessel for a given seeded role.
+
+    Args:
+        seeded_role: A SeededRoleV2 instance with v1_source (and v1_source.access) prefetched.
+        implicit_resource_service: Optional shared instance to avoid repeated construction in loops.
+
+    Returns:
+        List of RelationTuple objects representing expected parent-child relationships.
+    """
+    v1_role = seeded_role.v1_source
+    if v1_role is None:
+        logger.warning(f"SeededRole {seeded_role.uuid} has no v1_source, cannot generate hierarchy tuples")
+        return []
+
+    if not v1_role.admin_default and not v1_role.platform_default:
+        return []
+
+    if implicit_resource_service is None:
+        implicit_resource_service = ImplicitResourceService.from_settings()
+    scope = implicit_resource_service.scope_for_role(v1_role)
+    policy_service = GlobalPolicyIdService.shared()
+    tuples = []
+
+    if v1_role.admin_default:
+        try:
+            admin_scope = admin_platform_parent_scope_for_seeded_system_role(
+                v1_role.name, v1_role.admin_default, scope, apply_override=True
+            )
+            parent_uuid = platform_v2_role_uuid_for(DefaultAccessType.ADMIN, admin_scope, policy_service)
+            tuples.append(role_child_relationship(parent_uuid, seeded_role.uuid))
+        except DefaultGroupNotAvailableError:
+            logger.warning(f"Default admin group not available for seeded role {seeded_role.uuid}")
+
+    if v1_role.platform_default:
+        try:
+            parent_uuid = platform_v2_role_uuid_for(DefaultAccessType.USER, scope, policy_service)
+            tuples.append(role_child_relationship(parent_uuid, seeded_role.uuid))
+        except DefaultGroupNotAvailableError:
+            logger.warning(f"Default platform group not available for seeded role {seeded_role.uuid}")
+
+    return tuples
+
+
+class SeededRoleHierarchyChecker(InventoryApiBaseChecker):
+    """Subclass to check seeded role parent-child hierarchy relations on inventory api."""
+
+    def check_seeded_role_hierarchy(self, hierarchy_tuples: Sequence[RelationTuple], role_uuid: str) -> bool:
+        """Core logic to check seeded role parent-child relations on inventory api.
+
+        Each hierarchy tuple represents: rbac/role:<parent_platform_uuid>#child@rbac/role:<child_seeded_uuid>
+
+        Args:
+            hierarchy_tuples: List of RelationTuple objects from generate_seeded_role_hierarchy_tuples()
+            role_uuid: UUID of the seeded role being checked
+
+        Returns:
+            True if all relations exist in the inventory, False otherwise
+        """
+        if not hierarchy_tuples:
+            logger.debug(f"SeededRole: {role_uuid} has no parent-child relations, skipping check")
+            return True
+
+        check_requests = [relation_tuple_to_check_request(tuple_obj) for tuple_obj in hierarchy_tuples]
+
+        hierarchy_check = self.check_inventory_core(check_requests)
+        if not hierarchy_check:
+            logger.warning(f"SeededRole: {role_uuid} does not have the expected parent-child relations in inventory.")
+        else:
+            logger.info(f"SeededRole: {role_uuid} has the correct parent-child relations in inventory.")
+        return hierarchy_check
