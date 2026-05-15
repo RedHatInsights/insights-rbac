@@ -3504,6 +3504,572 @@ class AuditRedhatAccessTests(MCPToolTestMixin, IdentityRequest):
         self.assertEqual(tool_output["summary"]["audit_period_days"], 7)
 
 
+class MCPCheckRolePermissionsTests(MCPToolTestMixin, IdentityRequest):
+    """Tests for the check_role_permissions MCP tool (pre-flight role check)."""
+
+    def setUp(self):
+        """Set up check_role_permissions tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+
+        # Create permissions for testing
+        self.patch_read_perm = Permission.objects.create(
+            application="patch",
+            resource_type="*",
+            verb="read",
+            permission="patch:*:read",
+            tenant=self.tenant,
+        )
+        self.remediation_read_perm = Permission.objects.create(
+            application="remediations",
+            resource_type="*",
+            verb="read",
+            permission="remediations:*:read",
+            tenant=self.tenant,
+        )
+        self.patch_write_perm = Permission.objects.create(
+            application="patch",
+            resource_type="systems",
+            verb="write",
+            permission="patch:systems:write",
+            tenant=self.tenant,
+        )
+
+    def tearDown(self):
+        """Tear down check_role_permissions tests."""
+        Access.objects.all().delete()
+        Role.objects.all().delete()
+        Permission.objects.filter(tenant=self.tenant).delete()
+        super().tearDown()
+
+    def test_check_role_permissions_success(self):
+        """Positive: check_role_permissions returns comprehensive role analysis."""
+        role = Role.objects.create(name="Patch Reviewer", tenant=self.tenant)
+        Access.objects.create(role=role, permission=self.patch_read_perm, tenant=self.tenant)
+        Access.objects.create(role=role, permission=self.remediation_read_perm, tenant=self.tenant)
+
+        response = self._call_tool("check_role_permissions", {"role_name": "Patch Reviewer"})
+
+        self.assertEqual(response.status_code, 200)
+        tool_output = self._get_tool_output(response)
+
+        # Verify role info
+        self.assertEqual(tool_output["role"]["name"], "Patch Reviewer")
+        self.assertIn("uuid", tool_output["role"])
+
+        # Verify permissions structure
+        self.assertEqual(tool_output["permissions"]["total_count"], 2)
+        self.assertIn("patch", tool_output["permissions"]["by_application"])
+        self.assertIn("remediations", tool_output["permissions"]["by_application"])
+        self.assertIn("read", tool_output["permissions"]["verbs_included"])
+        self.assertIn("write", tool_output["permissions"]["verbs_not_included"])
+
+        # Verify coverage analysis
+        self.assertTrue(tool_output["coverage_analysis"]["is_read_only"])
+        self.assertFalse(tool_output["coverage_analysis"]["can_modify"])
+
+        # Verify recommendations
+        self.assertIn("recommendations", tool_output)
+
+    def test_check_role_permissions_identifies_read_only(self):
+        """Positive: check_role_permissions correctly identifies read-only roles."""
+        role = Role.objects.create(name="Viewer Role", tenant=self.tenant)
+        Access.objects.create(role=role, permission=self.patch_read_perm, tenant=self.tenant)
+
+        response = self._call_tool("check_role_permissions", {"role_name": "Viewer Role"})
+
+        tool_output = self._get_tool_output(response)
+        self.assertTrue(tool_output["coverage_analysis"]["is_read_only"])
+        self.assertFalse(tool_output["coverage_analysis"]["can_modify"])
+        self.assertIn("read-only", tool_output["recommendations"][0].lower())
+
+    def test_check_role_permissions_identifies_write_capability(self):
+        """Positive: check_role_permissions correctly identifies roles with write access."""
+        role = Role.objects.create(name="Patch Admin", tenant=self.tenant)
+        Access.objects.create(role=role, permission=self.patch_read_perm, tenant=self.tenant)
+        Access.objects.create(role=role, permission=self.patch_write_perm, tenant=self.tenant)
+
+        response = self._call_tool("check_role_permissions", {"role_name": "Patch Admin"})
+
+        tool_output = self._get_tool_output(response)
+        self.assertFalse(tool_output["coverage_analysis"]["is_read_only"])
+        self.assertTrue(tool_output["coverage_analysis"]["can_modify"])
+        self.assertIn("write", tool_output["permissions"]["verbs_included"])
+
+    def test_check_role_permissions_expands_wildcards(self):
+        """Positive: check_role_permissions expands wildcard permissions in explanation."""
+        role = Role.objects.create(name="Full Access", tenant=self.tenant)
+        Access.objects.create(role=role, permission=self.patch_read_perm, tenant=self.tenant)
+
+        response = self._call_tool("check_role_permissions", {"role_name": "Full Access"})
+
+        tool_output = self._get_tool_output(response)
+        self.assertIn("expanded_permissions", tool_output["permissions"])
+        expanded = tool_output["permissions"]["expanded_permissions"]
+        self.assertTrue(any("all patch resources" in exp for exp in expanded))
+
+    def test_check_role_permissions_role_not_found(self):
+        """Negative: check_role_permissions returns error for non-existent role."""
+        response = self._call_tool("check_role_permissions", {"role_name": "NonExistent Role"})
+
+        tool_output = self._get_tool_output(response)
+        self.assertIn("error", tool_output)
+        self.assertIn("not found", tool_output["error"])
+        self.assertIn("hint", tool_output)
+
+    def test_check_role_permissions_suggests_similar_roles(self):
+        """Positive: check_role_permissions suggests similar role names on partial match."""
+        Role.objects.create(name="Patch Reviewer", tenant=self.tenant)
+        Role.objects.create(name="Patch Admin", tenant=self.tenant)
+
+        response = self._call_tool("check_role_permissions", {"role_name": "Patch Review"})
+
+        tool_output = self._get_tool_output(response)
+        self.assertIn("error", tool_output)
+        self.assertIn("did_you_mean", tool_output)
+        suggestions = [s["name"] for s in tool_output["did_you_mean"]]
+        self.assertIn("Patch Reviewer", suggestions)
+
+    def test_check_role_permissions_case_insensitive(self):
+        """Positive: check_role_permissions finds role with case-insensitive search."""
+        role = Role.objects.create(name="Patch Reviewer", tenant=self.tenant)
+        Access.objects.create(role=role, permission=self.patch_read_perm, tenant=self.tenant)
+
+        response = self._call_tool("check_role_permissions", {"role_name": "patch reviewer"})
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["role"]["name"], "Patch Reviewer")
+
+    def test_check_role_permissions_empty_role(self):
+        """Positive: check_role_permissions warns about roles with no permissions."""
+        Role.objects.create(name="Empty Role", tenant=self.tenant)
+
+        response = self._call_tool("check_role_permissions", {"role_name": "Empty Role"})
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["permissions"]["total_count"], 0)
+        self.assertTrue(any("no permissions" in r.lower() for r in tool_output["recommendations"]))
+
+    def test_check_role_permissions_includes_available_permissions(self):
+        """Positive: check_role_permissions lists available but not granted permissions."""
+        role = Role.objects.create(name="Patch Reader", tenant=self.tenant)
+        Access.objects.create(role=role, permission=self.patch_read_perm, tenant=self.tenant)
+
+        response = self._call_tool(
+            "check_role_permissions",
+            {"role_name": "Patch Reader", "include_available_permissions": True},
+        )
+
+        tool_output = self._get_tool_output(response)
+        self.assertIn("available_but_not_granted", tool_output)
+        self.assertIn("patch", tool_output["available_but_not_granted"])
+        patch_not_granted = tool_output["available_but_not_granted"]["patch"]
+        self.assertIn("patch:systems:write", patch_not_granted)
+
+    def test_check_role_permissions_without_auth_returns_error(self):
+        """Permission: check_role_permissions without auth returns auth error."""
+        response = self._call_tool("check_role_permissions", {"role_name": "Any Role"}, use_auth=False)
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    def test_check_role_permissions_ignores_system_roles(self):
+        """Negative: check_role_permissions only checks custom roles, not system roles from public tenant."""
+        public_tenant = Tenant.objects.filter(tenant_name="public").first()
+        if not public_tenant:
+            public_tenant = Tenant.objects.create(tenant_name="public", org_id="")
+
+        system_role = Role.objects.create(name="System Reader", system=True, tenant=public_tenant)
+        system_perm = Permission.objects.create(
+            application="system",
+            resource_type="*",
+            verb="read",
+            permission="system:*:read",
+            tenant=public_tenant,
+        )
+        Access.objects.create(role=system_role, permission=system_perm, tenant=public_tenant)
+
+        response = self._call_tool("check_role_permissions", {"role_name": "System Reader"})
+
+        tool_output = self._get_tool_output(response)
+        self.assertIn("error", tool_output)
+        self.assertIn("not found", tool_output["error"])
+
+    def test_check_role_permissions_returns_org_version_v1(self):
+        """Positive: check_role_permissions returns org_version=v1 for V1 orgs."""
+        role = Role.objects.create(name="V1 Test Role", tenant=self.tenant)
+        Access.objects.create(role=role, permission=self.patch_read_perm, tenant=self.tenant)
+
+        response = self._call_tool("check_role_permissions", {"role_name": "V1 Test Role"})
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["org_version"], "v1")
+
+
+@override_settings(BYPASS_BOP_VERIFICATION=True, V2_APIS_ENABLED=True)
+class MCPCheckRolePermissionsV2Tests(MCPToolTestMixin, IdentityRequest):
+    """Tests for check_role_permissions on V2 organizations."""
+
+    def setUp(self):
+        """Set up V2 check_role_permissions tests."""
+        reload(urls)
+        clear_url_caches()
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.get_kessel_principal_id",
+                return_value="localhost/test-user-id",
+            )
+        )
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.WorkspaceInventoryAccessChecker.check_resource_access",
+                return_value=True,
+            )
+        )
+
+        # Activate V2 for this tenant
+        TenantMapping.objects.create(tenant=self.tenant, v2_write_activated_at=timezone.now())
+
+        # Create permissions for testing
+        self.patch_read_perm = Permission.objects.create(
+            application="patch",
+            resource_type="*",
+            verb="read",
+            permission="patch:*:read",
+            tenant=self.tenant,
+        )
+        self.remediation_read_perm = Permission.objects.create(
+            application="remediations",
+            resource_type="*",
+            verb="read",
+            permission="remediations:*:read",
+            tenant=self.tenant,
+        )
+        self.patch_write_perm = Permission.objects.create(
+            application="patch",
+            resource_type="systems",
+            verb="write",
+            permission="patch:systems:write",
+            tenant=self.tenant,
+        )
+
+    def tearDown(self):
+        """Tear down V2 check_role_permissions tests."""
+        RoleV2.objects.all().delete()
+        Permission.objects.filter(tenant=self.tenant).delete()
+        TenantMapping.objects.all().delete()
+        super().tearDown()
+
+    def test_check_role_permissions_v2_success(self):
+        """Positive: check_role_permissions returns comprehensive analysis for V2 roles."""
+        role = RoleV2.objects.create(name="V2 Patch Reviewer", tenant=self.tenant, type=RoleV2.Types.CUSTOM)
+        role.permissions.add(self.patch_read_perm)
+        role.permissions.add(self.remediation_read_perm)
+
+        response = self._call_tool("check_role_permissions", {"role_name": "V2 Patch Reviewer"})
+
+        self.assertEqual(response.status_code, 200)
+        tool_output = self._get_tool_output(response)
+
+        # Verify role info
+        self.assertEqual(tool_output["role"]["name"], "V2 Patch Reviewer")
+        self.assertEqual(tool_output["role"]["type"], "custom")
+        self.assertFalse(tool_output["role"]["system"])
+        self.assertIn("uuid", tool_output["role"])
+
+        # Verify permissions structure
+        self.assertEqual(tool_output["permissions"]["total_count"], 2)
+        self.assertIn("patch", tool_output["permissions"]["by_application"])
+        self.assertIn("remediations", tool_output["permissions"]["by_application"])
+
+        # Verify org_version
+        self.assertEqual(tool_output["org_version"], "v2")
+
+    def test_check_role_permissions_v2_returns_org_version(self):
+        """Positive: check_role_permissions returns org_version=v2 for V2 orgs."""
+        role = RoleV2.objects.create(name="V2 Test Role", tenant=self.tenant, type=RoleV2.Types.CUSTOM)
+        role.permissions.add(self.patch_read_perm)
+
+        response = self._call_tool("check_role_permissions", {"role_name": "V2 Test Role"})
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["org_version"], "v2")
+
+    def test_check_role_permissions_v2_ignores_seeded_roles(self):
+        """Negative: check_role_permissions only checks custom roles, not seeded roles from public tenant."""
+        public_tenant = Tenant.objects.filter(tenant_name="public").first()
+        if not public_tenant:
+            public_tenant = Tenant.objects.create(tenant_name="public", org_id="")
+
+        seeded_role = RoleV2.objects.create(name="Seeded Reader", tenant=public_tenant, type=RoleV2.Types.SEEDED)
+        seeded_perm = Permission.objects.create(
+            application="inventory",
+            resource_type="hosts",
+            verb="read",
+            permission="inventory:hosts:read",
+            tenant=public_tenant,
+        )
+        seeded_role.permissions.add(seeded_perm)
+
+        response = self._call_tool("check_role_permissions", {"role_name": "Seeded Reader"})
+
+        tool_output = self._get_tool_output(response)
+        self.assertIn("error", tool_output)
+        self.assertIn("not found", tool_output["error"])
+
+    def test_check_role_permissions_v2_identifies_read_only(self):
+        """Positive: check_role_permissions correctly identifies read-only V2 roles."""
+        role = RoleV2.objects.create(name="V2 Viewer", tenant=self.tenant, type=RoleV2.Types.CUSTOM)
+        role.permissions.add(self.patch_read_perm)
+
+        response = self._call_tool("check_role_permissions", {"role_name": "V2 Viewer"})
+
+        tool_output = self._get_tool_output(response)
+        self.assertTrue(tool_output["coverage_analysis"]["is_read_only"])
+        self.assertFalse(tool_output["coverage_analysis"]["can_modify"])
+
+    def test_check_role_permissions_v2_identifies_write_capability(self):
+        """Positive: check_role_permissions correctly identifies V2 roles with write access."""
+        role = RoleV2.objects.create(name="V2 Admin", tenant=self.tenant, type=RoleV2.Types.CUSTOM)
+        role.permissions.add(self.patch_read_perm)
+        role.permissions.add(self.patch_write_perm)
+
+        response = self._call_tool("check_role_permissions", {"role_name": "V2 Admin"})
+
+        tool_output = self._get_tool_output(response)
+        self.assertFalse(tool_output["coverage_analysis"]["is_read_only"])
+        self.assertTrue(tool_output["coverage_analysis"]["can_modify"])
+        self.assertIn("write", tool_output["permissions"]["verbs_included"])
+
+    def test_check_role_permissions_v2_suggests_similar_roles(self):
+        """Positive: check_role_permissions suggests similar V2 role names on partial match."""
+        RoleV2.objects.create(name="Patch Reviewer V2", tenant=self.tenant, type=RoleV2.Types.CUSTOM)
+        RoleV2.objects.create(name="Patch Admin V2", tenant=self.tenant, type=RoleV2.Types.CUSTOM)
+
+        response = self._call_tool("check_role_permissions", {"role_name": "Patch Review"})
+
+        tool_output = self._get_tool_output(response)
+        self.assertIn("error", tool_output)
+        self.assertIn("did_you_mean", tool_output)
+        suggestions = [s["name"] for s in tool_output["did_you_mean"]]
+        self.assertIn("Patch Reviewer V2", suggestions)
+
+    def test_check_role_permissions_v2_expands_wildcards(self):
+        """Positive: check_role_permissions expands wildcard permissions for V2 roles."""
+        role = RoleV2.objects.create(name="V2 Wildcard Role", tenant=self.tenant, type=RoleV2.Types.CUSTOM)
+        role.permissions.add(self.patch_read_perm)
+
+        response = self._call_tool("check_role_permissions", {"role_name": "V2 Wildcard Role"})
+
+        tool_output = self._get_tool_output(response)
+        self.assertIn("expanded_permissions", tool_output["permissions"])
+        expanded = tool_output["permissions"]["expanded_permissions"]
+        self.assertTrue(any("all patch resources" in exp for exp in expanded))
+
+    def test_check_role_permissions_v2_role_not_found(self):
+        """Negative: check_role_permissions returns error for non-existent V2 role."""
+        response = self._call_tool("check_role_permissions", {"role_name": "NonExistent V2 Role"})
+
+        tool_output = self._get_tool_output(response)
+        self.assertIn("error", tool_output)
+        self.assertIn("not found", tool_output["error"])
+        self.assertIn("hint", tool_output)
+
+    def test_check_role_permissions_v2_case_insensitive(self):
+        """Positive: check_role_permissions finds V2 role with case-insensitive search."""
+        role = RoleV2.objects.create(name="V2 Patch Reviewer", tenant=self.tenant, type=RoleV2.Types.CUSTOM)
+        role.permissions.add(self.patch_read_perm)
+
+        response = self._call_tool("check_role_permissions", {"role_name": "v2 patch reviewer"})
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["role"]["name"], "V2 Patch Reviewer")
+
+    def test_check_role_permissions_v2_empty_role(self):
+        """Positive: check_role_permissions warns about V2 roles with no permissions."""
+        RoleV2.objects.create(name="V2 Empty Role", tenant=self.tenant, type=RoleV2.Types.CUSTOM)
+
+        response = self._call_tool("check_role_permissions", {"role_name": "V2 Empty Role"})
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["permissions"]["total_count"], 0)
+        self.assertTrue(any("no permissions" in r.lower() for r in tool_output["recommendations"]))
+
+    def test_check_role_permissions_v2_includes_available_permissions(self):
+        """Positive: check_role_permissions lists available but not granted permissions for V2."""
+        role = RoleV2.objects.create(name="V2 Patch Reader", tenant=self.tenant, type=RoleV2.Types.CUSTOM)
+        role.permissions.add(self.patch_read_perm)
+
+        response = self._call_tool(
+            "check_role_permissions",
+            {"role_name": "V2 Patch Reader", "include_available_permissions": True},
+        )
+
+        tool_output = self._get_tool_output(response)
+        self.assertIn("available_but_not_granted", tool_output)
+        self.assertIn("patch", tool_output["available_but_not_granted"])
+        patch_not_granted = tool_output["available_but_not_granted"]["patch"]
+        self.assertIn("patch:systems:write", patch_not_granted)
+
+    def test_check_role_permissions_v2_without_auth_returns_error(self):
+        """Permission: check_role_permissions without auth returns auth error for V2."""
+        response = self._call_tool("check_role_permissions", {"role_name": "Any V2 Role"}, use_auth=False)
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+
+class MCPCheckRolePermissionsEdgeCasesTests(MCPToolTestMixin, IdentityRequest):
+    """Edge case tests for check_role_permissions (V1 - shared logic applies to V2)."""
+
+    def setUp(self):
+        """Set up edge case tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+
+    def tearDown(self):
+        """Tear down edge case tests."""
+        Access.objects.all().delete()
+        Role.objects.all().delete()
+        Permission.objects.filter(tenant=self.tenant).delete()
+        super().tearDown()
+
+    def test_check_role_permissions_full_wildcard_warning(self):
+        """Positive: check_role_permissions warns about full wildcard (*:*) permissions."""
+        full_wildcard_perm = Permission.objects.create(
+            application="dangerous",
+            resource_type="*",
+            verb="*",
+            permission="dangerous:*:*",
+            tenant=self.tenant,
+        )
+        role = Role.objects.create(name="Full Access Role", tenant=self.tenant)
+        Access.objects.create(role=role, permission=full_wildcard_perm, tenant=self.tenant)
+
+        response = self._call_tool("check_role_permissions", {"role_name": "Full Access Role"})
+
+        tool_output = self._get_tool_output(response)
+        self.assertTrue(tool_output["coverage_analysis"]["has_wildcard_resource"])
+        self.assertTrue(tool_output["coverage_analysis"]["has_wildcard_verb"])
+        self.assertTrue(any("CAUTION" in r for r in tool_output["recommendations"]))
+        self.assertTrue(any("full access" in r.lower() for r in tool_output["recommendations"]))
+
+    def test_check_role_permissions_multi_app_warning(self):
+        """Positive: check_role_permissions warns about roles spanning many applications."""
+        # Create permissions for 4 different applications
+        apps = ["app1", "app2", "app3", "app4"]
+        perms = []
+        for app in apps:
+            perm = Permission.objects.create(
+                application=app,
+                resource_type="resource",
+                verb="read",
+                permission=f"{app}:resource:read",
+                tenant=self.tenant,
+            )
+            perms.append(perm)
+
+        role = Role.objects.create(name="Multi App Role", tenant=self.tenant)
+        for perm in perms:
+            Access.objects.create(role=role, permission=perm, tenant=self.tenant)
+
+        response = self._call_tool("check_role_permissions", {"role_name": "Multi App Role"})
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(len(tool_output["coverage_analysis"]["applications_covered"]), 4)
+        self.assertTrue(any("spans 4 applications" in r for r in tool_output["recommendations"]))
+
+    def test_check_role_permissions_verbs_not_included(self):
+        """Positive: check_role_permissions lists verbs not included in recommendations."""
+        read_only_perm = Permission.objects.create(
+            application="test",
+            resource_type="resource",
+            verb="read",
+            permission="test:resource:read",
+            tenant=self.tenant,
+        )
+        role = Role.objects.create(name="Read Only Role", tenant=self.tenant)
+        Access.objects.create(role=role, permission=read_only_perm, tenant=self.tenant)
+
+        response = self._call_tool("check_role_permissions", {"role_name": "Read Only Role"})
+
+        tool_output = self._get_tool_output(response)
+        verbs_not_included = tool_output["permissions"]["verbs_not_included"]
+        self.assertIn("write", verbs_not_included)
+        self.assertIn("create", verbs_not_included)
+        self.assertIn("delete", verbs_not_included)
+        self.assertTrue(any("Verbs NOT granted" in r for r in tool_output["recommendations"]))
+
+    def test_check_role_permissions_wildcard_verb_clears_verbs_not_included(self):
+        """Positive: Wildcard verb (*) results in empty verbs_not_included list."""
+        wildcard_verb_perm = Permission.objects.create(
+            application="test",
+            resource_type="resource",
+            verb="*",
+            permission="test:resource:*",
+            tenant=self.tenant,
+        )
+        role = Role.objects.create(name="Wildcard Verb Role", tenant=self.tenant)
+        Access.objects.create(role=role, permission=wildcard_verb_perm, tenant=self.tenant)
+
+        response = self._call_tool("check_role_permissions", {"role_name": "Wildcard Verb Role"})
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["permissions"]["verbs_not_included"], [])
+        self.assertTrue(tool_output["coverage_analysis"]["has_wildcard_verb"])
+        self.assertTrue(tool_output["coverage_analysis"]["can_modify"])
+
+    def test_check_role_permissions_multiple_verbs(self):
+        """Positive: check_role_permissions correctly tracks multiple verbs."""
+        read_perm = Permission.objects.create(
+            application="test",
+            resource_type="resource",
+            verb="read",
+            permission="test:resource:read",
+            tenant=self.tenant,
+        )
+        write_perm = Permission.objects.create(
+            application="test",
+            resource_type="resource",
+            verb="write",
+            permission="test:resource:write",
+            tenant=self.tenant,
+        )
+        create_perm = Permission.objects.create(
+            application="test",
+            resource_type="resource",
+            verb="create",
+            permission="test:resource:create",
+            tenant=self.tenant,
+        )
+        role = Role.objects.create(name="Multi Verb Role", tenant=self.tenant)
+        Access.objects.create(role=role, permission=read_perm, tenant=self.tenant)
+        Access.objects.create(role=role, permission=write_perm, tenant=self.tenant)
+        Access.objects.create(role=role, permission=create_perm, tenant=self.tenant)
+
+        response = self._call_tool("check_role_permissions", {"role_name": "Multi Verb Role"})
+
+        tool_output = self._get_tool_output(response)
+        verbs_included = tool_output["permissions"]["verbs_included"]
+        self.assertIn("read", verbs_included)
+        self.assertIn("write", verbs_included)
+        self.assertIn("create", verbs_included)
+        self.assertNotIn("delete", verbs_included)
+        self.assertIn("delete", tool_output["permissions"]["verbs_not_included"])
+        self.assertFalse(tool_output["coverage_analysis"]["is_read_only"])
+        self.assertTrue(tool_output["coverage_analysis"]["can_modify"])
+
+
 @override_settings(BYPASS_BOP_VERIFICATION=True)
 class AuditGroupForDissolutionTests(MCPToolTestMixin, IdentityRequest):
     """Tests for audit_group_for_dissolution MCP tool."""
