@@ -8,8 +8,7 @@
 # published by the Free Software Foundation, either version 3 of the
 # License, or (at your option) any later version.
 #
-from io import StringIO
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 from django.core.management import CommandError, call_command
 from django.test import TestCase, override_settings
@@ -23,25 +22,26 @@ class RemoveLegacyRootWorkspaceTenantParentRelationsCommandTests(TestCase):
             call_command("remove_legacy_root_workspace_tenant_parent_relations")
 
     @override_settings(REPLICATION_TO_RELATION_ENABLED=False)
-    def test_skipped_writes_reason_to_stdout(self):
-        out = StringIO()
+    @patch("management.management.commands.remove_legacy_root_workspace_tenant_parent_relations.logger")
+    def test_skipped_logs_reason(self, mock_logger):
         call_command(
             "remove_legacy_root_workspace_tenant_parent_relations",
             "--all",
-            stdout=out,
         )
-        self.assertIn("REPLICATION_TO_RELATION_ENABLED", out.getvalue())
+        mock_logger.warning.assert_called_once_with("Skipped: %s", ANY)
+        _, reason = mock_logger.warning.call_args[0]
+        self.assertIn("REPLICATION_TO_RELATION_ENABLED", reason)
 
     @patch(
         "management.management.commands.remove_legacy_root_workspace_tenant_parent_relations."
         "remove_legacy_root_workspace_tenant_parent_relations"
     )
-    def test_all_invokes_util(self, mock_remove):
+    @patch("management.management.commands.remove_legacy_root_workspace_tenant_parent_relations.logger")
+    def test_all_invokes_util(self, mock_logger, mock_remove):
         mock_remove.return_value = {
             "skipped": False,
             "tenants_processed": 2,
         }
-        out = StringIO()
-        call_command("remove_legacy_root_workspace_tenant_parent_relations", "--all", stdout=out)
+        call_command("remove_legacy_root_workspace_tenant_parent_relations", "--all")
         mock_remove.assert_called_once_with()
-        self.assertIn("tenants_processed=2", out.getvalue())
+        mock_logger.info.assert_any_call("Processed %s tenants", 2)

@@ -54,12 +54,7 @@ class Command(BaseCommand):
 
         if result.get("skipped"):
             reason = result.get("reason", "skipped")
-            logger.info("Skipped: %s", reason)
-            self.stdout.write(self.style.WARNING(reason))
+            logger.warning("Skipped: %s", reason)
             return
 
-        logger.info(
-            "Processed %s tenants; enqueued %s tuple removals.",
-            result["tenants_processed"],
-        )
-        self.stdout.write(f"tenants_processed={result['tenants_processed']}")
+        logger.info("Processed %s tenants", result["tenants_processed"])
