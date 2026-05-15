@@ -1068,7 +1068,7 @@ namespace RoleBindings {
         }
     })
     @post op batchCreate(
-        @query fields?: FieldMask = "resource(id),role(id),subject(id,type)";
+        @query fields?: FieldMask = "resource(id,type),role(id),subject(id,type)";
         @body body: BatchCreateRoleBindingsRequest;
     ): BatchCreateRoleBindingsResponse | Problems.CommonProblems | Problems.Problem400;
 
