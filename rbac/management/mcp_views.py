@@ -438,7 +438,7 @@ def list_principals(
 
     # If name filter provided, fetch and filter directly via proxy
     if name and not usernames:
-        return _list_principals_by_name(request, name, limit, offset, sort_order, status)
+        return _list_principals_by_name(request, name, limit, offset, sort_order, status, username_only)
 
     # Otherwise, delegate to PrincipalView
     query_params: dict[str, str] = {
@@ -464,11 +464,13 @@ def _list_principals_by_name(
     offset: int,
     sort_order: str,
     status: str,
+    username_only: str = "false",
 ) -> str:
     """Fetch principals from BOP and filter by name (case-insensitive substring match)."""
     proxy = PrincipalProxy()
     org_id = request.user.org_id
     name_lower = name_filter.lower()
+    return_username_only = username_only.lower() == "true"
 
     options = {
         "sort_order": sort_order,
@@ -512,6 +514,9 @@ def _list_principals_by_name(
 
     paginated = filtered_users[offset : offset + limit]  # noqa: E203
     path = request.path
+
+    if return_username_only:
+        paginated = [{"username": u.get("username")} for u in paginated]
 
     return json.dumps(
         {
