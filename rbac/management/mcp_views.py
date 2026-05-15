@@ -3765,7 +3765,8 @@ def guide_user_access_delegation(
                         break
                 if not role_data:
                     role_data = roles_data["data"][0]
-                role_uuid = role_data.get("uuid")
+                # V1 uses "uuid", V2 uses "id" for the role identifier
+                role_uuid = role_data.get("uuid") or role_data.get("id")
                 result["role_info"] = {
                     "uuid": role_uuid,
                     "name": role_data.get("name"),
@@ -3816,52 +3817,65 @@ def guide_user_access_delegation(
 
         # Step 4: Find assignments for this role (V1: groups/policies, V2: role bindings)
         if is_v2:
-            # V2: Find role bindings using list_role_bindings tool
-            try:
-                bindings_raw = list_role_bindings(request, role_id=role_uuid, limit=100)
-                bindings_data = json.loads(bindings_raw)
-                for binding in bindings_data.get("data", []):
-                    resource = binding.get("resource", {})
-                    subjects = binding.get("subjects", [])
+            # V2: Find the V2 role by UUID (search_roles returns V2 role for V2 orgs)
+            v2_role = RoleV2.objects.filter(uuid=role_uuid, tenant=tenant).first()
+
+            if v2_role:
+                # V2: Find role bindings that grant this role
+                role_bindings_with_this_role = (
+                    RoleBinding.objects.filter(role=v2_role, tenant=tenant)
+                    .select_related("role")
+                    .annotate(
+                        principal_count=Count("principal_entries", distinct=True),
+                        group_count=Count("group_entries", distinct=True),
+                    )
+                )
+
+                for binding in role_bindings_with_this_role:
                     result["role_bindings_with_role"].append(
                         {
-                            "id": binding.get("uuid", binding.get("id", "")),
-                            "resource_type": resource.get("type", ""),
-                            "resource_id": resource.get("id", ""),
-                            "principal_count": sum(1 for s in subjects if s.get("type") == "principal"),
-                            "group_count": sum(1 for s in subjects if s.get("type") == "group"),
+                            "id": str(binding.id),
+                            "resource_type": binding.resource_type,
+                            "resource_id": binding.resource_id,
+                            "principal_count": binding.principal_count,
+                            "group_count": binding.group_count,
                         }
                     )
-            except Exception as e:
-                logger.warning("guide_user_access_delegation: Failed to get role bindings: %s", e)
 
-            # Step 5 (V2): Check if user already has this role via role bindings
-            try:
-                user_bindings_raw = list_role_bindings(
-                    request, role_id=role_uuid, granted_subject_principal_user_id=username, limit=100
-                )
-                user_bindings_data = json.loads(user_bindings_raw)
-                for binding in user_bindings_data.get("data", []):
+                # Step 5 (V2): Check if the target user already has this role via role bindings
+                # Direct bindings - query by username directly
+                direct_bindings = RoleBindingPrincipal.objects.filter(
+                    principal__username__iexact=username,
+                    principal__tenant=tenant,
+                    binding__role=v2_role,
+                    binding__tenant=tenant,
+                ).select_related("binding")
+                for rbp in direct_bindings:
                     result["user_already_has_role"] = True
-                    resource = binding.get("resource", {})
-                    subjects = binding.get("subjects", [])
-                    source = "direct"
-                    for subj in subjects:
-                        if subj.get("type") == "principal" and subj.get("id", "").endswith(username):
-                            source = "direct"
-                            break
-                        elif subj.get("type") == "group":
-                            source = f"group:{subj.get('id', 'unknown')}"
                     result["user_role_bindings"].append(
                         {
-                            "binding_id": binding.get("uuid", binding.get("id", "")),
-                            "source": source,
-                            "resource_type": resource.get("type", ""),
-                            "resource_id": resource.get("id", ""),
+                            "binding_id": str(rbp.binding.id),
+                            "source": rbp.source,
+                            "resource_type": rbp.binding.resource_type,
+                            "resource_id": rbp.binding.resource_id,
                         }
                     )
-            except Exception as e:
-                logger.warning("guide_user_access_delegation: Failed to check user bindings: %s", e)
+
+                # Group-based bindings - query groups by username directly
+                user_groups = Group.objects.filter(principals__username__iexact=username, tenant=tenant)
+                group_bindings = RoleBindingGroup.objects.filter(
+                    group__in=user_groups, binding__role=v2_role, binding__tenant=tenant
+                ).select_related("binding", "group")
+                for rbg in group_bindings:
+                    result["user_already_has_role"] = True
+                    result["user_role_bindings"].append(
+                        {
+                            "binding_id": str(rbg.binding.id),
+                            "source": f"group:{rbg.group.name}",
+                            "resource_type": rbg.binding.resource_type,
+                            "resource_id": rbg.binding.resource_id,
+                        }
+                    )
         else:
             # V1: Find groups using list_groups tool with role_names filter
             try:
