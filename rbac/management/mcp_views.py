@@ -42,12 +42,11 @@ from management.access.view import AccessView
 from management.audit_log.view import AuditLogViewSet
 from management.cache import _connection_pool
 from management.group.view import GroupViewSet
-from management.models import Access, AuditLog, Group, Role
+from management.models import Access, AuditLog, Group
 from management.permission.view import PermissionViewSet
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
 from management.principal.view import PrincipalView
-from management.role.v2_model import RoleV2
 from management.role.v2_view import RoleV2ViewSet
 from management.role.view import RoleViewSet
 from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
@@ -60,7 +59,7 @@ from redis import Redis, exceptions as redis_exceptions
 
 from api.common import RH_IDENTITY_HEADER
 from api.cross_access.view import CrossAccountRequestViewSet
-from api.models import CrossAccountRequest, Tenant
+from api.models import CrossAccountRequest
 from api.status.view import status as status_view_fn
 
 # Cache view functions — .as_view() returns a new callable each time,
@@ -3450,7 +3449,6 @@ def guide_user_access_delegation(
     """Provide guidance on delegating user access management without Org Admin privileges."""
     try:
         tenant = getattr(request, "tenant", None)
-        org_id = getattr(request.user, "org_id", None) if hasattr(request, "user") else None
 
         if not tenant:
             return json.dumps({"error": "No tenant context available"})
@@ -3474,41 +3472,63 @@ def guide_user_access_delegation(
             "recommendation": None,
         }
 
-        # Step 1: Check if user exists and get their org admin status
-        if org_id:
-            proxy = PrincipalProxy()
-            try:
-                proxy_resp = proxy.request_filtered_principals([username], org_id=org_id, limit=1)
-                if proxy_resp.get("status_code") == 200 and proxy_resp.get("data"):
-                    user_data = proxy_resp["data"][0] if proxy_resp["data"] else None
-                    if user_data:
-                        result["user_info"] = {
-                            "username": user_data.get("username"),
-                            "email": user_data.get("email"),
-                            "first_name": user_data.get("first_name"),
-                            "last_name": user_data.get("last_name"),
-                            "is_org_admin": user_data.get("is_org_admin", False),
-                            "is_active": user_data.get("is_active", True),
-                        }
-                    else:
-                        result["user_info"] = {"error": f"User '{username}' not found in this organization"}
-                else:
-                    result["user_info"] = {"error": f"Could not verify user '{username}'"}
-            except Exception as e:
-                logger.warning("guide_user_access_delegation: Failed to verify user %s: %s", username, e)
-                result["user_info"] = {"error": f"Could not verify user '{username}'"}
-        else:
-            result["user_info"] = {"error": "No org_id available to verify user"}
-
-        # Step 2: Find the 'User Access administrator' role (direct DB query for system role)
-        user_access_admin_role_name = "User Access administrator"
+        # Step 1: Check if user exists using list_principals tool
         try:
-            public_tenant = Tenant.objects.get(tenant_name="public")
-            role = Role.objects.filter(name__iexact=user_access_admin_role_name, tenant=public_tenant).first()
-        except Tenant.DoesNotExist:
-            role = None
+            principals_raw = list_principals(request, usernames=username, match_criteria="exact", limit=1)
+            principals_data = json.loads(principals_raw)
+            if principals_data.get("data"):
+                user_data = principals_data["data"][0]
+                result["user_info"] = {
+                    "username": user_data.get("username"),
+                    "email": user_data.get("email"),
+                    "first_name": user_data.get("first_name"),
+                    "last_name": user_data.get("last_name"),
+                    "is_org_admin": user_data.get("is_org_admin", False),
+                    "is_active": user_data.get("is_active", True),
+                }
+            else:
+                result["user_info"] = {"error": f"User '{username}' not found in this organization"}
+        except Exception as e:
+            logger.warning("guide_user_access_delegation: Failed to verify user %s: %s", username, e)
+            result["user_info"] = {"error": f"Could not verify user '{username}'"}
 
-        if not role:
+        # Step 2: Find the 'User Access administrator' role using search_roles tool
+        user_access_admin_role_name = "User Access administrator"
+        role_uuid = None
+        try:
+            # For V1, use system filter; for V2, search by name only
+            if is_v2:
+                roles_raw = search_roles(request, name=user_access_admin_role_name, limit=10)
+            else:
+                roles_raw = search_roles(request, name=user_access_admin_role_name, system="true", limit=1)
+            roles_data = json.loads(roles_raw)
+            if roles_data.get("data"):
+                # Find exact match by name (search may return partial matches)
+                role_data = None
+                for r in roles_data["data"]:
+                    if r.get("name", "").lower() == user_access_admin_role_name.lower():
+                        role_data = r
+                        break
+                if not role_data:
+                    role_data = roles_data["data"][0]
+                role_uuid = role_data.get("uuid")
+                result["role_info"] = {
+                    "uuid": role_uuid,
+                    "name": role_data.get("name"),
+                    "display_name": role_data.get("display_name"),
+                    "description": role_data.get("description"),
+                    "system": role_data.get("system", True),
+                }
+            else:
+                result["role_info"] = {"error": f"Role '{user_access_admin_role_name}' not found"}
+                result["recommendation"] = (
+                    f"The '{user_access_admin_role_name}' role was not found. "
+                    "This is a system role that should exist by default. "
+                    "Please contact Red Hat support if this role is missing."
+                )
+                return json.dumps(result)
+        except Exception as e:
+            logger.warning("guide_user_access_delegation: Failed to find role: %s", e)
             result["role_info"] = {"error": f"Role '{user_access_admin_role_name}' not found"}
             result["recommendation"] = (
                 f"The '{user_access_admin_role_name}' role was not found. "
@@ -3517,113 +3537,108 @@ def guide_user_access_delegation(
             )
             return json.dumps(result)
 
-        role_uuid = str(role.uuid)
-        result["role_info"] = {
-            "uuid": role_uuid,
-            "name": role.name,
-            "display_name": role.display_name,
-            "description": role.description,
-            "system": role.system,
-        }
-
-        # Step 3: Get the access permissions for this role (direct DB query)
-        permissions_list = list(Access.objects.filter(role=role).values_list("permission__permission", flat=True))
-        permission_summary = ", ".join(permissions_list) if permissions_list else "No permissions configured"
-
-        result["role_access"] = {
-            "permissions": permissions_list,
-            "permission_summary": permission_summary,
-        }
+        # Step 3: Get role permissions using get_role
+        try:
+            role_detail_raw = get_role(request, role_uuid=role_uuid)
+            role_detail = json.loads(role_detail_raw)
+            if is_v2:
+                # V2 role detail has permissions as objects with application/resource_type/verb
+                perms = role_detail.get("permissions", [])
+                permissions_list = [
+                    f"{p.get('application', '')}:{p.get('resource_type', '')}:{p.get('verb', '')}" for p in perms
+                ]
+            else:
+                # V1 role detail has "permissions" array with {permission, resourceDefinitions}
+                perms = role_detail.get("permissions", [])
+                permissions_list = [p.get("permission", "") for p in perms]
+            permission_summary = ", ".join(permissions_list) if permissions_list else "No permissions configured"
+            result["role_access"] = {
+                "permissions": permissions_list,
+                "permission_summary": permission_summary,
+            }
+        except Exception as e:
+            logger.warning("guide_user_access_delegation: Failed to get role access: %s", e)
+            result["role_access"] = {"permissions": [], "permission_summary": "Unable to retrieve permissions"}
 
         # Step 4: Find assignments for this role (V1: groups/policies, V2: role bindings)
-        principal = Principal.objects.filter(username__iexact=username, tenant=tenant).first()
-
         if is_v2:
-            # V2: RoleBinding uses RoleV2, so find the V2 equivalent of this role by name
-            v2_role = RoleV2.objects.filter(name__iexact=user_access_admin_role_name, tenant=tenant).first()
-
-            if v2_role:
-                # V2: Find role bindings that grant this role
-                role_bindings_with_this_role = (
-                    RoleBinding.objects.filter(role=v2_role, tenant=tenant)
-                    .select_related("role")
-                    .annotate(
-                        principal_count=Count("principal_entries", distinct=True),
-                        group_count=Count("group_entries", distinct=True),
-                    )
-                )
-
-                for binding in role_bindings_with_this_role:
+            # V2: Find role bindings using list_role_bindings tool
+            try:
+                bindings_raw = list_role_bindings(request, role_id=role_uuid, limit=100)
+                bindings_data = json.loads(bindings_raw)
+                for binding in bindings_data.get("data", []):
+                    resource = binding.get("resource", {})
+                    subjects = binding.get("subjects", [])
                     result["role_bindings_with_role"].append(
                         {
-                            "id": str(binding.id),
-                            "resource_type": binding.resource_type,
-                            "resource_id": binding.resource_id,
-                            "principal_count": binding.principal_count,
-                            "group_count": binding.group_count,
+                            "id": binding.get("uuid", binding.get("id", "")),
+                            "resource_type": resource.get("type", ""),
+                            "resource_id": resource.get("id", ""),
+                            "principal_count": sum(1 for s in subjects if s.get("type") == "principal"),
+                            "group_count": sum(1 for s in subjects if s.get("type") == "group"),
                         }
                     )
+            except Exception as e:
+                logger.warning("guide_user_access_delegation: Failed to get role bindings: %s", e)
 
-                # Step 5 (V2): Check if the target user already has this role via role bindings
-                if principal:
-                    # Direct bindings
-                    direct_bindings = RoleBindingPrincipal.objects.filter(
-                        principal=principal, binding__role=v2_role, binding__tenant=tenant
-                    ).select_related("binding")
-                    for rbp in direct_bindings:
-                        result["user_already_has_role"] = True
-                        result["user_role_bindings"].append(
-                            {
-                                "binding_id": str(rbp.binding.id),
-                                "source": rbp.source,
-                                "resource_type": rbp.binding.resource_type,
-                                "resource_id": rbp.binding.resource_id,
-                            }
-                        )
-
-                    # Group-based bindings
-                    user_groups = principal.group.filter(tenant=tenant)
-                    group_bindings = RoleBindingGroup.objects.filter(
-                        group__in=user_groups, binding__role=v2_role, binding__tenant=tenant
-                    ).select_related("binding", "group")
-                    for rbg in group_bindings:
-                        result["user_already_has_role"] = True
-                        result["user_role_bindings"].append(
-                            {
-                                "binding_id": str(rbg.binding.id),
-                                "source": f"group:{rbg.group.name}",
-                                "resource_type": rbg.binding.resource_type,
-                                "resource_id": rbg.binding.resource_id,
-                            }
-                        )
-        else:
-            # V1: Find groups that have this role assigned via policies
-            groups_with_role = (
-                Group.objects.filter(policies__roles=role, tenant=tenant)
-                .distinct()
-                .annotate(principal_count=Count("principals", distinct=True))
-            )
-
-            for group in groups_with_role:
-                result["groups_with_role"].append(
-                    {
-                        "uuid": str(group.uuid),
-                        "name": group.name,
-                        "description": group.description,
-                        "principal_count": group.principal_count,
-                    }
+            # Step 5 (V2): Check if user already has this role via role bindings
+            try:
+                user_bindings_raw = list_role_bindings(
+                    request, role_id=role_uuid, granted_subject_principal_user_id=username, limit=100
                 )
-
-            # Step 5 (V1): Check if the target user already has this role via group membership
-            if principal:
-                user_groups_with_this_role = (
-                    Group.objects.filter(principals=principal, policies__roles=role, tenant=tenant)
-                    .distinct()
-                    .values_list("name", flat=True)
-                )
-                if user_groups_with_this_role:
+                user_bindings_data = json.loads(user_bindings_raw)
+                for binding in user_bindings_data.get("data", []):
                     result["user_already_has_role"] = True
-                    result["user_groups_with_role"] = list(user_groups_with_this_role)
+                    resource = binding.get("resource", {})
+                    subjects = binding.get("subjects", [])
+                    source = "direct"
+                    for subj in subjects:
+                        if subj.get("type") == "principal" and subj.get("id", "").endswith(username):
+                            source = "direct"
+                            break
+                        elif subj.get("type") == "group":
+                            source = f"group:{subj.get('id', 'unknown')}"
+                    result["user_role_bindings"].append(
+                        {
+                            "binding_id": binding.get("uuid", binding.get("id", "")),
+                            "source": source,
+                            "resource_type": resource.get("type", ""),
+                            "resource_id": resource.get("id", ""),
+                        }
+                    )
+            except Exception as e:
+                logger.warning("guide_user_access_delegation: Failed to check user bindings: %s", e)
+        else:
+            # V1: Find groups using list_groups tool with role_names filter
+            try:
+                groups_raw = list_groups(request, role_names=user_access_admin_role_name, limit=100)
+                groups_data = json.loads(groups_raw)
+                for group in groups_data.get("data", []):
+                    result["groups_with_role"].append(
+                        {
+                            "uuid": group.get("uuid"),
+                            "name": group.get("name"),
+                            "description": group.get("description", ""),
+                            "principal_count": group.get("principalCount", 0),
+                        }
+                    )
+            except Exception as e:
+                logger.warning("guide_user_access_delegation: Failed to get groups with role: %s", e)
+
+            # Step 5 (V1): Check if user already has this role via group membership
+            try:
+                user_groups_raw = list_groups(request, username=username, limit=100)
+                user_groups_data = json.loads(user_groups_raw)
+                user_group_uuids = {g.get("uuid") for g in user_groups_data.get("data", [])}
+                groups_with_role_uuids = {g["uuid"] for g in result["groups_with_role"]}
+                overlap = user_group_uuids & groups_with_role_uuids
+                if overlap:
+                    result["user_already_has_role"] = True
+                    for group in result["groups_with_role"]:
+                        if group["uuid"] in overlap:
+                            result["user_groups_with_role"].append(group["name"])
+            except Exception as e:
+                logger.warning("guide_user_access_delegation: Failed to check user groups: %s", e)
 
         # Step 6: Build the recommendation
         user_is_org_admin = (
