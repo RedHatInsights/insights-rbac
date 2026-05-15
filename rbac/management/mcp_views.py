@@ -31,7 +31,7 @@ from functools import lru_cache, wraps
 from typing import Any, Callable
 
 from django.conf import settings
-from django.db.models import Count
+from django.db.models import Count, Prefetch
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.test import RequestFactory
 from django.urls import reverse
@@ -1621,6 +1621,7 @@ def audit_redhat_access(
         "Queries: Group, Principal, Policy, Role, Access models directly (no per-member API calls)"
     ),
     requires_auth=True,
+    api_version=ApiVersion.COMMON,
 )
 def audit_group_for_dissolution(
     request: HttpRequest,
@@ -1686,7 +1687,10 @@ def audit_group_for_dissolution(
     all_memberships = (
         Group.objects.filter(principals__id__in=principal_ids, tenant=tenant)
         .exclude(uuid=resolved_uuid)
-        .prefetch_related("policies__roles__access__permission", "principals")
+        .prefetch_related(
+            "policies__roles__access__permission",
+            Prefetch("principals", queryset=Principal.objects.filter(id__in=principal_ids)),
+        )
         .distinct()
     )
     # Build a mapping of principal_id -> list of other groups
