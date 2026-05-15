@@ -876,7 +876,7 @@ class BatchCreateRoleBindingRequestSerializer(serializers.Serializer):
 
     service_class = RoleBindingService
 
-    DEFAULT_FIELDS = "resource(id),role(id),subject(id,type)"
+    DEFAULT_FIELDS = "resource(id,type),role(id),subject(id,type)"
 
     requests = CreateRoleBindingItemSerializer(many=True, min_length=1, max_length=100)
     fields = serializers.CharField(
