@@ -35,10 +35,12 @@ from internal.utils import (
     remove_unassigned_system_binding_mappings,
     replicate_missing_binding_tuples,
 )
+from management.group.model import Group
 from management.health.healthcheck import redis_health
 from management.inventory_checker.inventory_api_check import (
     BootstrappedTenantInventoryChecker,
     CustomRolePermissionChecker,
+    GroupPrincipalInventoryChecker,
     SeededRoleHierarchyChecker,
     WorkspaceRelationInventoryChecker,
     generate_seeded_role_hierarchy_tuples,
@@ -260,6 +262,8 @@ def run_kessel_parity_checks_in_worker():
         "total_custom_roles_checked": 0,
         "total_seeded_roles_checked": 0,
         "total_bootstrap_checks": 0,
+        "total_groups_checked": 0,
+        "total_group_principal_relations_checked": 0,
         "passed_tenants": 0,
         "failed_tenants": 0,
         "tenants_not_found": 0,
@@ -272,6 +276,7 @@ def run_kessel_parity_checks_in_worker():
     role_permission_checker = CustomRolePermissionChecker()
     hierarchy_checker = SeededRoleHierarchyChecker()
     bootstrap_checker = BootstrappedTenantInventoryChecker()
+    group_principal_checker = GroupPrincipalInventoryChecker()
 
     # Seeded role hierarchy check (global, not per-tenant)
     seeded_start = time.monotonic()
@@ -351,6 +356,8 @@ def run_kessel_parity_checks_in_worker():
         custom_role_check_passed = True
         bootstrap_check_passed = False
         bootstrap_details: list[dict] = []
+        group_results = []
+        group_principal_check_passed = True
 
         try:
             tenant_start = time.monotonic()
@@ -420,7 +427,46 @@ def run_kessel_parity_checks_in_worker():
                 logger.warning(f"No tenant mapping for org_id: {org_id}, skipping bootstrap check")
                 bootstrap_check_passed = False
 
-            tenant_passed = workspace_check_passed and custom_role_check_passed and bootstrap_check_passed
+            groups = Group.objects.filter(tenant=tenant).prefetch_related("principals")
+            tenant_group_principal_relations = 0
+
+            for group in groups:
+                relationships = [group.relationship_to_principal(p) for p in group.principals.all()]
+                relationships = [r for r in relationships if r is not None]
+                principal_count = len(relationships)
+                tenant_group_principal_relations += principal_count
+
+                if relationships:
+                    result = group_principal_checker.check_relationships(relationships)
+                    all_exist = all(pr["relation_exists"] for pr in result["principal_relations"])
+                else:
+                    all_exist = True
+
+                group_results.append(
+                    {
+                        "group_uuid": str(group.uuid),
+                        "group_name": group.name,
+                        "principal_count": principal_count,
+                        "passed": all_exist,
+                    }
+                )
+                if not all_exist:
+                    group_principal_check_passed = False
+
+            stats["total_groups_checked"] += len(group_results)
+            stats["total_group_principal_relations_checked"] += tenant_group_principal_relations
+            if group_results:
+                logger.info(
+                    f"Checked {len(group_results)} group(s) with "
+                    f"{tenant_group_principal_relations} principal relation(s) for tenant {org_id}"
+                )
+
+            tenant_passed = (
+                workspace_check_passed
+                and custom_role_check_passed
+                and bootstrap_check_passed
+                and group_principal_check_passed
+            )
 
             if tenant_passed:
                 stats["passed_tenants"] += 1
@@ -444,6 +490,9 @@ def run_kessel_parity_checks_in_worker():
                     "bootstrap_check_passed": bootstrap_check_passed,
                     "bootstrap_details": bootstrap_details,
                     "role_results": role_results,
+                    "groups_checked": len(group_results),
+                    "group_principal_check_passed": group_principal_check_passed,
+                    "group_results": group_results,
                     "passed": tenant_passed,
                     "duration_seconds": round(tenant_elapsed, 3),
                 }
@@ -465,6 +514,9 @@ def run_kessel_parity_checks_in_worker():
                     "bootstrap_check_passed": bootstrap_check_passed,
                     "bootstrap_details": bootstrap_details,
                     "role_results": role_results,
+                    "groups_checked": len(group_results),
+                    "group_principal_check_passed": group_principal_check_passed,
+                    "group_results": group_results,
                     "passed": False,
                     "error": str(e),
                     "duration_seconds": round(tenant_elapsed, 3),
@@ -494,7 +546,9 @@ def run_kessel_parity_checks_in_worker():
         f"Total workspace pairs: {stats['total_workspace_pairs_checked']}, "
         f"Total custom roles: {stats['total_custom_roles_checked']}, "
         f"Total seeded roles: {stats['total_seeded_roles_checked']}, "
-        f"Total bootstrap checks: {stats['total_bootstrap_checks']}"
+        f"Total bootstrap checks: {stats['total_bootstrap_checks']}, "
+        f"Total groups: {stats['total_groups_checked']}, "
+        f"Total group-principal relations: {stats['total_group_principal_relations_checked']}"
     )
 
     stats["timing"] = timing_stats
