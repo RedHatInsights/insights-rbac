@@ -1176,7 +1176,7 @@ class InternalViewsetTests(BaseInternalViewsetTests):
         self.assertIsNotNone(Workspace.objects.root(tenant=tenant))
         self.assertIsNotNone(Workspace.objects.default(tenant=tenant))
         self.assertTrue(getattr(tenant, "tenant_mapping"))
-        self.assertEqual(len(tuples), 21)
+        self.assertEqual(len(tuples), 20)
 
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     def test_bootstrapping_multiple_tenants(self, replicate):
@@ -1215,8 +1215,8 @@ class InternalViewsetTests(BaseInternalViewsetTests):
             self.assertTrue(getattr(tenant, "tenant_mapping"))
         self.assertEqual(
             len(tuples),
-            21 + 21 + 21,
-        )  # orgs: 3 for workspaces, (3 for default and 3 for admin default access) for each of 3 scopes
+            20 + 20 + 20,
+        )  # orgs: per tenant, workspace hierarchy + default access (root no longer has workspace#parent@tenant)
 
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
     def test_bootstrapping_existing_tenant_without_force_does_nothing(self, replicate):
@@ -1271,7 +1271,7 @@ class InternalViewsetTests(BaseInternalViewsetTests):
         )
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
-        self.assertEqual(len(tuples), 21)
+        self.assertEqual(len(tuples), 20)
 
     @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
     def test_cannot_force_bootstrapping_while_replication_enabled(self):
