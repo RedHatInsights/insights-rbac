@@ -4071,6 +4071,263 @@ class MCPCheckRolePermissionsEdgeCasesTests(MCPToolTestMixin, IdentityRequest):
 
 
 @override_settings(BYPASS_BOP_VERIFICATION=True)
+class AuditGroupForDissolutionTests(MCPToolTestMixin, IdentityRequest):
+    """Tests for audit_group_for_dissolution MCP tool."""
+
+    def setUp(self):
+        """Set up audit_group_for_dissolution tests with groups, roles, and members."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+
+        # Create test principals
+        self.user1 = Principal.objects.create(username="jen.park", tenant=self.tenant, type="user")
+        self.user2 = Principal.objects.create(username="tomas.rivera", tenant=self.tenant, type="user")
+        self.user3 = Principal.objects.create(username="priya.shah", tenant=self.tenant, type="user")
+        self.user4 = Principal.objects.create(username="alex.chen", tenant=self.tenant, type="user")
+        self.svc1 = Principal.objects.create(
+            username="svc-legacy-patcher",
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id="sa-12345",
+        )
+        self.svc2 = Principal.objects.create(
+            username="svc-legacy-remediation",
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id="sa-67890",
+        )
+
+        # Create target group to be dissolved
+        self.legacy_ops_group = Group.objects.create(
+            name="Legacy Ops",
+            description="Legacy operations team",
+            tenant=self.tenant,
+        )
+
+        # Create platform default group
+        self.platform_default_group = Group.objects.create(
+            name="Default access",
+            description="Platform default group",
+            tenant=self.tenant,
+            platform_default=True,
+        )
+
+        # Create another group for users with overlapping access
+        self.other_group = Group.objects.create(
+            name="Engineering",
+            description="Engineering team",
+            tenant=self.tenant,
+        )
+
+        # Add members to Legacy Ops
+        self.legacy_ops_group.principals.add(self.user1, self.user2, self.user3, self.user4, self.svc1, self.svc2)
+
+        # Add some users to platform default (they'll be stranded after dissolution)
+        self.platform_default_group.principals.add(self.user1, self.user2, self.user3)
+
+        # Add user4 to another group (will have overlapping access)
+        self.other_group.principals.add(self.user4)
+
+        # Create roles with permissions
+        self.inventory_role = Role.objects.create(
+            name="inventory-hosts-admin",
+            display_name="Inventory Hosts administrator",
+            description="Manage inventory hosts",
+            tenant=self.tenant,
+        )
+        self.patch_role = Role.objects.create(
+            name="patch-admin",
+            display_name="Patch administrator",
+            description="Manage patches",
+            tenant=self.tenant,
+        )
+        self.remediation_role = Role.objects.create(
+            name="remediations-admin",
+            display_name="Remediations administrator",
+            description="Manage remediations",
+            tenant=self.tenant,
+        )
+
+        # Create permissions
+        self.inventory_perm = Permission.objects.create(
+            permission="inventory:hosts:write",
+            tenant=self.tenant,
+        )
+        self.patch_perm = Permission.objects.create(
+            permission="patch:template:write",
+            tenant=self.tenant,
+        )
+        self.remediation_perm = Permission.objects.create(
+            permission="remediations:remediation:write",
+            tenant=self.tenant,
+        )
+
+        # Assign permissions to roles
+        Access.objects.create(permission=self.inventory_perm, role=self.inventory_role, tenant=self.tenant)
+        Access.objects.create(permission=self.patch_perm, role=self.patch_role, tenant=self.tenant)
+        Access.objects.create(permission=self.remediation_perm, role=self.remediation_role, tenant=self.tenant)
+
+        # Create policy and add roles to Legacy Ops group
+        self.policy = Policy.objects.create(name="legacy-ops-policy", group=self.legacy_ops_group, tenant=self.tenant)
+        self.policy.roles.add(self.inventory_role, self.patch_role, self.remediation_role)
+
+        # Add a role to the other group for overlapping access
+        other_policy = Policy.objects.create(name="engineering-policy", group=self.other_group, tenant=self.tenant)
+        other_policy.roles.add(self.inventory_role)
+
+    def tearDown(self):
+        """Clean up test data."""
+        Policy.objects.filter(tenant=self.tenant).delete()
+        Access.objects.filter(tenant=self.tenant).delete()
+        Role.objects.filter(tenant=self.tenant).delete()
+        Permission.objects.filter(tenant=self.tenant).delete()
+        Group.objects.filter(tenant=self.tenant).delete()
+        Principal.objects.filter(tenant=self.tenant).delete()
+        super().tearDown()
+
+    def test_audit_group_for_dissolution_success(self):
+        """Positive: audit_group_for_dissolution returns group dissolution analysis."""
+        response = self._call_tool("audit_group_for_dissolution", {"group_name": "Legacy Ops"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+
+        self.assertIn("group", tool_output)
+        self.assertIn("members", tool_output)
+        self.assertIn("roles", tool_output)
+        self.assertIn("analysis", tool_output)
+        self.assertEqual(tool_output["group"]["name"], "Legacy Ops")
+
+    def test_audit_group_for_dissolution_without_auth_returns_error(self):
+        """Permission: audit_group_for_dissolution without auth returns auth error."""
+        response = self._call_tool("audit_group_for_dissolution", {"group_name": "Legacy Ops"}, use_auth=False)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    def test_audit_group_for_dissolution_identifies_stranded_users(self):
+        """Positive: identifies users who would be stranded (only in target + platform default)."""
+        response = self._call_tool("audit_group_for_dissolution", {"group_name": "Legacy Ops"})
+        tool_output = self._get_tool_output(response)
+
+        analysis = tool_output["analysis"]
+        # Users 1, 2, 3 are only in Legacy Ops + platform default - they're stranded
+        self.assertEqual(analysis["stranded_user_count"], 3)
+        self.assertIn("jen.park", analysis["stranded_users"])
+        self.assertIn("tomas.rivera", analysis["stranded_users"])
+        self.assertIn("priya.shah", analysis["stranded_users"])
+
+    def test_audit_group_for_dissolution_identifies_stranded_service_accounts(self):
+        """Positive: identifies service accounts that would lose all access."""
+        response = self._call_tool("audit_group_for_dissolution", {"group_name": "Legacy Ops"})
+        tool_output = self._get_tool_output(response)
+
+        analysis = tool_output["analysis"]
+        # Both service accounts are only in Legacy Ops - they're stranded
+        self.assertEqual(analysis["stranded_service_account_count"], 2)
+        self.assertIn("svc-legacy-patcher", analysis["stranded_service_accounts"])
+        self.assertIn("svc-legacy-remediation", analysis["stranded_service_accounts"])
+
+    def test_audit_group_for_dissolution_identifies_members_with_overlapping_access(self):
+        """Positive: identifies members who have overlapping access via other groups."""
+        response = self._call_tool("audit_group_for_dissolution", {"group_name": "Legacy Ops"})
+        tool_output = self._get_tool_output(response)
+
+        analysis = tool_output["analysis"]
+        # User4 (alex.chen) is also in Engineering group
+        self.assertIn("alex.chen", analysis["members_with_overlapping_access"])
+        self.assertEqual(analysis["members_with_overlapping_count"], 1)
+
+    def test_audit_group_for_dissolution_shows_roles_and_permissions(self):
+        """Positive: returns roles assigned to the group with their permissions."""
+        response = self._call_tool("audit_group_for_dissolution", {"group_name": "Legacy Ops"})
+        tool_output = self._get_tool_output(response)
+
+        roles = tool_output["roles"]
+        self.assertEqual(len(roles), 3)
+        role_names = [r["name"] for r in roles]
+        self.assertIn("Inventory Hosts administrator", role_names)
+        self.assertIn("Patch administrator", role_names)
+        self.assertIn("Remediations administrator", role_names)
+
+        analysis = tool_output["analysis"]
+        self.assertEqual(analysis["total_unique_permissions"], 3)
+        self.assertIn("inventory", analysis["permissions_by_application"])
+        self.assertIn("patch", analysis["permissions_by_application"])
+        self.assertIn("remediations", analysis["permissions_by_application"])
+
+    def test_audit_group_for_dissolution_member_details(self):
+        """Positive: returns detailed member information including other groups."""
+        response = self._call_tool("audit_group_for_dissolution", {"group_name": "Legacy Ops"})
+        tool_output = self._get_tool_output(response)
+
+        members = tool_output["members"]
+        self.assertEqual(len(members), 6)
+
+        # Find alex.chen who has overlapping access
+        alex = next(m for m in members if m["username"] == "alex.chen")
+        self.assertFalse(alex["is_stranded"])
+        self.assertEqual(alex["non_default_group_count"], 1)
+        self.assertIn("partial", alex["access_impact"])
+
+        # Find svc-legacy-patcher (service account)
+        svc = next(m for m in members if m["username"] == "svc-legacy-patcher")
+        self.assertTrue(svc["is_stranded"])
+        self.assertEqual(svc["type"], "service-account")
+        self.assertEqual(svc["service_account_id"], "sa-12345")
+
+    def test_audit_group_for_dissolution_by_uuid(self):
+        """Positive: can look up group by UUID instead of name."""
+        response = self._call_tool("audit_group_for_dissolution", {"group_uuid": str(self.legacy_ops_group.uuid)})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["group"]["name"], "Legacy Ops")
+
+    def test_audit_group_for_dissolution_group_not_found(self):
+        """Negative: returns error for non-existent group."""
+        response = self._call_tool("audit_group_for_dissolution", {"group_name": "Non-Existent Group"})
+
+        tool_output = self._get_tool_output(response)
+        self.assertIn("error", tool_output)
+        self.assertIn("not found", tool_output["error"])
+
+    def test_audit_group_for_dissolution_empty_group(self):
+        """Edge case: handles group with no members."""
+        empty_group = Group.objects.create(name="Empty Group", tenant=self.tenant)
+
+        response = self._call_tool("audit_group_for_dissolution", {"group_name": "Empty Group"})
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(len(tool_output["members"]), 0)
+        self.assertEqual(tool_output["analysis"]["total_members"], 0)
+        self.assertIn("no members", tool_output["analysis"]["warnings"][0].lower())
+
+        empty_group.delete()
+
+    def test_audit_group_for_dissolution_warns_about_stranded(self):
+        """Positive: warnings field includes stranded user/service account alerts."""
+        response = self._call_tool("audit_group_for_dissolution", {"group_name": "Legacy Ops"})
+        tool_output = self._get_tool_output(response)
+
+        warnings = tool_output["analysis"]["warnings"]
+        self.assertTrue(len(warnings) >= 2)
+
+        # Check for user warning
+        user_warning = next(w for w in warnings if "user" in w.lower() and "demoted" in w.lower())
+        self.assertIn("3", user_warning)
+
+        # Check for service account warning
+        svc_warning = next(w for w in warnings if "service account" in w.lower())
+        self.assertIn("403", svc_warning)
+
+
+@override_settings(BYPASS_BOP_VERIFICATION=True)
 class MCPInvestigateUserAccessTests(MCPToolTestMixin, IdentityRequest):
     """Tests for investigate_user_access MCP tool."""
 
