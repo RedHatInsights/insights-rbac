@@ -3684,12 +3684,13 @@ def create_cross_account_request(
         "(1) Whether the user exists and their current org admin status, "
         "(2) Details about the 'User Access administrator' role (the purpose-built role for this delegation), "
         "(3) What permissions it grants and what the user can/cannot do with it, "
-        "(4) Existing groups that already have this role assigned, "
-        "(5) Whether the user already has this role via group membership. "
+        "(4) Existing assignments for this role (V1: groups with role, V2: role bindings), "
+        "(5) Whether the user already has this role (V1: via group membership, V2: via role bindings). "
         "This is the #1 governance question from security/compliance teams - customers consistently "
         "don't know the 'User Access administrator' role exists. "
         "BEST FOR: Answering 'How do I let someone manage user access without making them Org Admin?' "
-        "Returns: {user_info, role_info, role_access, groups_with_role, user_already_has_role, recommendation}."
+        "Returns: {user_info, role_info, role_access, groups_with_role (V1), role_bindings_with_role (V2), "
+        "user_already_has_role, recommendation}."
     ),
     requires_auth=True,
     api_version=ApiVersion.UNIFIED,
