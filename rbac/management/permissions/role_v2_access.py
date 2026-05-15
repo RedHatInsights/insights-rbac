@@ -44,6 +44,21 @@ class RoleV2KesselAccessPermission(permissions.BasePermission):
     ROLES_WRITE_RELATION = "rbac_roles_write"
     WRITE_ACTIONS = {"create", "update", "bulk_destroy"}
 
+    def _get_principal_info(self, request):
+        """Safely extract principal information from request for logging."""
+        user = getattr(request, "user", None)
+        if user is None:
+            return {"username": None, "org_id": None, "user_id": None}
+        return {
+            "username": getattr(user, "username", None),
+            "org_id": getattr(user, "org_id", None),
+            "user_id": getattr(user, "user_id", None),
+        }
+
+    def _get_endpoint(self, request):
+        """Safely extract endpoint path from request for logging."""
+        return getattr(request, "path", None)
+
     def _get_relation(self, view) -> str:
         """Get the relation to check based on the view action."""
         action = getattr(view, "action", None)
@@ -69,15 +84,11 @@ class RoleV2KesselAccessPermission(permissions.BasePermission):
                 "Authorization denied: No tenant on request",
                 extra={
                     "event": "authorization_failure",
-                    "principal": {
-                        "username": getattr(request.user, "username", None),
-                        "org_id": getattr(request.user, "org_id", None),
-                        "user_id": getattr(request.user, "user_id", None),
-                    },
+                    "principal": self._get_principal_info(request),
                     "resource_type": "role_v2",
                     "outcome": "failure",
                     "reason": "No tenant on request",
-                    "endpoint": request.path,
+                    "endpoint": self._get_endpoint(request),
                 },
             )
             return False
@@ -89,15 +100,11 @@ class RoleV2KesselAccessPermission(permissions.BasePermission):
                 "Authorization denied: Tenant has no resource ID",
                 extra={
                     "event": "authorization_failure",
-                    "principal": {
-                        "username": getattr(request.user, "username", None),
-                        "org_id": getattr(request.user, "org_id", None),
-                        "user_id": getattr(request.user, "user_id", None),
-                    },
+                    "principal": self._get_principal_info(request),
                     "resource_type": "role_v2",
                     "outcome": "failure",
                     "reason": "Tenant has no resource ID",
-                    "endpoint": request.path,
+                    "endpoint": self._get_endpoint(request),
                 },
             )
             return False
@@ -109,15 +116,11 @@ class RoleV2KesselAccessPermission(permissions.BasePermission):
                 "Authorization denied: Could not determine principal ID",
                 extra={
                     "event": "authorization_failure",
-                    "principal": {
-                        "username": getattr(request.user, "username", None),
-                        "org_id": getattr(request.user, "org_id", None),
-                        "user_id": getattr(request.user, "user_id", None),
-                    },
+                    "principal": self._get_principal_info(request),
                     "resource_type": "role_v2",
                     "outcome": "failure",
                     "reason": "Could not determine Kessel principal ID",
-                    "endpoint": request.path,
+                    "endpoint": self._get_endpoint(request),
                 },
             )
             return False
@@ -133,22 +136,19 @@ class RoleV2KesselAccessPermission(permissions.BasePermission):
 
         if not has_access:
             # Log authorization failure - SEC-MON-REQ-1 compliance (#8 authorization_failure)
+            principal_info = self._get_principal_info(request)
+            principal_info["kessel_principal_id"] = principal_id
             logger.warning(
                 "Authorization denied by Kessel permission check for Role V2 API",
                 extra={
                     "event": "authorization_failure",
-                    "principal": {
-                        "username": getattr(request.user, "username", None),
-                        "org_id": getattr(request.user, "org_id", None),
-                        "user_id": getattr(request.user, "user_id", None),
-                        "kessel_principal_id": principal_id,
-                    },
+                    "principal": principal_info,
                     "resource_type": "role_v2",
                     "resource_id": org_resource_id,
                     "required_permission": relation,
                     "outcome": "failure",
                     "reason": "Kessel Inventory permission check denied",
-                    "endpoint": request.path,
+                    "endpoint": self._get_endpoint(request),
                 },
             )
 
