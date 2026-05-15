@@ -22,8 +22,13 @@ from unittest.mock import patch
 from django.test import override_settings
 from management.models import CustomRoleV2, Permission
 from management.tasks import run_kessel_parity_checks_in_worker
+from management.tenant_mapping.model import TenantMapping
 from management.workspace.model import Workspace
 from tests.identity_request import IdentityRequest
+
+BOOTSTRAP_CHECKER_PATH = (
+    "management.inventory_checker.inventory_api_check.BootstrappedTenantInventoryChecker.check_bootstrapped_tenant"
+)
 
 
 class ParityCheckTasksTest(IdentityRequest):
@@ -52,6 +57,18 @@ class ParityCheckTasksTest(IdentityRequest):
             tenant=self.tenant,
             parent=self.default_workspace,
         )
+
+        # Create tenant mapping so bootstrap checker path is reachable
+        self.tenant_mapping = TenantMapping.objects.create(tenant=self.tenant)
+
+        # Mock bootstrap checker by default so existing tests aren't affected
+        self._bootstrap_patcher = patch(BOOTSTRAP_CHECKER_PATH, return_value=(True, []))
+        self.mock_bootstrap_checker = self._bootstrap_patcher.start()
+
+    def tearDown(self):
+        """Clean up mocks."""
+        self._bootstrap_patcher.stop()
+        super().tearDown()
 
     @override_settings(PARITY_CHECK_ENABLED=True, PARITY_CHECK_ORG_IDS="")
     def test_parity_check_task_no_org_ids_configured(self):
@@ -544,3 +561,125 @@ class ParityCheckTasksTest(IdentityRequest):
         self.assertTrue(tenant_result["passed"])
         self.assertEqual(tenant_result["custom_roles_checked"], 1)
         self.assertEqual(tenant_result["role_results"][0]["permission_count"], 0)
+
+    @override_settings(PARITY_CHECK_ENABLED=True, PARITY_CHECK_ORG_IDS="test_org_id")
+    @patch(
+        "management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace_descendants"
+    )
+    def test_bootstrap_parity_success_updates_stats(self, mock_check_workspace):
+        """Bootstrap parity success should increment counters and mark tenant as passed."""
+        self.tenant.org_id = "test_org_id"
+        self.tenant.save()
+        mock_check_workspace.return_value = True
+
+        bootstrap_details = [
+            {"name": "default_workspace_parent", "exists": True},
+            {"name": "root_workspace_parent", "exists": True},
+        ]
+        self.mock_bootstrap_checker.return_value = (True, bootstrap_details)
+
+        result = run_kessel_parity_checks_in_worker()
+
+        self.assertEqual(result["total_bootstrap_checks"], 2)
+        self.assertEqual(result["passed_tenants"], 1)
+
+        tenant_result = result["tenants_checked"][0]
+        self.assertEqual(tenant_result["bootstrap_checks"], 2)
+        self.assertTrue(tenant_result["bootstrap_check_passed"])
+        self.assertEqual(tenant_result["bootstrap_details"], bootstrap_details)
+        self.assertTrue(tenant_result["passed"])
+
+    @override_settings(PARITY_CHECK_ENABLED=True, PARITY_CHECK_ORG_IDS="test_org_id")
+    @patch(
+        "management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace_descendants"
+    )
+    def test_bootstrap_parity_failure_marks_tenant_failed(self, mock_check_workspace):
+        """Bootstrap parity failure should mark tenant as failed even when other checks pass."""
+        self.tenant.org_id = "test_org_id"
+        self.tenant.save()
+        mock_check_workspace.return_value = True
+
+        bootstrap_details = [
+            {"name": "default_workspace_parent", "exists": True},
+            {"name": "root_workspace_parent", "exists": False},
+        ]
+        self.mock_bootstrap_checker.return_value = (False, bootstrap_details)
+
+        result = run_kessel_parity_checks_in_worker()
+
+        self.assertEqual(result["total_bootstrap_checks"], 2)
+        self.assertEqual(result["passed_tenants"], 0)
+        self.assertEqual(result["failed_tenants"], 1)
+
+        tenant_result = result["tenants_checked"][0]
+        self.assertEqual(tenant_result["bootstrap_checks"], 2)
+        self.assertFalse(tenant_result["bootstrap_check_passed"])
+        self.assertFalse(tenant_result["passed"])
+
+    @override_settings(PARITY_CHECK_ENABLED=True, PARITY_CHECK_ORG_IDS="test_org_id")
+    @patch(
+        "management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace_descendants"
+    )
+    def test_bootstrap_parity_no_tenant_mapping(self, mock_check_workspace):
+        """Missing TenantMapping should skip bootstrap check and fail the tenant."""
+        self.tenant.org_id = "test_org_id"
+        self.tenant.save()
+        mock_check_workspace.return_value = True
+        self.tenant_mapping.delete()
+
+        result = run_kessel_parity_checks_in_worker()
+
+        self.mock_bootstrap_checker.assert_not_called()
+        self.assertEqual(result["total_bootstrap_checks"], 0)
+        self.assertEqual(result["passed_tenants"], 0)
+        self.assertEqual(result["failed_tenants"], 1)
+
+        tenant_result = result["tenants_checked"][0]
+        self.assertFalse(tenant_result["bootstrap_check_passed"])
+        self.assertFalse(tenant_result["passed"])
+
+    @override_settings(PARITY_CHECK_ENABLED=True, PARITY_CHECK_ORG_IDS="test_org_id")
+    @patch(
+        "management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace_descendants"
+    )
+    def test_bootstrap_parity_missing_root_workspace(self, mock_check_workspace):
+        """Missing root workspace should skip bootstrap check and fail the tenant."""
+        self.tenant.org_id = "test_org_id"
+        self.tenant.save()
+        mock_check_workspace.return_value = True
+
+        self.child_workspace.delete()
+        self.default_workspace.delete()
+        self.root_workspace.delete()
+
+        result = run_kessel_parity_checks_in_worker()
+
+        self.mock_bootstrap_checker.assert_not_called()
+        self.assertEqual(result["total_bootstrap_checks"], 0)
+
+        tenant_result = result["tenants_checked"][0]
+        self.assertFalse(tenant_result["bootstrap_check_passed"])
+        self.assertFalse(tenant_result["passed"])
+
+    @override_settings(PARITY_CHECK_ENABLED=True, PARITY_CHECK_ORG_IDS="test_org_id")
+    @patch(
+        "management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace_descendants"
+    )
+    def test_bootstrap_parity_exception_still_counts_tenant(self, mock_check_workspace):
+        """When the bootstrap checker raises, the tenant is still counted and marked failed."""
+        self.tenant.org_id = "test_org_id"
+        self.tenant.save()
+        mock_check_workspace.return_value = True
+        self.mock_bootstrap_checker.side_effect = Exception("gRPC unavailable")
+
+        result = run_kessel_parity_checks_in_worker()
+
+        self.assertEqual(result["total_tenants"], 1)
+        self.assertEqual(result["failed_tenants"], 1)
+
+        tenant_result = result["tenants_checked"][0]
+        self.assertFalse(tenant_result["passed"])
+        self.assertIn("error", tenant_result)
+        self.assertIn("gRPC unavailable", tenant_result["error"])
+        self.assertEqual(tenant_result["bootstrap_checks"], 0)
+        self.assertEqual(tenant_result["bootstrap_details"], [])
