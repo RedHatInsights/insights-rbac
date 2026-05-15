@@ -383,6 +383,97 @@ class MCPViewTests(MCPToolTestMixin, IdentityRequest):
     @patch(
         "management.principal.proxy.PrincipalProxy.request_principals",
         return_value={
+            "status_code": 200,
+            "data": [
+                {"username": "jsmith", "first_name": "John", "last_name": "Smith", "email": "jsmith@example.com"},
+                {"username": "jdoe", "first_name": "Jane", "last_name": "Doe", "email": "jdoe@example.com"},
+                {
+                    "username": "rbac_user",
+                    "first_name": "RBAC",
+                    "last_name": "Normal For V2",
+                    "email": "rbac@example.com",
+                },
+            ],
+            "userCount": 3,
+        },
+    )
+    def test_tools_call_list_principals_filter_by_name_partial(self, mock_request):
+        """Positive: list_principals filters by name with partial match (e.g., 'RBAC Normal' matches 'RBAC Normal For V2')."""
+        response = self._call_tool("list_principals", {"name": "RBAC Normal"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["meta"]["count"], 1)
+        self.assertEqual(len(tool_output["data"]), 1)
+        self.assertEqual(tool_output["data"][0]["username"], "rbac_user")
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {"username": "jsmith", "first_name": "John", "last_name": "Smith", "email": "jsmith@example.com"},
+                {"username": "jdoe", "first_name": "Jane", "last_name": "Doe", "email": "jdoe@example.com"},
+                {"username": "asmith", "first_name": "Alice", "last_name": "Smith", "email": "asmith@example.com"},
+            ],
+            "userCount": 3,
+        },
+    )
+    def test_tools_call_list_principals_filter_by_name_multiple_matches(self, mock_request):
+        """Positive: list_principals name filter returns all matching users."""
+        response = self._call_tool("list_principals", {"name": "Smith"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["meta"]["count"], 2)
+        self.assertEqual(len(tool_output["data"]), 2)
+        usernames = [u["username"] for u in tool_output["data"]]
+        self.assertIn("jsmith", usernames)
+        self.assertIn("asmith", usernames)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {"username": "jsmith", "first_name": "John", "last_name": "Smith", "email": "jsmith@example.com"},
+                {"username": "jdoe", "first_name": "Jane", "last_name": "Doe", "email": "jdoe@example.com"},
+            ],
+            "userCount": 2,
+        },
+    )
+    def test_tools_call_list_principals_filter_by_name_case_insensitive(self, mock_request):
+        """Positive: list_principals name filter is case-insensitive."""
+        response = self._call_tool("list_principals", {"name": "john smith"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["meta"]["count"], 1)
+        self.assertEqual(len(tool_output["data"]), 1)
+        self.assertEqual(tool_output["data"][0]["username"], "jsmith")
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_principals",
+        return_value={
+            "status_code": 200,
+            "data": [
+                {"username": "jsmith", "first_name": "John", "last_name": "Smith", "email": "jsmith@example.com"},
+            ],
+            "userCount": 1,
+        },
+    )
+    def test_tools_call_list_principals_filter_by_name_no_match(self, mock_request):
+        """Positive: list_principals returns empty when name filter has no matches."""
+        response = self._call_tool("list_principals", {"name": "NonExistent"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["meta"]["count"], 0)
+        self.assertEqual(len(tool_output["data"]), 0)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_principals",
+        return_value={
             "status_code": 500,
             "errors": [{"detail": "Unexpected error.", "status": "500", "source": "principals"}],
         },
