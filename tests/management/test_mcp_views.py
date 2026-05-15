@@ -5870,8 +5870,8 @@ class MCPUpdateToolsV2Tests(MCPToolTestMixin, IdentityRequest):
                 return_value=True,
             )
         )
-        TenantMapping.objects.create(tenant=self.tenant, v2_write_activated_at=timezone.now())
         V2TenantBootstrapService(NoopReplicator()).bootstrap_tenant(self.tenant)
+        TenantMapping.objects.update_or_create(tenant=self.tenant, defaults={"v2_write_activated_at": timezone.now()})
         self.permission_obj = Permission.objects.create(
             application="rbac",
             resource_type="group",
