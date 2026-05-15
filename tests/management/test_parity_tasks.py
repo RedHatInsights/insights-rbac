@@ -20,7 +20,9 @@ from unittest import mock
 from unittest.mock import patch
 
 from django.test import override_settings
+from management.group.model import Group
 from management.models import CustomRoleV2, Permission
+from management.principal.model import Principal
 from management.tasks import run_kessel_parity_checks_in_worker
 from management.tenant_mapping.model import TenantMapping
 from management.workspace.model import Workspace
@@ -481,15 +483,19 @@ class ParityCheckTasksTest(IdentityRequest):
         self.assertEqual(len(tenant_result["role_results"]), 0)
 
     @override_settings(PARITY_CHECK_ENABLED=False, PARITY_CHECK_ORG_IDS="test_org_id")
+    @mock.patch("management.tasks.GroupPrincipalInventoryChecker")
     @mock.patch("management.tasks.CustomRolePermissionChecker")
     @mock.patch("management.tasks.WorkspaceRelationInventoryChecker")
-    def test_parity_check_task_disabled(self, mock_workspace_checker_cls, mock_role_checker_cls):
+    def test_parity_check_task_disabled(
+        self, mock_workspace_checker_cls, mock_role_checker_cls, mock_group_checker_cls
+    ):
         """Test parity check task returns early when disabled."""
         result = run_kessel_parity_checks_in_worker()
 
         self.assertEqual(result, {"message": "Parity checks disabled"})
         mock_workspace_checker_cls.assert_not_called()
         mock_role_checker_cls.assert_not_called()
+        mock_group_checker_cls.assert_not_called()
 
     @override_settings(PARITY_CHECK_ENABLED=True, PARITY_CHECK_ORG_IDS="test_org_id")
     @patch(
@@ -683,3 +689,236 @@ class ParityCheckTasksTest(IdentityRequest):
         self.assertIn("gRPC unavailable", tenant_result["error"])
         self.assertEqual(tenant_result["bootstrap_checks"], 0)
         self.assertEqual(tenant_result["bootstrap_details"], [])
+
+    @override_settings(PARITY_CHECK_ENABLED=True, PARITY_CHECK_ORG_IDS="test_org_id")
+    @patch("management.inventory_checker.inventory_api_check.GroupPrincipalInventoryChecker.check_relationships")
+    @patch(
+        "management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace_descendants"
+    )
+    def test_parity_check_with_groups_all_pass(self, mock_check_workspace, mock_check_group):
+        """Test parity check when group-principal checks pass."""
+        self.tenant.org_id = "test_org_id"
+        self.tenant.save()
+
+        group1 = Group.objects.create(name="group1", tenant=self.tenant)
+        p1 = Principal.objects.create(username="user1", tenant=self.tenant, user_id="uid1")
+        p2 = Principal.objects.create(username="user2", tenant=self.tenant, user_id="uid2")
+        group1.principals.add(p1, p2)
+
+        mock_check_workspace.return_value = True
+        mock_check_group.return_value = {
+            "group_uuid": str(group1.uuid),
+            "principal_relations": [
+                {"id": "localhost/uid1", "relation_exists": True},
+                {"id": "localhost/uid2", "relation_exists": True},
+            ],
+        }
+
+        result = run_kessel_parity_checks_in_worker()
+
+        mock_check_group.assert_called_once()
+        self.assertEqual(result["total_groups_checked"], 1)
+        self.assertEqual(result["total_group_principal_relations_checked"], 2)
+        self.assertEqual(result["passed_tenants"], 1)
+        self.assertEqual(result["failed_tenants"], 0)
+
+        tenant_result = result["tenants_checked"][0]
+        self.assertTrue(tenant_result["group_principal_check_passed"])
+        self.assertEqual(tenant_result["groups_checked"], 1)
+        self.assertEqual(len(tenant_result["group_results"]), 1)
+        self.assertEqual(tenant_result["group_results"][0]["principal_count"], 2)
+        self.assertTrue(tenant_result["group_results"][0]["passed"])
+        self.assertTrue(tenant_result["passed"])
+
+    @override_settings(PARITY_CHECK_ENABLED=True, PARITY_CHECK_ORG_IDS="test_org_id")
+    @patch("management.inventory_checker.inventory_api_check.GroupPrincipalInventoryChecker.check_relationships")
+    @patch(
+        "management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace_descendants"
+    )
+    def test_parity_check_group_principal_fails(self, mock_check_workspace, mock_check_group):
+        """Test parity check fails when group-principal relation is missing."""
+        self.tenant.org_id = "test_org_id"
+        self.tenant.save()
+
+        group1 = Group.objects.create(name="group1", tenant=self.tenant)
+        p1 = Principal.objects.create(username="user1", tenant=self.tenant, user_id="uid1")
+        group1.principals.add(p1)
+
+        mock_check_workspace.return_value = True
+        mock_check_group.return_value = {
+            "group_uuid": str(group1.uuid),
+            "principal_relations": [
+                {"id": "localhost/uid1", "relation_exists": False},
+            ],
+        }
+
+        result = run_kessel_parity_checks_in_worker()
+
+        self.assertEqual(result["passed_tenants"], 0)
+        self.assertEqual(result["failed_tenants"], 1)
+
+        tenant_result = result["tenants_checked"][0]
+        self.assertFalse(tenant_result["group_principal_check_passed"])
+        self.assertFalse(tenant_result["group_results"][0]["passed"])
+        self.assertFalse(tenant_result["passed"])
+
+    @override_settings(PARITY_CHECK_ENABLED=True, PARITY_CHECK_ORG_IDS="test_org_id")
+    @patch("management.inventory_checker.inventory_api_check.GroupPrincipalInventoryChecker.check_relationships")
+    @patch(
+        "management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace_descendants"
+    )
+    def test_parity_check_group_no_principals(self, mock_check_workspace, mock_check_group):
+        """Test parity check passes for groups with no principals."""
+        self.tenant.org_id = "test_org_id"
+        self.tenant.save()
+
+        Group.objects.create(name="empty-group", tenant=self.tenant)
+
+        mock_check_workspace.return_value = True
+
+        result = run_kessel_parity_checks_in_worker()
+
+        mock_check_group.assert_not_called()
+
+        self.assertEqual(result["total_groups_checked"], 1)
+        self.assertEqual(result["total_group_principal_relations_checked"], 0)
+        self.assertEqual(result["passed_tenants"], 1)
+
+        tenant_result = result["tenants_checked"][0]
+        self.assertTrue(tenant_result["group_principal_check_passed"])
+        self.assertEqual(tenant_result["group_results"][0]["principal_count"], 0)
+        self.assertTrue(tenant_result["group_results"][0]["passed"])
+
+    @override_settings(PARITY_CHECK_ENABLED=True, PARITY_CHECK_ORG_IDS="test_org_id")
+    @patch("management.inventory_checker.inventory_api_check.GroupPrincipalInventoryChecker.check_relationships")
+    @patch(
+        "management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace_descendants"
+    )
+    def test_parity_check_principal_without_user_id(self, mock_check_workspace, mock_check_group):
+        """Test that principals without user_id are filtered out gracefully."""
+        self.tenant.org_id = "test_org_id"
+        self.tenant.save()
+
+        group1 = Group.objects.create(name="group1", tenant=self.tenant)
+        p_no_uid = Principal.objects.create(username="no-uid", tenant=self.tenant, user_id=None)
+        group1.principals.add(p_no_uid)
+
+        mock_check_workspace.return_value = True
+
+        result = run_kessel_parity_checks_in_worker()
+
+        mock_check_group.assert_not_called()
+
+        tenant_result = result["tenants_checked"][0]
+        self.assertTrue(tenant_result["group_principal_check_passed"])
+        self.assertEqual(tenant_result["group_results"][0]["principal_count"], 0)
+        self.assertTrue(tenant_result["group_results"][0]["passed"])
+        self.assertTrue(tenant_result["passed"])
+
+    @override_settings(PARITY_CHECK_ENABLED=True, PARITY_CHECK_ORG_IDS="test_org_id")
+    @patch("management.inventory_checker.inventory_api_check.GroupPrincipalInventoryChecker.check_relationships")
+    @patch(
+        "management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace_descendants"
+    )
+    def test_parity_check_multiple_groups(self, mock_check_workspace, mock_check_group):
+        """Test parity check with multiple groups per tenant."""
+        self.tenant.org_id = "test_org_id"
+        self.tenant.save()
+
+        group1 = Group.objects.create(name="group1", tenant=self.tenant)
+        group2 = Group.objects.create(name="group2", tenant=self.tenant)
+        p1 = Principal.objects.create(username="user1", tenant=self.tenant, user_id="uid1")
+        p2 = Principal.objects.create(username="user2", tenant=self.tenant, user_id="uid2")
+        group1.principals.add(p1)
+        group2.principals.add(p2)
+
+        mock_check_workspace.return_value = True
+        mock_check_group.side_effect = [
+            {
+                "group_uuid": str(group1.uuid),
+                "principal_relations": [{"id": "localhost/uid1", "relation_exists": True}],
+            },
+            {
+                "group_uuid": str(group2.uuid),
+                "principal_relations": [{"id": "localhost/uid2", "relation_exists": False}],
+            },
+        ]
+
+        result = run_kessel_parity_checks_in_worker()
+
+        self.assertEqual(mock_check_group.call_count, 2)
+        self.assertEqual(result["total_groups_checked"], 2)
+        self.assertEqual(result["total_group_principal_relations_checked"], 2)
+        self.assertEqual(result["failed_tenants"], 1)
+
+        tenant_result = result["tenants_checked"][0]
+        self.assertFalse(tenant_result["group_principal_check_passed"])
+        self.assertTrue(tenant_result["group_results"][0]["passed"])
+        self.assertFalse(tenant_result["group_results"][1]["passed"])
+        self.assertFalse(tenant_result["passed"])
+
+    @override_settings(PARITY_CHECK_ENABLED=True, PARITY_CHECK_ORG_IDS="test_org_id")
+    @patch("management.inventory_checker.inventory_api_check.GroupPrincipalInventoryChecker.check_relationships")
+    @patch(
+        "management.inventory_checker.inventory_api_check.CustomRolePermissionChecker.check_custom_role_permissions"
+    )
+    @patch(
+        "management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace_descendants"
+    )
+    def test_parity_check_group_fails_others_pass(self, mock_check_workspace, mock_check_role_perms, mock_check_group):
+        """Test that tenant fails when only group-principal check fails."""
+        self.tenant.org_id = "test_org_id"
+        self.tenant.save()
+
+        role1 = CustomRoleV2.objects.create(name="role1", tenant=self.tenant)
+        perm1 = Permission.objects.create(permission="inventory:hosts:read", tenant=self.tenant)
+        role1.permissions.add(perm1)
+
+        group1 = Group.objects.create(name="group1", tenant=self.tenant)
+        p1 = Principal.objects.create(username="user1", tenant=self.tenant, user_id="uid1")
+        group1.principals.add(p1)
+
+        mock_check_workspace.return_value = True
+        mock_check_role_perms.return_value = True
+        mock_check_group.return_value = {
+            "group_uuid": str(group1.uuid),
+            "principal_relations": [{"id": "localhost/uid1", "relation_exists": False}],
+        }
+
+        result = run_kessel_parity_checks_in_worker()
+
+        self.assertEqual(result["passed_tenants"], 0)
+        self.assertEqual(result["failed_tenants"], 1)
+
+        tenant_result = result["tenants_checked"][0]
+        self.assertTrue(tenant_result["workspace_check_passed"])
+        self.assertTrue(tenant_result["custom_role_check_passed"])
+        self.assertFalse(tenant_result["group_principal_check_passed"])
+        self.assertFalse(tenant_result["passed"])
+
+    @override_settings(PARITY_CHECK_ENABLED=True, PARITY_CHECK_ORG_IDS="test_org_id")
+    @patch("management.inventory_checker.inventory_api_check.GroupPrincipalInventoryChecker.check_relationships")
+    @patch(
+        "management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace_descendants"
+    )
+    def test_parity_check_group_checker_exception(self, mock_check_workspace, mock_check_group):
+        """Test that the task handles exceptions from the group-principal checker gracefully."""
+        self.tenant.org_id = "test_org_id"
+        self.tenant.save()
+
+        group1 = Group.objects.create(name="group1", tenant=self.tenant)
+        p1 = Principal.objects.create(username="user1", tenant=self.tenant, user_id="uid1")
+        group1.principals.add(p1)
+
+        mock_check_workspace.return_value = True
+        mock_check_group.side_effect = RuntimeError("gRPC connection timeout")
+
+        result = run_kessel_parity_checks_in_worker()
+
+        self.assertEqual(result["passed_tenants"], 0)
+        self.assertEqual(result["failed_tenants"], 1)
+
+        tenant_result = result["tenants_checked"][0]
+        self.assertFalse(tenant_result["passed"])
+        self.assertIn("error", tenant_result)
+        self.assertIn("gRPC connection timeout", tenant_result["error"])
