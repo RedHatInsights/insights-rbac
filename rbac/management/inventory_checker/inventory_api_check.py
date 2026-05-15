@@ -92,6 +92,12 @@ class InventoryApiBaseChecker:
             responses = [stub.Check(req) for req in checks]
             return all(self._is_allowed(res) for res in responses)
 
+    def _check_inventory_batch(self, checks: List[CheckRequest]) -> list[bool]:
+        """Check multiple relations via a single gRPC channel, returning per-request results."""
+        with create_client_channel_inventory(settings.INVENTORY_API_SERVER) as channel:
+            stub = inventory_service_pb2_grpc.KesselInventoryServiceStub(channel)
+            return [self._is_allowed(stub.Check(req)) for req in checks]
+
     def _is_allowed(self, response):
         response_dict = json_format.MessageToDict(response)
         return response_dict.get("allowed", "") != "ALLOWED_FALSE"
@@ -101,18 +107,23 @@ class GroupPrincipalInventoryChecker(InventoryApiBaseChecker):
     """Subclass to check group principal relations are correct on inventory api."""
 
     def check_relationships(self, relationships):
-        """Core logic to check group principal relations are correct."""
+        """Check group principal relations are correct. All relationships must belong to the same group."""
         inventory_relation_assignments = {"group_uuid": "", "principal_relations": []}
-        for r in relationships:
-            check_request = relation_tuple_to_check_request(r)
-            relation_exists = self.check_inventory_core(check_request)
+        if not relationships:
+            return inventory_relation_assignments
+
+        check_requests = [relation_tuple_to_check_request(r) for r in relationships]
+        results = self._check_inventory_batch(check_requests)
+
+        for r, relation_exists in zip(relationships, results):
             inventory_relation_assignments["group_uuid"] = r.resource.id
             inventory_relation_assignments["principal_relations"].append(
                 {"id": r.subject.subject.id, "relation_exists": relation_exists}
             )
             if not relation_exists:
                 logger.warning(
-                    f"Relation missing: User ID {r.subject.subject.id} is not associated with Group ID {r.resource.id}"
+                    f"Relation missing: User ID {r.subject.subject.id} "
+                    f"is not associated with Group ID {r.resource.id}"
                 )
         return inventory_relation_assignments
 
