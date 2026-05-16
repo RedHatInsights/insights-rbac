@@ -6171,7 +6171,7 @@ class MCPHealthCheckTests(MCPToolTestMixin, IdentityRequest):
         output = self._get_tool_output(response)
         self.assertEqual(output["status"], "degraded")
         self.assertEqual(output["checks"]["database"], "error")
-        self.assertIn("connection refused", output["details"]["database"])
+        self.assertEqual(output["details"]["database"], "unavailable")
         # Other checks should still report independently
         self.assertEqual(output["checks"]["tools"], "ok")
 
@@ -6184,7 +6184,7 @@ class MCPHealthCheckTests(MCPToolTestMixin, IdentityRequest):
         output = self._get_tool_output(response)
         self.assertEqual(output["status"], "degraded")
         self.assertEqual(output["checks"]["redis"], "error")
-        self.assertIn("redis down", output["details"]["redis"])
+        self.assertEqual(output["details"]["redis"], "unavailable")
         self.assertEqual(output["checks"]["tools"], "ok")
         self.assertEqual(output["checks"]["database"], "ok")
 
@@ -6197,7 +6197,7 @@ class MCPHealthCheckTests(MCPToolTestMixin, IdentityRequest):
         output = self._get_tool_output(response)
         self.assertEqual(output["status"], "degraded")
         self.assertEqual(output["checks"]["tools"], "error")
-        self.assertIn("event loop error", output["details"]["tools"])
+        self.assertEqual(output["details"]["tools"], "unavailable")
 
     @patch("management.mcp_views._get_tools", side_effect=RuntimeError("tools broken"))
     @patch("management.mcp_views._check_redis", side_effect=Exception("redis down"))
@@ -6213,3 +6213,5 @@ class MCPHealthCheckTests(MCPToolTestMixin, IdentityRequest):
         self.assertEqual(output["checks"]["database"], "error")
         self.assertEqual(output["checks"]["redis"], "error")
         self.assertEqual(len(output["details"]), 3)
+        for val in output["details"].values():
+            self.assertEqual(val, "unavailable")

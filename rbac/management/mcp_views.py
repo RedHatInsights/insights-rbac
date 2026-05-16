@@ -549,6 +549,7 @@ def get_status(request: HttpRequest) -> str:
         "Returns status 'ok' when all checks pass, 'degraded' with per-check "
         "details when any check fails."
     ),
+    requires_auth=False,
     api_version=ApiVersion.UNVERSIONED,
 )
 def health_check() -> str:
@@ -565,26 +566,29 @@ def health_check() -> str:
             checks["tools"] = "ok"
         else:
             checks["tools"] = "error"
-            details["tools"] = f"registry empty: config={config_count}, schema={tools_count}"
-    except Exception as exc:
+            details["tools"] = "registry empty"
+    except Exception:
+        logger.exception("mcp: health_check tools registry probe failed")
         checks["tools"] = "error"
-        details["tools"] = str(exc)
+        details["tools"] = "unavailable"
 
     # 2. Database check
     try:
         _check_database()
         checks["database"] = "ok"
-    except Exception as exc:
+    except Exception:
+        logger.exception("mcp: health_check database probe failed")
         checks["database"] = "error"
-        details["database"] = str(exc)
+        details["database"] = "unavailable"
 
     # 3. Redis check
     try:
         _check_redis()
         checks["redis"] = "ok"
-    except Exception as exc:
+    except Exception:
+        logger.exception("mcp: health_check redis probe failed")
         checks["redis"] = "error"
-        details["redis"] = str(exc)
+        details["redis"] = "unavailable"
 
     overall = "ok" if all(v == "ok" for v in checks.values()) else "degraded"
     result: dict[str, Any] = {"status": overall, "checks": checks}
