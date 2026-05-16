@@ -6125,3 +6125,101 @@ class MCPDeleteToolsV2Tests(MCPToolTestMixin, IdentityRequest):
         data = response.json()
         self.assertIn("error", data)
         self.assertEqual(data["error"]["code"], -32000)
+
+
+@override_settings(MCP_WRITE_ENABLED=True)
+class MCPAuditLogSourceTests(MCPToolTestMixin, IdentityRequest):
+    """Test that MCP write tools tag audit log entries with ai_assistant source."""
+
+    def setUp(self):
+        """Set up audit log source tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.principal = Principal.objects.create(username="test_user", tenant=self.tenant)
+
+    def tearDown(self):
+        """Tear down audit log source tests."""
+        AuditLog.objects.all().delete()
+        Group.objects.all().delete()
+        Principal.objects.all().delete()
+        super().tearDown()
+
+    def test_mcp_create_group_sets_audit_source(self):
+        """MCP create_group tags audit log with ai_assistant source."""
+        response = self._call_tool("create_group", {"name": "MCP Group", "description": "via MCP"})
+
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+
+        audit_entry = AuditLog.objects.filter(
+            tenant=self.tenant, resource_type=AuditLog.GROUP, action=AuditLog.CREATE
+        ).first()
+        self.assertIsNotNone(audit_entry)
+        self.assertEqual(audit_entry.source, AuditLog.SOURCE_AI_ASSISTANT)
+
+    def test_direct_api_write_has_no_source(self):
+        """Direct API group creation does not set audit source."""
+        AuditLog.objects.create(
+            principal_username="api_user",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.CREATE,
+            description="Created group: Direct Group",
+            tenant=self.tenant,
+        )
+
+        audit_entry = AuditLog.objects.filter(tenant=self.tenant, principal_username="api_user").first()
+        self.assertIsNotNone(audit_entry)
+        self.assertIsNone(audit_entry.source)
+
+    def test_list_audit_logs_includes_source_field(self):
+        """list_audit_logs output includes source field."""
+        AuditLog.objects.create(
+            principal_username="mcp_user",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.CREATE,
+            description="Created group: MCP Group",
+            source=AuditLog.SOURCE_AI_ASSISTANT,
+            tenant=self.tenant,
+        )
+        AuditLog.objects.create(
+            principal_username="api_user",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.CREATE,
+            description="Created group: API Group",
+            tenant=self.tenant,
+        )
+
+        response = self._call_tool("list_audit_logs", {"limit": 10})
+
+        self.assertEqual(response.status_code, 200)
+        tool_output = self._get_tool_output(response)
+        entries = tool_output["data"]
+        self.assertEqual(len(entries), 2)
+
+        mcp_entry = next(e for e in entries if e["principal_username"] == "mcp_user")
+        api_entry = next(e for e in entries if e["principal_username"] == "api_user")
+
+        self.assertEqual(mcp_entry["source"], "ai_assistant")
+        self.assertIsNone(api_entry["source"])
+
+    def test_list_audit_logs_with_authorization_includes_source(self):
+        """list_audit_logs with include_authorization also includes source field."""
+        AuditLog.objects.create(
+            principal_username="mcp_user",
+            resource_type=AuditLog.GROUP,
+            action=AuditLog.CREATE,
+            description="Created group: Auth Test",
+            source=AuditLog.SOURCE_AI_ASSISTANT,
+            tenant=self.tenant,
+        )
+
+        response = self._call_tool("list_audit_logs", {"include_authorization": True})
+
+        self.assertEqual(response.status_code, 200)
+        tool_output = self._get_tool_output(response)
+        entries = tool_output["data"]
+        self.assertEqual(len(entries), 1)
+        self.assertEqual(entries[0]["source"], "ai_assistant")
+        self.assertIn("authorized_by", entries[0])
