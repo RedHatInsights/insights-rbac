@@ -14,7 +14,6 @@ class Migration(migrations.Migration):
             field=models.CharField(
                 blank=True,
                 choices=[("ai_assistant", "AI Assistant")],
-                default=None,
                 max_length=32,
                 null=True,
             ),

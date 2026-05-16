@@ -67,7 +67,7 @@ class AuditLogModelTests(IdentityRequest):
             source=AuditLog.SOURCE_AI_ASSISTANT,
             tenant_id="2",
         )
-        self.assertEqual(entry.source, "ai_assistant")
+        self.assertEqual(entry.source, AuditLog.SOURCE_AI_ASSISTANT)
 
     def test_apply_source_sets_ai_assistant_when_mcp(self):
         """_apply_source sets source to ai_assistant when request has mcp_source=True."""

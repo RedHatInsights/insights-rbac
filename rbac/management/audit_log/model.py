@@ -81,7 +81,7 @@ class AuditLog(TenantAwareModel):
     tenant = models.ForeignKey(Tenant, on_delete=models.SET_NULL, null=True)
     resource_uuid = models.UUIDField(null=True)
     secondary_resource_uuid = models.UUIDField(null=True)
-    source = models.CharField(max_length=32, choices=SOURCE_CHOICES, null=True, blank=True, default=None)
+    source = models.CharField(max_length=32, choices=SOURCE_CHOICES, null=True, blank=True)
 
     class Meta:
         """Metadata for audit log model."""
