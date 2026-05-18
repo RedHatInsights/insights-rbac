@@ -6136,7 +6136,8 @@ class MCPHealthCheckTests(MCPToolTestMixin, IdentityRequest):
         self.url = "/_private/_a2s/mcp/"
         self.client = APIClient()
 
-    def test_health_check_all_healthy(self):
+    @patch("management.mcp_views._check_redis")
+    def test_health_check_all_healthy(self, _mock_redis):
         """health_check returns status ok when all checks pass."""
         response = self._call_tool("health_check")
 
@@ -6150,7 +6151,8 @@ class MCPHealthCheckTests(MCPToolTestMixin, IdentityRequest):
         self.assertEqual(output["checks"]["redis"], "ok")
         self.assertNotIn("details", output)
 
-    def test_health_check_works_without_auth(self):
+    @patch("management.mcp_views._check_redis")
+    def test_health_check_works_without_auth(self, _mock_redis):
         """health_check does not require authentication."""
         response = self._call_tool("health_check", use_auth=False)
 
@@ -6162,8 +6164,9 @@ class MCPHealthCheckTests(MCPToolTestMixin, IdentityRequest):
         self.assertIn("status", output)
         self.assertIn("checks", output)
 
+    @patch("management.mcp_views._check_redis")
     @patch("management.mcp_views._check_database", side_effect=Exception("connection refused"))
-    def test_health_check_database_failure(self, _mock_db):
+    def test_health_check_database_failure(self, _mock_db, _mock_redis):
         """health_check returns degraded when database is unreachable."""
         response = self._call_tool("health_check")
 
@@ -6188,8 +6191,9 @@ class MCPHealthCheckTests(MCPToolTestMixin, IdentityRequest):
         self.assertEqual(output["checks"]["tools"], "ok")
         self.assertEqual(output["checks"]["database"], "ok")
 
+    @patch("management.mcp_views._check_redis")
     @patch("management.mcp_views._get_tools", side_effect=RuntimeError("event loop error"))
-    def test_health_check_tool_registry_failure(self, _mock_tools):
+    def test_health_check_tool_registry_failure(self, _mock_tools, _mock_redis):
         """health_check returns degraded when tool registry cannot be resolved."""
         response = self._call_tool("health_check")
 
