@@ -169,7 +169,7 @@ class BootstrappedTenantInventoryChecker(InventoryApiBaseChecker):
                     root_workspace_id,
                     ("rbac", "tenant"),
                     Tenant.org_id_to_tenant_resource_id(org_id=org_id),
-                    "parent",
+                    "tenant",
                 ),
             )
         )
