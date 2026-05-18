@@ -669,6 +669,8 @@ objects:
             value: ${IT_SERVICE_TIMEOUT_SECONDS}
           - name: IT_TOKEN_JKWS_CACHE_LIFETIME
             value: ${IT_TOKEN_JKWS_CACHE_LIFETIME}
+          - name: MCP_ENABLED
+            value: ${MCP_ENABLED}
           - name: V2_APIS_ENABLED
             value: ${V2_APIS_ENABLED}
           - name: V2_READ_ONLY_API_MODE
@@ -1701,6 +1703,9 @@ parameters:
 - name: REPLICATION_TO_RELATION_ENABLED
   description: Enable replication to Relation API
   value: "True"
+- name: MCP_ENABLED
+  description: Flag to enable the MCP (Model Context Protocol) agent-to-service endpoint. Set to False to fully disable the MCP server.
+  value: 'False'
 - name: V2_APIS_ENABLED
   description: Flag to explicitly enable v2 API endpoints
   value: 'True'
