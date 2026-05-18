@@ -5568,8 +5568,11 @@ class MCPGuideUserAccessDelegationTests(MCPToolTestMixin, IdentityRequest):
         self.assertIn("error", data)
         self.assertEqual(data["error"]["code"], -32000)
 
-    def test_guide_user_access_delegation_nonexistent_user(self):
+    @patch("management.mcp_views.list_principals")
+    def test_guide_user_access_delegation_nonexistent_user(self, mock_list_principals):
         """Edge case: guide_user_access_delegation handles non-existent user gracefully."""
+        mock_list_principals.return_value = '{"data": []}'
+
         response = self._call_tool("guide_user_access_delegation", {"username": "nonexistent_user"})
 
         self.assertEqual(response.status_code, status.HTTP_200_OK)
