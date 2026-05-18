@@ -1,4 +1,4 @@
-FROM registry.access.redhat.com/ubi9/ubi-minimal:9.7-1778072020 AS base
+FROM registry.access.redhat.com/ubi9/ubi-minimal:9.7-1778562320 AS base
 
 USER root
 
@@ -87,6 +87,9 @@ ENV \
 
 # copy the src files into the workdir
 COPY . .
+
+# Copy license to /licenses for Red Hat certification
+RUN mkdir -p /licenses && cp LICENSE /licenses/
 
 # unleash cache dir
 RUN mkdir -p /tmp/unleash_cache && chmod -R 777 /tmp/unleash_cache
