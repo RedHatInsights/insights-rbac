@@ -3922,6 +3922,146 @@ def create_cross_account_request(
     return _call_view_write(request, _cross_account_create_view, path, body)
 
 
+@register_tool(
+    description=(
+        "Check if a user can be delegated user access management without Org Admin privileges. "
+        "\n\n"
+        "USE WHEN: 'delegate user access', 'let someone manage users without Org Admin', "
+        "'give RBAC permissions', 'User Access administrator role'.\n\n"
+        "BACKGROUND: 'User Access administrator' is a system role with rbac:* permissions. "
+        "CAN: create/delete groups, assign roles, add/remove users, invite users, create custom roles. "
+        "CANNOT: grant Org Admin flag, manage groups containing this role (escalation guard), "
+        "access cost management/subscriptions.\n\n"
+        "DECISION TREE:\n"
+        "1. role_info.error → Role missing, contact Red Hat support.\n"
+        "2. user_already_has_role=true → No action needed.\n"
+        "3. user_info.is_org_admin=true → Redundant (Org Admin has full access).\n"
+        "4. org_version='v1' → Call add_principals_to_group(group_uuid=existing_assignments[].uuid, "
+        "principals=[username]), OR create_group() then add_role_to_group(role_uuid=role_info.uuid) "
+        "then add_principals_to_group().\n"
+        "5. org_version='v2' → Call create_role_bindings(role_id=role_info.uuid, subjects=[username]).\n\n"
+        "Returns: {org_version, user_info, role_info, user_already_has_role, existing_assignments}."
+    ),
+    requires_auth=True,
+    api_version=ApiVersion.UNIFIED,
+)
+def guide_user_access_delegation(
+    request: HttpRequest,
+    *,
+    username: str,
+) -> str:
+    """Check if a user can be delegated user access management without Org Admin privileges."""
+    try:
+        tenant = getattr(request, "tenant", None)
+        if not tenant:
+            return json.dumps({"error": "No tenant context available"})
+
+        is_v2 = is_v2_write_activated(tenant)
+        user_access_admin_role_name = "User Access administrator"
+
+        result: dict[str, Any] = {
+            "org_version": "v2" if is_v2 else "v1",
+            "user_info": None,
+            "role_info": None,
+            "user_already_has_role": False,
+            "existing_assignments": [],
+        }
+
+        # Check if user exists
+        try:
+            principals_raw = list_principals(request, usernames=username, match_criteria="exact", limit=1)
+            principals_data = json.loads(principals_raw)
+            if principals_data.get("data"):
+                user_data = principals_data["data"][0]
+                result["user_info"] = {
+                    "username": user_data.get("username"),
+                    "is_org_admin": user_data.get("is_org_admin", False),
+                    "is_active": user_data.get("is_active", True),
+                }
+            else:
+                result["user_info"] = {"error": f"User '{username}' not found"}
+        except Exception as e:
+            logger.warning("guide_user_access_delegation: Failed to verify user %s: %s", username, e)
+            result["user_info"] = {"error": f"Could not verify user '{username}'"}
+
+        # Find the 'User Access administrator' role
+        role_uuid = None
+        try:
+            if is_v2:
+                roles_raw = search_roles(request, name=user_access_admin_role_name, limit=10)
+            else:
+                roles_raw = search_roles(request, name=user_access_admin_role_name, system="true", limit=1)
+            roles_data = json.loads(roles_raw)
+            if roles_data.get("data"):
+                role_data = next(
+                    (
+                        r
+                        for r in roles_data["data"]
+                        if r.get("name", "").lower() == user_access_admin_role_name.lower()
+                    ),
+                    roles_data["data"][0],
+                )
+                role_uuid = role_data.get("uuid") or role_data.get("id")
+                result["role_info"] = {"uuid": role_uuid, "name": role_data.get("name")}
+            else:
+                result["role_info"] = {"error": "Role not found - contact Red Hat support"}
+                return json.dumps(result)
+        except Exception as e:
+            logger.warning("guide_user_access_delegation: Failed to find role: %s", e)
+            result["role_info"] = {"error": "Role not found"}
+            return json.dumps(result)
+
+        # Check current assignments and if user already has the role
+        if is_v2:
+            v2_role = RoleV2.objects.filter(uuid=role_uuid, tenant=tenant).first()
+            if v2_role:
+                # Get existing bindings
+                bindings = RoleBinding.objects.filter(role=v2_role, tenant=tenant).annotate(
+                    principal_count=Count("principal_entries", distinct=True),
+                    group_count=Count("group_entries", distinct=True),
+                )
+                for b in bindings:
+                    result["existing_assignments"].append(
+                        {
+                            "type": "role_binding",
+                            "id": str(b.id),
+                            "principals": b.principal_count,
+                            "groups": b.group_count,
+                        }
+                    )
+
+                # Check if user already has role (direct or via group)
+                has_direct = RoleBindingPrincipal.objects.filter(
+                    principal__username__iexact=username, principal__tenant=tenant, binding__role=v2_role
+                ).exists()
+                user_groups = Group.objects.filter(principals__username__iexact=username, tenant=tenant)
+                has_via_group = RoleBindingGroup.objects.filter(
+                    group__in=user_groups, binding__role=v2_role, binding__tenant=tenant
+                ).exists()
+                result["user_already_has_role"] = has_direct or has_via_group
+        else:
+            # V1: Check groups with this role
+            try:
+                groups_raw = list_groups(request, role_names=user_access_admin_role_name, limit=100)
+                groups_data = json.loads(groups_raw)
+                groups_with_role = {g.get("uuid"): g.get("name") for g in groups_data.get("data", [])}
+                for group_uuid, name in groups_with_role.items():
+                    result["existing_assignments"].append({"type": "group", "uuid": group_uuid, "name": name})
+
+                # Check if user is in any of these groups
+                user_groups_raw = list_groups(request, username=username, limit=100)
+                user_groups_data = json.loads(user_groups_raw)
+                user_group_uuids = {g.get("uuid") for g in user_groups_data.get("data", [])}
+                result["user_already_has_role"] = bool(user_group_uuids & set(groups_with_role.keys()))
+            except Exception as e:
+                logger.warning("guide_user_access_delegation: Failed to check groups: %s", e)
+
+        return json.dumps(result)
+    except Exception:
+        logger.exception("guide_user_access_delegation failed")
+        return json.dumps({"error": "An internal error occurred. Please try again or contact support."})
+
+
 # --- UPDATE tool implementations ---
 
 # ┌──────────────────────────────────────┬───────────┬─────────────────────────────────────────────────────┐
