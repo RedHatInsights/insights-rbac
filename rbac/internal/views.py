@@ -228,7 +228,19 @@ def tenant_view(request, org_id):
         tenant_obj = get_object_or_404(Tenant, org_id=org_id)
         with transaction.atomic():
             if tenant_is_unmodified(tenant_name=tenant_obj.tenant_name, org_id=org_id):
-                logger.warning(f"Deleting tenant {org_id}. Requested by {request.user.username}")
+                # Admin action - SEC-MON-REQ-1 compliance (#3 admin_action, #2 system_object_manipulation)
+                logger.warning(
+                    "Deleting tenant",
+                    extra={
+                        "action": "DELETE",
+                        "api_type": "admin",
+                        "principal": f"{request.user.org_id}:{request.user.username}",
+                        "resource_type": "tenant",
+                        "resource_id": org_id,
+                        "endpoint": request.path,
+                        "outcome": "success",
+                    },
+                )
                 TENANTS.delete_tenant(org_id)
                 tenant_obj.delete()
                 return HttpResponse(status=204)
@@ -243,7 +255,18 @@ def run_migrations(request):
     POST /_private/api/migrations/run/
     """
     if request.method == "POST":
-        logger.info(f"Running migrations: {request.method} {request.user.username}")
+        # Admin action - SEC-MON-REQ-1 compliance (#3 admin_action)
+        logger.info(
+            "Running database migrations",
+            extra={
+                "action": "MIGRATE",
+                "api_type": "admin",
+                "principal": f"{request.user.org_id}:{request.user.username}",
+                "resource_type": "database",
+                "endpoint": request.path,
+                "outcome": "success",
+            },
+        )
         run_migrations_in_worker.delay()
         return HttpResponse("Migrations are running in a background worker.", status=202)
     return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
@@ -304,10 +327,21 @@ def sync_schemas(request):
         if schema_list_param:
             schema_list = schema_list_param.split(",")
             args = {"schema_list": schema_list}
-        msg = "Running schema sync in background worker."
-        logger.info(msg)
+        # Admin action - SEC-MON-REQ-1 compliance (#3 admin_action)
+        logger.info(
+            "Syncing database schemas",
+            extra={
+                "action": "SYNC",
+                "api_type": "admin",
+                "principal": f"{request.user.org_id}:{request.user.username}",
+                "resource_type": "database_schema",
+                "endpoint": request.path,
+                "schema_count": len(schema_list) if schema_list_param else 0,
+                "outcome": "success",
+            },
+        )
         run_sync_schemas_in_worker.delay(args)
-        return HttpResponse(msg, status=202)
+        return HttpResponse("Running schema sync in background worker.", status=202)
 
     return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
 
@@ -597,7 +631,20 @@ def run_seeds(request):
                 f"{force_create_option} and {force_update_option} cannot both be set to true.", status=400
             )
 
-        logger.info(f"Running seeds: {request.method} {request.user.username}")
+        # Admin action - SEC-MON-REQ-1 compliance (#3 admin_action, #2 system_object_manipulation)
+        logger.info(
+            "Running seeds",
+            extra={
+                "action": "CREATE",
+                "api_type": "admin",
+                "principal": f"{request.user.org_id}:{request.user.username}",
+                "resource_type": "seed_data",
+                "endpoint": request.path,
+                "force_create": args.get(force_create_option, False),
+                "force_update": args.get(force_update_option, False),
+                "outcome": "success",
+            },
+        )
         run_seeds_in_worker.delay(args)
 
         return HttpResponse("Seeds are running in a background worker.", status=202)
@@ -611,7 +658,18 @@ def car_expiry(request):
     POST /_private/api/cars/expire/
     """
     if request.method == "POST":
-        logger.info("Running cross-account request expiration check.")
+        # Admin action - SEC-MON-REQ-1 compliance (#3 admin_action, #1 pii_manipulation)
+        logger.info(
+            "Running cross-account request expiration check",
+            extra={
+                "action": "DELETE",
+                "api_type": "admin",
+                "principal": f"{request.user.org_id}:{request.user.username}",
+                "resource_type": "cross_account_request",
+                "endpoint": request.path,
+                "outcome": "success",
+            },
+        )
         cross_account_cleanup.delay()
         return HttpResponse("Expiry checks are running in a background worker.", status=202)
     return HttpResponse('Invalid method, only "POST" is allowed.', status=405)
@@ -641,7 +699,18 @@ def cars_clean(request):
             }
             return HttpResponse(json.dumps(result), status=200)
         else:
-            logger.info("Cleaning up cars.")
+            # Admin action - SEC-MON-REQ-1 compliance (#3 admin_action, #1 pii_manipulation)
+            logger.info(
+                "Cleaning up cross-account requests",
+                extra={
+                    "action": "DELETE",
+                    "api_type": "admin",
+                    "principal": f"{request.user.org_id}:{request.user.username}",
+                    "resource_type": "cross_account_request",
+                    "endpoint": request.path,
+                    "outcome": "success",
+                },
+            )
             request_roles.delete()
             return HttpResponse("Cars cleaned up.", status=200)
 
@@ -660,7 +729,18 @@ def set_tenant_ready(request):
     if request.method == "POST":
         if not destructive_ok("api"):
             return HttpResponse("Destructive operations disallowed.", status=400)
-        logger.info("Setting flag ready to true for tenants.")
+        # Admin action - SEC-MON-REQ-1 compliance (#3 admin_action, #2 system_object_manipulation)
+        logger.info(
+            "Setting tenant ready flags",
+            extra={
+                "action": "UPDATE",
+                "api_type": "admin",
+                "principal": f"{request.user.org_id}:{request.user.username}",
+                "resource_type": "tenant",
+                "endpoint": request.path,
+                "outcome": "success",
+            },
+        )
         max_expected = request.GET.get("max_expected")
         if not max_expected:
             return HttpResponse("Please specify a max_expected value.", status=400)
@@ -686,7 +766,18 @@ def populate_tenant_account_id(request):
     POST /_private/api/utils/populate_tenant_account_id/
     """
     if request.method == "POST":
-        logger.info("Setting account_id on all Tenant objects.")
+        # Admin action - SEC-MON-REQ-1 compliance (#3 admin_action, #2 system_object_manipulation)
+        logger.info(
+            "Populating tenant account IDs",
+            extra={
+                "action": "UPDATE",
+                "api_type": "admin",
+                "principal": f"{request.user.org_id}:{request.user.username}",
+                "resource_type": "tenant",
+                "endpoint": request.path,
+                "outcome": "success",
+            },
+        )
         populate_tenant_account_id_in_worker.delay()
         return HttpResponse(
             "Tenant objects account_id values being updated in background worker.",
@@ -770,7 +861,6 @@ def invalid_default_admin_groups(request):
     GET /_private/api/utils/invalid_default_admin_groups/
     DELETE /_private/api/utils/invalid_default_admin_groups/
     """
-    logger.info(f"Invalid default admin groups: {request.method} {request.user.username}")
     public_tenant = Tenant.objects.get(tenant_name="public")
     invalid_default_admin_groups_list = Group.objects.filter(
         admin_default=True, system=False, platform_default=False
@@ -789,6 +879,19 @@ def invalid_default_admin_groups(request):
     if request.method == "DELETE":
         if not destructive_ok("api"):
             return HttpResponse("Destructive operations disallowed.", status=400)
+        # Admin action - SEC-MON-REQ-1 compliance (#3 admin_action, #1 pii_manipulation)
+        logger.info(
+            "Deleting invalid default admin groups",
+            extra={
+                "action": "DELETE",
+                "api_type": "admin",
+                "principal": f"{request.user.org_id}:{request.user.username}",
+                "resource_type": "group",
+                "endpoint": request.path,
+                "deleted_count": invalid_default_admin_groups_list.count(),
+                "outcome": "success",
+            },
+        )
         invalid_default_admin_groups_list.delete()
         return HttpResponse(status=204)
     return HttpResponse('Invalid method, only "DELETE" and "GET" are allowed.', status=405)
@@ -799,7 +902,6 @@ def role_removal(request):
 
     DELETE /_private/api/utils/role/
     """
-    logger.info(f"Role removal: {request.method} {request.user.username}")
     if request.method == "DELETE":
         if not destructive_ok("api"):
             return HttpResponse("Destructive operations disallowed.", status=400)
@@ -815,12 +917,38 @@ def role_removal(request):
         role_obj = get_object_or_404(Role, name=role_name, tenant=Tenant.objects.get(tenant_name="public"))
         with transaction.atomic():
             try:
-                logger.warning(f"Deleting role '{role_name}'. Requested by '{request.user.username}'")
                 dual_write_handler = SeedingRelationApiDualWriteHandler(role_obj)
                 dual_write_handler.replicate_deleted_system_role()
                 role_obj.delete()
+                # Admin action - SEC-MON-REQ-1 compliance (#3 admin_action, #2 system_object_manipulation)
+                logger.info(
+                    f"System role deleted: {role_name}",
+                    extra={
+                        "action": "DELETE",
+                        "api_type": "admin",
+                        "principal": f"{request.user.org_id}:{request.user.username}",
+                        "resource_type": "role",
+                        "resource_id": role_name,
+                        "endpoint": request.path,
+                        "outcome": "success",
+                    },
+                )
                 return HttpResponse(f"Role '{role_name}' deleted.", status=204)
-            except Exception:
+            except Exception as e:
+                # Failed admin operation - SEC-MON-REQ-1 compliance (#3 admin_action, #11 warnings_or_errors)
+                logger.error(
+                    f"System role deletion failed: {role_name}",
+                    extra={
+                        "action": "DELETE",
+                        "api_type": "admin",
+                        "principal": f"{request.user.org_id}:{request.user.username}",
+                        "resource_type": "role",
+                        "resource_id": role_name,
+                        "endpoint": request.path,
+                        "outcome": "failure",
+                        "error": str(e),
+                    },
+                )
                 return HttpResponse("Role cannot be deleted.", status=400)
     return HttpResponse('Invalid method, only "DELETE" is allowed.', status=405)
 
@@ -1015,6 +1143,19 @@ def bootstrap_tenant(request):
     # Handle force_admin_only separately - this is safe even with replication on
     if force_admin_only:
         results = [fix_admin_default_bindings(org_id) for org_id in org_ids]
+        # Admin action - SEC-MON-REQ-1 compliance (#3 admin_action)
+        logger.info(
+            "Tenant admin bindings fixed",
+            extra={
+                "action": "UPDATE",
+                "api_type": "admin",
+                "principal": f"{request.user.org_id}:{request.user.username}",
+                "resource_type": "tenant",
+                "affected_count": len(org_ids),
+                "endpoint": request.path,
+                "outcome": "success",
+            },
+        )
         return JsonResponse({"results": results}, status=200)
 
     with transaction.atomic():
@@ -1022,6 +1163,20 @@ def bootstrap_tenant(request):
         for org_id in org_ids:
             tenant = get_object_or_404(Tenant, org_id=org_id)
             bootstrap_service.bootstrap_tenant(tenant, force=force)
+    # Admin action - SEC-MON-REQ-1 compliance (#3 admin_action)
+    logger.info(
+        "Tenants bootstrapped",
+        extra={
+            "action": "CREATE",
+            "api_type": "admin",
+            "principal": f"{request.user.org_id}:{request.user.username}",
+            "resource_type": "tenant",
+            "affected_count": len(org_ids),
+            "endpoint": request.path,
+            "force": force,
+            "outcome": "success",
+        },
+    )
     return HttpResponse(f"Bootstrapping tenants with org_ids {org_ids} were finished.", status=200)
 
 
@@ -1572,6 +1727,20 @@ def principal_removal(request):
 
                 bootstrap_service.update_user(user)
 
+        # Admin action - SEC-MON-REQ-1 compliance (#3 admin_action, #1 pii_manipulation)
+        logger.info(
+            "Inactive principals removed",
+            extra={
+                "action": "DELETE",
+                "api_type": "admin",
+                "principal": f"{request.user.org_id}:{request.user.username}",
+                "resource_type": "principal",
+                "affected_count": len(principal_usernames),
+                "user_type": user_type,
+                "endpoint": request.path,
+                "outcome": "success",
+            },
+        )
         return HttpResponse(f"Users deleted: {principal_usernames}", status=204)
 
 

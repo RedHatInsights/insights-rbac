@@ -16,9 +16,13 @@
 #
 """Defines the Principal Access Permissions class."""
 
+import logging
+
 from rest_framework import permissions
 
 from rbac.env import ENVIRONMENT
+
+logger = logging.getLogger(__name__)
 
 
 class PrincipalAccessPermission(permissions.BasePermission):
@@ -34,4 +38,20 @@ class PrincipalAccessPermission(permissions.BasePermission):
             principal_read = request.user.access.get("principal", {}).get("read", [])
             if principal_read:
                 return True
+
+        # Authorization failure - SEC-MON-REQ-1 compliance (#8 authorization_failure)
+        required_permission = "principal:write" if request.method != "GET" else "principal:read"
+        logger.warning(
+            "Permission denied",
+            extra={
+                "event": "authorization_failure",
+                "principal": f"{request.user.org_id}:{request.user.username}",
+                "resource_type": "principal",
+                "endpoint": request.path,
+                "method": request.method,
+                "required_permission": required_permission,
+                "reason": "missing permission",
+                "outcome": "failure",
+            },
+        )
         return False

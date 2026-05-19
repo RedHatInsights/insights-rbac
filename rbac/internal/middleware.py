@@ -67,29 +67,65 @@ class InternalIdentityHeaderMiddleware(MiddlewareMixin):
             user = build_user_from_psk(request) or build_system_user_from_token(request, self.token_validator)
 
             if not user:
-                logger.error(
-                    "S2S auth failed: no identity (PSK/token failed) [request_id=%s, method=%s, path=%s]",
-                    req_id,
-                    request.method,
-                    request.path,
+                # Authentication failure - SEC-MON-REQ-1 compliance (#7 invalid_login)
+                logger.warning(
+                    "S2S authentication failed: PSK/token validation failed",
+                    extra={
+                        "event": "authentication_failure",
+                        "endpoint": request.path,
+                        "method": request.method,
+                        "reason": "invalid or missing PSK/JWT token",
+                        "outcome": "failure",
+                        "request_id": req_id,
+                    },
                 )
                 return HttpResponseForbidden()
         else:
             try:
                 _, json_rh_auth = extract_header(request, self.header)
-            except (JSONDecodeError, binascii.Error, KeyError):
-                logger.exception("Invalid X-RH-Identity header.")
+            except (JSONDecodeError, binascii.Error, KeyError) as e:
+                # Authentication failure - SEC-MON-REQ-1 compliance (#7 invalid_login)
+                logger.warning(
+                    "Authentication failed: invalid X-RH-Identity header",
+                    extra={
+                        "event": "authentication_failure",
+                        "endpoint": request.path,
+                        "method": request.method,
+                        "reason": f"invalid X-RH-Identity header: {type(e).__name__}",
+                        "outcome": "failure",
+                    },
+                )
                 return HttpResponseForbidden()
             user = build_internal_user(request, json_rh_auth)
             if not user:
-                logger.error("Malformed X-RH-Identity header.")
+                # Authentication failure - SEC-MON-REQ-1 compliance (#7 invalid_login)
+                logger.warning(
+                    "Authentication failed: malformed X-RH-Identity header",
+                    extra={
+                        "event": "authentication_failure",
+                        "endpoint": request.path,
+                        "method": request.method,
+                        "reason": "malformed X-RH-Identity header: could not build user",
+                        "outcome": "failure",
+                    },
+                )
                 return HttpResponseForbidden()
             try:
                 path_org_id = resolve(request.path).kwargs.get("org_id")
                 if path_org_id:
                     request.tenant = get_object_or_404(Tenant, org_id=user.org_id)
             except (KeyError, TypeError):
-                logger.error("Malformed X-RH-Identity header.")
+                # Authentication failure - SEC-MON-REQ-1 compliance (#7 invalid_login)
+                logger.warning(
+                    "Authentication failed: malformed X-RH-Identity header",
+                    extra={
+                        "event": "authentication_failure",
+                        "endpoint": request.path,
+                        "method": request.method,
+                        "reason": "malformed X-RH-Identity header: missing org_id",
+                        "outcome": "failure",
+                    },
+                )
                 return HttpResponseForbidden()
 
         request.user = user

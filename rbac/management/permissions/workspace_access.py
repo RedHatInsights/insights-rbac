@@ -136,20 +136,43 @@ class WorkspaceAccessPermission(permissions.BasePermission):
         # Uses unified check_system_user_access to prevent behavior drift
         system_check = check_system_user_access(request.user, action=view.action)
         if system_check.result == SystemUserAccessResult.ALLOWED:
-            log_ctx = _build_s2s_log_context(request, view, ws_id)
-            logger.info("S2S system user admin access granted (v2) %s", log_ctx)
             return True
         if system_check.result == SystemUserAccessResult.DENIED:
-            log_ctx = _build_s2s_log_context(request, view, ws_id)
-            logger.info("S2S system user access denied: not admin (v2) %s", log_ctx)
+            # Authorization failure - SEC-MON-REQ-1 compliance (#8 authorization_failure)
+            logger.warning(
+                "S2S system user access denied: not admin",
+                extra={
+                    "event": "authorization_failure",
+                    "principal": f"{request.user.org_id}:{request.user.username}",
+                    "resource_type": "workspace",
+                    "resource_id": str(ws_id) if ws_id else None,
+                    "endpoint": request.path,
+                    "method": request.method,
+                    "required_permission": f"workspace:{perm}",
+                    "reason": "S2S user requires admin flag",
+                    "outcome": "failure",
+                },
+            )
             return False
         if system_check.result == SystemUserAccessResult.CHECK_MOVE_TARGET:
             result = self._check_move_target_exists_v1(request)
-            log_ctx = _build_s2s_log_context(request, view, ws_id)
-            if result:
-                logger.info("S2S system user admin access granted for move (v2) %s", log_ctx)
-            else:
-                logger.info("S2S system user admin denied: target ws not found (v2) %s", log_ctx)
+            if not result:
+                # Authorization failure - SEC-MON-REQ-1 compliance (#8 authorization_failure, #1 pii_manipulation)
+                logger.warning(
+                    "S2S system user admin denied: target workspace not found",
+                    extra={
+                        "event": "authorization_failure",
+                        "action": "MOVE",
+                        "principal": f"{request.user.org_id}:{request.user.username}",
+                        "resource_type": "workspace",
+                        "resource_id": str(ws_id) if ws_id else None,
+                        "endpoint": request.path,
+                        "method": request.method,
+                        "required_permission": "workspace:move",
+                        "reason": "target workspace not found",
+                        "outcome": "failure",
+                    },
+                )
             return result
         # SystemUserAccessResult.NOT_SYSTEM_USER - continue with normal checks
 
@@ -157,6 +180,22 @@ class WorkspaceAccessPermission(permissions.BasePermission):
         # ws_id is the parent workspace ID where the new workspace will be created
         if view.action == "create":
             if not is_user_allowed_v2(request, perm, ws_id):
+                # Authorization failure - SEC-MON-REQ-1 compliance (#8 authorization_failure, #1 pii_manipulation)
+                logger.warning(
+                    "Permission denied - cannot create workspace",
+                    extra={
+                        "event": "authorization_failure",
+                        "action": "CREATE",
+                        "principal": f"{request.user.org_id}:{request.user.username}",
+                        "resource_type": "workspace",
+                        "resource_id": str(ws_id) if ws_id else None,
+                        "endpoint": request.path,
+                        "method": request.method,
+                        "required_permission": f"workspace:{perm}",
+                        "reason": "Kessel permission check failed",
+                        "outcome": "failure",
+                    },
+                )
                 return False
             return True
 
@@ -186,25 +225,61 @@ class WorkspaceAccessPermission(permissions.BasePermission):
         if request.user.admin:
             if view.action == "move":
                 result = self._check_move_target_exists_v1(request)
-                if is_system_user:
-                    log_ctx = _build_s2s_log_context(request, view, ws_id)
-                    if result:
-                        logger.info("S2S system user admin access granted for move %s", log_ctx)
-                    else:
-                        logger.info("S2S system user admin denied: target ws not found %s", log_ctx)
+                if is_system_user and not result:
+                    # Authorization failure - SEC-MON-REQ-1 compliance (#8 authorization_failure, #1 pii_manipulation)
+                    logger.warning(
+                        "S2S system user admin denied: target workspace not found",
+                        extra={
+                            "event": "authorization_failure",
+                            "action": "MOVE",
+                            "principal": f"{request.user.org_id}:{request.user.username}",
+                            "resource_type": "workspace",
+                            "resource_id": str(ws_id) if ws_id else None,
+                            "endpoint": request.path,
+                            "method": request.method,
+                            "required_permission": "workspace:write",
+                            "reason": "target workspace not found",
+                            "outcome": "failure",
+                        },
+                    )
                 return result
-            if is_system_user:
-                log_ctx = _build_s2s_log_context(request, view, ws_id)
-                logger.info("S2S system user admin access granted %s", log_ctx)
             return True
 
         # Non-admin user (including system users without admin)
         if is_system_user:
-            log_ctx = _build_s2s_log_context(request, view, ws_id)
-            logger.info("S2S system user access denied: not admin %s", log_ctx)
+            # Authorization failure - SEC-MON-REQ-1 compliance (#8 authorization_failure)
+            logger.warning(
+                "S2S system user access denied: not admin",
+                extra={
+                    "event": "authorization_failure",
+                    "principal": f"{request.user.org_id}:{request.user.username}",
+                    "resource_type": "workspace",
+                    "resource_id": str(ws_id) if ws_id else None,
+                    "endpoint": request.path,
+                    "method": request.method,
+                    "required_permission": "workspace:admin",
+                    "reason": "S2S user requires admin flag",
+                    "outcome": "failure",
+                },
+            )
 
         op = operation_from_request(request)
         if not is_user_allowed_v1(request, op, ws_id):
+            # Authorization failure - SEC-MON-REQ-1 compliance (#8 authorization_failure)
+            logger.warning(
+                "Permission denied - workspace access check failed",
+                extra={
+                    "event": "authorization_failure",
+                    "principal": f"{request.user.org_id}:{request.user.username}",
+                    "resource_type": "workspace",
+                    "resource_id": str(ws_id) if ws_id else None,
+                    "endpoint": request.path,
+                    "method": request.method,
+                    "required_permission": f"workspace:{op}",
+                    "reason": "permission check failed",
+                    "outcome": "failure",
+                },
+            )
             return False
 
         # For move operations, also check target workspace access (V1 non-admin only)

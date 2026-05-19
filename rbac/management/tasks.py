@@ -65,7 +65,32 @@ logger = logging.getLogger(__name__)
 @shared_task
 def principal_cleanup():
     """Celery task to clean up principals no longer existing."""
-    clean_tenants_principals()
+    try:
+        result = clean_tenants_principals()
+        # Scheduled cleanup job - SEC-MON-REQ-1 compliance (#3 admin_action, #1 pii_manipulation)
+        logger.info(
+            "Principal cleanup completed",
+            extra={
+                "action": "DELETE",
+                "resource_type": "principal",
+                "principal": "system:celery:principal_cleanup",
+                "outcome": "success",
+            },
+        )
+        return result
+    except Exception as e:
+        # Failed admin operation - SEC-MON-REQ-1 compliance (#3 admin_action, #11 warnings_or_errors)
+        logger.error(
+            "Principal cleanup failed",
+            extra={
+                "action": "DELETE",
+                "resource_type": "principal",
+                "principal": "system:celery:principal_cleanup",
+                "outcome": "failure",
+                "error": str(e),
+            },
+        )
+        raise
 
 
 @shared_task
@@ -77,7 +102,31 @@ def principal_cleanup_via_umb():
 @shared_task
 def run_migrations_in_worker():
     """Celery task to run migrations."""
-    call_command("migrate")
+    try:
+        call_command("migrate")
+        # Scheduled migration job - SEC-MON-REQ-1 compliance (#3 admin_action)
+        logger.info(
+            "Database migrations completed",
+            extra={
+                "action": "MIGRATE",
+                "resource_type": "database",
+                "principal": "system:celery:run_migrations",
+                "outcome": "success",
+            },
+        )
+    except Exception as e:
+        # Failed admin operation - SEC-MON-REQ-1 compliance (#3 admin_action, #11 warnings_or_errors)
+        logger.error(
+            "Database migrations failed",
+            extra={
+                "action": "MIGRATE",
+                "resource_type": "database",
+                "principal": "system:celery:run_migrations",
+                "outcome": "failure",
+                "error": str(e),
+            },
+        )
+        raise
 
 
 @shared_task
@@ -107,7 +156,32 @@ def run_redis_cache_health():
 @shared_task
 def migrate_data_in_worker(kwargs):
     """Celery task to migrate data from V1 to V2 spiceDB schema."""
-    migrate_data(**kwargs)
+    try:
+        result = migrate_data(**kwargs)
+        # Scheduled migration job - SEC-MON-REQ-1 compliance (#3 admin_action)
+        logger.info(
+            "Data migration V1 to V2 completed",
+            extra={
+                "action": "MIGRATE",
+                "resource_type": "data",
+                "principal": "system:celery:migrate_data",
+                "outcome": "success",
+            },
+        )
+        return result
+    except Exception as e:
+        # Failed admin operation - SEC-MON-REQ-1 compliance (#3 admin_action, #11 warnings_or_errors)
+        logger.error(
+            "Data migration V1 to V2 failed",
+            extra={
+                "action": "MIGRATE",
+                "resource_type": "data",
+                "principal": "system:celery:migrate_data",
+                "outcome": "failure",
+                "error": str(e),
+            },
+        )
+        raise
 
 
 @shared_task

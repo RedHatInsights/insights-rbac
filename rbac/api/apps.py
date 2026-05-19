@@ -17,6 +17,7 @@
 """API application configuration module."""
 
 import logging
+import sys
 
 from django.apps import AppConfig
 
@@ -27,3 +28,35 @@ class ApiConfig(AppConfig):
     """API application configuration."""
 
     name = "api"
+
+    def ready(self):
+        """Log startup configuration when Django app is ready."""
+        # Only log on main process, not during migrations or management commands
+        # Skip during test runs as well
+        if any(arg in sys.argv for arg in ["migrate", "makemigrations", "test", "collectstatic"]):
+            return
+
+        # Only log once (Django calls ready() multiple times in some configurations)
+        if hasattr(self, "_startup_logged"):
+            return
+        self._startup_logged = True
+
+        from django.conf import settings
+
+        # Service startup - SEC-MON-REQ-1 compliance (#5 process_status)
+        logger.info(
+            "RBAC service starting",
+            extra={
+                "event": "startup",
+                "version": settings.GIT_COMMIT,
+                "config": {
+                    "log_level": settings.RBAC_LOGGING_LEVEL,
+                    "django_debug": settings.DEBUG,
+                    "v2_apis_enabled": getattr(settings, "V2_APIS_ENABLED", False),
+                    "kessel_relations_enabled": getattr(settings, "KESSEL_RELATIONS_ENABLED", False),
+                    "database_engine": settings.DATABASES.get("default", {}).get("ENGINE", "unknown"),
+                    # DO NOT LOG: DATABASE_PASSWORD, SECRET_KEY, PSK values, API keys
+                },
+                "outcome": "success",
+            },
+        )
