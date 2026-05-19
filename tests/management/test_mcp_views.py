@@ -4071,6 +4071,263 @@ class MCPCheckRolePermissionsEdgeCasesTests(MCPToolTestMixin, IdentityRequest):
 
 
 @override_settings(BYPASS_BOP_VERIFICATION=True)
+class AuditGroupForDissolutionTests(MCPToolTestMixin, IdentityRequest):
+    """Tests for audit_group_for_dissolution MCP tool."""
+
+    def setUp(self):
+        """Set up audit_group_for_dissolution tests with groups, roles, and members."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+
+        # Create test principals
+        self.user1 = Principal.objects.create(username="jen.park", tenant=self.tenant, type="user")
+        self.user2 = Principal.objects.create(username="tomas.rivera", tenant=self.tenant, type="user")
+        self.user3 = Principal.objects.create(username="priya.shah", tenant=self.tenant, type="user")
+        self.user4 = Principal.objects.create(username="alex.chen", tenant=self.tenant, type="user")
+        self.svc1 = Principal.objects.create(
+            username="svc-legacy-patcher",
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id="sa-12345",
+        )
+        self.svc2 = Principal.objects.create(
+            username="svc-legacy-remediation",
+            tenant=self.tenant,
+            type="service-account",
+            service_account_id="sa-67890",
+        )
+
+        # Create target group to be dissolved
+        self.legacy_ops_group = Group.objects.create(
+            name="Legacy Ops",
+            description="Legacy operations team",
+            tenant=self.tenant,
+        )
+
+        # Create platform default group
+        self.platform_default_group = Group.objects.create(
+            name="Default access",
+            description="Platform default group",
+            tenant=self.tenant,
+            platform_default=True,
+        )
+
+        # Create another group for users with overlapping access
+        self.other_group = Group.objects.create(
+            name="Engineering",
+            description="Engineering team",
+            tenant=self.tenant,
+        )
+
+        # Add members to Legacy Ops
+        self.legacy_ops_group.principals.add(self.user1, self.user2, self.user3, self.user4, self.svc1, self.svc2)
+
+        # Add some users to platform default (they'll be stranded after dissolution)
+        self.platform_default_group.principals.add(self.user1, self.user2, self.user3)
+
+        # Add user4 to another group (will have overlapping access)
+        self.other_group.principals.add(self.user4)
+
+        # Create roles with permissions
+        self.inventory_role = Role.objects.create(
+            name="inventory-hosts-admin",
+            display_name="Inventory Hosts administrator",
+            description="Manage inventory hosts",
+            tenant=self.tenant,
+        )
+        self.patch_role = Role.objects.create(
+            name="patch-admin",
+            display_name="Patch administrator",
+            description="Manage patches",
+            tenant=self.tenant,
+        )
+        self.remediation_role = Role.objects.create(
+            name="remediations-admin",
+            display_name="Remediations administrator",
+            description="Manage remediations",
+            tenant=self.tenant,
+        )
+
+        # Create permissions
+        self.inventory_perm = Permission.objects.create(
+            permission="inventory:hosts:write",
+            tenant=self.tenant,
+        )
+        self.patch_perm = Permission.objects.create(
+            permission="patch:template:write",
+            tenant=self.tenant,
+        )
+        self.remediation_perm = Permission.objects.create(
+            permission="remediations:remediation:write",
+            tenant=self.tenant,
+        )
+
+        # Assign permissions to roles
+        Access.objects.create(permission=self.inventory_perm, role=self.inventory_role, tenant=self.tenant)
+        Access.objects.create(permission=self.patch_perm, role=self.patch_role, tenant=self.tenant)
+        Access.objects.create(permission=self.remediation_perm, role=self.remediation_role, tenant=self.tenant)
+
+        # Create policy and add roles to Legacy Ops group
+        self.policy = Policy.objects.create(name="legacy-ops-policy", group=self.legacy_ops_group, tenant=self.tenant)
+        self.policy.roles.add(self.inventory_role, self.patch_role, self.remediation_role)
+
+        # Add a role to the other group for overlapping access
+        other_policy = Policy.objects.create(name="engineering-policy", group=self.other_group, tenant=self.tenant)
+        other_policy.roles.add(self.inventory_role)
+
+    def tearDown(self):
+        """Clean up test data."""
+        Policy.objects.filter(tenant=self.tenant).delete()
+        Access.objects.filter(tenant=self.tenant).delete()
+        Role.objects.filter(tenant=self.tenant).delete()
+        Permission.objects.filter(tenant=self.tenant).delete()
+        Group.objects.filter(tenant=self.tenant).delete()
+        Principal.objects.filter(tenant=self.tenant).delete()
+        super().tearDown()
+
+    def test_audit_group_for_dissolution_success(self):
+        """Positive: audit_group_for_dissolution returns group dissolution analysis."""
+        response = self._call_tool("audit_group_for_dissolution", {"group_name": "Legacy Ops"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+
+        self.assertIn("group", tool_output)
+        self.assertIn("members", tool_output)
+        self.assertIn("roles", tool_output)
+        self.assertIn("analysis", tool_output)
+        self.assertEqual(tool_output["group"]["name"], "Legacy Ops")
+
+    def test_audit_group_for_dissolution_without_auth_returns_error(self):
+        """Permission: audit_group_for_dissolution without auth returns auth error."""
+        response = self._call_tool("audit_group_for_dissolution", {"group_name": "Legacy Ops"}, use_auth=False)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    def test_audit_group_for_dissolution_identifies_stranded_users(self):
+        """Positive: identifies users who would be stranded (only in target + platform default)."""
+        response = self._call_tool("audit_group_for_dissolution", {"group_name": "Legacy Ops"})
+        tool_output = self._get_tool_output(response)
+
+        analysis = tool_output["analysis"]
+        # Users 1, 2, 3 are only in Legacy Ops + platform default - they're stranded
+        self.assertEqual(analysis["stranded_user_count"], 3)
+        self.assertIn("jen.park", analysis["stranded_users"])
+        self.assertIn("tomas.rivera", analysis["stranded_users"])
+        self.assertIn("priya.shah", analysis["stranded_users"])
+
+    def test_audit_group_for_dissolution_identifies_stranded_service_accounts(self):
+        """Positive: identifies service accounts that would lose all access."""
+        response = self._call_tool("audit_group_for_dissolution", {"group_name": "Legacy Ops"})
+        tool_output = self._get_tool_output(response)
+
+        analysis = tool_output["analysis"]
+        # Both service accounts are only in Legacy Ops - they're stranded
+        self.assertEqual(analysis["stranded_service_account_count"], 2)
+        self.assertIn("svc-legacy-patcher", analysis["stranded_service_accounts"])
+        self.assertIn("svc-legacy-remediation", analysis["stranded_service_accounts"])
+
+    def test_audit_group_for_dissolution_identifies_members_with_overlapping_access(self):
+        """Positive: identifies members who have overlapping access via other groups."""
+        response = self._call_tool("audit_group_for_dissolution", {"group_name": "Legacy Ops"})
+        tool_output = self._get_tool_output(response)
+
+        analysis = tool_output["analysis"]
+        # User4 (alex.chen) is also in Engineering group
+        self.assertIn("alex.chen", analysis["members_with_overlapping_access"])
+        self.assertEqual(analysis["members_with_overlapping_count"], 1)
+
+    def test_audit_group_for_dissolution_shows_roles_and_permissions(self):
+        """Positive: returns roles assigned to the group with their permissions."""
+        response = self._call_tool("audit_group_for_dissolution", {"group_name": "Legacy Ops"})
+        tool_output = self._get_tool_output(response)
+
+        roles = tool_output["roles"]
+        self.assertEqual(len(roles), 3)
+        role_names = [r["name"] for r in roles]
+        self.assertIn("Inventory Hosts administrator", role_names)
+        self.assertIn("Patch administrator", role_names)
+        self.assertIn("Remediations administrator", role_names)
+
+        analysis = tool_output["analysis"]
+        self.assertEqual(analysis["total_unique_permissions"], 3)
+        self.assertIn("inventory", analysis["permissions_by_application"])
+        self.assertIn("patch", analysis["permissions_by_application"])
+        self.assertIn("remediations", analysis["permissions_by_application"])
+
+    def test_audit_group_for_dissolution_member_details(self):
+        """Positive: returns detailed member information including other groups."""
+        response = self._call_tool("audit_group_for_dissolution", {"group_name": "Legacy Ops"})
+        tool_output = self._get_tool_output(response)
+
+        members = tool_output["members"]
+        self.assertEqual(len(members), 6)
+
+        # Find alex.chen who has overlapping access
+        alex = next(m for m in members if m["username"] == "alex.chen")
+        self.assertFalse(alex["is_stranded"])
+        self.assertEqual(alex["non_default_group_count"], 1)
+        self.assertIn("partial", alex["access_impact"])
+
+        # Find svc-legacy-patcher (service account)
+        svc = next(m for m in members if m["username"] == "svc-legacy-patcher")
+        self.assertTrue(svc["is_stranded"])
+        self.assertEqual(svc["type"], "service-account")
+        self.assertEqual(svc["service_account_id"], "sa-12345")
+
+    def test_audit_group_for_dissolution_by_uuid(self):
+        """Positive: can look up group by UUID instead of name."""
+        response = self._call_tool("audit_group_for_dissolution", {"group_uuid": str(self.legacy_ops_group.uuid)})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["group"]["name"], "Legacy Ops")
+
+    def test_audit_group_for_dissolution_group_not_found(self):
+        """Negative: returns error for non-existent group."""
+        response = self._call_tool("audit_group_for_dissolution", {"group_name": "Non-Existent Group"})
+
+        tool_output = self._get_tool_output(response)
+        self.assertIn("error", tool_output)
+        self.assertIn("not found", tool_output["error"])
+
+    def test_audit_group_for_dissolution_empty_group(self):
+        """Edge case: handles group with no members."""
+        empty_group = Group.objects.create(name="Empty Group", tenant=self.tenant)
+
+        response = self._call_tool("audit_group_for_dissolution", {"group_name": "Empty Group"})
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(len(tool_output["members"]), 0)
+        self.assertEqual(tool_output["analysis"]["total_members"], 0)
+        self.assertIn("no members", tool_output["analysis"]["warnings"][0].lower())
+
+        empty_group.delete()
+
+    def test_audit_group_for_dissolution_warns_about_stranded(self):
+        """Positive: warnings field includes stranded user/service account alerts."""
+        response = self._call_tool("audit_group_for_dissolution", {"group_name": "Legacy Ops"})
+        tool_output = self._get_tool_output(response)
+
+        warnings = tool_output["analysis"]["warnings"]
+        self.assertTrue(len(warnings) >= 2)
+
+        # Check for user warning
+        user_warning = next(w for w in warnings if "user" in w.lower() and "demoted" in w.lower())
+        self.assertIn("3", user_warning)
+
+        # Check for service account warning
+        svc_warning = next(w for w in warnings if "service account" in w.lower())
+        self.assertIn("403", svc_warning)
+
+
+@override_settings(BYPASS_BOP_VERIFICATION=True)
 class MCPInvestigateUserAccessTests(MCPToolTestMixin, IdentityRequest):
     """Tests for investigate_user_access MCP tool."""
 
@@ -5194,6 +5451,394 @@ class MCPCrossAccountRequestTests(MCPToolTestMixin, IdentityRequest):
         self.assertIn("result", data, f"Expected result but got: {data}")
 
 
+@override_settings(BYPASS_BOP_VERIFICATION=True)
+class MCPGuideUserAccessDelegationTests(MCPToolTestMixin, IdentityRequest):
+    """Tests for the guide_user_access_delegation MCP tool."""
+
+    def setUp(self):
+        """Set up guide_user_access_delegation tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.test_username = self.user_data["username"]
+        self.principal = Principal.objects.create(username=self.test_username, tenant=self.tenant)
+
+        self.user_access_admin_role = Role.objects.create(
+            name="User Access administrator",
+            display_name="User Access administrator",
+            description="Provides access to create and manage roles, groups, and principals in RBAC.",
+            system=True,
+            tenant=Tenant.objects.get(tenant_name="public"),
+        )
+
+        self.rbac_permission = Permission.objects.create(
+            application="rbac",
+            resource_type="*",
+            verb="*",
+            permission="rbac:*:*",
+            tenant=Tenant.objects.get(tenant_name="public"),
+        )
+        self.rbac_access = Access.objects.create(
+            permission=self.rbac_permission,
+            role=self.user_access_admin_role,
+            tenant=Tenant.objects.get(tenant_name="public"),
+        )
+
+        self.access_governance_group = Group.objects.create(
+            name="Access Governance",
+            description="Team managing user access",
+            tenant=self.tenant,
+        )
+        self.access_policy = Policy.objects.create(
+            name="access_governance_policy",
+            group=self.access_governance_group,
+            tenant=self.tenant,
+        )
+        self.access_policy.roles.add(self.user_access_admin_role)
+
+        self.admin_user1 = Principal.objects.create(username="admin_user1", tenant=self.tenant)
+        self.admin_user2 = Principal.objects.create(username="admin_user2", tenant=self.tenant)
+        self.access_governance_group.principals.add(self.admin_user1)
+        self.access_governance_group.principals.add(self.admin_user2)
+
+    def tearDown(self):
+        """Tear down guide_user_access_delegation tests."""
+        Policy.objects.all().delete()
+        Access.objects.all().delete()
+        Role.objects.all().delete()
+        Permission.objects.all().delete()
+        Group.objects.all().delete()
+        Principal.objects.all().delete()
+        super().tearDown()
+
+    def test_guide_user_access_delegation_success(self):
+        """Positive: guide_user_access_delegation returns factual data."""
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertFalse(data["result"]["isError"])
+        tool_output = self._get_tool_output(response)
+
+        # Verify simplified structure
+        self.assertIn("org_version", tool_output)
+        self.assertIn("user_info", tool_output)
+        self.assertIn("role_info", tool_output)
+        self.assertIn("user_already_has_role", tool_output)
+        self.assertIn("existing_assignments", tool_output)
+
+    def test_guide_user_access_delegation_finds_role(self):
+        """Positive: guide_user_access_delegation finds the User Access administrator role."""
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        # Verify role info (simplified - only uuid and name)
+        self.assertIsNotNone(tool_output["role_info"])
+        self.assertEqual(tool_output["role_info"]["name"], "User Access administrator")
+        self.assertEqual(tool_output["role_info"]["uuid"], str(self.user_access_admin_role.uuid))
+
+    def test_guide_user_access_delegation_finds_groups_with_role(self):
+        """Positive: guide_user_access_delegation finds groups that have the role."""
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        # Verify existing_assignments contains the group
+        self.assertEqual(len(tool_output["existing_assignments"]), 1)
+        assignment = tool_output["existing_assignments"][0]
+        self.assertEqual(assignment["type"], "group")
+        self.assertEqual(assignment["name"], "Access Governance")
+
+    def test_guide_user_access_delegation_user_not_org_admin(self):
+        """Positive: guide_user_access_delegation shows user is not org admin."""
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        # Verify user_info shows is_org_admin status
+        self.assertIn("is_org_admin", tool_output["user_info"])
+
+    def test_guide_user_access_delegation_without_auth_returns_error(self):
+        """Permission: guide_user_access_delegation without auth returns auth error."""
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username}, use_auth=False)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+
+    @patch("management.mcp_views.list_principals")
+    def test_guide_user_access_delegation_nonexistent_user(self, mock_list_principals):
+        """Edge case: guide_user_access_delegation handles non-existent user gracefully."""
+        mock_list_principals.return_value = '{"data": []}'
+
+        response = self._call_tool("guide_user_access_delegation", {"username": "nonexistent_user"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+
+        self.assertIsNotNone(tool_output["role_info"])
+        self.assertFalse(tool_output["user_already_has_role"])
+        self.assertIn("error", tool_output["user_info"])
+
+    def test_guide_user_access_delegation_no_groups_with_role(self):
+        """Edge case: handles when no groups have the role assigned."""
+        # Remove the role from the group
+        self.access_policy.roles.remove(self.user_access_admin_role)
+
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        # Should have empty existing_assignments
+        self.assertEqual(len(tool_output["existing_assignments"]), 0)
+
+    def test_guide_user_access_delegation_tool_in_tools_list(self):
+        """Positive: guide_user_access_delegation appears in tools/list."""
+        tool_names = self._get_tool_names()
+        self.assertIn("guide_user_access_delegation", tool_names)
+
+    def test_guide_user_access_delegation_user_already_has_role(self):
+        """Positive: detects when user already has the role via group membership."""
+        # Add the test user to the group that has the role
+        self.access_governance_group.principals.add(self.principal)
+
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        # Should detect that user already has the role
+        self.assertTrue(tool_output["user_already_has_role"])
+
+    def test_guide_user_access_delegation_user_does_not_have_role(self):
+        """Positive: correctly identifies when user does not have the role."""
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        # User should not have the role (not in the group)
+        self.assertFalse(tool_output["user_already_has_role"])
+
+    def test_guide_user_access_delegation_role_not_found(self):
+        """Edge case: handles when User Access administrator role doesn't exist."""
+        # Delete the role
+        self.rbac_access.delete()
+        self.user_access_admin_role.delete()
+
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        # Should indicate role not found
+        self.assertIn("error", tool_output["role_info"])
+        self.assertIn("not found", tool_output["role_info"]["error"].lower())
+
+    def test_guide_user_access_delegation_multiple_groups_with_role(self):
+        """Positive: lists multiple groups when several have the role."""
+        # Create another group with the same role
+        second_group = Group.objects.create(
+            name="Security Team",
+            description="Security administrators",
+            tenant=self.tenant,
+        )
+        second_policy = Policy.objects.create(
+            name="security_team_policy",
+            group=second_group,
+            tenant=self.tenant,
+        )
+        second_policy.roles.add(self.user_access_admin_role)
+
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        # Should list both groups in existing_assignments
+        self.assertEqual(len(tool_output["existing_assignments"]), 2)
+        group_names = [a["name"] for a in tool_output["existing_assignments"]]
+        self.assertIn("Access Governance", group_names)
+        self.assertIn("Security Team", group_names)
+
+    def test_guide_user_access_delegation_v1_org_version(self):
+        """Positive: V1 organization shows org_version=v1."""
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["org_version"], "v1")
+
+
+@override_settings(BYPASS_BOP_VERIFICATION=True, V2_APIS_ENABLED=True)
+class MCPGuideUserAccessDelegationV2Tests(MCPToolTestMixin, IdentityRequest):
+    """Tests for guide_user_access_delegation on V2 organizations."""
+
+    def setUp(self):
+        """Set up V2 guide_user_access_delegation tests."""
+        reload(urls)
+        clear_url_caches()
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.test_username = self.user_data["username"]
+        self.principal = Principal.objects.create(username=self.test_username, tenant=self.tenant)
+        self.enterContext(
+            patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
+        )
+        V2TenantBootstrapService(NoopReplicator()).bootstrap_tenant(self.tenant)
+        TenantMapping.objects.update_or_create(tenant=self.tenant, defaults={"v2_write_activated_at": timezone.now()})
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.get_kessel_principal_id",
+                return_value="localhost/test-user-id",
+            )
+        )
+        self.enterContext(
+            patch(
+                "management.permissions.role_v2_access.WorkspaceInventoryAccessChecker.check_resource_access",
+                return_value=True,
+            )
+        )
+
+        self.public_tenant = Tenant.objects.get(tenant_name="public")
+        self.user_access_admin_role = Role.objects.create(
+            name="User Access administrator",
+            display_name="User Access administrator",
+            description="Provides access to create and manage roles, groups, and principals in RBAC.",
+            system=True,
+            tenant=self.public_tenant,
+        )
+
+        self.rbac_permission = Permission.objects.create(
+            application="rbac",
+            resource_type="*",
+            verb="*",
+            permission="rbac:*:*",
+            tenant=self.public_tenant,
+        )
+        self.rbac_access = Access.objects.create(
+            permission=self.rbac_permission,
+            role=self.user_access_admin_role,
+            tenant=self.public_tenant,
+        )
+
+        self.user_access_admin_role_v2 = RoleV2.objects.create(
+            name="User Access administrator",
+            tenant=self.tenant,
+        )
+
+        self.binding = RoleBinding.objects.create(
+            tenant=self.tenant,
+            role=self.user_access_admin_role_v2,
+            resource_type="workspace",
+            resource_id="root-workspace-id",
+        )
+
+        self.admin_principal = Principal.objects.create(username="admin_via_binding", tenant=self.tenant)
+        RoleBindingPrincipal.objects.create(binding=self.binding, principal=self.admin_principal, source="direct")
+
+        self.admin_group = Group.objects.create(name="User Access Admins Group", tenant=self.tenant)
+
+    def tearDown(self):
+        """Tear down V2 guide_user_access_delegation tests."""
+        RoleBindingPrincipal.objects.all().delete()
+        RoleBindingGroup.objects.all().delete()
+        RoleBinding.objects.all().delete()
+        RoleV2.objects.all().delete()
+        Policy.objects.all().delete()
+        Access.objects.all().delete()
+        Role.objects.all().delete()
+        Permission.objects.all().delete()
+        TenantMapping.objects.all().delete()
+        Group.objects.all().delete()
+        Principal.objects.all().delete()
+        super().tearDown()
+
+    def test_guide_user_access_delegation_v2_returns_org_version(self):
+        """Positive: V2 organization shows org_version=v2."""
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["org_version"], "v2")
+
+    def test_guide_user_access_delegation_v2_finds_role_bindings(self):
+        """Positive: V2 org finds role bindings with the role."""
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        self.assertEqual(len(tool_output["existing_assignments"]), 1)
+        assignment = tool_output["existing_assignments"][0]
+        self.assertEqual(assignment["type"], "role_binding")
+        self.assertEqual(assignment["principals"], 1)
+
+    def test_guide_user_access_delegation_v2_user_has_role_direct(self):
+        """Positive: V2 detects user has role via direct binding."""
+        RoleBindingPrincipal.objects.create(binding=self.binding, principal=self.principal, source="direct")
+
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        self.assertTrue(tool_output["user_already_has_role"])
+
+    def test_guide_user_access_delegation_v2_user_has_role_via_group(self):
+        """Positive: V2 detects user has role via group membership."""
+        self.admin_group.principals.add(self.principal)
+        RoleBindingGroup.objects.create(binding=self.binding, group=self.admin_group)
+
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        self.assertTrue(tool_output["user_already_has_role"])
+
+    def test_guide_user_access_delegation_v2_user_does_not_have_role(self):
+        """Positive: V2 correctly identifies user does not have the role."""
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        self.assertFalse(tool_output["user_already_has_role"])
+
+    def test_guide_user_access_delegation_v2_no_bindings(self):
+        """Edge case: V2 org with no role bindings for the role."""
+        RoleBindingPrincipal.objects.all().delete()
+        self.binding.delete()
+
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        self.assertEqual(len(tool_output["existing_assignments"]), 0)
+
+    def test_guide_user_access_delegation_v2_multiple_bindings(self):
+        """Positive: V2 lists multiple role bindings when several exist."""
+        second_binding = RoleBinding.objects.create(
+            tenant=self.tenant,
+            role=self.user_access_admin_role_v2,
+            resource_type="workspace",
+            resource_id="child-workspace-id",
+        )
+        RoleBindingPrincipal.objects.create(binding=second_binding, principal=self.admin_principal, source="direct")
+
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        self.assertEqual(len(tool_output["existing_assignments"]), 2)
+
+    def test_guide_user_access_delegation_v2_shows_binding_counts(self):
+        """Positive: V2 role binding info includes principal and group counts."""
+        RoleBindingGroup.objects.create(binding=self.binding, group=self.admin_group)
+
+        response = self._call_tool("guide_user_access_delegation", {"username": self.test_username})
+
+        tool_output = self._get_tool_output(response)
+
+        assignment = tool_output["existing_assignments"][0]
+        self.assertEqual(assignment["principals"], 1)
+        self.assertEqual(assignment["groups"], 1)
+
+
 # --- UPDATE tool tests ---
 
 
@@ -5362,18 +6007,6 @@ class MCPUpdateToolsV2Tests(MCPToolTestMixin, IdentityRequest):
         self.client = APIClient()
         self.principal = Principal.objects.create(username="test_user", tenant=self.tenant)
         self.enterContext(
-            patch("management.relation_replicator.outbox_replicator.OutboxReplicator._save_replication_event")
-        )
-        V2TenantBootstrapService(NoopReplicator()).bootstrap_tenant(self.tenant)
-        TenantMapping.objects.update_or_create(tenant=self.tenant, defaults={"v2_write_activated_at": timezone.now()})
-        self.permission_obj = Permission.objects.create(
-            application="rbac",
-            resource_type="group",
-            verb="read",
-            permission="rbac:group:read",
-            tenant=self.tenant,
-        )
-        self.enterContext(
             patch(
                 "management.permissions.role_v2_access.get_kessel_principal_id",
                 return_value="localhost/test-user-id",
@@ -5384,6 +6017,15 @@ class MCPUpdateToolsV2Tests(MCPToolTestMixin, IdentityRequest):
                 "management.permissions.role_v2_access.WorkspaceInventoryAccessChecker.check_resource_access",
                 return_value=True,
             )
+        )
+        V2TenantBootstrapService(NoopReplicator()).bootstrap_tenant(self.tenant)
+        TenantMapping.objects.update_or_create(tenant=self.tenant, defaults={"v2_write_activated_at": timezone.now()})
+        self.permission_obj = Permission.objects.create(
+            application="rbac",
+            resource_type="group",
+            verb="read",
+            permission="rbac:group:read",
+            tenant=self.tenant,
         )
 
     def tearDown(self):

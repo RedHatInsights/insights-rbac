@@ -31,7 +31,7 @@ from functools import lru_cache, wraps
 from typing import Any, Callable
 
 from django.conf import settings
-from django.db.models import Count
+from django.db.models import Count, Prefetch
 from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.test import RequestFactory
 from django.urls import reverse
@@ -1953,6 +1953,251 @@ def audit_redhat_access(
 
 @register_tool(
     description=(
+        "Audit a group before dissolving it. Shows all members (users + service accounts), "
+        "roles/permissions they'd lose, and identifies who would be left stranded (losing all "
+        "non-default access). Essential for org changes, contractor offboarding, or acquisitions. "
+        "Provide either group_uuid OR group_name to identify the group. "
+        "Returns: {group: {...}, members: [{username, type, other_groups, access_impact}], "
+        "roles: [{name, permissions}], analysis: {stranded_users, stranded_service_accounts, ...}}. "
+        "STRANDED means the member is ONLY in this group plus platform_default — they'd be demoted "
+        "to default access only. Service accounts with no other groups would start 403'ing. "
+        "Queries: Group, Principal, Policy, Role, Access models directly (no per-member API calls)"
+    ),
+    requires_auth=True,
+    api_version=ApiVersion.COMMON,
+)
+def audit_group_for_dissolution(
+    request: HttpRequest,
+    *,
+    group_uuid: str = "",
+    group_name: str = "",
+) -> str:
+    """Audit a group before dissolving it to identify stranded members."""
+    tenant = getattr(request, "tenant", None)
+    if not tenant:
+        return json.dumps({"error": "No tenant context available"})
+
+    # Resolve group by UUID or name
+    resolved_uuid, error = _resolve_group_uuid(group_uuid, group_name, tenant)
+    if error:
+        return error
+    assert resolved_uuid is not None
+
+    # Get the group with prefetched data
+    group = (
+        Group.objects.filter(uuid=resolved_uuid, tenant=tenant)
+        .prefetch_related(
+            "principals",
+            "policies__roles__access__permission",
+        )
+        .first()
+    )
+
+    if not group:
+        return json.dumps({"error": f"Group with UUID '{resolved_uuid}' not found"})
+
+    # Get all members (users and service accounts)
+    all_principals = list(group.principals.all())
+    users = [p for p in all_principals if p.type == Principal.Types.USER]
+    service_accounts = [p for p in all_principals if p.type == Principal.Types.SERVICE_ACCOUNT]
+
+    # Get roles assigned to this group with their permissions
+    group_roles: list[dict[str, Any]] = []
+    all_permissions_in_group: set[str] = set()
+
+    for policy in group.policies.all():
+        for role in policy.roles.all():
+            role_perms: list[str] = []
+            for access in role.access.all():
+                if access.permission:
+                    perm_str = access.permission.permission
+                    role_perms.append(perm_str)
+                    all_permissions_in_group.add(perm_str)
+
+            group_roles.append(
+                {
+                    "uuid": str(role.uuid),
+                    "name": role.display_name or role.name,
+                    "description": role.description or "",
+                    "system": getattr(role, "system", False),
+                    "permissions": sorted(role_perms),
+                    "permission_count": len(role_perms),
+                }
+            )
+
+    # Precompute all group memberships for all principals
+    principal_ids = set(p.id for p in all_principals)
+    all_memberships = (
+        Group.objects.filter(principals__id__in=principal_ids, tenant=tenant)
+        .exclude(uuid=resolved_uuid)
+        .prefetch_related(
+            "policies__roles__access__permission",
+            Prefetch("principals", queryset=Principal.objects.filter(id__in=principal_ids)),
+        )
+        .distinct()
+    )
+    # Build a mapping of principal_id -> list of other groups
+    principal_to_groups: dict[int, list[Group]] = {pid: [] for pid in principal_ids}
+    for grp in all_memberships:
+        for p in grp.principals.all():
+            if p.id in principal_to_groups:
+                principal_to_groups[p.id].append(grp)
+
+    # Analyze each member's other group memberships and access impact
+    members_data: list[dict[str, Any]] = []
+    stranded_users: list[str] = []
+    stranded_service_accounts: list[str] = []
+    members_with_overlap: list[str] = []
+
+    for principal in all_principals:
+        # Get precomputed groups for this principal
+        other_groups_list = principal_to_groups.get(principal.id, [])
+
+        # Check what permissions they'd retain from other groups
+        retained_permissions: set[str] = set()
+        other_groups_info: list[dict[str, Any]] = []
+
+        for other_group in other_groups_list:
+            group_perms: list[str] = []
+            for policy in other_group.policies.all():
+                for role in policy.roles.all():
+                    for access in role.access.all():
+                        if access.permission:
+                            perm_str = access.permission.permission
+                            group_perms.append(perm_str)
+                            retained_permissions.add(perm_str)
+
+            other_groups_info.append(
+                {
+                    "uuid": str(other_group.uuid),
+                    "name": other_group.name,
+                    "is_platform_default": other_group.platform_default,
+                    "is_admin_default": other_group.admin_default,
+                    "permission_count": len(group_perms),
+                }
+            )
+
+        # Calculate lost permissions (permissions in target group but not in other groups)
+        lost_permissions = all_permissions_in_group - retained_permissions
+
+        # Determine if stranded (only in target group + platform_default, or no other groups at all)
+        non_default_other_groups = [g for g in other_groups_info if not g["is_platform_default"]]
+        is_stranded = len(non_default_other_groups) == 0
+
+        # Categorize access impact
+        if is_stranded:
+            if lost_permissions:
+                access_impact = "stranded - will lose all non-default access"
+            else:
+                access_impact = "stranded - no permissions to lose (target group grants none)"
+        elif lost_permissions:
+            overlap_perms = all_permissions_in_group & retained_permissions
+            if overlap_perms:
+                access_impact = (
+                    f"partial - loses {len(lost_permissions)} perm(s), retains {len(overlap_perms)} overlapping"
+                )
+            else:
+                access_impact = f"loses {len(lost_permissions)} permission(s), retains access via other groups"
+        else:
+            access_impact = "no impact - all permissions retained via other groups"
+
+        member_info: dict[str, Any] = {
+            "username": principal.username,
+            "uuid": str(principal.uuid),
+            "type": principal.type,
+            "other_groups": other_groups_info,
+            "other_group_count": len(other_groups_info),
+            "non_default_group_count": len(non_default_other_groups),
+            "is_stranded": is_stranded,
+            "access_impact": access_impact,
+            "permissions_lost": sorted(lost_permissions) if lost_permissions else [],
+            "permissions_retained": len(retained_permissions),
+        }
+
+        if principal.type == Principal.Types.SERVICE_ACCOUNT:
+            member_info["service_account_id"] = principal.service_account_id
+
+        members_data.append(member_info)
+
+        # Track stranded members
+        if is_stranded:
+            if principal.type == Principal.Types.USER:
+                stranded_users.append(principal.username)
+            else:
+                stranded_service_accounts.append(principal.username)
+        elif lost_permissions and retained_permissions:
+            members_with_overlap.append(principal.username)
+
+    # Group permissions by application for summary
+    perm_by_app: dict[str, int] = {}
+    for perm in all_permissions_in_group:
+        app = perm.split(":")[0]
+        perm_by_app[app] = perm_by_app.get(app, 0) + 1
+
+    # Build analysis summary
+    analysis: dict[str, Any] = {
+        "total_members": len(all_principals),
+        "total_users": len(users),
+        "total_service_accounts": len(service_accounts),
+        "total_roles": len(group_roles),
+        "total_unique_permissions": len(all_permissions_in_group),
+        "permissions_by_application": dict(sorted(perm_by_app.items())),
+        "stranded_users": stranded_users,
+        "stranded_user_count": len(stranded_users),
+        "stranded_service_accounts": stranded_service_accounts,
+        "stranded_service_account_count": len(stranded_service_accounts),
+        "members_with_overlapping_access": members_with_overlap,
+        "members_with_overlapping_count": len(members_with_overlap),
+    }
+
+    # Add warnings/recommendations (truncate long lists to avoid huge messages)
+    warnings: list[str] = []
+    if stranded_users:
+        if len(stranded_users) <= 5:
+            user_list = ", ".join(stranded_users)
+        else:
+            user_list = ", ".join(stranded_users[:5]) + f", +{len(stranded_users) - 5} more"
+        warnings.append(f"{len(stranded_users)} user(s) ({user_list}) will be demoted to default access only")
+    if stranded_service_accounts:
+        if len(stranded_service_accounts) <= 5:
+            svc_list = ", ".join(stranded_service_accounts)
+        else:
+            svc_list = ", ".join(stranded_service_accounts[:5]) + f", +{len(stranded_service_accounts) - 5} more"
+        warnings.append(
+            f"{len(stranded_service_accounts)} service account(s) ({svc_list}) "
+            f"will lose all access — automated processes using them will start 403'ing"
+        )
+    if not stranded_users and not stranded_service_accounts:
+        if len(all_principals) == 0:
+            warnings.append("Group has no members — safe to delete")
+        else:
+            warnings.append(
+                f"All {len(all_principals)} member(s) have other group memberships — "
+                f"access impact is partial or none"
+            )
+
+    analysis["warnings"] = warnings
+
+    return json.dumps(
+        {
+            "group": {
+                "uuid": str(group.uuid),
+                "name": group.name,
+                "description": group.description or "",
+                "platform_default": group.platform_default,
+                "admin_default": group.admin_default,
+                "system": group.system,
+            },
+            "members": members_data,
+            "roles": group_roles,
+            "analysis": analysis,
+        },
+        default=str,
+    )
+
+
+@register_tool(
+    description=(
         "List workspaces for the authenticated organization (V2 API). Workspaces are hierarchical "
         "containers used to scope role bindings to specific resource boundaries. "
         "Order by: 'name', 'created', 'modified', 'type' (prefix with '-' to reverse). "
@@ -3675,6 +3920,146 @@ def create_cross_account_request(
 
     path = reverse("v1_api:cross-list")
     return _call_view_write(request, _cross_account_create_view, path, body)
+
+
+@register_tool(
+    description=(
+        "Check if a user can be delegated user access management without Org Admin privileges. "
+        "\n\n"
+        "USE WHEN: 'delegate user access', 'let someone manage users without Org Admin', "
+        "'give RBAC permissions', 'User Access administrator role'.\n\n"
+        "BACKGROUND: 'User Access administrator' is a system role with rbac:* permissions. "
+        "CAN: create/delete groups, assign roles, add/remove users, invite users, create custom roles. "
+        "CANNOT: grant Org Admin flag, manage groups containing this role (escalation guard), "
+        "access cost management/subscriptions.\n\n"
+        "DECISION TREE:\n"
+        "1. role_info.error → Role missing, contact Red Hat support.\n"
+        "2. user_already_has_role=true → No action needed.\n"
+        "3. user_info.is_org_admin=true → Redundant (Org Admin has full access).\n"
+        "4. org_version='v1' → Call add_principals_to_group(group_uuid=existing_assignments[].uuid, "
+        "principals=[username]), OR create_group() then add_role_to_group(role_uuid=role_info.uuid) "
+        "then add_principals_to_group().\n"
+        "5. org_version='v2' → Call create_role_bindings(role_id=role_info.uuid, subjects=[username]).\n\n"
+        "Returns: {org_version, user_info, role_info, user_already_has_role, existing_assignments}."
+    ),
+    requires_auth=True,
+    api_version=ApiVersion.UNIFIED,
+)
+def guide_user_access_delegation(
+    request: HttpRequest,
+    *,
+    username: str,
+) -> str:
+    """Check if a user can be delegated user access management without Org Admin privileges."""
+    try:
+        tenant = getattr(request, "tenant", None)
+        if not tenant:
+            return json.dumps({"error": "No tenant context available"})
+
+        is_v2 = is_v2_write_activated(tenant)
+        user_access_admin_role_name = "User Access administrator"
+
+        result: dict[str, Any] = {
+            "org_version": "v2" if is_v2 else "v1",
+            "user_info": None,
+            "role_info": None,
+            "user_already_has_role": False,
+            "existing_assignments": [],
+        }
+
+        # Check if user exists
+        try:
+            principals_raw = list_principals(request, usernames=username, match_criteria="exact", limit=1)
+            principals_data = json.loads(principals_raw)
+            if principals_data.get("data"):
+                user_data = principals_data["data"][0]
+                result["user_info"] = {
+                    "username": user_data.get("username"),
+                    "is_org_admin": user_data.get("is_org_admin", False),
+                    "is_active": user_data.get("is_active", True),
+                }
+            else:
+                result["user_info"] = {"error": f"User '{username}' not found"}
+        except Exception as e:
+            logger.warning("guide_user_access_delegation: Failed to verify user %s: %s", username, e)
+            result["user_info"] = {"error": f"Could not verify user '{username}'"}
+
+        # Find the 'User Access administrator' role
+        role_uuid = None
+        try:
+            if is_v2:
+                roles_raw = search_roles(request, name=user_access_admin_role_name, limit=10)
+            else:
+                roles_raw = search_roles(request, name=user_access_admin_role_name, system="true", limit=1)
+            roles_data = json.loads(roles_raw)
+            if roles_data.get("data"):
+                role_data = next(
+                    (
+                        r
+                        for r in roles_data["data"]
+                        if r.get("name", "").lower() == user_access_admin_role_name.lower()
+                    ),
+                    roles_data["data"][0],
+                )
+                role_uuid = role_data.get("uuid") or role_data.get("id")
+                result["role_info"] = {"uuid": role_uuid, "name": role_data.get("name")}
+            else:
+                result["role_info"] = {"error": "Role not found - contact Red Hat support"}
+                return json.dumps(result)
+        except Exception as e:
+            logger.warning("guide_user_access_delegation: Failed to find role: %s", e)
+            result["role_info"] = {"error": "Role not found"}
+            return json.dumps(result)
+
+        # Check current assignments and if user already has the role
+        if is_v2:
+            v2_role = RoleV2.objects.filter(uuid=role_uuid, tenant=tenant).first()
+            if v2_role:
+                # Get existing bindings
+                bindings = RoleBinding.objects.filter(role=v2_role, tenant=tenant).annotate(
+                    principal_count=Count("principal_entries", distinct=True),
+                    group_count=Count("group_entries", distinct=True),
+                )
+                for b in bindings:
+                    result["existing_assignments"].append(
+                        {
+                            "type": "role_binding",
+                            "id": str(b.id),
+                            "principals": b.principal_count,
+                            "groups": b.group_count,
+                        }
+                    )
+
+                # Check if user already has role (direct or via group)
+                has_direct = RoleBindingPrincipal.objects.filter(
+                    principal__username__iexact=username, principal__tenant=tenant, binding__role=v2_role
+                ).exists()
+                user_groups = Group.objects.filter(principals__username__iexact=username, tenant=tenant)
+                has_via_group = RoleBindingGroup.objects.filter(
+                    group__in=user_groups, binding__role=v2_role, binding__tenant=tenant
+                ).exists()
+                result["user_already_has_role"] = has_direct or has_via_group
+        else:
+            # V1: Check groups with this role
+            try:
+                groups_raw = list_groups(request, role_names=user_access_admin_role_name, limit=100)
+                groups_data = json.loads(groups_raw)
+                groups_with_role = {g.get("uuid"): g.get("name") for g in groups_data.get("data", [])}
+                for group_uuid, name in groups_with_role.items():
+                    result["existing_assignments"].append({"type": "group", "uuid": group_uuid, "name": name})
+
+                # Check if user is in any of these groups
+                user_groups_raw = list_groups(request, username=username, limit=100)
+                user_groups_data = json.loads(user_groups_raw)
+                user_group_uuids = {g.get("uuid") for g in user_groups_data.get("data", [])}
+                result["user_already_has_role"] = bool(user_group_uuids & set(groups_with_role.keys()))
+            except Exception as e:
+                logger.warning("guide_user_access_delegation: Failed to check groups: %s", e)
+
+        return json.dumps(result)
+    except Exception:
+        logger.exception("guide_user_access_delegation failed")
+        return json.dumps({"error": "An internal error occurred. Please try again or contact support."})
 
 
 # --- UPDATE tool implementations ---

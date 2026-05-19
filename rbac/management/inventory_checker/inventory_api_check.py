@@ -19,7 +19,7 @@
 
 import logging
 from collections.abc import Sequence
-from typing import List, Union
+from typing import List, Optional, Union
 
 from django.conf import settings
 from google.protobuf import json_format
@@ -33,12 +33,15 @@ from kessel.inventory.v1beta2 import (
 from kessel.inventory.v1beta2.check_request_pb2 import CheckRequest
 from management.cache import JWTCache
 from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
-from management.permission.scope_service import ImplicitResourceService
+from management.permission.scope_service import ImplicitResourceService, Scope
 from management.relation_replicator.types import RelationTuple
 from management.role.platform import admin_platform_parent_scope_for_seeded_system_role, platform_v2_role_uuid_for
 from management.role.relations import role_child_relationship
-from management.tenant_mapping.model import DefaultAccessType
+from management.tenant_mapping.model import DefaultAccessType, TenantMapping
 from management.utils import create_client_channel_inventory
+from migration_tool.utils import create_relationship
+
+from api.models import Tenant
 
 jwt_cache = JWTCache()
 jwt_provider = JWTProvider()
@@ -91,6 +94,12 @@ class InventoryApiBaseChecker:
             responses = [stub.Check(req) for req in checks]
             return all(self._is_allowed(res) for res in responses)
 
+    def _check_inventory_batch(self, checks: List[CheckRequest]) -> list[bool]:
+        """Check multiple relations via a single gRPC channel, returning per-request results."""
+        with create_client_channel_inventory(settings.INVENTORY_API_SERVER) as channel:
+            stub = inventory_service_pb2_grpc.KesselInventoryServiceStub(channel)
+            return [self._is_allowed(stub.Check(req)) for req in checks]
+
     def _is_allowed(self, response):
         response_dict = json_format.MessageToDict(response)
         return response_dict.get("allowed", "") != "ALLOWED_FALSE"
@@ -100,18 +109,23 @@ class GroupPrincipalInventoryChecker(InventoryApiBaseChecker):
     """Subclass to check group principal relations are correct on inventory api."""
 
     def check_relationships(self, relationships):
-        """Core logic to check group principal relations are correct."""
+        """Check group principal relations are correct. All relationships must belong to the same group."""
         inventory_relation_assignments = {"group_uuid": "", "principal_relations": []}
-        for r in relationships:
-            check_request = relation_tuple_to_check_request(r)
-            relation_exists = self.check_inventory_core(check_request)
+        if not relationships:
+            return inventory_relation_assignments
+
+        check_requests = [relation_tuple_to_check_request(r) for r in relationships]
+        results = self._check_inventory_batch(check_requests)
+
+        for r, relation_exists in zip(relationships, results):
             inventory_relation_assignments["group_uuid"] = r.resource.id
             inventory_relation_assignments["principal_relations"].append(
                 {"id": r.subject.subject.id, "relation_exists": relation_exists}
             )
             if not relation_exists:
                 logger.warning(
-                    f"Relation missing: User ID {r.subject.subject.id} is not associated with Group ID {r.resource.id}"
+                    f"Relation missing: User ID {r.subject.subject.id} "
+                    f"is not associated with Group ID {r.resource.id}"
                 )
         return inventory_relation_assignments
 
@@ -119,138 +133,172 @@ class GroupPrincipalInventoryChecker(InventoryApiBaseChecker):
 class BootstrappedTenantInventoryChecker(InventoryApiBaseChecker):
     """Subclass to check bootstrapped tenants are correct on inventory api."""
 
-    def check_bootstrapped_tenants(self, mapping):
-        """Core logic to check bootstrapped tenants are correct."""
-        if mapping:
-            # If mapping provided create the correct check requests for check_relation_core
-            # Each tuple contains (name, check_request) for labeling purposes
-            checks_with_names = [
-                # Check default workspace has root workspace as parent
-                (
-                    "workspace_parent",
-                    CheckRequest(
-                        object=resource_reference_pb2.ResourceReference(
-                            resource_id=mapping["default_workspace"],
-                            resource_type="workspace",
-                            reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
-                        ),
-                        relation="parent",
-                        subject=subject_reference_pb2.SubjectReference(
-                            resource=resource_reference_pb2.ResourceReference(
-                                resource_id=mapping["root_workspace"],
-                                resource_type="workspace",
-                                reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
-                            )
-                        ),
-                    ),
-                ),
-                # Check default workspace has correct default role binding
-                (
-                    "default_access_binding",
-                    CheckRequest(
-                        object=resource_reference_pb2.ResourceReference(
-                            resource_id=mapping["default_workspace"],
-                            resource_type="workspace",
-                            reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
-                        ),
-                        relation="binding",
-                        subject=subject_reference_pb2.SubjectReference(
-                            resource=resource_reference_pb2.ResourceReference(
-                                resource_id=mapping["tenant_mapping"]["default_role_binding_uuid"],
-                                resource_type="role_binding",
-                                reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
-                            )
-                        ),
-                    ),
-                ),
-                # Check default workspace has correct default admin role binding
-                (
-                    "admin_default_access_binding",
-                    CheckRequest(
-                        object=resource_reference_pb2.ResourceReference(
-                            resource_id=mapping["default_workspace"],
-                            resource_type="workspace",
-                            reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
-                        ),
-                        relation="binding",
-                        subject=subject_reference_pb2.SubjectReference(
-                            resource=resource_reference_pb2.ResourceReference(
-                                resource_id=mapping["tenant_mapping"]["default_admin_role_binding_uuid"],
-                                resource_type="role_binding",
-                                reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
-                            )
-                        ),
-                    ),
-                ),
-                # Check default role binding is assigned to correct group
-                (
-                    "default_access_subject",
-                    CheckRequest(
-                        object=resource_reference_pb2.ResourceReference(
-                            resource_id=mapping["tenant_mapping"]["default_role_binding_uuid"],
-                            resource_type="role_binding",
-                            reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
-                        ),
-                        relation="subject",
-                        subject=subject_reference_pb2.SubjectReference(
-                            resource=resource_reference_pb2.ResourceReference(
-                                resource_id=mapping["tenant_mapping"]["default_group_uuid"],
-                                resource_type="group",
-                                reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
-                            ),
-                            relation="member",
-                        ),
-                    ),
-                ),
-                # Check default admin role binding is assigned to correct group
-                (
-                    "admin_default_access_subject",
-                    CheckRequest(
-                        object=resource_reference_pb2.ResourceReference(
-                            resource_id=mapping["tenant_mapping"]["default_admin_role_binding_uuid"],
-                            resource_type="role_binding",
-                            reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
-                        ),
-                        relation="subject",
-                        subject=subject_reference_pb2.SubjectReference(
-                            resource=resource_reference_pb2.ResourceReference(
-                                resource_id=mapping["tenant_mapping"]["default_admin_group_uuid"],
-                                resource_type="group",
-                                reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
-                            ),
-                            relation="member",
-                        ),
-                    ),
-                ),
-            ]
-            checks = [check for _, check in checks_with_names]
-            bootstrapped_tenant_correct = self.check_inventory_core(checks)
-            if not bootstrapped_tenant_correct:
-                logger.warning(f'{mapping["org_id"]} does not have the expected hierarchy for bootstrapped tenant.')
-            else:
-                logger.info(f'{mapping["org_id"]} is correctly bootstrapped.')
+    _SCOPE_RESOURCE_TYPE: dict[Scope, str] = {
+        Scope.DEFAULT: "workspace",
+        Scope.ROOT: "workspace",
+        Scope.TENANT: "tenant",
+    }
 
-            # Convert checks to readable format for logging in response
-            check_list = []
-            for name, check in checks_with_names:
-                check_dict = json_format.MessageToDict(check)
-                obj = check_dict.get("object", {})
-                subject = check_dict.get("subject", {})
-                subject_resource = subject.get("resource", {})
-                relation = check_dict.get("relation", "")
-                subject_relation = subject.get("relation", "")
-                obj_reporter = obj.get("reporter", {}).get("type", "")
-                subject_reporter = subject_resource.get("reporter", {}).get("type", "")
+    def _build_named_tuples(
+        self,
+        org_id: str,
+        tenant_mapping: TenantMapping,
+        root_workspace_id: str,
+        default_workspace_id: str,
+        ungrouped_workspace_id: Optional[str],
+        scope_resource_ids: dict[Scope, str],
+        policy_service: GlobalPolicyIdService,
+    ) -> list[tuple[str, RelationTuple]]:
+        """Build all expected bootstrap tuples with descriptive names."""
+        named_tuples: list[tuple[str, RelationTuple]] = []
+        tenant_id = scope_resource_ids[Scope.TENANT]
 
-                subject_relation_suffix = f"#{subject_relation}" if subject_relation else ""
-                check_str = (
-                    f"{obj_reporter}/{obj.get('resourceType', '')}:{obj.get('resourceId', '')}/"
-                    f"{relation}#{subject_reporter}/{subject_resource.get('resourceType', '')}:"
-                    f"{subject_resource.get('resourceId', '')}{subject_relation_suffix}"
+        named_tuples.append(
+            (
+                "default_workspace_parent",
+                create_relationship(
+                    ("rbac", "workspace"), default_workspace_id, ("rbac", "workspace"), root_workspace_id, "parent"
+                ),
+            )
+        )
+        named_tuples.append(
+            (
+                "root_workspace_tenant",
+                create_relationship(
+                    ("rbac", "workspace"),
+                    root_workspace_id,
+                    ("rbac", "tenant"),
+                    Tenant.org_id_to_tenant_resource_id(org_id=org_id),
+                    "tenant",
+                ),
+            )
+        )
+        named_tuples.append(
+            (
+                "tenant_platform",
+                create_relationship(
+                    ("rbac", "tenant"), tenant_id, ("rbac", "platform"), settings.ENV_NAME, "platform"
+                ),
+            )
+        )
+
+        for access_type in DefaultAccessType:
+            group_uuid = str(tenant_mapping.group_uuid_for(access_type))
+            access_label = access_type.value
+
+            for scope in Scope:
+                scope_label = scope.name.lower()
+                rb_uuid = str(tenant_mapping.default_role_binding_uuid_for(access_type, scope))
+                resource_type = self._SCOPE_RESOURCE_TYPE[scope]
+                resource_id = scope_resource_ids[scope]
+                role_uuid = str(platform_v2_role_uuid_for(access_type, scope, policy_service))
+
+                named_tuples.append(
+                    (
+                        f"{access_label}_{scope_label}_binding",
+                        create_relationship(
+                            ("rbac", resource_type), resource_id, ("rbac", "role_binding"), rb_uuid, "binding"
+                        ),
+                    )
                 )
-                check_exists = self.check_inventory_core(check)
-                check_list.append({"name": name, "check": check_str, "exists": check_exists})
-        return bootstrapped_tenant_correct, check_list
+                named_tuples.append(
+                    (
+                        f"{access_label}_{scope_label}_role",
+                        create_relationship(("rbac", "role_binding"), rb_uuid, ("rbac", "role"), role_uuid, "role"),
+                    )
+                )
+                named_tuples.append(
+                    (
+                        f"{access_label}_{scope_label}_subject",
+                        create_relationship(
+                            ("rbac", "role_binding"), rb_uuid, ("rbac", "group"), group_uuid, "subject", "member"
+                        ),
+                    )
+                )
+
+        if ungrouped_workspace_id:
+            named_tuples.append(
+                (
+                    "ungrouped_workspace_parent",
+                    create_relationship(
+                        ("rbac", "workspace"),
+                        ungrouped_workspace_id,
+                        ("rbac", "workspace"),
+                        default_workspace_id,
+                        "parent",
+                    ),
+                )
+            )
+
+        return named_tuples
+
+    @staticmethod
+    def _tuple_to_readable(t: RelationTuple) -> str:
+        """Format a RelationTuple as a human-readable string."""
+        subject_suffix = f"#{t.subject.relation}" if t.subject.relation else ""
+        return (
+            f"{t.resource.type.namespace}/{t.resource.type.name}:{t.resource.id}"
+            f"#{t.relation}"
+            f"@{t.subject.subject.type.namespace}/{t.subject.subject.type.name}:{t.subject.subject.id}"
+            f"{subject_suffix}"
+        )
+
+    def check_bootstrapped_tenant(
+        self,
+        org_id: str,
+        tenant_mapping: TenantMapping,
+        root_workspace_id: str,
+        default_workspace_id: str,
+        ungrouped_workspace_id: Optional[str] = None,
+    ) -> tuple[bool, list[dict]]:
+        """Check all bootstrap relations for a tenant against inventory.
+
+        Returns:
+            Tuple of (all_passed, list of per-check result dicts).
+        """
+        policy_service = GlobalPolicyIdService.shared()
+        tenant_id = f"{settings.PRINCIPAL_USER_DOMAIN}/{org_id}"
+
+        scope_resource_ids: dict[Scope, str] = {
+            Scope.DEFAULT: default_workspace_id,
+            Scope.ROOT: root_workspace_id,
+            Scope.TENANT: tenant_id,
+        }
+
+        named_tuples = self._build_named_tuples(
+            org_id=org_id,
+            tenant_mapping=tenant_mapping,
+            root_workspace_id=root_workspace_id,
+            default_workspace_id=default_workspace_id,
+            ungrouped_workspace_id=ungrouped_workspace_id,
+            scope_resource_ids=scope_resource_ids,
+            policy_service=policy_service,
+        )
+
+        check_list: list[dict] = []
+        all_passed = True
+
+        for name, rel_tuple in named_tuples:
+            check_request = relation_tuple_to_check_request(rel_tuple)
+            exists = self.check_inventory_core(check_request)
+            check_list.append(
+                {
+                    "name": name,
+                    "check": self._tuple_to_readable(rel_tuple),
+                    "exists": exists,
+                }
+            )
+            if not exists:
+                all_passed = False
+                logger.warning(f"Bootstrap check failed for {org_id}: {name} missing")
+
+        if all_passed:
+            logger.info(f"{org_id} is correctly bootstrapped ({len(check_list)} checks passed).")
+        else:
+            failed = [c["name"] for c in check_list if not c["exists"]]
+            logger.warning(f"{org_id} bootstrap check FAILED. Missing: {failed}")
+
+        return all_passed, check_list
 
 
 class WorkspaceRelationInventoryChecker(InventoryApiBaseChecker):
