@@ -31,11 +31,13 @@ from django.db.models.functions import Cast
 from django.utils import timezone
 from management.atomic_transactions import atomic
 from management.group.definer import seed_group
+from management.group.model import Group
 from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
 from management.models import Workspace
 from management.notifications.notification_handlers import role_obj_change_notification_handler
 from management.permission.model import Permission
 from management.permission.scope_service import ImplicitResourceService, Scope
+from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.role.model import Access, ExtRoleRelation, ExtTenant, ResourceDefinition, Role
 from management.role.platform import (
@@ -49,7 +51,9 @@ from management.role.relation_api_dual_write_handler import (
 from management.role.v2_model import PlatformRoleV2, SeededRoleV2
 from management.role_binding.model import RoleBinding
 from management.tenant_mapping.model import DefaultAccessType
+from migration_tool.migrate_binding_scope import _migrate_car_bindings, migrate_system_role_bindings_for_group
 
+from api.cross_access.model import CrossAccountRequest
 from api.models import Tenant
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -215,12 +219,6 @@ def _migrate_bindings_for_scope_change(v1_role, old_scopes, new_scope):
         old_scopes: Set of scopes where the role currently has bindings
         new_scope: The new scope
     """
-    from management.group.model import Group
-    from migration_tool.migrate_binding_scope import migrate_system_role_bindings_for_group
-    from management.relation_replicator.outbox_replicator import OutboxReplicator
-    from api.cross_access.model import CrossAccountRequest
-    from migration_tool.migrate_binding_scope import _migrate_car_bindings
-
     # Find all groups (non-public tenant) that have this system role assigned
     groups_with_role = Group.objects.filter(policies__roles=v1_role).exclude(tenant__tenant_name="public").distinct()
 
