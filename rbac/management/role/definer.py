@@ -74,33 +74,43 @@ def _determine_old_scopes(v1_role):
         return set()
 
     try:
-        # Helper to check if bindings exist for a given scope
-        def has_bindings(v1_role, scope):
-            """Check if bindings exist for the given v1_role at the given scope."""
-            queryset = RoleBinding.objects.filter(tenant__tenant_mapping__v2_write_activated_at=None).filter(
-                role__v1_source=v1_role
-            )
-
-            if scope in (Scope.ROOT, Scope.DEFAULT):
-                # For ROOT and DEFAULT scopes, check workspace bindings with specific workspace types
-                workspace_type = Workspace.Types.ROOT if scope == Scope.ROOT else Workspace.Types.DEFAULT
-                queryset = queryset.filter(resource_type="workspace").filter(
-                    Exists(
-                        Workspace.objects.filter(type=workspace_type).filter(
-                            id=Cast(OuterRef("resource_id"), UUIDField())
-                        )
+        # Check for bindings at DEFAULT workspace scope
+        in_default = (
+            RoleBinding.objects.filter(resource_type="workspace")
+            .filter(tenant__tenant_mapping__v2_write_activated_at=None)
+            .filter(role__v1_source=v1_role)
+            .filter(
+                Exists(
+                    Workspace.objects.filter(type=Workspace.Types.DEFAULT).filter(
+                        id=Cast(OuterRef("resource_id"), UUIDField())
                     )
                 )
-            else:
-                # For TENANT scope, check tenant bindings
-                queryset = queryset.filter(resource_type="tenant")
+            )
+            .exists()
+        )
 
-            return queryset.exists()
+        # Check for bindings at ROOT workspace scope
+        in_root = (
+            RoleBinding.objects.filter(resource_type="workspace")
+            .filter(tenant__tenant_mapping__v2_write_activated_at=None)
+            .filter(role__v1_source=v1_role)
+            .filter(
+                Exists(
+                    Workspace.objects.filter(type=Workspace.Types.ROOT).filter(
+                        id=Cast(OuterRef("resource_id"), UUIDField())
+                    )
+                )
+            )
+            .exists()
+        )
 
-        # Check for bindings at each scope
-        in_default = has_bindings(v1_role, Scope.DEFAULT)
-        in_root = has_bindings(v1_role, Scope.ROOT)
-        in_tenant = has_bindings(v1_role, Scope.TENANT)
+        # Check for bindings at TENANT scope
+        in_tenant = (
+            RoleBinding.objects.filter(resource_type="tenant")
+            .filter(tenant__tenant_mapping__v2_write_activated_at=None)
+            .filter(role__v1_source=v1_role)
+            .exists()
+        )
 
         scopes = set()
 
@@ -135,9 +145,10 @@ def _log_scope_change_and_migrate(v1_role, display_name, old_scopes, new_scope):
     """
     Log scope change and trigger binding migration if scope has changed.
 
-    This function is called during seeding for all system roles. It only triggers migration if:
-    1. old_scopes is not empty (meaning we found existing bindings)
-    2. old_scopes != {new_scope} (meaning the scope actually changed or role has mixed-scope bindings)
+    This function is called during seeding for all system roles. It only triggers migration if
+    the existing bindings are not already at the expected scope. Migration is needed when:
+    - old_scopes is non-empty and contains scopes other than new_scope, OR
+    - old_scopes contains multiple scopes (mixed-scope bindings)
 
     The old scopes are determined by checking what resources the role is actually bound to
     in V1 tenants. This detects:
@@ -152,19 +163,21 @@ def _log_scope_change_and_migrate(v1_role, display_name, old_scopes, new_scope):
         old_scopes: Set of scopes where the role currently has bindings
         new_scope: The new scope based on current permissions configuration
     """
-    if not old_scopes:
-        logger.debug(
-            "No scope migration for %s: no existing bindings found in V1 tenants",
-            display_name,
-        )
-        return
-
-    if old_scopes == {new_scope}:
-        logger.debug(
-            "No scope migration for %s: all existing bindings already at %s scope",
-            display_name,
-            new_scope.name,
-        )
+    # Use issubset to check if migration is needed
+    # If old_scopes is a subset of {new_scope}, no migration needed
+    # This handles: empty set (no bindings), or exact match {new_scope}
+    if old_scopes.issubset({new_scope}):
+        if old_scopes:
+            logger.debug(
+                "No scope migration for %s: all existing bindings already at %s scope",
+                display_name,
+                new_scope.name,
+            )
+        else:
+            logger.debug(
+                "No scope migration for %s: no existing bindings found in V1 tenants",
+                display_name,
+            )
         return
 
     old_scope_names = ", ".join(sorted(s.name for s in old_scopes))
