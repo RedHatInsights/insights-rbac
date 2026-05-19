@@ -54,3 +54,11 @@ class ReplicateRootWorkspacesTest(TestCase):
                 )
             ),
         )
+
+    def test_replicate_unbootstrapped(self):
+        Tenant.objects.create(tenant_name="unbootstrapped tenant", org_id="unbootstrapped")
+
+        with self.assertRaises(RuntimeError) as ctx:
+            replicate_root_workspace_tenants(NoopReplicator())
+
+        self.assertIn("bootstrap", str(ctx.exception))
