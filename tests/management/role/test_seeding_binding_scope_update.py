@@ -29,6 +29,7 @@ from management.role.definer import (
     _log_scope_change_and_migrate,
 )
 from management.role.model import Role
+from management.tenant_mapping.model import TenantMapping
 from management.tenant_mapping.v2_activation import ensure_v2_write_activated
 from migration_tool.in_memory_tuples import (
     InMemoryTuples,
@@ -54,8 +55,6 @@ class SystemRoleBindingScopeUpdateTests(DualWriteTestCase):
 
         # Deactivate V2 writes to make this a V1 tenant
         # This ensures _determine_old_scopes can find the bindings
-        from management.tenant_mapping.model import TenantMapping
-
         TenantMapping.objects.filter(tenant=self.tenant).update(v2_write_activated_at=None)
 
     @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
