@@ -17,9 +17,19 @@ class Command(BaseCommand):
             help="whether to replicate tenants for all root workspaces (required for forwards compatibility)",
         )
 
+        parser.add_argument(
+            "--sleep-sec",
+            type=float,
+            default=0.0,
+            help=(
+                "if positive, the number of seconds to sleep in between each replication batch "
+                "(defaults to 0, no sleeping)"
+            ),
+        )
+
     def handle(self, **options):
         """Run the command."""
         if not options["all"]:
             raise CommandError("Must pass --all to request replicating tenants for all root workspaces", returncode=1)
 
-        replicate_root_workspace_tenants()
+        replicate_root_workspace_tenants(batch_sleep_seconds=options["sleep_sec"])

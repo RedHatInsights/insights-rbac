@@ -1,5 +1,6 @@
 import itertools
 import logging
+import time
 from typing import Optional
 
 from api.models import Tenant
@@ -66,7 +67,16 @@ def _do_replicate(replicator: RelationReplicator, raw_tenants: list[Tenant]) -> 
     return len(tenants)
 
 
-def replicate_root_workspace_tenants(replicator: Optional[RelationReplicator] = None):
+def replicate_root_workspace_tenants(
+    replicator: Optional[RelationReplicator] = None, *, batch_sleep_seconds: int | float = 0
+):
+    """
+    Replicate the tenant relation for all existing root workspaces.
+
+    Args:
+        replicator: the replicator to use (defaulting to OutboxReplicator)
+        batch_sleep_seconds: if positive, how many seconds to sleep between each "batch" (defaulting to 0)
+    """
     if replicator is None:
         replicator = OutboxReplicator()
 
@@ -80,5 +90,8 @@ def replicate_root_workspace_tenants(replicator: Optional[RelationReplicator] = 
     for raw_tenant_batch in itertools.batched(query.iterator(), 1000):
         replicated_count += _do_replicate(replicator, list(raw_tenant_batch))
         logger.info(f"Replicated {replicated_count}/~{tenant_count} root workspace tenants.")
+
+        if batch_sleep_seconds > 0:
+            time.sleep(batch_sleep_seconds)
 
     logger.info(f"Finished replicating a total of {replicated_count} root workspace tenants.")

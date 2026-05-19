@@ -1300,6 +1300,7 @@ objects:
             - /opt/rbac/rbac/manage.py
             - replicate_root_workspace_tenants
             - "--all"
+            - "--sleep-sec=0.5"
           resources:
             limits:
               cpu: 300m
