@@ -1228,14 +1228,13 @@ class V2RoleSeedingTests(IdentityRequest):
             "Non-default role should have no parents",
         )
 
-    def test_non_default_role_scope_change_does_not_trigger_migration(self):
+    def test_role_without_bindings_does_not_trigger_migration(self):
         """Test that roles without bindings don't trigger migration.
 
-        Migration is triggered based on whether a role has actual bindings in V1 tenants,
-        not based on whether it's a default role. Non-default roles typically don't have
-        bindings (since they lack automatic bindings via default groups), so changing their
-        scope doesn't trigger migration. If a non-default role HAD manual bindings, those
-        would be migrated.
+        Migration is triggered based on whether a role has actual bindings in V1 tenants.
+        Roles without any bindings (whether default or non-default) don't need migration.
+        If a role later gets manual bindings and then changes scope, those bindings WILL
+        be migrated.
         """
         seed_group()
 
@@ -1243,39 +1242,31 @@ class V2RoleSeedingTests(IdentityRequest):
         with self.settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS=""):
             seed_roles()
 
-        # Find a non-default role (neither platform_default nor admin_default) that has permissions
-        # Use a filter that ensures we get a role with permissions to test
-        non_default_role = (
-            Role.objects.public_tenant_only()
-            .filter(platform_default=False, admin_default=False, system=True, access__isnull=False)
-            .distinct()
-            .first()
-        )
+        # Pick a specific non-default role by name from the test seed data
+        # "Cost Administrator Local Test" is a known non-default system role with permissions in test data
+        non_default_role = Role.objects.public_tenant_only().filter(name="Cost Administrator Local Test").first()
         self.assertIsNotNone(
             non_default_role,
-            "Expected at least one seeded non-default system role with permissions in test data",
+            "Expected 'Cost Administrator Local Test' role to exist in seeded roles",
         )
 
         # Mock the migration function
         with patch("management.role.definer._migrate_bindings_for_scope_change") as mock_migrate:
-            # Change the scope for this role's permissions
-            role_permissions = list(non_default_role.access.select_related("permission"))
-            self.assertGreater(len(role_permissions), 0, f"Role {non_default_role.name} should have permissions")
-            permission_pattern = f"{role_permissions[0].permission.application}:*:*"
+            # Change the scope for this role's permissions by moving its permissions to ROOT
+            permission_pattern = f"{non_default_role.access.first().permission.application}:*:*"
 
             # Re-seed with the permission now in ROOT scope
             with self.settings(ROOT_SCOPE_PERMISSIONS=permission_pattern, TENANT_SCOPE_PERMISSIONS=""):
                 seed_roles()
 
-            # Verify that migration was NOT called for the non-default role
-            # Non-default roles without bindings should not trigger migration.
+            # Verify that migration was NOT called for this role
             # The new _determine_old_scopes checks for actual bindings in V1 tenants.
-            # Since this test doesn't create any bindings for the non-default role,
+            # Since this test doesn't create any bindings for this role,
             # _determine_old_scopes returns empty set and migration is skipped.
             migration_called_for_role = any(call[0][0] == non_default_role for call in mock_migrate.call_args_list)
             self.assertFalse(
                 migration_called_for_role,
-                f"Migration should NOT be called for non-default role {non_default_role.name} "
+                f"Migration should NOT be called for role {non_default_role.name} "
                 "because it has no bindings to migrate (only roles with actual bindings need migration)",
             )
 
