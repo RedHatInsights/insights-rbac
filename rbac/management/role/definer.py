@@ -214,88 +214,137 @@ def _migrate_bindings_for_scope_change(v1_role, old_scopes, new_scope):
     be lost during migration. This is by design, as system roles should follow the
     scope determined by their permissions configuration.
 
+    Race Condition Handling:
+    There is a potential race condition where a concurrent V1 role assignment could
+    create bindings for a new group while this migration is running. The new group
+    would use the old scope (before migration completes) and would be missed by the
+    initial query. To handle this, we re-check after the first migration pass and
+    re-run for any newly discovered groups/CARs. This simple retry approach is
+    preferred over complex locking mechanisms (SERIALIZABLE transactions or SELECT
+    FOR UPDATE) which would require changes across the codebase.
+
     Args:
         v1_role: The V1 system role whose scope has changed
         old_scopes: Set of scopes where the role currently has bindings
         new_scope: The new scope
     """
-    # Find all groups (non-public tenant) that have this system role assigned
-    groups_with_role = Group.objects.filter(policies__roles=v1_role).exclude(tenant__tenant_name="public").distinct()
-
-    # Find all approved CARs that have this system role
-    cars_with_role = CrossAccountRequest.objects.filter(roles=v1_role, status="approved")
-
-    groups = list(groups_with_role)
-    cars = list(cars_with_role)
-
-    if not groups and not cars:
-        logger.info("No groups or CARs found with role %s, skipping binding migration", v1_role.name)
-        return
-
-    group_count = len(groups)
-    car_count = len(cars)
-    old_scope_names = ", ".join(sorted(s.name for s in old_scopes))
-    logger.info(
-        "Found %d group(s) and %d CAR(s) with system role %s. Migrating bindings from [%s] to %s scope.",
-        group_count,
-        car_count,
-        v1_role.name,
-        old_scope_names,
-        new_scope.name,
-    )
-
     replicator = OutboxReplicator()
-    migrated_groups = 0
-    migrated_cars = 0
+    total_migrated_groups = 0
+    total_migrated_cars = 0
+    max_retries = 2  # Initial pass + 1 retry to catch race conditions
 
-    # Migrate group bindings
-    for group in groups:
-        try:
-            # Use the existing migration function to migrate bindings for this group
-            # This will update all system role bindings for the group to the correct scope
-            result = migrate_system_role_bindings_for_group(group, replicator)
-            if result > 0:
-                migrated_groups += 1
+    for retry in range(max_retries):
+        # Find all groups (non-public tenant) that have this system role assigned
+        groups_with_role = (
+            Group.objects.filter(policies__roles=v1_role).exclude(tenant__tenant_name="public").distinct()
+        )
+
+        # Find all approved CARs that have this system role
+        cars_with_role = CrossAccountRequest.objects.filter(roles=v1_role, status="approved")
+
+        groups = list(groups_with_role)
+        cars = list(cars_with_role)
+
+        # On retry, check if there are still bindings at wrong scope
+        # If not, we're done (no race condition occurred or previous pass caught everything)
+        if retry > 0:
+            current_scopes = _determine_old_scopes(v1_role)
+            if current_scopes.issubset({new_scope}):
                 logger.info(
-                    "Migrated bindings for group %s (uuid=%s) with system role %s",
-                    group.name,
+                    "Scope migration verification passed for %s: all bindings now at correct scope after %d pass(es)",
+                    v1_role.name,
+                    retry,
+                )
+                break
+
+            logger.warning(
+                "Detected additional bindings at wrong scope for %s after initial migration (retry %d/%d). "
+                "This likely indicates concurrent role assignments during migration. Re-running migration.",
+                v1_role.name,
+                retry,
+                max_retries - 1,
+            )
+
+        if not groups and not cars:
+            if retry == 0:
+                logger.info("No groups or CARs found with role %s, skipping binding migration", v1_role.name)
+            return
+
+        group_count = len(groups)
+        car_count = len(cars)
+
+        if retry == 0:
+            old_scope_names = ", ".join(sorted(s.name for s in old_scopes))
+            logger.info(
+                "Found %d group(s) and %d CAR(s) with system role %s. Migrating bindings from [%s] to %s scope.",
+                group_count,
+                car_count,
+                v1_role.name,
+                old_scope_names,
+                new_scope.name,
+            )
+
+        migrated_groups = 0
+        migrated_cars = 0
+
+        # Migrate group bindings
+        for group in groups:
+            try:
+                # Use the existing migration function to migrate bindings for this group
+                # This will update all system role bindings for the group to the correct scope
+                result = migrate_system_role_bindings_for_group(group, replicator)
+                if result > 0:
+                    migrated_groups += 1
+                    logger.debug(
+                        "Migrated bindings for group %s (uuid=%s) with system role %s",
+                        group.name,
+                        group.uuid,
+                        v1_role.name,
+                    )
+            except Exception:
+                logger.error(
+                    "Failed to migrate bindings for group %s with role %s",
                     group.uuid,
                     v1_role.name,
+                    exc_info=True,
                 )
-        except Exception:
-            logger.error(
-                "Failed to migrate bindings for group %s with role %s",
-                group.uuid,
-                v1_role.name,
-                exc_info=True,
-            )
 
-    # Migrate CAR bindings
-    for car in cars:
-        try:
-            result = _migrate_car_bindings(car, replicator)
-            if result > 0:
-                migrated_cars += 1
-                logger.info(
-                    "Migrated bindings for CAR %s with system role %s",
+        # Migrate CAR bindings
+        for car in cars:
+            try:
+                result = _migrate_car_bindings(car, replicator)
+                if result > 0:
+                    migrated_cars += 1
+                    logger.debug(
+                        "Migrated bindings for CAR %s with system role %s",
+                        car.request_id,
+                        v1_role.name,
+                    )
+            except Exception:
+                logger.error(
+                    "Failed to migrate bindings for CAR %s with role %s",
                     car.request_id,
                     v1_role.name,
+                    exc_info=True,
                 )
-        except Exception:
-            logger.error(
-                "Failed to migrate bindings for CAR %s with role %s",
-                car.request_id,
+
+        total_migrated_groups += migrated_groups
+        total_migrated_cars += migrated_cars
+
+        if retry > 0:
+            logger.info(
+                "Retry %d: migrated %d additional groups and %d additional CARs for role %s",
+                retry,
+                migrated_groups,
+                migrated_cars,
                 v1_role.name,
-                exc_info=True,
             )
 
     logger.info(
-        "Completed binding migration for system role %s: %d/%d groups and %d/%d CARs migrated successfully",
+        "Completed binding migration for system role %s: %d groups and %d CARs migrated successfully",
         v1_role.name,
-        migrated_groups,
-        group_count,
-        migrated_cars,
-        car_count,
+        total_migrated_groups,
+        total_migrated_cars,
     )
 
 
