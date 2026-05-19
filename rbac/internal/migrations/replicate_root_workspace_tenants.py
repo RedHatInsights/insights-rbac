@@ -3,7 +3,7 @@ import logging
 from typing import Optional
 
 from api.models import Tenant
-from management.atomic_transactions import atomic
+from management.atomic_transactions import atomic_with_retry
 from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.relation_replicator.relation_replicator import (
     RelationReplicator,
@@ -18,7 +18,7 @@ from migration_tool.utils import create_relationship
 logger = logging.getLogger(__name__)
 
 
-@atomic
+@atomic_with_retry(retries=3)
 def _do_replicate(replicator: RelationReplicator, raw_tenants: list[Tenant]) -> int:
     tenants = list(Tenant.objects.filter(pk__in=(t.pk for t in raw_tenants)).exclude(org_id=None))
     bootstrap_locks = try_lock_tenants_for_bootstrap(tenants)
