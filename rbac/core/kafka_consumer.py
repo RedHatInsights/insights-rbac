@@ -71,6 +71,13 @@ message_processing_duration = Histogram(
     ["message_type", "event_type"],
 )
 
+kessel_write_duration = Histogram(
+    "rbac_kessel_write_duration_seconds",
+    "Time spent on Kessel Relations API write and delete calls",
+    ["operation", "event_type"],
+    buckets=(0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0),
+)
+
 validation_errors_total = Counter(
     "rbac_kafka_consumer_validation_errors_total",
     "Total number of validation errors",
@@ -1308,14 +1315,18 @@ class RBACKafkaConsumer:
                     raise RuntimeError(error_msg)
 
             # Do tuple deletes for relationships with fencing check
+            delete_start = time.time()
             replication_delete_response = relations_api_replication.delete_relationships(
                 relationships=relations_to_remove_pb, fencing_check=fencing_check
             )
+            delete_duration = time.time() - delete_start
 
             # Do tuple writes for relationships with fencing check
+            add_start = time.time()
             replication_add_response = relations_api_replication.write_relationships(
                 relationships=relations_to_add_pb, fencing_check=fencing_check
             )
+            add_duration = time.time() - add_start
 
             # Extract consistency token from responses
             token = getattr(replication_add_response.consistency_token, "token", None) or getattr(
@@ -1368,6 +1379,10 @@ class RBACKafkaConsumer:
             processing_duration_seconds = time.time() - processing_start
             latency_event_type = event_type or "unknown"
 
+            # Record Kessel write duration metrics
+            kessel_write_duration.labels(operation="delete", event_type=latency_event_type).observe(delete_duration)
+            kessel_write_duration.labels(operation="add", event_type=latency_event_type).observe(add_duration)
+
             # Record processing duration metric with event_type label
             message_processing_duration.labels(message_type="debezium", event_type=latency_event_type).observe(
                 processing_duration_seconds
@@ -1390,6 +1405,8 @@ class RBACKafkaConsumer:
                 f"Message processed successfully "
                 f"(partition: {message_partition}, offset: {message_offset}, "
                 f"event_type: {latency_event_type}, "
+                f"kessel_delete_duration: {delete_duration:.3f}s, "
+                f"kessel_add_duration: {add_duration:.3f}s, "
                 f"processing_duration: {processing_duration_seconds:.3f}s, "
                 f"replication_event_latency: {f'{latency_seconds:.3f}s' if latency_seconds is not None else 'N/A'})"
             )
