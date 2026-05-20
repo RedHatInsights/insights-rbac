@@ -38,7 +38,11 @@ class WorkspaceListInputSerializer(serializers.Serializer):
     """
 
     type = serializers.CharField(required=False, allow_blank=True, help_text="Filter by workspace type")
-    name = serializers.CharField(required=False, allow_blank=True, help_text="Filter by workspace name")
+    name = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Filter by workspace name. Use * as wildcard for partial matching.",
+    )
     parent_id = serializers.CharField(required=False, allow_blank=True, help_text="Filter by parent workspace ID")
     ids = serializers.CharField(required=False, allow_blank=True, help_text="Filter by comma-separated workspace IDs")
 

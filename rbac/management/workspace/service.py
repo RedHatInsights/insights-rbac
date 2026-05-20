@@ -42,6 +42,7 @@ from management.role.model import BindingMapping
 from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
 from management.role_binding.model import RoleBinding
 from management.tenant_mapping.v2_activation import TenantVersion, lock_tenant_version
+from management.v2_filters import v2_name_filter
 from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspaceHandler
 from migration_tool.sharedSystemRolesReplicatedRoleBindings import attribute_key_to_v2_related_resource_type
 from prometheus_client import Counter, Histogram
@@ -365,7 +366,7 @@ class WorkspaceService:
         if type_filter:
             queryset = queryset.filter(type__in=type_filter)
         if name:
-            queryset = queryset.filter(name__icontains=name)
+            queryset = v2_name_filter(queryset, name)
         if parent_id:
             queryset = queryset.filter(parent_id=parent_id)
         return queryset
