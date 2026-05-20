@@ -41,7 +41,6 @@ from management.relation_replicator.relations_api_replicator import (
     RelationsApiReplicator,
 )
 from prometheus_client import Counter, Gauge, Histogram
-from psycopg2 import sql
 
 from api.models import Tenant
 
@@ -719,11 +718,8 @@ class RebalanceListener(ConsumerRebalanceListener):
 def _send_pg_notify_best_effort(channel: str, payload: str, description: str) -> None:
     """Send PostgreSQL NOTIFY after successful side effects. Errors are logged only; they do not fail replication."""
     try:
-        notify_sql = sql.SQL("NOTIFY {}, %s").format(sql.Identifier(channel))
         with connection.cursor() as cursor:
-            # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query
-            # Safe: psycopg2.sql.SQL with Identifier(channel); payload is parameterized.
-            cursor.execute(notify_sql, [payload])
+            cursor.execute("SELECT pg_notify(%s, %s)", [channel, payload])
         logger.info("Sent NOTIFY on channel '%s' (%s)", channel, description)
     except Exception as e:
         logger.error("Failed NOTIFY on channel '%s' (%s): %s", channel, description, e)

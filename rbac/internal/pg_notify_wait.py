@@ -77,6 +77,7 @@ def wait_for_pg_notify(
         conn = connection.connection
 
         with connection.cursor() as cursor:
+            # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query
             cursor.execute(listen_sql)
 
         logger.info(
@@ -153,6 +154,7 @@ def wait_for_pg_notify(
     finally:
         try:
             with connection.cursor() as cursor:
+                # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query
                 cursor.execute(unlisten_sql)
         except Exception:
             pass

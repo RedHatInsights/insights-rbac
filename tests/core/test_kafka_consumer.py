@@ -717,7 +717,7 @@ class RBACKafkaConsumerTests(TestCase):
     @patch("core.kafka_consumer.relations_api_replication.delete_relationships")
     @patch("core.kafka_consumer.Tenant.objects.get")
     def test_process_relations_message_remove_legacy_root_parent_sends_notify(
-        self, mock_tenant_get, mock_delete, mock_write, mock_parse_dict, mock_conn_cursor, _mock_batch_channel
+        self, mock_tenant_get, mock_delete, mock_write, mock_parse_dict, mock_conn_cursor
     ):
         """Consumer NOTIFYs after remove_root_parent_tenant_relationships batch replication."""
         from management.relation_replicator.relation_replicator import ReplicationEventType
@@ -758,11 +758,11 @@ class RBACKafkaConsumerTests(TestCase):
             },
         )
 
-        self.assertTrue(consumer._process_relations_message(debezium_msg))
+        self.assertTrue(consumer._process_relations_message(debezium_msg, 0, 0))
 
-        notify_sql_calls = [c for c in mock_cursor.execute.call_args_list if "NOTIFY" in str(c[0][0]).upper()]
+        notify_sql_calls = [c for c in mock_cursor.execute.call_args_list if "PG_NOTIFY" in str(c[0][0]).upper()]
         self.assertEqual(len(notify_sql_calls), 1)
-        self.assertEqual(notify_sql_calls[0][0][1], ["batch-ack-token"])
+        self.assertEqual(notify_sql_calls[0][0][1], ["test_legacy_ch", "batch-ack-token"])
 
     def test_process_relations_message_invalid_payload(self):
         """Test relations message processing with invalid payload raises ValidationError."""

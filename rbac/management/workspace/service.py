@@ -558,6 +558,8 @@ class WorkspaceService:
                     f"for workspace {workspace_id}"
                 ),
             )
+        except TimeoutError:
+            raise
         except Exception:
             logger.exception("Error while waiting for NOTIFY after workspace create")
             raise
