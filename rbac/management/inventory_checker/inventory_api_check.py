@@ -41,6 +41,8 @@ from management.tenant_mapping.model import DefaultAccessType, TenantMapping
 from management.utils import create_client_channel_inventory
 from migration_tool.utils import create_relationship
 
+from api.models import Tenant
+
 jwt_cache = JWTCache()
 jwt_provider = JWTProvider()
 jwt_manager = JWTManager(jwt_provider, jwt_cache)
@@ -139,6 +141,7 @@ class BootstrappedTenantInventoryChecker(InventoryApiBaseChecker):
 
     def _build_named_tuples(
         self,
+        org_id: str,
         tenant_mapping: TenantMapping,
         root_workspace_id: str,
         default_workspace_id: str,
@@ -155,6 +158,18 @@ class BootstrappedTenantInventoryChecker(InventoryApiBaseChecker):
                 "default_workspace_parent",
                 create_relationship(
                     ("rbac", "workspace"), default_workspace_id, ("rbac", "workspace"), root_workspace_id, "parent"
+                ),
+            )
+        )
+        named_tuples.append(
+            (
+                "root_workspace_tenant",
+                create_relationship(
+                    ("rbac", "workspace"),
+                    root_workspace_id,
+                    ("rbac", "tenant"),
+                    Tenant.org_id_to_tenant_resource_id(org_id=org_id),
+                    "tenant",
                 ),
             )
         )
@@ -251,6 +266,7 @@ class BootstrappedTenantInventoryChecker(InventoryApiBaseChecker):
         }
 
         named_tuples = self._build_named_tuples(
+            org_id=org_id,
             tenant_mapping=tenant_mapping,
             root_workspace_id=root_workspace_id,
             default_workspace_id=default_workspace_id,
