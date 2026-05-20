@@ -596,7 +596,7 @@ class RBACKafkaConsumerTests(TestCase):
         }
 
         with patch.object(consumer, "_process_relations_message", return_value=True) as mock_process:
-            result = consumer._process_debezium_message(message_value)
+            result = consumer._process_debezium_message(message_value, 0, 0)
 
             self.assertTrue(result)
             mock_process.assert_called_once()
@@ -619,7 +619,7 @@ class RBACKafkaConsumerTests(TestCase):
 
         # Should raise ValidationError because payload doesn't have relations_to_add or relations_to_remove
         with self.assertRaises(ValidationError):
-            consumer._process_debezium_message(message_value)
+            consumer._process_debezium_message(message_value, 0, 0)
 
     def test_process_debezium_message_invalid(self):
         """Test processing invalid message."""
@@ -634,7 +634,7 @@ class RBACKafkaConsumerTests(TestCase):
 
         # Should raise ValidationError for invalid message
         with self.assertRaises(ValidationError):
-            consumer._process_debezium_message(message_value)
+            consumer._process_debezium_message(message_value, 0, 0)
 
     @patch("core.kafka_consumer.json_format.ParseDict")
     @patch("core.kafka_consumer.relations_api_replication.write_relationships")
@@ -688,7 +688,7 @@ class RBACKafkaConsumerTests(TestCase):
             },
         )
 
-        result = consumer._process_relations_message(debezium_msg)
+        result = consumer._process_relations_message(debezium_msg, 0, 0)
 
         self.assertTrue(result)
         mock_tenant_get.assert_called_once_with(org_id="12345")
@@ -732,7 +732,7 @@ class RBACKafkaConsumerTests(TestCase):
 
         # Should raise ValidationError for empty relations
         with self.assertRaises(ValidationError):
-            consumer._process_relations_message(debezium_msg)
+            consumer._process_relations_message(debezium_msg, 0, 0)
 
     @override_settings(
         KAFKA_ENABLED=True,
@@ -1607,7 +1607,7 @@ class FencingTokenProcessingTests(TestCase):
             payload=self.payload,
         )
 
-        result = self.consumer._process_relations_message(debezium_msg)
+        result = self.consumer._process_relations_message(debezium_msg, 0, 0)
 
         self.assertTrue(result)
 
@@ -1639,7 +1639,7 @@ class FencingTokenProcessingTests(TestCase):
 
         # Verify that processing raises RuntimeError when no lock token is available
         with self.assertRaises(RuntimeError) as ctx:
-            self.consumer._process_relations_message(debezium_msg)
+            self.consumer._process_relations_message(debezium_msg, 0, 0)
 
         # Verify error message
         self.assertIn("Lock token not available", str(ctx.exception))
@@ -1857,7 +1857,7 @@ class FencingTokenErrorHandlingTests(TestCase):
         )
 
         with self.assertRaises(RuntimeError) as ctx:
-            self.consumer._process_relations_message(debezium_msg)
+            self.consumer._process_relations_message(debezium_msg, 0, 0)
 
         self.assertIn("Fencing token validation failed", str(ctx.exception))
 
@@ -1885,4 +1885,4 @@ class FencingTokenErrorHandlingTests(TestCase):
 
         # Should re-raise the gRPC error (not RuntimeError)
         with self.assertRaises(grpc.RpcError):
-            self.consumer._process_relations_message(debezium_msg)
+            self.consumer._process_relations_message(debezium_msg, 0, 0)
