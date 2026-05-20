@@ -710,6 +710,60 @@ class RBACKafkaConsumerTests(TestCase):
         self.assertEqual(delete_fencing_check.lock_id, "test-group/0")
         self.assertEqual(delete_fencing_check.lock_token, "test-lock-token")
 
+    @patch("core.kafka_consumer.REMOVE_LEGACY_ROOT_WORKSPACE_PARENT_NOTIFY_CHANNEL", "test_legacy_ch")
+    @patch("core.kafka_consumer.connection.cursor")
+    @patch("core.kafka_consumer.json_format.ParseDict")
+    @patch("core.kafka_consumer.relations_api_replication.write_relationships")
+    @patch("core.kafka_consumer.relations_api_replication.delete_relationships")
+    @patch("core.kafka_consumer.Tenant.objects.get")
+    def test_process_relations_message_remove_legacy_root_parent_sends_notify(
+        self, mock_tenant_get, mock_delete, mock_write, mock_parse_dict, mock_conn_cursor, _mock_batch_channel
+    ):
+        """Consumer NOTIFYs after remove_root_parent_tenant_relationships batch replication."""
+        from management.relation_replicator.relation_replicator import ReplicationEventType
+
+        mock_tenant_get.return_value = Mock(org_id="12345")
+        mock_parse_dict.return_value = Mock()
+        mock_write.return_value = Mock(consistency_token=Mock(token="tok"))
+        mock_delete.return_value = Mock(consistency_token=Mock(token=None))
+
+        mock_cursor = Mock()
+        mock_cm = Mock()
+        mock_cm.__enter__ = Mock(return_value=mock_cursor)
+        mock_cm.__exit__ = Mock(return_value=False)
+        mock_conn_cursor.return_value = mock_cm
+
+        consumer = RBACKafkaConsumer()
+        consumer.lock_id = "test-group/0"
+        consumer.lock_token = "test-lock-token"
+
+        debezium_msg = DebeziumMessage(
+            aggregatetype="relations",
+            aggregateid="test-id",
+            event_type=ReplicationEventType.REMOVE_ROOT_PARENT_TENANT_RELATIONSHIPS.value,
+            payload={
+                "relations_to_add": [],
+                "relations_to_remove": [
+                    {
+                        "resource": {"type": "rbac", "id": "ws1"},
+                        "subject": {"type": "rbac", "id": "t1"},
+                        "relation": "parent",
+                    }
+                ],
+                "resource_context": {
+                    "org_id": "",
+                    "event_type": ReplicationEventType.REMOVE_ROOT_PARENT_TENANT_RELATIONSHIPS.value,
+                    "notify_token": "batch-ack-token",
+                },
+            },
+        )
+
+        self.assertTrue(consumer._process_relations_message(debezium_msg))
+
+        notify_sql_calls = [c for c in mock_cursor.execute.call_args_list if "NOTIFY" in str(c[0][0]).upper()]
+        self.assertEqual(len(notify_sql_calls), 1)
+        self.assertEqual(notify_sql_calls[0][0][1], ["batch-ack-token"])
+
     def test_process_relations_message_invalid_payload(self):
         """Test relations message processing with invalid payload raises ValidationError."""
         from core.kafka_consumer import ValidationError

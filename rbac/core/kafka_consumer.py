@@ -30,11 +30,13 @@ import grpc
 from django.conf import settings
 from django.db import connection
 from google.protobuf import json_format
+from internal.pg_notify_wait import REMOVE_LEGACY_ROOT_WORKSPACE_PARENT_NOTIFY_CHANNEL
 from kafka import KafkaConsumer, TopicPartition
 from kafka.consumer.subscription_state import ConsumerRebalanceListener
 from kafka.errors import KafkaError
 from kafka.structs import OffsetAndMetadata
 from kessel.relations.v1beta1 import common_pb2
+from management.relation_replicator.relation_replicator import ReplicationEventType
 from management.relation_replicator.relations_api_replicator import (
     RelationsApiReplicator,
 )
@@ -714,6 +716,19 @@ class RebalanceListener(ConsumerRebalanceListener):
             logger.warning("on_partitions_assigned called with empty partition list")
 
 
+def _send_pg_notify_best_effort(channel: str, payload: str, description: str) -> None:
+    """Send PostgreSQL NOTIFY after successful side effects. Errors are logged only; they do not fail replication."""
+    try:
+        notify_sql = sql.SQL("NOTIFY {}, %s").format(sql.Identifier(channel))
+        with connection.cursor() as cursor:
+            # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query
+            # Safe: psycopg2.sql.SQL with Identifier(channel); payload is parameterized.
+            cursor.execute(notify_sql, [payload])
+        logger.info("Sent NOTIFY on channel '%s' (%s)", channel, description)
+    except Exception as e:
+        logger.error("Failed NOTIFY on channel '%s' (%s): %s", channel, description, e)
+
+
 class RBACKafkaConsumer:
     """RBAC Kafka consumer for processing Debezium and replication messages."""
 
@@ -1357,23 +1372,21 @@ class RBACKafkaConsumer:
                     resource_id,
                     token,
                 )
-                try:
-                    notify_channel = settings.READ_YOUR_WRITES_CHANNEL
-                    notify_sql = sql.SQL("NOTIFY {}, %s").format(sql.Identifier(notify_channel))
-                    with connection.cursor() as cursor:
-                        # nosemgrep: python.sqlalchemy.security.sqlalchemy-execute-raw-query
-                        # Safe: Using psycopg2.sql.SQL with sql.Identifier for channel name
-                        # and parameterized query (%s) for resource_id
-                        cursor.execute(notify_sql, [resource_id])
-                    logger.info(
-                        f"Sent NOTIFY on channel '{notify_channel}' for workspace_id '{resource_id}' "
-                        f"after successful replication"
-                    )
-                except Exception as e:
-                    # Log error but don't fail the processing - NOTIFY is best-effort
-                    logger.error(
-                        f"Failed to send NOTIFY for workspace_id '{resource_id}' on channel '{notify_channel}': {e}"
-                    )
+                _send_pg_notify_best_effort(
+                    settings.READ_YOUR_WRITES_CHANNEL,
+                    resource_id,
+                    f"read-your-writes after workspace create (workspace_id={resource_id})",
+                )
+
+            # remove_legacy_root_workspace_tenant_parent_relations job LISTENs for batch completion
+            batch_notify_token = resource_context.get("notify_token") if resource_context else None
+            if event_type == ReplicationEventType.REMOVE_ROOT_PARENT_TENANT_RELATIONSHIPS.value and batch_notify_token:
+                payload = str(batch_notify_token).strip()
+                _send_pg_notify_best_effort(
+                    REMOVE_LEGACY_ROOT_WORKSPACE_PARENT_NOTIFY_CHANNEL,
+                    payload,
+                    f"remove_root_parent_tenant_relationships batch (token={payload})",
+                )
 
             # Calculate processing duration and replication latency
             processing_duration_seconds = time.time() - processing_start
