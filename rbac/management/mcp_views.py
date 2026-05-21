@@ -411,7 +411,11 @@ def hello(message: str = "Hello, World!") -> str:
         "(enabled/disabled/all). Set 'usernames' (comma-separated) to look up specific users. "
         "Set 'match_criteria' to 'exact' (default) or 'partial' for username matching. "
         "Set username_only='true' to return only usernames. "
-        "TROUBLESHOOTING: To confirm a user exists and check their org admin status, call "
+        "Set 'name' to search by display name (e.g., 'RBAC Normal' matches 'RBAC Normal For V2'); "
+        "cannot be used with 'usernames'. "
+        "TROUBLESHOOTING: To find a user by display name, call "
+        "list_principals(name='John Smith'). "
+        "To confirm a user exists and check their org admin status, call "
         "list_principals(usernames='<user>', match_criteria='exact'). "
         "Returns: {meta: {count}, links, data: [{username, email, first_name, last_name, is_org_admin, ...}]}. "
         "Calls: GET /api/v1/principals/"
@@ -428,8 +432,20 @@ def list_principals(
     username_only: str = "false",
     usernames: str = "",
     match_criteria: str = "",
+    name: str = "",
 ) -> str:
-    """List principals by delegating to PrincipalView."""
+    """List principals by delegating to PrincipalView, with optional name filtering."""
+    name = name.strip()
+
+    # Reject conflicting inputs
+    if name and usernames:
+        return json.dumps({"errors": [{"detail": "Cannot use both 'name' and 'usernames' parameters"}]})
+
+    # If name filter provided, fetch and filter directly via proxy
+    if name:
+        return _list_principals_by_name(request, name, limit, offset, sort_order, status, username_only)
+
+    # Otherwise, delegate to PrincipalView
     query_params: dict[str, str] = {
         "limit": str(limit),
         "offset": str(offset),
@@ -444,6 +460,87 @@ def list_principals(
 
     path = reverse("v1_management:principals")
     return _call_view(request, _principal_view, path, query_params)
+
+
+def _list_principals_by_name(
+    request: HttpRequest,
+    name_filter: str,
+    limit: int,
+    offset: int,
+    sort_order: str,
+    status: str,
+    username_only: str = "false",
+) -> str:
+    """Fetch principals from BOP and filter by name (case-insensitive substring match)."""
+    proxy = PrincipalProxy()
+    org_id = request.user.org_id
+    name_lower = name_filter.lower()
+    return_username_only = username_only.lower() == "true"
+
+    options = {
+        "sort_order": sort_order,
+        "status": status,
+    }
+
+    filtered_users = []
+    bop_offset = 0
+    bop_limit = 500
+    max_users = 2000
+
+    while bop_offset < max_users:
+        resp = proxy.request_principals(org_id=org_id, limit=bop_limit, offset=bop_offset, options=options)
+        if resp.get("status_code") != 200:
+            return json.dumps({"errors": resp.get("errors", [{"detail": "Failed to fetch principals"}])})
+
+        data = resp.get("data", [])
+        if isinstance(data, dict):
+            users = data.get("users", [])
+            total_count = int(data.get("userCount", 0))
+        else:
+            users = data
+            total_count = int(resp.get("userCount", len(users)))
+
+        if not users:
+            break
+
+        for user in users:
+            first = (user.get("first_name") or "").lower()
+            last = (user.get("last_name") or "").lower()
+            full_name = f"{first} {last}".strip()
+            if name_lower in full_name:
+                filtered_users.append(user)
+
+        bop_offset += bop_limit
+        if bop_offset >= total_count:
+            break
+
+    paginated = filtered_users[offset : offset + limit]  # noqa: E203
+    path = request.path
+
+    if return_username_only:
+        paginated = [{"username": u.get("username")} for u in paginated]
+
+    base_params = f"name={name_filter}&sort_order={sort_order}&status={status}&username_only={username_only}"
+
+    return json.dumps(
+        {
+            "meta": {"count": len(filtered_users), "limit": limit, "offset": offset},
+            "links": {
+                "first": f"{path}?{base_params}&limit={limit}&offset=0",
+                "next": (
+                    f"{path}?{base_params}&limit={limit}&offset={offset + limit}"
+                    if offset + limit < len(filtered_users)
+                    else None
+                ),
+                "previous": (
+                    f"{path}?{base_params}&limit={limit}&offset={max(0, offset - limit)}" if offset > 0 else None
+                ),
+                "last": f"{path}?{base_params}&limit={limit}&offset={max(0, len(filtered_users) - limit)}",
+            },
+            "data": paginated,
+        },
+        default=str,
+    )
 
 
 def _call_view(
