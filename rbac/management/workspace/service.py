@@ -353,6 +353,23 @@ class WorkspaceService:
 
         self._replicator = replicator
 
+    def list(self, queryset, params: dict):
+        """Apply parameter-based filters to a pre-filtered workspace queryset."""
+        ids = params.get("ids")
+        type_filter = params.get("type")
+        name = params.get("name")
+        parent_id = params.get("parent_id")
+
+        if ids:
+            queryset = queryset.filter(id__in=ids)
+        if type_filter:
+            queryset = queryset.filter(type__in=type_filter)
+        if name:
+            queryset = queryset.filter(name__icontains=name)
+        if parent_id:
+            queryset = queryset.filter(parent_id=parent_id)
+        return queryset
+
     def _dual_write_handler(
         self, workspace: Workspace, event_type: ReplicationEventType
     ) -> RelationApiDualWriteWorkspaceHandler:
