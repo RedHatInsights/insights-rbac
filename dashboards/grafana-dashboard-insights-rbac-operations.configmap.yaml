@@ -677,8 +677,8 @@ data:
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "time() - rbac_kafka_consumer_start_time_seconds",
-              "legendFormat": "__auto",
+              "expr": "min(time() - rbac_kafka_consumer_start_time_seconds)",
+              "legendFormat": "min uptime",
               "range": true,
               "refId": "A"
             }
@@ -696,7 +696,21 @@ data:
               "color": {
                 "mode": "background"
               },
-              "mappings": [],
+              "mappings": [
+                {
+                  "type": "value",
+                  "options": {
+                    "0": {
+                      "text": "Down",
+                      "color": "red"
+                    },
+                    "1": {
+                      "text": "Up",
+                      "color": "green"
+                    }
+                  }
+                }
+              ],
               "thresholds": {
                 "mode": "absolute",
                 "steps": [
@@ -741,8 +755,8 @@ data:
                 "uid": "${datasource}"
               },
               "editorMode": "code",
-              "expr": "rbac_kafka_consumer_info",
-              "legendFormat": "__auto",
+              "expr": "min(rbac_kafka_consumer_info)",
+              "legendFormat": "consumer status",
               "range": true,
               "refId": "A"
             }
@@ -801,8 +815,12 @@ data:
                     "color": "green"
                   },
                   {
+                    "color": "yellow",
+                    "value": 0.1
+                  },
+                  {
                     "color": "red",
-                    "value": 80
+                    "value": 0.5
                   }
                 ]
               }
@@ -896,8 +914,12 @@ data:
                     "color": "green"
                   },
                   {
+                    "color": "yellow",
+                    "value": 1
+                  },
+                  {
                     "color": "red",
-                    "value": 80
+                    "value": 5
                   }
                 ]
               }
@@ -991,8 +1013,12 @@ data:
                     "color": "green"
                   },
                   {
+                    "color": "yellow",
+                    "value": 1
+                  },
+                  {
                     "color": "red",
-                    "value": 80
+                    "value": 5
                   }
                 ]
               }
@@ -1084,10 +1110,6 @@ data:
                 "steps": [
                   {
                     "color": "green"
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
                   }
                 ]
               }
@@ -1181,8 +1203,12 @@ data:
                     "color": "green"
                   },
                   {
+                    "color": "yellow",
+                    "value": 0.1
+                  },
+                  {
                     "color": "red",
-                    "value": 80
+                    "value": 1
                   }
                 ]
               }
@@ -1276,8 +1302,12 @@ data:
                     "color": "green"
                   },
                   {
+                    "color": "yellow",
+                    "value": 0.1
+                  },
+                  {
                     "color": "red",
-                    "value": 80
+                    "value": 1
                   }
                 ]
               }
@@ -1371,8 +1401,12 @@ data:
                     "color": "green"
                   },
                   {
+                    "color": "yellow",
+                    "value": 5
+                  },
+                  {
                     "color": "red",
-                    "value": 80
+                    "value": 30
                   }
                 ]
               }
@@ -1431,10 +1465,6 @@ data:
                 "steps": [
                   {
                     "color": "green"
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
                   }
                 ]
               }
@@ -1532,10 +1562,6 @@ data:
                 "steps": [
                   {
                     "color": "green"
-                  },
-                  {
-                    "color": "red",
-                    "value": 80
                   }
                 ]
               }
@@ -1629,8 +1655,12 @@ data:
                     "color": "green"
                   },
                   {
+                    "color": "yellow",
+                    "value": 5
+                  },
+                  {
                     "color": "red",
-                    "value": 80
+                    "value": 30
                   }
                 ]
               }
@@ -1724,8 +1754,12 @@ data:
                     "color": "green"
                   },
                   {
+                    "color": "yellow",
+                    "value": 2
+                  },
+                  {
                     "color": "red",
-                    "value": 80
+                    "value": 10
                   }
                 ]
               }
@@ -3015,7 +3049,7 @@ data:
                   "color": "rgba(255,0,255,0.7)"
                 },
                 "filterValues": {
-                  "le": 1e-9
+                  "le": 1e-09
                 },
                 "legend": {
                   "show": false
@@ -3190,7 +3224,7 @@ data:
                   "color": "rgba(255,0,255,0.7)"
                 },
                 "filterValues": {
-                  "le": 1e-9
+                  "le": 1e-09
                 },
                 "legend": {
                   "show": false
@@ -3476,7 +3510,7 @@ data:
                   "color": "rgba(255,0,255,0.7)"
                 },
                 "filterValues": {
-                  "le": 1e-9
+                  "le": 1e-09
                 },
                 "legend": {
                   "show": true
@@ -4828,7 +4862,7 @@ data:
                   "color": "rgba(255,0,255,0.7)"
                 },
                 "filterValues": {
-                  "le": 1e-9
+                  "le": 1e-09
                 },
                 "legend": {
                   "show": false
