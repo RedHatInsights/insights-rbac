@@ -63,18 +63,61 @@ class RoleV2KesselAccessPermission(permissions.BasePermission):
             bool: True if the user has permission, False otherwise
         """
         tenant = getattr(request, "tenant", None)
+        user = getattr(request, "user", None)
+        org_id = getattr(user, "org_id", "unknown") if user else "unknown"
+        username = getattr(user, "username", "unknown") if user else "unknown"
+
         if tenant is None:
-            logger.debug("Denied role access: no tenant on request")
+            # Authorization failure - SEC-MON-REQ-1 compliance (#8 authorization_failure)
+            logger.warning(
+                "Permission denied",
+                extra={
+                    "event": "authorization_failure",
+                    "principal": f"{org_id}:{username}",
+                    "resource_type": "role",
+                    "endpoint": getattr(request, "path", "unknown"),
+                    "method": getattr(request, "method", "unknown"),
+                    "required_permission": "rbac_roles_read",
+                    "reason": "no tenant on request",
+                    "outcome": "failure",
+                },
+            )
             return False
 
         org_resource_id = tenant.tenant_resource_id()
         if not org_resource_id:
-            logger.debug("Denied role access: tenant has no resource ID")
+            # Authorization failure - SEC-MON-REQ-1 compliance (#8 authorization_failure)
+            logger.warning(
+                "Permission denied",
+                extra={
+                    "event": "authorization_failure",
+                    "principal": f"{org_id}:{username}",
+                    "resource_type": "role",
+                    "endpoint": getattr(request, "path", "unknown"),
+                    "method": getattr(request, "method", "unknown"),
+                    "required_permission": "rbac_roles_read",
+                    "reason": "tenant has no resource ID",
+                    "outcome": "failure",
+                },
+            )
             return False
 
         principal_id = get_kessel_principal_id(request)
         if not principal_id:
-            logger.debug("Denied role access: could not determine principal ID")
+            # Authorization failure - SEC-MON-REQ-1 compliance (#8 authorization_failure)
+            logger.warning(
+                "Permission denied",
+                extra={
+                    "event": "authorization_failure",
+                    "principal": f"{org_id}:{username}",
+                    "resource_type": "role",
+                    "endpoint": getattr(request, "path", "unknown"),
+                    "method": getattr(request, "method", "unknown"),
+                    "required_permission": "rbac_roles_read",
+                    "reason": "could not determine principal ID",
+                    "outcome": "failure",
+                },
+            )
             return False
 
         relation = self._get_relation(view)

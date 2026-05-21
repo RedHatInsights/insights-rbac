@@ -1,11 +1,14 @@
 """Gunicorn configuration file."""
 
+import logging
 import multiprocessing
 import os
 
 from prometheus_client import multiprocess
 
 from rbac.env import ENVIRONMENT
+
+logger = logging.getLogger(__name__)
 
 CLOWDER_PORT = "8080"
 if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
@@ -28,3 +31,16 @@ def child_exit(server, worker):
     """Watches for workers to exit and marks them as dead in prometheus."""
     # See: https://prometheus.github.io/client_python/multiprocess/
     multiprocess.mark_process_dead(worker.pid)
+
+
+def on_exit(server):
+    """Called just before the master process exits - graceful shutdown logging."""
+    # Service shutdown - SEC-MON-REQ-1 compliance (#5 process_status)
+    logger.info(
+        "RBAC service shutting down",
+        extra={
+            "event": "shutdown",
+            "workers": server.num_workers,
+            "outcome": "success",
+        },
+    )

@@ -16,10 +16,14 @@
 #
 """Defines the Role Access Permissions class."""
 
+import logging
+
 from management.permissions.utils import is_scope_principal
 from rest_framework import permissions
 
 from rbac.env import ENVIRONMENT
+
+logger = logging.getLogger(__name__)
 
 
 class RoleAccessPermission(permissions.BasePermission):
@@ -44,4 +48,20 @@ class RoleAccessPermission(permissions.BasePermission):
             role_write = request.user.access.get("role", {}).get("write", [])
             if role_write:
                 return True
+
+        # Authorization failure - SEC-MON-REQ-1 compliance (#8 authorization_failure)
+        required_permission = "role:write" if request.method not in permissions.SAFE_METHODS else "role:read"
+        logger.warning(
+            "Permission denied",
+            extra={
+                "event": "authorization_failure",
+                "principal": f"{request.user.org_id}:{request.user.username}",
+                "resource_type": "role",
+                "endpoint": request.path,
+                "method": request.method,
+                "required_permission": required_permission,
+                "reason": "missing permission",
+                "outcome": "failure",
+            },
+        )
         return False

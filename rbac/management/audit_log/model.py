@@ -17,6 +17,8 @@
 
 """Model for audit logging."""
 
+import logging
+
 from django.db import models
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -27,6 +29,8 @@ from management.role.v2_model import RoleV2
 from management.workspace.model import Workspace
 
 from api.models import Tenant, TenantAwareModel
+
+logger = logging.getLogger(__name__)
 
 
 class AuditLog(TenantAwareModel):
@@ -109,6 +113,29 @@ class AuditLog(TenantAwareModel):
         tenant_object = get_object_or_404(Tenant, org_id=request._user.org_id)
         return tenant_object.id
 
+    def _emit_to_stdout(self, request):
+        """Emit audit log to stdout for Splunk ingestion - SEC-MON-REQ-1 compliance."""
+        # Map AuditLog action to standard CRUD verbs
+        action_map = {
+            self.CREATE: "CREATE",
+            self.DELETE: "DELETE",
+            self.EDIT: "UPDATE",
+            self.ADD: "ADD",
+            self.REMOVE: "REMOVE",
+        }
+
+        logger.info(
+            self.description,
+            extra={
+                "action": action_map.get(self.action, self.action.upper()),
+                "resource_type": self.resource_type,
+                "resource_id": str(self.resource_uuid) if self.resource_uuid else str(self.resource_id),
+                "org_id": request.user.org_id,
+                "user_id": self.principal_username,
+                "outcome": "success",
+            },
+        )
+
     def get_resource_item(self, r_type, request, *args, **kwargs):
         """Find related information (eg, name, id, etc...) for each resource item."""
         model_class = self._model_class_by_resource_type.get(r_type)
@@ -189,6 +216,8 @@ class AuditLog(TenantAwareModel):
         self.action = action
         self.tenant_id = self.get_tenant_id(request)
         super(AuditLog, self).save()
+        # Emit to stdout - SEC-MON-REQ-1 compliance (#1 pii_manipulation)
+        self._emit_to_stdout(request)
 
     def log_create(self, request, resource):
         """Audit Log when a role or a group is created."""
@@ -202,6 +231,8 @@ class AuditLog(TenantAwareModel):
         self.action = AuditLog.CREATE
         self.tenant_id = self.get_tenant_id(request)
         super(AuditLog, self).save()
+        # Emit to stdout - SEC-MON-REQ-1 compliance (#1 pii_manipulation)
+        self._emit_to_stdout(request)
 
     def log_delete(self, request, resource, object):
         """Audit Log when a role or a group is deleted."""
@@ -217,6 +248,8 @@ class AuditLog(TenantAwareModel):
         self.action = AuditLog.DELETE
         self.tenant_id = self.get_tenant_id(request)
         super(AuditLog, self).save()
+        # Emit to stdout - SEC-MON-REQ-1 compliance (#1 pii_manipulation)
+        self._emit_to_stdout(request)
 
     def log_edit(self, request, resource, object):
         """Audit Log when a role or a group is edit."""
@@ -232,6 +265,8 @@ class AuditLog(TenantAwareModel):
         self.action = AuditLog.EDIT
         self.tenant_id = self.get_tenant_id(request)
         super(AuditLog, self).save()
+        # Emit to stdout - SEC-MON-REQ-1 compliance (#1 pii_manipulation)
+        self._emit_to_stdout(request)
 
     def log_group_assignment(
         self, request, resource_type, resource, secondary_resource_object, assigned_resource_type
@@ -262,6 +297,8 @@ class AuditLog(TenantAwareModel):
         self.action = AuditLog.ADD
         self.tenant_id = self.get_tenant_id(request)
         super(AuditLog, self).save()
+        # Emit to stdout - SEC-MON-REQ-1 compliance (#1 pii_manipulation)
+        self._emit_to_stdout(request)
 
     def log_group_remove(self, request, resource_type, resource, secondary_resource_object, assigned_resource_type):
         """Audit Log when a role, user/principal, or service account is removed from a group."""
@@ -292,3 +329,5 @@ class AuditLog(TenantAwareModel):
         self.action = AuditLog.REMOVE
         self.tenant_id = self.get_tenant_id(request)
         super(AuditLog, self).save()
+        # Emit to stdout - SEC-MON-REQ-1 compliance (#1 pii_manipulation)
+        self._emit_to_stdout(request)

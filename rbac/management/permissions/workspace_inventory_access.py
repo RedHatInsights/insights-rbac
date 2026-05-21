@@ -79,11 +79,18 @@ class WorkspaceInventoryAccessChecker:
             return True
 
         if allowed_value == allowed_pb2.Allowed.ALLOWED_FALSE:
-            logger.debug(
-                "Access denied: principal=%s, workspace=%s, relation=%s",
-                principal_id,
-                workspace_id,
-                relation,
+            # Authorization failure - SEC-MON-REQ-1 compliance (#8 authorization_failure)
+            logger.warning(
+                "Permission denied via Kessel",
+                extra={
+                    "event": "authorization_failure",
+                    "principal": principal_id,
+                    "resource_type": "workspace",
+                    "resource_id": workspace_id,
+                    "required_permission": f"workspace:{relation}",
+                    "reason": "Kessel permission check denied",
+                    "outcome": "failure",
+                },
             )
             return False
 

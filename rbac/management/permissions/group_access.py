@@ -16,11 +16,15 @@
 #
 """Defines the Group Access Permissions class."""
 
+import logging
+
 from management.permissions.utils import is_scope_principal
 from rest_framework import permissions
 from rest_framework.request import Request
 
 from rbac.env import ENVIRONMENT
+
+logger = logging.getLogger(__name__)
 
 # Allowed methods to be able to modify principals from a group.
 ALLOWED_METHODS = ["DELETE", "POST"]
@@ -55,9 +59,38 @@ class GroupAccessPermission(permissions.BasePermission):
                 if group_write and principal_write:
                     return True
                 else:
+                    # Authorization failure - SEC-MON-REQ-1 compliance (#8 authorization_failure, #1 pii_manipulation)
+                    logger.warning(
+                        "Permission denied - group principal modification requires both group:write and principal:write",
+                        extra={
+                            "event": "authorization_failure",
+                            "principal": f"{request.user.org_id}:{request.user.username}",
+                            "resource_type": "group",
+                            "endpoint": request.path,
+                            "method": request.method,
+                            "required_permission": "group:write,principal:write",
+                            "reason": "missing principal:write permission",
+                            "outcome": "failure",
+                        },
+                    )
                     return False
 
             if group_write:
                 return True
 
+        # Authorization failure - SEC-MON-REQ-1 compliance (#8 authorization_failure)
+        required_permission = "group:write" if request.method not in permissions.SAFE_METHODS else "group:read"
+        logger.warning(
+            "Permission denied",
+            extra={
+                "event": "authorization_failure",
+                "principal": f"{request.user.org_id}:{request.user.username}",
+                "resource_type": "group",
+                "endpoint": request.path,
+                "method": request.method,
+                "required_permission": required_permission,
+                "reason": "missing permission",
+                "outcome": "failure",
+            },
+        )
         return False

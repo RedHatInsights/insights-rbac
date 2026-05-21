@@ -131,7 +131,22 @@ class RoleBindingKesselAccessPermission(permissions.BasePermission):
         elif action in ("list", "by_subject"):
             return self._check_read_permission(request)
         else:
-            logger.warning("Denied access: unrecognized action %s", action)
+            # Authorization failure - SEC-MON-REQ-1 compliance (#8 authorization_failure)
+            logger.warning(
+                "Permission denied",
+                extra={
+                    "event": "authorization_failure",
+                    "principal": f"{request.user.org_id}:{request.user.username}",
+                    "resource_type": "role_binding",
+                    "endpoint": request.path,
+                    "method": request.method,
+                    "required_permission": (
+                        "role_binding:read" if request.method in ("GET", "HEAD", "OPTIONS") else "role_binding:write"
+                    ),
+                    "reason": f"unrecognized action: {action}",
+                    "outcome": "failure",
+                },
+            )
             return False
 
     def _parse_query_resource(self, request):
