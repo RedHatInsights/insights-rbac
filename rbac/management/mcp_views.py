@@ -411,7 +411,8 @@ def hello(message: str = "Hello, World!") -> str:
         "(enabled/disabled/all). Set 'usernames' (comma-separated) to look up specific users. "
         "Set 'match_criteria' to 'exact' (default) or 'partial' for username matching. "
         "Set username_only='true' to return only usernames. "
-        "Set 'name' to search by display name (e.g., 'RBAC Normal' matches 'RBAC Normal For V2'). "
+        "Set 'name' to search by display name (e.g., 'RBAC Normal' matches 'RBAC Normal For V2'); "
+        "cannot be used with 'usernames'. "
         "TROUBLESHOOTING: To find a user by display name, call "
         "list_principals(name='John Smith'). "
         "To confirm a user exists and check their org admin status, call "
@@ -436,8 +437,12 @@ def list_principals(
     """List principals by delegating to PrincipalView, with optional name filtering."""
     name = name.strip()
 
+    # Reject conflicting inputs
+    if name and usernames:
+        return json.dumps({"errors": [{"detail": "Cannot use both 'name' and 'usernames' parameters"}]})
+
     # If name filter provided, fetch and filter directly via proxy
-    if name and not usernames:
+    if name:
         return _list_principals_by_name(request, name, limit, offset, sort_order, status, username_only)
 
     # Otherwise, delegate to PrincipalView
@@ -518,16 +523,22 @@ def _list_principals_by_name(
     if return_username_only:
         paginated = [{"username": u.get("username")} for u in paginated]
 
+    base_params = f"name={name_filter}&sort_order={sort_order}&status={status}&username_only={username_only}"
+
     return json.dumps(
         {
             "meta": {"count": len(filtered_users), "limit": limit, "offset": offset},
             "links": {
-                "first": f"{path}?limit={limit}&offset=0",
+                "first": f"{path}?{base_params}&limit={limit}&offset=0",
                 "next": (
-                    f"{path}?limit={limit}&offset={offset + limit}" if offset + limit < len(filtered_users) else None
+                    f"{path}?{base_params}&limit={limit}&offset={offset + limit}"
+                    if offset + limit < len(filtered_users)
+                    else None
                 ),
-                "previous": f"{path}?limit={limit}&offset={max(0, offset - limit)}" if offset > 0 else None,
-                "last": f"{path}?limit={limit}&offset={max(0, len(filtered_users) - limit)}",
+                "previous": (
+                    f"{path}?{base_params}&limit={limit}&offset={max(0, offset - limit)}" if offset > 0 else None
+                ),
+                "last": f"{path}?{base_params}&limit={limit}&offset={max(0, len(filtered_users) - limit)}",
             },
             "data": paginated,
         },
