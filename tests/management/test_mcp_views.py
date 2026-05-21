@@ -119,6 +119,36 @@ class MCPViewTests(MCPToolTestMixin, IdentityRequest):
         self.assertEqual(result["serverInfo"]["name"], "RBAC")
         self.assertIn("Mcp-Session-Id", response)
 
+    def test_initialize_returns_instructions(self):
+        """Positive: MCP initialize includes instructions field."""
+        body = {"jsonrpc": "2.0", "method": "initialize", "id": 1, "params": {}}
+        response = self.client.post(self.url, data=json.dumps(body), content_type="application/json", **self.headers)
+
+        result = response.json()["result"]
+        self.assertIn("instructions", result)
+        self.assertIn("RBAC", result["instructions"])
+
+    @override_settings(MCP_WRITE_ENABLED=True)
+    def test_initialize_instructions_include_suggestion_layer_when_writes_enabled(self):
+        """Positive: instructions include suggestion layer guidance when write mode is on."""
+        body = {"jsonrpc": "2.0", "method": "initialize", "id": 1, "params": {}}
+        response = self.client.post(self.url, data=json.dumps(body), content_type="application/json", **self.headers)
+
+        instructions = response.json()["result"]["instructions"]
+        self.assertIn("Suggestion Layer", instructions)
+        self.assertIn("numbered write-action", instructions)
+        self.assertIn("NEVER execute a write tool", instructions)
+
+    @override_settings(MCP_WRITE_ENABLED=False)
+    def test_initialize_instructions_omit_suggestion_layer_when_writes_disabled(self):
+        """Negative: instructions omit suggestion layer when write mode is off."""
+        body = {"jsonrpc": "2.0", "method": "initialize", "id": 1, "params": {}}
+        response = self.client.post(self.url, data=json.dumps(body), content_type="application/json", **self.headers)
+
+        instructions = response.json()["result"]["instructions"]
+        self.assertNotIn("Suggestion Layer", instructions)
+        self.assertNotIn("write-action", instructions)
+
     def test_notification_returns_202(self):
         """Positive: JSON-RPC notification (no id) returns 202."""
         body = {"jsonrpc": "2.0", "method": "notifications/initialized"}
