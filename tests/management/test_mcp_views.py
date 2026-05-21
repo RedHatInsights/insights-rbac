@@ -504,6 +504,56 @@ class MCPViewTests(MCPToolTestMixin, IdentityRequest):
     @patch(
         "management.principal.proxy.PrincipalProxy.request_principals",
         return_value={
+            "status_code": 200,
+            "data": [
+                {"username": "jsmith", "first_name": "John", "last_name": "Smith", "email": "jsmith@example.com"},
+                {"username": "asmith", "first_name": "Alice", "last_name": "Smith", "email": "asmith@example.com"},
+            ],
+            "userCount": 2,
+        },
+    )
+    def test_tools_call_list_principals_filter_by_name_username_only(self, mock_request):
+        """Positive: list_principals with name filter and username_only returns only usernames."""
+        response = self._call_tool("list_principals", {"name": "Smith", "username_only": "true"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertEqual(tool_output["meta"]["count"], 2)
+        self.assertEqual(len(tool_output["data"]), 2)
+        for user in tool_output["data"]:
+            self.assertEqual(list(user.keys()), ["username"])
+        usernames = [u["username"] for u in tool_output["data"]]
+        self.assertIn("jsmith", usernames)
+        self.assertIn("asmith", usernames)
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_principals",
+        return_value={
+            "status_code": 500,
+            "errors": [{"detail": "BOP service unavailable", "status": "500", "source": "principals"}],
+        },
+    )
+    def test_tools_call_list_principals_filter_by_name_bop_error(self, mock_request):
+        """Negative: list_principals with name filter handles BOP error gracefully."""
+        response = self._call_tool("list_principals", {"name": "Smith"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertIn("errors", tool_output)
+        self.assertEqual(tool_output["errors"][0]["detail"], "BOP service unavailable")
+
+    def test_tools_call_list_principals_name_and_usernames_conflict(self):
+        """Negative: list_principals rejects conflicting name and usernames parameters."""
+        response = self._call_tool("list_principals", {"name": "Smith", "usernames": "jsmith"})
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        tool_output = self._get_tool_output(response)
+        self.assertIn("errors", tool_output)
+        self.assertEqual(tool_output["errors"][0]["detail"], "Cannot use both 'name' and 'usernames' parameters")
+
+    @patch(
+        "management.principal.proxy.PrincipalProxy.request_principals",
+        return_value={
             "status_code": 500,
             "errors": [{"detail": "Unexpected error.", "status": "500", "source": "principals"}],
         },

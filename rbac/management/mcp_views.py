@@ -486,7 +486,6 @@ def _list_principals_by_name(
     bop_offset = 0
     bop_limit = 500
     max_users = 2000
-    total_needed = offset + limit
 
     while bop_offset < max_users:
         resp = proxy.request_principals(org_id=org_id, limit=bop_limit, offset=bop_offset, options=options)
@@ -507,14 +506,12 @@ def _list_principals_by_name(
         for user in users:
             first = (user.get("first_name") or "").lower()
             last = (user.get("last_name") or "").lower()
-            full_name = f"{first} {last}"
+            full_name = f"{first} {last}".strip()
             if name_lower in full_name:
                 filtered_users.append(user)
 
         bop_offset += bop_limit
         if bop_offset >= total_count:
-            break
-        if len(filtered_users) >= total_needed:
             break
 
     paginated = filtered_users[offset : offset + limit]  # noqa: E203
