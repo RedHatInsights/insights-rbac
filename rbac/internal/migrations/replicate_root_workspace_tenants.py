@@ -19,7 +19,7 @@ from migration_tool.utils import create_relationship
 logger = logging.getLogger(__name__)
 
 
-@atomic_with_retry(retries=3)
+@atomic_with_retry(retries=10)
 def _do_replicate(replicator: RelationReplicator, raw_tenants: list[Tenant]) -> int:
     tenants = list(Tenant.objects.filter(pk__in=(t.pk for t in raw_tenants)).exclude(org_id=None))
     bootstrap_locks = {t: l for t, l in try_lock_tenants_for_bootstrap(tenants).items() if l is not None}
