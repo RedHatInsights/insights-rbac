@@ -38,7 +38,11 @@ class WorkspaceListInputSerializer(serializers.Serializer):
     """
 
     type = serializers.CharField(required=False, allow_blank=True, help_text="Filter by workspace type")
-    name = serializers.CharField(required=False, allow_blank=True, help_text="Filter by workspace name")
+    name = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Filter by workspace name. Use * as wildcard for partial matching.",
+    )
     parent_id = serializers.CharField(required=False, allow_blank=True, help_text="Filter by parent workspace ID")
     ids = serializers.CharField(required=False, allow_blank=True, help_text="Filter by comma-separated workspace IDs")
 
@@ -67,20 +71,26 @@ class WorkspaceListInputSerializer(serializers.Serializer):
         return fields
 
     def validate_name(self, value: str | None) -> str | None:
-        """Return None for empty values."""
-        if not value or not value.strip():
+        """Return None for empty values, strip surrounding whitespace."""
+        if value is None:
             return None
-        return value
+        cleaned = value.strip()
+        if not cleaned:
+            return None
+        return cleaned
 
     def validate_parent_id(self, value: str | None) -> str | None:
         """Return None for empty values, validate UUID format otherwise."""
-        if not value or not value.strip():
+        if not value:
+            return None
+        cleaned = value.strip()
+        if not cleaned:
             return None
         try:
-            uuid.UUID(value.strip())
+            uuid.UUID(cleaned)
         except ValueError as e:
-            raise serializers.ValidationError(f"{value} is not a valid UUID.") from e
-        return value.strip()
+            raise serializers.ValidationError(f"{cleaned} is not a valid UUID.") from e
+        return cleaned
 
     def validate_ids(self, value: str | None) -> list[str] | None:
         """Return None for empty values, split and validate UUIDs otherwise."""

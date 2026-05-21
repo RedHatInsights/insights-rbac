@@ -67,7 +67,7 @@ class RoleBindingBySubjectFieldSelection(FieldSelection):
 
 def _normalize_blank_or_none(value: str | None) -> str | None:
     """Return None for empty/blank values, pass through otherwise."""
-    return value or None
+    return (value and value.strip()) or None
 
 
 def _normalize_uuid_or_none(value: str | None) -> uuid.UUID | None:

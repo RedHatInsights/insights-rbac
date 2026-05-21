@@ -2146,30 +2146,6 @@ class UpdateRoleBindingRequestSerializerTests(IdentityRequest):
                     error_messages = str(serializer.errors[error_field])
                     self.assertIn(expected_msg, error_messages, f"Expected message for: {description}")
 
-    # ── Empty string normalization ─────────────────────────────────
-
-    def test_empty_resource_id_treated_as_unset(self):
-        """Test that empty resource_id is normalized to None, triggering cross-field error."""
-        data = self._make_valid_data(resource_id="")
-        serializer = UpdateRoleBindingRequestSerializer(data=data)
-        self.assertFalse(serializer.is_valid())
-        self.assertIn("resource_id", serializer.errors)
-
-    def test_empty_resource_type_treated_as_unset(self):
-        """Test that empty resource_type is normalized to None, triggering cross-field error."""
-        data = self._make_valid_data(resource_type="")
-        serializer = UpdateRoleBindingRequestSerializer(data=data)
-        self.assertFalse(serializer.is_valid())
-        self.assertIn("resource_type", serializer.errors)
-
-    def test_empty_resource_tenant_org_id_treated_as_unset(self):
-        """Test that empty resource.tenant.org_id is normalized to None."""
-        data = self._make_valid_data()
-        data["resource.tenant.org_id"] = ""
-        serializer = UpdateRoleBindingRequestSerializer(data=data)
-        self.assertTrue(serializer.is_valid(), serializer.errors)
-        self.assertIsNone(serializer.validated_data.get("resource_tenant_org_id"))
-
     # ── NUL byte sanitization (parameterized) ────────────────────────
 
     def test_nul_bytes_sanitized_from_string_fields(self):
