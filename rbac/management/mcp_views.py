@@ -295,6 +295,9 @@ def _clone_request(
     view_request.tenant = getattr(source, "tenant", None)
     view_request.req_id = getattr(source, "req_id", None)
 
+    if getattr(source, "mcp_source", False):
+        view_request.mcp_source = True
+
     identity = source.META.get(RH_IDENTITY_HEADER)
     if identity:
         view_request.META[RH_IDENTITY_HEADER] = identity
@@ -654,6 +657,7 @@ def list_audit_logs(
                 "resource_type": e.resource_type,
                 "description": e.description,
                 "created": e.created.isoformat() if e.created else None,
+                "source": e.source,
             }
             for e in entries
         ]
@@ -697,6 +701,7 @@ def list_audit_logs(
             "resource_type": entry_resource,
             "description": entry.description,
             "created": entry.created.isoformat() if entry.created else None,
+            "source": entry.source,
             "authorized_by": auth_info,
         }
 
@@ -4891,6 +4896,9 @@ def _handle_tools_call(request: HttpRequest, request_id: Any, params: dict[str, 
             logger.warning("mcp: tools/call tool='%s' rejected, no auth", tool_name)
             _record_metric(tool_name, "auth_error")
             return _error_response(request_id, -32000, "Authentication required")
+
+    if config.write:
+        request.mcp_source = True
 
     track = tool_name != "hello"
     start = time.monotonic() if track else 0
