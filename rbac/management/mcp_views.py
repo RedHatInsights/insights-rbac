@@ -44,8 +44,9 @@ from management.cache import _connection_pool
 from management.group.view import GroupViewSet
 from management.models import Access, AuditLog, Group, Permission
 from management.permission.view import PermissionViewSet
+from management.permissions.workspace_inventory_access import WorkspaceInventoryAccessChecker
 from management.principal.model import Principal
-from management.principal.proxy import PrincipalProxy
+from management.principal.proxy import PrincipalProxy, get_kessel_principal_id
 from management.principal.view import PrincipalView
 from management.role.model import Role
 from management.role.v2_model import RoleV2
@@ -213,6 +214,8 @@ class ToolConfig:
     passes_request: bool = False
     api_version: str = ApiVersion.COMMON
     write: bool = False
+    required_relation: str | None = None
+    required_resource_type: str = "tenant"
 
 
 _TOOL_CONFIG: dict[str, ToolConfig] = {}
@@ -224,6 +227,8 @@ def register_tool(
     requires_auth: bool = False,
     api_version: str = ApiVersion.COMMON,
     write: bool = False,
+    required_relation: str | None = None,
+    required_resource_type: str = "tenant",
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Register a tool with both FastMCP and _TOOL_CONFIG.
 
@@ -246,6 +251,8 @@ def register_tool(
             passes_request=passes_request,
             api_version=api_version,
             write=write,
+            required_relation=required_relation,
+            required_resource_type=required_resource_type,
         )
 
         if passes_request:
@@ -600,6 +607,7 @@ def list_permissions(
         "authorized the action."
     ),
     requires_auth=True,
+    required_relation="rbac_roles_read",
 )
 def list_audit_logs(
     request: HttpRequest,
@@ -994,6 +1002,7 @@ def list_role_access(
     ),
     requires_auth=True,
     api_version=ApiVersion.UNIFIED,
+    required_relation="rbac_roles_read",
 )
 def search_roles(
     request: HttpRequest,
@@ -1089,6 +1098,7 @@ def _search_roles_v2(
     ),
     requires_auth=True,
     api_version=ApiVersion.UNIFIED,
+    required_relation="rbac_roles_read",
 )
 def get_role(
     request: HttpRequest,
@@ -1144,6 +1154,7 @@ def _get_role_v2(request: HttpRequest, role_uuid: str) -> str:
     ),
     requires_auth=True,
     api_version=ApiVersion.UNIFIED,
+    required_relation="rbac_roles_read",
 )
 def check_role_permissions(
     request: HttpRequest,
@@ -1548,6 +1559,7 @@ def get_cross_account_request(
     ),
     requires_auth=True,
     api_version=ApiVersion.COMMON,
+    required_relation="rbac_roles_read",
 )
 def investigate_tam_access(
     request: HttpRequest,
@@ -1752,6 +1764,7 @@ def investigate_tam_access(
     ),
     requires_auth=True,
     api_version=ApiVersion.COMMON,
+    required_relation="rbac_roles_read",
 )
 def audit_redhat_access(
     request: HttpRequest,
@@ -1965,6 +1978,7 @@ def audit_redhat_access(
     ),
     requires_auth=True,
     api_version=ApiVersion.COMMON,
+    required_relation="rbac_roles_read",
 )
 def audit_group_for_dissolution(
     request: HttpRequest,
@@ -2381,6 +2395,7 @@ def _permission_matches(granted_permission: str, requested_permission: str) -> b
     ),
     requires_auth=True,
     api_version=ApiVersion.UNIFIED,
+    required_relation="rbac_roles_read",
 )
 def check_user_permission(
     request: HttpRequest,
@@ -2557,6 +2572,7 @@ def _check_user_permission_v1(request: HttpRequest, username: str, permission: s
     ),
     requires_auth=True,
     api_version=ApiVersion.UNIFIED,
+    required_relation="rbac_roles_read",
 )
 def get_user_state(
     request: HttpRequest,
@@ -2809,6 +2825,7 @@ def _get_user_access_v1(request: HttpRequest, username: str) -> list[dict[str, A
         "Format dates as day of week (Monday, Tuesday, etc.), not ISO timestamps."
     ),
     requires_auth=True,
+    required_relation="rbac_roles_read",
 )
 def get_rbac_recent_changes(
     request: HttpRequest,
@@ -2907,6 +2924,7 @@ def get_rbac_recent_changes(
         "rbac:group:write.'"
     ),
     requires_auth=True,
+    required_relation="rbac_roles_read",
 )
 def investigate_group_changes(
     request: HttpRequest,
@@ -3192,6 +3210,7 @@ def _analyze_expected_permission(
     ),
     requires_auth=True,
     api_version=ApiVersion.COMMON,
+    required_relation="rbac_roles_read",
 )
 def investigate_user_access(
     request: HttpRequest,
@@ -3944,6 +3963,7 @@ def create_cross_account_request(
     ),
     requires_auth=True,
     api_version=ApiVersion.UNIFIED,
+    required_relation="rbac_roles_read",
 )
 def guide_user_access_delegation(
     request: HttpRequest,
@@ -4798,6 +4818,32 @@ def _execute_with_timeout(fn: Callable[..., Any], timeout: int, *args: Any, **kw
         raise ToolTimeoutError(f"Tool execution exceeded {timeout}s timeout")
 
 
+def _check_kessel_access(request: HttpRequest, resource_type: str, relation: str) -> bool:
+    """Check Kessel Inventory API permission for the requesting user.
+
+    Returns True if access is granted, False otherwise. Fails closed on
+    missing tenant, missing principal ID, or Inventory API errors.
+    """
+    tenant = getattr(request, "tenant", None)
+    if not tenant:
+        return False
+
+    resource_id = tenant.tenant_resource_id()
+    if not resource_id:
+        return False
+
+    principal_id = get_kessel_principal_id(request)
+    if not principal_id:
+        return False
+
+    return WorkspaceInventoryAccessChecker().check_resource_access(
+        resource_type=resource_type,
+        resource_id=resource_id,
+        principal_id=principal_id,
+        relation=relation,
+    )
+
+
 def _handle_tools_call(request: HttpRequest, request_id: Any, params: dict[str, Any]) -> JsonResponse:
     """Handle MCP tools/call request.
 
@@ -4854,6 +4900,17 @@ def _handle_tools_call(request: HttpRequest, request_id: Any, params: dict[str, 
             logger.warning("mcp: tools/call tool='%s' rejected, no auth", tool_name)
             _record_metric(tool_name, "auth_error")
             return _error_response(request_id, -32000, "Authentication required")
+
+    if config.required_relation:
+        if not _check_kessel_access(request, config.required_resource_type, config.required_relation):
+            logger.warning(
+                "mcp: tools/call tool='%s' rejected, Kessel permission denied (relation=%s, resource_type=%s)",
+                tool_name,
+                config.required_relation,
+                config.required_resource_type,
+            )
+            _record_metric(tool_name, "permission_denied")
+            return _error_response(request_id, -32003, "Permission denied")
 
     track = tool_name != "hello"
     start = time.monotonic() if track else 0
