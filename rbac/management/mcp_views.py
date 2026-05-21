@@ -4703,6 +4703,31 @@ _MCP_INSTRUCTIONS_BASE = (
     "roles, audit logs, and cross-account access."
 )
 
+_MCP_INSTRUCTIONS_HONEST_CAVEATS = (
+    "\n\n## Honest Caveats\n\n"
+    "After answering any question, proactively surface what the API response does NOT cover. "
+    "If the user's question requires data from multiple tools, explain which additional calls "
+    "are needed rather than presenting partial data as complete.\n\n"
+    "Cross-cutting limitations to keep in mind:\n\n"
+    "1. **Permission-to-UI mapping does not exist.** RBAC defines permission strings "
+    "(e.g., 'cost-management:cost_model:write') but the consuming application determines "
+    "what UI elements or API endpoints each permission unlocks. Permission names are naming "
+    "conventions only -- RBAC cannot confirm what they control.\n\n"
+    "2. **ResourceDefinition filters are opaque.** The 'resourceDefinitions' array on access "
+    "entries scopes permissions to specific resources, but RBAC only stores the filter -- the "
+    "consuming application enforces it. RBAC cannot tell you which concrete resources a filter "
+    "matches.\n\n"
+    "3. **Org admins have implicit full access.** Org admins bypass all RBAC checks. Tools "
+    "like list_access return only explicitly assigned permissions, not the effective (unlimited) "
+    "access org admins actually have. When a user is an org admin, clarify that their effective "
+    "access is unrestricted regardless of what the API returns.\n\n"
+    "4. **V1 vs V2 role assignment model.** In V1, roles are assigned to groups and users are "
+    "added to those groups -- roles cannot be assigned directly to users. In V2, roles are "
+    "bound to subjects via role bindings, which can target individual users directly. When "
+    "advising on role assignment, check the org's API version (org_version field) to give "
+    "accurate guidance."
+)
+
 _MCP_INSTRUCTIONS_SUGGESTION_LAYER = (
     "\n\n## Suggestion Layer\n\n"
     "After completing a readonly analysis, present the user with numbered write-action "
@@ -4727,7 +4752,7 @@ _MCP_INSTRUCTIONS_SUGGESTION_LAYER = (
 
 def _build_mcp_instructions() -> str:
     """Build MCP server instructions based on current feature flags."""
-    parts = [_MCP_INSTRUCTIONS_BASE]
+    parts = [_MCP_INSTRUCTIONS_BASE, _MCP_INSTRUCTIONS_HONEST_CAVEATS]
     if _is_write_enabled():
         parts.append(_MCP_INSTRUCTIONS_SUGGESTION_LAYER)
     return "".join(parts)

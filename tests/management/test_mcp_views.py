@@ -141,6 +141,18 @@ class MCPViewTests(MCPToolTestMixin, IdentityRequest):
         self.assertNotIn("Suggestion Layer", instructions)
         self.assertNotIn("write-action", instructions)
 
+    def test_initialize_instructions_include_honest_caveats(self):
+        """Positive: instructions always include cross-cutting honest caveats."""
+        body = {"jsonrpc": "2.0", "method": "initialize", "id": 1, "params": {}}
+        response = self.client.post(self.url, data=json.dumps(body), content_type="application/json", **self.headers)
+
+        instructions = response.json()["result"]["instructions"]
+        self.assertIn("Honest Caveats", instructions)
+        self.assertIn("ResourceDefinition filters are opaque", instructions)
+        self.assertIn("Org admins have implicit full access", instructions)
+        self.assertIn("Permission-to-UI mapping does not exist", instructions)
+        self.assertIn("V1 vs V2 role assignment model", instructions)
+
     def test_notification_returns_202(self):
         """Positive: JSON-RPC notification (no id) returns 202."""
         body = {"jsonrpc": "2.0", "method": "notifications/initialized"}
