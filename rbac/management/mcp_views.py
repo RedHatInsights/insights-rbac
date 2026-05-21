@@ -216,6 +216,7 @@ class ToolConfig:
     write: bool = False
     required_relation: str | None = None
     required_resource_type: str = "tenant"
+    v1_permission: tuple[str, str] | None = None
 
 
 _TOOL_CONFIG: dict[str, ToolConfig] = {}
@@ -229,6 +230,7 @@ def register_tool(
     write: bool = False,
     required_relation: str | None = None,
     required_resource_type: str = "tenant",
+    v1_permission: tuple[str, str] | None = None,
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
     """Register a tool with both FastMCP and _TOOL_CONFIG.
 
@@ -253,6 +255,7 @@ def register_tool(
             write=write,
             required_relation=required_relation,
             required_resource_type=required_resource_type,
+            v1_permission=v1_permission,
         )
 
         if passes_request:
@@ -608,6 +611,7 @@ def list_permissions(
     ),
     requires_auth=True,
     required_relation="rbac_roles_read",
+    v1_permission=("admin", "only"),
 )
 def list_audit_logs(
     request: HttpRequest,
@@ -1003,6 +1007,7 @@ def list_role_access(
     requires_auth=True,
     api_version=ApiVersion.UNIFIED,
     required_relation="rbac_roles_read",
+    v1_permission=("role", "read"),
 )
 def search_roles(
     request: HttpRequest,
@@ -1099,6 +1104,7 @@ def _search_roles_v2(
     requires_auth=True,
     api_version=ApiVersion.UNIFIED,
     required_relation="rbac_roles_read",
+    v1_permission=("role", "read"),
 )
 def get_role(
     request: HttpRequest,
@@ -1155,6 +1161,7 @@ def _get_role_v2(request: HttpRequest, role_uuid: str) -> str:
     requires_auth=True,
     api_version=ApiVersion.UNIFIED,
     required_relation="rbac_roles_read",
+    v1_permission=("role", "read"),
 )
 def check_role_permissions(
     request: HttpRequest,
@@ -1560,6 +1567,7 @@ def get_cross_account_request(
     requires_auth=True,
     api_version=ApiVersion.COMMON,
     required_relation="rbac_roles_read",
+    v1_permission=("role", "read"),
 )
 def investigate_tam_access(
     request: HttpRequest,
@@ -1765,6 +1773,7 @@ def investigate_tam_access(
     requires_auth=True,
     api_version=ApiVersion.COMMON,
     required_relation="rbac_roles_read",
+    v1_permission=("role", "read"),
 )
 def audit_redhat_access(
     request: HttpRequest,
@@ -1979,6 +1988,7 @@ def audit_redhat_access(
     requires_auth=True,
     api_version=ApiVersion.COMMON,
     required_relation="rbac_roles_read",
+    v1_permission=("group", "read"),
 )
 def audit_group_for_dissolution(
     request: HttpRequest,
@@ -2396,6 +2406,7 @@ def _permission_matches(granted_permission: str, requested_permission: str) -> b
     requires_auth=True,
     api_version=ApiVersion.UNIFIED,
     required_relation="rbac_roles_read",
+    v1_permission=("principal", "read"),
 )
 def check_user_permission(
     request: HttpRequest,
@@ -2573,6 +2584,7 @@ def _check_user_permission_v1(request: HttpRequest, username: str, permission: s
     requires_auth=True,
     api_version=ApiVersion.UNIFIED,
     required_relation="rbac_roles_read",
+    v1_permission=("principal", "read"),
 )
 def get_user_state(
     request: HttpRequest,
@@ -2826,6 +2838,7 @@ def _get_user_access_v1(request: HttpRequest, username: str) -> list[dict[str, A
     ),
     requires_auth=True,
     required_relation="rbac_roles_read",
+    v1_permission=("admin", "only"),
 )
 def get_rbac_recent_changes(
     request: HttpRequest,
@@ -2925,6 +2938,7 @@ def get_rbac_recent_changes(
     ),
     requires_auth=True,
     required_relation="rbac_roles_read",
+    v1_permission=("group", "read"),
 )
 def investigate_group_changes(
     request: HttpRequest,
@@ -3211,6 +3225,7 @@ def _analyze_expected_permission(
     requires_auth=True,
     api_version=ApiVersion.COMMON,
     required_relation="rbac_roles_read",
+    v1_permission=("principal", "read"),
 )
 def investigate_user_access(
     request: HttpRequest,
@@ -3964,6 +3979,7 @@ def create_cross_account_request(
     requires_auth=True,
     api_version=ApiVersion.UNIFIED,
     required_relation="rbac_roles_read",
+    v1_permission=("role", "read"),
 )
 def guide_user_access_delegation(
     request: HttpRequest,
@@ -4855,6 +4871,31 @@ def _execute_with_timeout(fn: Callable[..., Any], timeout: int, *args: Any, **kw
         raise ToolTimeoutError(f"Tool execution exceeded {timeout}s timeout")
 
 
+def _check_v1_access(request: HttpRequest, v1_permission: tuple[str, str]) -> bool:
+    """Check v1 RBAC permission for the requesting user.
+
+    Args:
+        request: The Django HTTP request with user context populated by middleware.
+        v1_permission: A (resource_type, verb) tuple, e.g. ("role", "read").
+            Use ("admin", "only") to require org admin with no access-dict fallback.
+
+    Returns True if access is granted, False otherwise.
+    """
+    user = getattr(request, "user", None)
+    if not user:
+        return False
+
+    if getattr(user, "admin", False):
+        return True
+
+    resource_type, verb = v1_permission
+    if resource_type == "admin":
+        return False
+
+    access = getattr(user, "access", {})
+    return bool(access.get(resource_type, {}).get(verb, []))
+
+
 def _check_kessel_access(request: HttpRequest, resource_type: str, relation: str) -> bool:
     """Check Kessel Inventory API permission for the requesting user.
 
@@ -4943,9 +4984,16 @@ def _handle_tools_call(request: HttpRequest, request_id: Any, params: dict[str, 
             return _error_response(request_id, -32000, "Authentication required")
 
     if config.required_relation:
-        if not _check_kessel_access(request, config.required_resource_type, config.required_relation):
+        tenant = getattr(request, "tenant", None)
+        if tenant and is_v2_write_activated(tenant):
+            access_granted = _check_kessel_access(request, config.required_resource_type, config.required_relation)
+        elif config.v1_permission:
+            access_granted = _check_v1_access(request, config.v1_permission)
+        else:
+            access_granted = False
+        if not access_granted:
             logger.warning(
-                "mcp: tools/call tool='%s' rejected, Kessel permission denied (relation=%s, resource_type=%s)",
+                "mcp: tools/call tool='%s' rejected, permission denied (relation=%s, resource_type=%s)",
                 tool_name,
                 config.required_relation,
                 config.required_resource_type,
