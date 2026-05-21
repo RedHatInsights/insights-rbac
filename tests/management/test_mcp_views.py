@@ -29,6 +29,8 @@ from management.mcp_views import (
     ToolConfig,
     ToolTimeoutError,
     _TOOL_CONFIG,
+    _check_kessel_access,
+    _check_v1_access,
     _execute_with_timeout,
     _permission_matches,
 )
@@ -49,6 +51,16 @@ from rbac import urls
 
 class MCPToolTestMixin:
     """Shared helpers for calling MCP tools in tests."""
+
+    def setUp(self):
+        """Auto-mock access checks so protected tools are callable in tests."""
+        super().setUp()
+        kessel_patcher = patch("management.mcp_views._check_kessel_access", return_value=True)
+        self._kessel_mock = kessel_patcher.start()
+        self.addCleanup(kessel_patcher.stop)
+        v1_patcher = patch("management.mcp_views._check_v1_access", return_value=True)
+        self._v1_access_mock = v1_patcher.start()
+        self.addCleanup(v1_patcher.stop)
 
     def _call_tool(self, tool_name, arguments=None, use_auth=True):
         """Helper to call an MCP tool and return the parsed response."""
@@ -6681,3 +6693,330 @@ class MCPDeleteToolsV2Tests(MCPToolTestMixin, IdentityRequest):
         data = response.json()
         self.assertIn("error", data)
         self.assertEqual(data["error"]["code"], -32000)
+
+
+class MCPAccessCheckTests(MCPToolTestMixin, IdentityRequest):
+    """Test the dual-path (v1/v2) permission check for MCP tools."""
+
+    def setUp(self):
+        """Set up the access check tests."""
+        super().setUp()
+        self.url = "/_private/_a2s/mcp/"
+        self.client = APIClient()
+        self.principal = Principal.objects.create(username="test_user", tenant=self.tenant)
+
+    def tearDown(self):
+        """Tear down access check tests."""
+        AuditLog.objects.all().delete()
+        Principal.objects.all().delete()
+        super().tearDown()
+
+    # --- ToolConfig ---
+
+    def test_tool_config_has_permission_fields(self):
+        """ToolConfig includes required_relation, required_resource_type, and v1_permission."""
+        config = ToolConfig(fn=lambda: "")
+        self.assertIsNone(config.required_relation)
+        self.assertEqual(config.required_resource_type, "tenant")
+        self.assertIsNone(config.v1_permission)
+
+    def test_tool_config_with_permission_fields(self):
+        """ToolConfig accepts all permission fields."""
+        config = ToolConfig(
+            fn=lambda: "",
+            required_relation="rbac_roles_read",
+            required_resource_type="workspace",
+            v1_permission=("role", "read"),
+        )
+        self.assertEqual(config.required_relation, "rbac_roles_read")
+        self.assertEqual(config.required_resource_type, "workspace")
+        self.assertEqual(config.v1_permission, ("role", "read"))
+
+    def test_protected_tools_have_required_relation(self):
+        """All protected tools have required_relation set."""
+        expected_protected = [
+            "list_audit_logs",
+            "investigate_tam_access",
+            "audit_redhat_access",
+            "audit_group_for_dissolution",
+            "get_user_state",
+            "get_rbac_recent_changes",
+            "investigate_group_changes",
+            "guide_user_access_delegation",
+            "search_roles",
+            "get_role",
+            "check_role_permissions",
+            "investigate_user_access",
+            "check_user_permission",
+        ]
+        for tool_name in expected_protected:
+            config = _TOOL_CONFIG.get(tool_name)
+            self.assertIsNotNone(config, f"Tool '{tool_name}' not found in _TOOL_CONFIG")
+            self.assertIsNotNone(
+                config.required_relation,
+                f"Tool '{tool_name}' missing required_relation",
+            )
+
+    def test_protected_tools_have_v1_permission(self):
+        """All protected tools have v1_permission set for v1 org fallback."""
+        expected_v1_permissions = {
+            "list_audit_logs": ("admin", "only"),
+            "get_rbac_recent_changes": ("admin", "only"),
+            "search_roles": ("role", "read"),
+            "get_role": ("role", "read"),
+            "check_role_permissions": ("role", "read"),
+            "investigate_tam_access": ("role", "read"),
+            "audit_redhat_access": ("role", "read"),
+            "guide_user_access_delegation": ("role", "read"),
+            "audit_group_for_dissolution": ("group", "read"),
+            "investigate_group_changes": ("group", "read"),
+            "check_user_permission": ("principal", "read"),
+            "get_user_state": ("principal", "read"),
+            "investigate_user_access": ("principal", "read"),
+        }
+        for tool_name, expected_perm in expected_v1_permissions.items():
+            config = _TOOL_CONFIG.get(tool_name)
+            self.assertIsNotNone(config, f"Tool '{tool_name}' not found in _TOOL_CONFIG")
+            self.assertEqual(
+                config.v1_permission,
+                expected_perm,
+                f"Tool '{tool_name}' has wrong v1_permission: {config.v1_permission}",
+            )
+
+    def test_unprotected_tools_have_no_required_relation(self):
+        """View-delegated tools do not have required_relation set."""
+        unprotected = ["hello", "list_principals", "list_permissions", "list_groups", "get_group"]
+        for tool_name in unprotected:
+            config = _TOOL_CONFIG.get(tool_name)
+            if config:
+                self.assertIsNone(
+                    config.required_relation,
+                    f"Tool '{tool_name}' should not have required_relation",
+                )
+
+    # --- _check_kessel_access unit tests ---
+
+    def test_check_kessel_access_no_tenant(self):
+        """_check_kessel_access returns False when request has no tenant."""
+        from django.test import RequestFactory
+
+        request = RequestFactory().get("/")
+        self.assertFalse(_check_kessel_access(request, "tenant", "rbac_roles_read"))
+
+    def test_check_kessel_access_no_resource_id(self):
+        """_check_kessel_access returns False when tenant has no resource ID."""
+        from django.test import RequestFactory
+
+        request = RequestFactory().get("/")
+        request.tenant = self.tenant
+        with patch.object(type(self.tenant), "tenant_resource_id", return_value=None):
+            self.assertFalse(_check_kessel_access(request, "tenant", "rbac_roles_read"))
+
+    @patch("management.mcp_views.get_kessel_principal_id", return_value=None)
+    def test_check_kessel_access_no_principal_id(self, _mock_principal):
+        """_check_kessel_access returns False when principal ID cannot be resolved."""
+        from django.test import RequestFactory
+
+        request = RequestFactory().get("/")
+        request.tenant = self.tenant
+        self.assertFalse(_check_kessel_access(request, "tenant", "rbac_roles_read"))
+
+    @patch("management.mcp_views.get_kessel_principal_id", return_value="localhost/test_user")
+    @patch("management.mcp_views.WorkspaceInventoryAccessChecker.check_resource_access", return_value=True)
+    def test_check_kessel_access_granted(self, mock_checker, _mock_principal):
+        """_check_kessel_access returns True when Kessel grants access."""
+        from django.test import RequestFactory
+
+        request = RequestFactory().get("/")
+        request.tenant = self.tenant
+        self.assertTrue(_check_kessel_access(request, "tenant", "rbac_roles_read"))
+        mock_checker.assert_called_once_with(
+            resource_type="tenant",
+            resource_id=self.tenant.tenant_resource_id(),
+            principal_id="localhost/test_user",
+            relation="rbac_roles_read",
+        )
+
+    @patch("management.mcp_views.get_kessel_principal_id", return_value="localhost/test_user")
+    @patch("management.mcp_views.WorkspaceInventoryAccessChecker.check_resource_access", return_value=False)
+    def test_check_kessel_access_denied(self, mock_checker, _mock_principal):
+        """_check_kessel_access returns False when Kessel denies access."""
+        from django.test import RequestFactory
+
+        request = RequestFactory().get("/")
+        request.tenant = self.tenant
+        self.assertFalse(_check_kessel_access(request, "tenant", "rbac_roles_read"))
+
+    @patch("management.mcp_views.get_kessel_principal_id", side_effect=Exception("Dependency error"))
+    def test_check_kessel_access_principal_exception_fails_closed(self, _mock_principal):
+        """_check_kessel_access returns False when get_kessel_principal_id raises (fail-closed)."""
+        from django.test import RequestFactory
+
+        request = RequestFactory().get("/")
+        request.tenant = self.tenant
+        self.assertFalse(_check_kessel_access(request, "tenant", "rbac_roles_read"))
+
+    @patch("management.mcp_views.get_kessel_principal_id", return_value="localhost/test_user")
+    @patch(
+        "management.mcp_views.WorkspaceInventoryAccessChecker.check_resource_access",
+        side_effect=Exception("Inventory API error"),
+    )
+    def test_check_kessel_access_inventory_exception_fails_closed(self, _mock_checker, _mock_principal):
+        """_check_kessel_access returns False when check_resource_access raises (fail-closed)."""
+        from django.test import RequestFactory
+
+        request = RequestFactory().get("/")
+        request.tenant = self.tenant
+        self.assertFalse(_check_kessel_access(request, "tenant", "rbac_roles_read"))
+
+    # --- _check_v1_access unit tests ---
+
+    def test_check_v1_access_admin_user(self):
+        """_check_v1_access returns True for org admin regardless of permission type."""
+        from django.test import RequestFactory
+
+        request = RequestFactory().get("/")
+        request.user = type("User", (), {"admin": True, "access": {}})()
+        self.assertTrue(_check_v1_access(request, ("role", "read")))
+        self.assertTrue(_check_v1_access(request, ("admin", "only")))
+
+    def test_check_v1_access_admin_only_non_admin(self):
+        """_check_v1_access returns False for non-admin when admin-only is required."""
+        from django.test import RequestFactory
+
+        request = RequestFactory().get("/")
+        request.user = type("User", (), {"admin": False, "access": {"role": {"read": ["*"]}}})()
+        self.assertFalse(_check_v1_access(request, ("admin", "only")))
+
+    def test_check_v1_access_role_read_granted(self):
+        """_check_v1_access returns True when user has role:read access."""
+        from django.test import RequestFactory
+
+        request = RequestFactory().get("/")
+        request.user = type("User", (), {"admin": False, "access": {"role": {"read": ["*"]}}})()
+        self.assertTrue(_check_v1_access(request, ("role", "read")))
+
+    def test_check_v1_access_group_read_granted(self):
+        """_check_v1_access returns True when user has group:read access."""
+        from django.test import RequestFactory
+
+        request = RequestFactory().get("/")
+        request.user = type("User", (), {"admin": False, "access": {"group": {"read": ["*"]}}})()
+        self.assertTrue(_check_v1_access(request, ("group", "read")))
+
+    def test_check_v1_access_principal_read_granted(self):
+        """_check_v1_access returns True when user has principal:read access."""
+        from django.test import RequestFactory
+
+        request = RequestFactory().get("/")
+        request.user = type("User", (), {"admin": False, "access": {"principal": {"read": ["*"]}}})()
+        self.assertTrue(_check_v1_access(request, ("principal", "read")))
+
+    def test_check_v1_access_no_matching_access(self):
+        """_check_v1_access returns False when user lacks required access."""
+        from django.test import RequestFactory
+
+        request = RequestFactory().get("/")
+        request.user = type("User", (), {"admin": False, "access": {"group": {"read": ["*"]}}})()
+        self.assertFalse(_check_v1_access(request, ("role", "read")))
+
+    def test_check_v1_access_empty_access(self):
+        """_check_v1_access returns False when user has empty access dict."""
+        from django.test import RequestFactory
+
+        request = RequestFactory().get("/")
+        request.user = type("User", (), {"admin": False, "access": {}})()
+        self.assertFalse(_check_v1_access(request, ("role", "read")))
+
+    def test_check_v1_access_no_user(self):
+        """_check_v1_access returns False when request has no user."""
+        from django.test import RequestFactory
+
+        request = RequestFactory().get("/")
+        self.assertFalse(_check_v1_access(request, ("role", "read")))
+
+    # --- Integration: dual-path dispatch ---
+
+    @patch("management.mcp_views.is_v2_write_activated", return_value=True)
+    @patch("management.mcp_views._check_kessel_access", return_value=False)
+    def test_v2_org_uses_kessel_check(self, mock_kessel, _mock_v2):
+        """V2 org dispatches to Kessel check; denied when Kessel returns False."""
+        response = self._call_tool("list_audit_logs")
+
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32003)
+        mock_kessel.assert_called_once()
+
+    @patch("management.mcp_views.is_v2_write_activated", return_value=True)
+    @patch("management.mcp_views._check_kessel_access", return_value=True)
+    def test_v2_org_kessel_granted(self, _mock_kessel, _mock_v2):
+        """V2 org dispatches to Kessel check; allowed when Kessel returns True."""
+        response = self._call_tool("list_audit_logs")
+
+        data = response.json()
+        self.assertIn("result", data)
+        self.assertFalse(data["result"]["isError"])
+
+    @patch("management.mcp_views.is_v2_write_activated", return_value=False)
+    @patch("management.mcp_views._check_v1_access", return_value=False)
+    def test_v1_org_uses_v1_check(self, mock_v1, _mock_v2):
+        """V1 org dispatches to v1 access check; denied when v1 returns False."""
+        response = self._call_tool("search_roles")
+
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32003)
+        mock_v1.assert_called_once()
+
+    @patch("management.mcp_views.is_v2_write_activated", return_value=False)
+    @patch("management.mcp_views._check_v1_access", return_value=True)
+    def test_v1_org_v1_access_granted(self, _mock_v1, _mock_v2):
+        """V1 org dispatches to v1 access check; allowed when v1 returns True."""
+        response = self._call_tool("search_roles")
+
+        data = response.json()
+        self.assertIn("result", data)
+        self.assertFalse(data["result"]["isError"])
+
+    @patch("management.mcp_views.is_v2_write_activated", return_value=False)
+    @patch("management.mcp_views._check_v1_access", return_value=False)
+    def test_v1_org_admin_only_tool_denied(self, mock_v1, _mock_v2):
+        """V1 org with admin-only tool (list_audit_logs) denied for non-admin."""
+        response = self._call_tool("list_audit_logs")
+
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32003)
+
+    @patch("management.mcp_views.is_v2_write_activated", return_value=False)
+    @patch("management.mcp_views._check_v1_access", return_value=True)
+    def test_v1_org_admin_only_tool_granted(self, _mock_v1, _mock_v2):
+        """V1 org with admin-only tool (list_audit_logs) granted for admin."""
+        response = self._call_tool("list_audit_logs")
+
+        data = response.json()
+        self.assertIn("result", data)
+        self.assertFalse(data["result"]["isError"])
+
+    def test_tool_without_required_relation_skips_both_checks(self):
+        """Tools without required_relation do not trigger any permission check."""
+        with (
+            patch("management.mcp_views._check_kessel_access") as mock_kessel,
+            patch("management.mcp_views._check_v1_access") as mock_v1,
+        ):
+            self._call_tool("hello", {"message": "test"})
+            mock_kessel.assert_not_called()
+            mock_v1.assert_not_called()
+
+    @patch("management.mcp_views._check_kessel_access", return_value=False)
+    @patch("management.mcp_views._check_v1_access", return_value=False)
+    def test_auth_check_runs_before_permission_check(self, _mock_v1, _mock_kessel):
+        """Auth check (org_id) runs before permission check — unauthenticated gets -32000."""
+        response = self._call_tool("list_audit_logs", use_auth=False)
+
+        data = response.json()
+        self.assertIn("error", data)
+        self.assertEqual(data["error"]["code"], -32000)
+        _mock_kessel.assert_not_called()
+        _mock_v1.assert_not_called()
