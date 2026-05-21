@@ -29,9 +29,9 @@ from tests.identity_request import IdentityRequest
 INVENTORY_STUB_PATH = "management.inventory_checker.inventory_api_check.inventory_service_pb2_grpc.KesselInventoryServiceStub"  # noqa: E501
 PLATFORM_ROLE_UUID_PATH = "management.inventory_checker.inventory_api_check.platform_v2_role_uuid_for"
 
-# 2 hierarchy + 6 binding combos x 3 tuples each = 20 base checks
-EXPECTED_BASE_CHECK_COUNT = 20
-EXPECTED_WITH_UNGROUPED = 21
+# 3 hierarchy + 6 binding combos x 3 tuples each = 21 base checks
+EXPECTED_BASE_CHECK_COUNT = 21
+EXPECTED_WITH_UNGROUPED = 22
 
 
 class BootstrappedTenantCheckerTest(IdentityRequest):
@@ -160,7 +160,7 @@ class BootstrappedTenantCheckerTest(IdentityRequest):
         mock_stub = self._setup_inventory_mocks(mock_create_channel, responses)
         allowed_results = [{"allowed": "ALLOWED_TRUE"}] * EXPECTED_BASE_CHECK_COUNT
         # user_root_binding: 2 hierarchy + 3 user_default = index 5
-        allowed_results[5] = {"allowed": "ALLOWED_FALSE"}
+        allowed_results[6] = {"allowed": "ALLOWED_FALSE"}
         mock_message_to_dict.side_effect = allowed_results
 
         with patch(INVENTORY_STUB_PATH, return_value=mock_stub):
@@ -188,7 +188,7 @@ class BootstrappedTenantCheckerTest(IdentityRequest):
         mock_stub = self._setup_inventory_mocks(mock_create_channel, responses)
         allowed_results = [{"allowed": "ALLOWED_TRUE"}] * EXPECTED_BASE_CHECK_COUNT
         # admin_tenant_subject: 2 hierarchy + 15 (user 9 + admin default 3 + admin root 3) + 2 = index 19
-        allowed_results[19] = {"allowed": "ALLOWED_FALSE"}
+        allowed_results[20] = {"allowed": "ALLOWED_FALSE"}
         mock_message_to_dict.side_effect = allowed_results
 
         with patch(INVENTORY_STUB_PATH, return_value=mock_stub):
@@ -278,7 +278,7 @@ class BootstrappedTenantCheckerTest(IdentityRequest):
             )
 
         check_names = {c["name"] for c in checks}
-        expected_names = {"default_workspace_parent", "tenant_platform"}
+        expected_names = {"default_workspace_parent", "root_workspace_tenant", "tenant_platform"}
         for access_type in DefaultAccessType:
             for scope in Scope:
                 prefix = f"{access_type.value}_{scope.name.lower()}"

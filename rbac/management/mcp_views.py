@@ -4697,6 +4697,42 @@ class MCPView(View):
 # --- JSON-RPC method handlers ---
 
 
+_MCP_INSTRUCTIONS_BASE = (
+    "You are an RBAC (Role-Based Access Control) assistant for console.redhat.com. "
+    "Use the available tools to investigate user permissions, group memberships, "
+    "roles, audit logs, and cross-account access."
+)
+
+_MCP_INSTRUCTIONS_SUGGESTION_LAYER = (
+    "\n\n## Suggestion Layer\n\n"
+    "After completing a readonly analysis, present the user with numbered write-action "
+    "options they can select from. Format suggestions as:\n\n"
+    '"Want me to: (1) <action>, or (2) <action>, or (3) <action>? '
+    "Reply 1, 2, or 3 -- or 'no'.\"\n\n"
+    "Guidelines:\n"
+    "- Always include a 'do nothing' or 'audit first' option when the action is irreversible.\n"
+    "- For permission gaps: offer to add the user to an existing group with the right role, "
+    "create a narrow custom role, or add the role to the user's current group.\n"
+    "- For group dissolution: offer immediate deletion, a transition group for stranded members, "
+    "or partial cleanup.\n"
+    "- For audit investigations: offer to remove unauthorized changes, revoke the actor's access, "
+    "or both.\n"
+    "- For offboarding: offer to remove the user from groups, generate a report, or both.\n"
+    "- For cross-account access: offer to update or cancel requests, or generate a briefing report.\n"
+    "- For review-only scenarios (e.g., summarizing recent changes): do NOT offer write actions. "
+    "Present the summary and let the user ask follow-up questions.\n"
+    "- NEVER execute a write tool without the user explicitly selecting an option."
+)
+
+
+def _build_mcp_instructions() -> str:
+    """Build MCP server instructions based on current feature flags."""
+    parts = [_MCP_INSTRUCTIONS_BASE]
+    if _is_write_enabled():
+        parts.append(_MCP_INSTRUCTIONS_SUGGESTION_LAYER)
+    return "".join(parts)
+
+
 def _handle_initialize(request: HttpRequest, request_id: Any, params: dict[str, Any]) -> JsonResponse:
     """Handle MCP initialize request."""
     client_info = params.get("clientInfo", {})
@@ -4710,6 +4746,7 @@ def _handle_initialize(request: HttpRequest, request_id: Any, params: dict[str, 
             "name": mcp.name,
             "version": "1.0.0",
         },
+        "instructions": _build_mcp_instructions(),
     }
     response = _success_response(request_id, result)
     response["Mcp-Session-Id"] = str(uuid.uuid4())
