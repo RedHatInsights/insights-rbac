@@ -4824,24 +4824,28 @@ def _check_kessel_access(request: HttpRequest, resource_type: str, relation: str
     Returns True if access is granted, False otherwise. Fails closed on
     missing tenant, missing principal ID, or Inventory API errors.
     """
-    tenant = getattr(request, "tenant", None)
-    if not tenant:
-        return False
+    try:
+        tenant = getattr(request, "tenant", None)
+        if not tenant:
+            return False
 
-    resource_id = tenant.tenant_resource_id()
-    if not resource_id:
-        return False
+        resource_id = tenant.tenant_resource_id()
+        if not resource_id:
+            return False
 
-    principal_id = get_kessel_principal_id(request)
-    if not principal_id:
-        return False
+        principal_id = get_kessel_principal_id(request)
+        if not principal_id:
+            return False
 
-    return WorkspaceInventoryAccessChecker().check_resource_access(
-        resource_type=resource_type,
-        resource_id=resource_id,
-        principal_id=principal_id,
-        relation=relation,
-    )
+        return WorkspaceInventoryAccessChecker().check_resource_access(
+            resource_type=resource_type,
+            resource_id=resource_id,
+            principal_id=principal_id,
+            relation=relation,
+        )
+    except Exception:
+        logger.exception("mcp: Kessel access check failed unexpectedly")
+        return False
 
 
 def _handle_tools_call(request: HttpRequest, request_id: Any, params: dict[str, Any]) -> JsonResponse:

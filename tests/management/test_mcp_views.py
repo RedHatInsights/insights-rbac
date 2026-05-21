@@ -6740,3 +6740,12 @@ class MCPKesselAccessCheckTests(MCPToolTestMixin, IdentityRequest):
         self.assertIn("error", data)
         self.assertEqual(data["error"]["code"], -32000)
         mock_kessel.assert_not_called()
+
+    @patch("management.mcp_views.get_kessel_principal_id", side_effect=Exception("Dependency error"))
+    def test_check_kessel_access_exception_fails_closed(self, _mock_principal):
+        """_check_kessel_access returns False when an exception is raised (fail-closed)."""
+        from django.test import RequestFactory
+
+        request = RequestFactory().get("/")
+        request.tenant = self.tenant
+        self.assertFalse(_check_kessel_access(request, "tenant", "rbac_roles_read"))
