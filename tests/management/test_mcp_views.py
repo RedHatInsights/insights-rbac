@@ -6742,8 +6742,21 @@ class MCPKesselAccessCheckTests(MCPToolTestMixin, IdentityRequest):
         mock_kessel.assert_not_called()
 
     @patch("management.mcp_views.get_kessel_principal_id", side_effect=Exception("Dependency error"))
-    def test_check_kessel_access_exception_fails_closed(self, _mock_principal):
-        """_check_kessel_access returns False when an exception is raised (fail-closed)."""
+    def test_check_kessel_access_principal_exception_fails_closed(self, _mock_principal):
+        """_check_kessel_access returns False when get_kessel_principal_id raises (fail-closed)."""
+        from django.test import RequestFactory
+
+        request = RequestFactory().get("/")
+        request.tenant = self.tenant
+        self.assertFalse(_check_kessel_access(request, "tenant", "rbac_roles_read"))
+
+    @patch("management.mcp_views.get_kessel_principal_id", return_value="localhost/test_user")
+    @patch(
+        "management.mcp_views.WorkspaceInventoryAccessChecker.check_resource_access",
+        side_effect=Exception("Inventory API error"),
+    )
+    def test_check_kessel_access_inventory_exception_fails_closed(self, _mock_checker, _mock_principal):
+        """_check_kessel_access returns False when check_resource_access raises (fail-closed)."""
         from django.test import RequestFactory
 
         request = RequestFactory().get("/")
