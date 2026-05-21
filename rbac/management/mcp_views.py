@@ -414,7 +414,11 @@ def hello(message: str = "Hello, World!") -> str:
         "TROUBLESHOOTING: To confirm a user exists and check their org admin status, call "
         "list_principals(usernames='<user>', match_criteria='exact'). "
         "Returns: {meta: {count}, links, data: [{username, email, first_name, last_name, is_org_admin, ...}]}. "
-        "Calls: GET /api/v1/principals/"
+        "Calls: GET /api/v1/principals/\n"
+        "Caveats:\n"
+        "- Shows only users provisioned in this org -- does not include cross-account (TAM) users or "
+        "service accounts from other identity providers.\n"
+        "- 'is_org_admin' reflects the current state from the identity provider, not a historical snapshot."
     ),
     requires_auth=True,
 )
@@ -547,7 +551,11 @@ def get_status(request: HttpRequest) -> str:
         "Filter by application, resource_type, or verb. Supports pagination and ordering by 'permission' or "
         "'-permission'. "
         "Returns: {meta: {count}, links, data: [{application, resource_type, verb, permission}]}. "
-        "Calls: GET /api/v1/permissions/"
+        "Calls: GET /api/v1/permissions/\n"
+        "Caveats:\n"
+        "- Permissions exist independently of roles. A permission appearing here does not mean any role "
+        "grants it -- use search_roles(permission='...') to find roles that include a specific permission.\n"
+        "- Wildcard permissions ('*') are expanded at access-check time, not in this listing."
     ),
     requires_auth=True,
 )
@@ -597,7 +605,14 @@ def list_permissions(
         "'2025-04-14T09:32:15'), and the description field. When include_authorization=true, also state the "
         "role name (authorized_by.role), "
         "group name (authorized_by.via_group), and specific permission (authorized_by.permission) that "
-        "authorized the action."
+        "authorized the action.\n"
+        "Caveats:\n"
+        "- Does NOT capture: IP addresses, session IDs, login/logout events, geographic location, or "
+        "before/after state diffs. This is an activity log of RBAC changes, not a full security audit trail.\n"
+        "- No server-side date range filter. Time-bounded queries require client-side pagination through "
+        "results ordered by '-created' until entries fall outside the desired window.\n"
+        "- Cross-account request approval/denial events may not appear here -- those are tracked in the "
+        "cross-account-requests API, not the audit log."
     ),
     requires_auth=True,
 )
@@ -825,7 +840,11 @@ def _find_authorizing_role(username: str, tenant: Any, required_perms: list[str]
         "granted_subject_type='principal' and granted_subject_principal_user_id='<username>'. "
         "Order by: 'application', 'resource_type', 'verb' (prefix with '-' to reverse). "
         "Returns: {meta: {count}, links, data: [{permission, resourceDefinitions: [...]}]}. "
-        "Calls: GET /api/v1/access/"
+        "Calls: GET /api/v1/access/\n"
+        "Caveats:\n"
+        "- This shows the flattened effective permissions but not the path: you cannot see which "
+        "role or group granted each permission. Use list_group_roles + list_role_access to trace "
+        "the full chain."
     ),
     requires_auth=True,
     api_version=ApiVersion.V1,
@@ -863,7 +882,12 @@ def list_access(
         "'application', 'resource_type', 'verb'. Optionally filter by application, resource_type, "
         "or verb (comma-separated for multiple). "
         "Returns: {meta: {count}, links, data: ['value1', 'value2', ...]}. "
-        "Calls: GET /api/v1/permissions/options/"
+        "Calls: GET /api/v1/permissions/options/\n"
+        "Caveats:\n"
+        "- Returns values from the permission registry, not from what is actively assigned. An "
+        "application or verb may appear here even if no role in this org currently uses it.\n"
+        "- Application names are identifiers (e.g., 'cost-management', 'advisor'), not display "
+        "names. There is no mapping from these identifiers to user-facing product names."
     ),
     requires_auth=True,
 )
@@ -903,7 +927,10 @@ def list_permission_options(
         "Filter results by role_name, role_description, role_display_name, or role_system. "
         "Set exclude='true' to list roles NOT in the group. "
         "Order by: 'name', 'display_name', 'modified', 'policyCount' (prefix with '-' to reverse). "
-        "Returns: {meta: {count}, links, data: [{uuid, name, description, system, ...}]}."
+        "Returns: {meta: {count}, links, data: [{uuid, name, description, system, ...}]}.\n"
+        "Caveats:\n"
+        "- Non-org-admin users cannot modify groups that contain roles with RBAC write permissions "
+        "(e.g., 'User Access administrator'). The Default admin access group cannot be modified at all."
     ),
     requires_auth=True,
     api_version=ApiVersion.V1,
@@ -958,7 +985,13 @@ def list_group_roles(
         "List access permissions granted by a specific role (V1 API). Each access entry is a "
         "permission string with optional resource definitions. "
         "Returns: {meta: {count}, links, data: [{permission, resourceDefinitions: [...]}]}. "
-        "Calls: GET /api/v1/roles/{uuid}/access/"
+        "Calls: GET /api/v1/roles/{uuid}/access/\n"
+        "Caveats:\n"
+        "- This shows what the role grants in isolation. A user's effective access is the union of "
+        "all roles across all their groups -- a missing permission here may be covered by another role.\n"
+        "- No workspace or scope concept in V1. Permissions attach to roles, roles to groups, groups "
+        "to principals -- there is no way to limit a role to a specific workspace or resource subset "
+        "beyond ResourceDefinitions."
     ),
     requires_auth=True,
     api_version=ApiVersion.V1,
@@ -990,7 +1023,12 @@ def list_role_access(
         "To see all roles for an application, call search_roles(application='<app>'). "
         "V2 orgs support name with '*' wildcards (e.g., name='Cost*') and resource_type filter. "
         "V1 orgs additionally support display_name, system flag filters. "
-        "Returns: {meta: {count}, links, data: [{uuid, name, description, ...}], org_version: 'v1'|'v2'}."
+        "Returns: {meta: {count}, links, data: [{uuid, name, description, ...}], org_version: 'v1'|'v2'}.\n"
+        "Caveats:\n"
+        "- The permission filter finds roles containing that permission, but does not account for "
+        "ResourceDefinition filters that may narrow the permission's effective scope.\n"
+        "- Role names are not unique across V1 and V2. The org_version field indicates which API "
+        "version the result came from."
     ),
     requires_auth=True,
     api_version=ApiVersion.UNIFIED,
@@ -1424,7 +1462,13 @@ def list_groups(
         "Get details of a specific group by UUID, including its name, description, "
         "principal count, policy count, and role count. "
         "Returns: {uuid, name, description, principalCount, policyCount, roleCount, ...}. "
-        "Calls: GET /api/v1/groups/{uuid}/"
+        "Calls: GET /api/v1/groups/{uuid}/\n"
+        "Caveats:\n"
+        "- The 'Default access' group is a system group that all users belong to implicitly. "
+        "Its principalCount may not reflect the full org size, and its roles define the baseline "
+        "permissions every user gets.\n"
+        "- Group membership changes are not versioned. You see the current state, not a history "
+        "of who was added or removed. Use list_audit_logs for membership change history."
     ),
     requires_auth=True,
 )
@@ -1479,7 +1523,14 @@ def list_group_principals(
         "Order by: 'request_id', 'start_date', 'end_date', 'created', 'modified', "
         "'status' (prefix with '-' to reverse). "
         "Returns: {meta: {count}, links, data: [{request_id, target_account, status, start_date, end_date, ...}]}. "
-        "Calls: GET /api/v1/cross-account-requests/"
+        "Calls: GET /api/v1/cross-account-requests/\n"
+        "Caveats:\n"
+        "- Cross-account requests are org-to-org, not user-to-user. A TAM requests access to your "
+        "entire org's resources (scoped by the roles they are granted), not to a specific user's data.\n"
+        "- Approved requests have a time window (start_date to end_date). An 'approved' request may "
+        "have expired -- check end_date against the current date to confirm active access.\n"
+        "- Cross-account activity is not tracked in RBAC audit logs.\n"
+        "- Only org admins can approve or deny requests -- regular users can view but not act on them."
     ),
     requires_auth=True,
 )
