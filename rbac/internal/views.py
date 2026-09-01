@@ -315,18 +315,12 @@ def tenant_org_config(request, org_id):
 
         old_limit = tenant.workspace_creation_limit()
         tenant.org_config = new_config
-        try:
-            tenant.save(update_fields=["org_config"])
-        except ValidationError as e:
-            return JsonResponse({"error": Tenant.org_config_error_message(e)}, status=400)
-
-        try:
-            TENANTS.delete_tenant(org_id)
-        except Exception as e:
-            logger.warning(
-                "Failed to invalidate tenant cache after org_config update",
-                extra={"org_id": org_id, "error": str(e)},
-            )
+        with transaction.atomic():
+            try:
+                tenant.save(update_fields=["org_config"])
+            except ValidationError as e:
+                return JsonResponse({"error": Tenant.org_config_error_message(e)}, status=400)
+            transaction.on_commit(lambda: TENANTS.delete_tenant(org_id))
 
         logger.info(
             "Internal API: Tenant org_config updated",

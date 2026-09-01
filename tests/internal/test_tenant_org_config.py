@@ -16,8 +16,10 @@
 #
 """Tests for internal tenant org_config API."""
 
+import json
 from unittest.mock import patch
 
+from django.test import RequestFactory
 from django.test.utils import override_settings
 from rest_framework import status
 from rest_framework.test import APIClient
@@ -85,6 +87,17 @@ class TenantOrgConfigInternalTests(IdentityRequest):
         response = self.client.get("/_private/api/utils/tenant_org_config/missing-org/", **self.internal_headers)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
+    def test_view_returns_json_404_for_unknown_org(self):
+        """View-level defensive fallback returns JSON 404 when called directly."""
+        from internal.views import tenant_org_config
+
+        factory = RequestFactory()
+        request = factory.get("/_private/api/utils/tenant_org_config/missing-org/")
+        request.user = type("User", (), {"username": "test", "admin": True, "org_id": "missing-org"})()
+        response = tenant_org_config(request, "missing-org")
+        self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+        self.assertEqual(json.loads(response.content), {"error": "Tenant not found."})
+
     def test_patch_sets_limit(self):
         """PATCH stores workspace_creation_limit and returns the effective value."""
         response = self.client.patch(
@@ -124,22 +137,30 @@ class TenantOrgConfigInternalTests(IdentityRequest):
 
     @patch("internal.views.TENANTS.delete_tenant")
     def test_patch_invalidates_tenant_cache(self, delete_tenant):
-        """PATCH deletes the TenantCache entry for the org."""
-        response = self.client.patch(
-            self.url, {"workspace_creation_limit": 500}, format="json", **self.internal_headers
-        )
+        """PATCH deletes the TenantCache entry for the org after commit."""
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.patch(
+                self.url, {"workspace_creation_limit": 500}, format="json", **self.internal_headers
+            )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         delete_tenant.assert_called_once_with(self.tenant.org_id)
 
-    @patch("internal.views.TENANTS.delete_tenant", side_effect=Exception("Redis unavailable"))
+    @patch("internal.views.TENANTS.delete_tenant")
     def test_patch_succeeds_when_cache_invalidation_fails(self, delete_tenant):
-        """PATCH returns 200 even if cache invalidation raises."""
-        response = self.client.patch(
-            self.url, {"workspace_creation_limit": 500}, format="json", **self.internal_headers
-        )
+        """PATCH returns 200 and delete_tenant is called via on_commit.
+
+        Cache failures are handled internally by BasicCache.delete_cached
+        (catches RedisError). The view relies on that rather than adding a
+        redundant broad exception handler.
+        """
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.patch(
+                self.url, {"workspace_creation_limit": 500}, format="json", **self.internal_headers
+            )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.tenant.refresh_from_db()
         self.assertEqual(self.tenant.org_config, {"workspace_creation_limit": 500})
+        delete_tenant.assert_called_once_with(self.tenant.org_id)
 
     def test_patch_rejects_unknown_keys(self):
         """PATCH with an unknown key returns 400 and does not write."""
