@@ -35,14 +35,15 @@ class TenantOrgConfigInternalTests(IdentityRequest):
         ctx = self._create_request_context(self.customer_data, self.user_data, is_internal=True)
         self.internal_headers = ctx["request"].META
         self.url = f"/_private/api/utils/tenant_org_config/{self.tenant.org_id}/"
+        self._original_org_config = dict(self.tenant.org_config or {})
         self.tenant.org_config = {}
         self.tenant.save(update_fields=["org_config"])
+        self.addCleanup(self._restore_org_config)
 
-    def tearDown(self):
+    def _restore_org_config(self):
         """Reset org_config so class-level tenant does not leak overrides."""
-        self.tenant.org_config = {}
+        self.tenant.org_config = self._original_org_config
         self.tenant.save(update_fields=["org_config"])
-        super().tearDown()
 
     def test_get_returns_global_default_when_empty(self):
         """GET returns empty org_config and the effective global limit."""
@@ -74,7 +75,13 @@ class TenantOrgConfigInternalTests(IdentityRequest):
         )
 
     def test_get_unknown_org_returns_404(self):
-        """GET for a missing org_id returns 404."""
+        """GET for a missing org_id returns 404.
+
+        Note: the InternalIdentityHeaderMiddleware intercepts before the view
+        because build_internal_user sets user.org_id from the URL path, so
+        the middleware's get_object_or_404 fires first. The view still has
+        its own JSON 404 as a defensive fallback.
+        """
         response = self.client.get("/_private/api/utils/tenant_org_config/missing-org/", **self.internal_headers)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
 
@@ -123,6 +130,16 @@ class TenantOrgConfigInternalTests(IdentityRequest):
         )
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         delete_tenant.assert_called_once_with(self.tenant.org_id)
+
+    @patch("internal.views.TENANTS.delete_tenant", side_effect=Exception("Redis unavailable"))
+    def test_patch_succeeds_when_cache_invalidation_fails(self, delete_tenant):
+        """PATCH returns 200 even if cache invalidation raises."""
+        response = self.client.patch(
+            self.url, {"workspace_creation_limit": 500}, format="json", **self.internal_headers
+        )
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.tenant.refresh_from_db()
+        self.assertEqual(self.tenant.org_config, {"workspace_creation_limit": 500})
 
     def test_patch_rejects_unknown_keys(self):
         """PATCH with an unknown key returns 400 and does not write."""
@@ -174,5 +191,5 @@ class TenantOrgConfigInternalTests(IdentityRequest):
         self.assertEqual(response.status_code, status.HTTP_405_METHOD_NOT_ALLOWED)
         self.assertEqual(
             response.json(),
-            {"errors": [{"detail": 'Invalid method, only "GET" and "PATCH" are allowed.', "status": "405"}]},
+            {"error": 'Invalid method, only "GET" and "PATCH" are allowed.'},
         )

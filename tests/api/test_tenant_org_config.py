@@ -47,6 +47,13 @@ class TenantOrgConfigTests(IdentityRequest):
         self.tenant.org_config = None
         self.assertEqual(self.tenant.workspace_creation_limit(), 120)
 
+    def test_invalid_stored_value_falls_back_to_default(self):
+        """Invalid workspace_creation_limit in org_config falls back to the global default."""
+        for invalid in (True, "lots", 0, -1, 1.5):
+            with self.subTest(value=invalid):
+                self.tenant.org_config = {"workspace_creation_limit": invalid}
+                self.assertEqual(self.tenant.workspace_creation_limit(), 120)
+
     def test_merge_sets_limit(self):
         """merge_org_config sets workspace_creation_limit."""
         merged = Tenant.merge_org_config({}, {"workspace_creation_limit": 500})

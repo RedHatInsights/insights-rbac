@@ -16,6 +16,7 @@
 #
 """API models for import organization."""
 
+import logging
 from typing import Any, Optional
 
 from django.conf import settings
@@ -25,6 +26,8 @@ from django.db.models import Q
 
 from api.cross_access.model import CrossAccountRequest  # noqa: F401
 from api.status.model import Status  # noqa: F401
+
+logger = logging.getLogger(__name__)
 
 
 class TenantModifiedQuerySet(models.QuerySet):
@@ -63,7 +66,7 @@ class Tenant(models.Model):
     def workspace_creation_limit(self) -> int:
         """Return the effective workspace creation limit for this tenant.
 
-        Missing org_config values fall back to WORKSPACE_ORG_CREATION_LIMIT.
+        Missing or invalid org_config values fall back to WORKSPACE_ORG_CREATION_LIMIT.
         """
         default = int(settings.WORKSPACE_ORG_CREATION_LIMIT)
         org_config = getattr(self, "org_config", None)
@@ -71,6 +74,12 @@ class Tenant(models.Model):
             return default
         raw = org_config.get(self.ORG_CONFIG_WORKSPACE_CREATION_LIMIT)
         if raw is None:
+            return default
+        if isinstance(raw, bool) or not isinstance(raw, int) or raw < 1:
+            logger.warning(
+                "Invalid workspace_creation_limit in org_config, using default",
+                extra={"org_id": self.org_id, "raw": raw},
+            )
             return default
         return raw
 
@@ -97,8 +106,9 @@ class Tenant(models.Model):
                     raise ValidationError({"org_config": str(exc)}) from exc
 
     def save(self, *args, **kwargs):
-        """Persist tenant after validating org_config."""
-        self.clean()
+        """Persist tenant, validating org_config only when it is being updated."""
+        if "org_config" in (kwargs.get("update_fields") or ()):
+            self.clean()
         super().save(*args, **kwargs)
 
     @classmethod

@@ -295,7 +295,10 @@ def tenant_org_config(request, org_id):
     GET /_private/api/utils/tenant_org_config/<org_id>/
     PATCH /_private/api/utils/tenant_org_config/<org_id>/
     """
-    tenant = get_object_or_404(Tenant, org_id=org_id)
+    try:
+        tenant = Tenant.objects.get(org_id=org_id)
+    except Tenant.DoesNotExist:
+        return JsonResponse({"error": "Tenant not found."}, status=404)
 
     if request.method == "GET":
         return JsonResponse(_tenant_org_config_payload(tenant))
@@ -316,7 +319,14 @@ def tenant_org_config(request, org_id):
             tenant.save(update_fields=["org_config"])
         except ValidationError as e:
             return JsonResponse({"error": Tenant.org_config_error_message(e)}, status=400)
-        TENANTS.delete_tenant(org_id)
+
+        try:
+            TENANTS.delete_tenant(org_id)
+        except Exception as e:
+            logger.warning(
+                "Failed to invalidate tenant cache after org_config update",
+                extra={"org_id": org_id, "error": str(e)},
+            )
 
         logger.info(
             "Internal API: Tenant org_config updated",
@@ -332,10 +342,7 @@ def tenant_org_config(request, org_id):
         )
         return JsonResponse(_tenant_org_config_payload(tenant))
 
-    return JsonResponse(
-        {"errors": [{"detail": 'Invalid method, only "GET" and "PATCH" are allowed.', "status": "405"}]},
-        status=405,
-    )
+    return JsonResponse({"error": 'Invalid method, only "GET" and "PATCH" are allowed.'}, status=405)
 
 
 def run_migrations(request):
