@@ -25,7 +25,6 @@ from django.conf import settings
 from google.protobuf import json_format
 from google.rpc import error_details_pb2
 from grpc_status import rpc_status
-from internal.jwt_utils import JWTManager, JWTProvider
 from kessel.inventory.v1beta2 import (
     acquire_lock_request_pb2,
     create_tuples_request_pb2,
@@ -36,16 +35,10 @@ from kessel.inventory.v1beta2 import (
     request_pagination_pb2,
     tuple_service_pb2_grpc,
 )
-from management.cache import JWTCacheOptimized
 from management.inventory_replicator.inventory_replicator import InventoryReplicator, ReplicationEvent
-from management.utils import create_client_channel_inventory
+from management.utils import create_client_channel_inventory, get_inventory_auth_metadata
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
-
-# Initialize JWT manager for token handling (using optimized cache for Kafka consumer)
-jwt_cache = JWTCacheOptimized()
-jwt_provider = JWTProvider()
-jwt_manager = JWTManager(jwt_provider, jwt_cache)
 
 
 def execute_grpc_call(operation_name, grpc_callable, fencing_check=None, log_context=None):
@@ -107,9 +100,7 @@ class InventoryApiReplicator(InventoryReplicator):
         Raises:
             grpc.RpcError: If the lock acquisition fails
         """
-        # Get JWT token for authentication
-        token = jwt_manager.get_jwt_from_redis()
-        metadata = [("authorization", f"Bearer {token}")] if token else []
+        metadata = get_inventory_auth_metadata()
 
         with create_client_channel_inventory(settings.INVENTORY_API_SERVER) as channel:
             stub = tuple_service_pb2_grpc.KesselTupleServiceStub(channel)
@@ -139,9 +130,7 @@ class InventoryApiReplicator(InventoryReplicator):
         Raises:
             grpc.RpcError: If the API call fails (including FAILED_PRECONDITION for invalid fencing token)
         """
-        # Get JWT token for authentication
-        token = jwt_manager.get_jwt_from_redis()
-        metadata = [("authorization", f"Bearer {token}")] if token else []
+        metadata = get_inventory_auth_metadata()
 
         with create_client_channel_inventory(settings.INVENTORY_API_SERVER) as channel:
             stub = tuple_service_pb2_grpc.KesselTupleServiceStub(channel)
@@ -189,9 +178,7 @@ class InventoryApiReplicator(InventoryReplicator):
                 {"consistency_token": type("obj", (object,), {"token": None})()},
             )()
 
-        # Get JWT token for authentication
-        token = jwt_manager.get_jwt_from_redis()
-        metadata = [("authorization", f"Bearer {token}")] if token else []
+        metadata = get_inventory_auth_metadata()
 
         with create_client_channel_inventory(settings.INVENTORY_API_SERVER) as channel:
             stub = tuple_service_pb2_grpc.KesselTupleServiceStub(channel)
@@ -278,9 +265,7 @@ class InventoryApiReplicator(InventoryReplicator):
         if subject_namespace is None:
             subject_namespace = "rbac" if subject_type != "" else ""
 
-        # Get JWT token for authentication
-        token = jwt_manager.get_jwt_from_redis()
-        metadata = [("authorization", f"Bearer {token}")] if token else []
+        metadata = get_inventory_auth_metadata()
 
         with create_client_channel_inventory(settings.INVENTORY_API_SERVER) as channel:
             stub = tuple_service_pb2_grpc.KesselTupleServiceStub(channel)

@@ -23,7 +23,6 @@ from typing import List, Optional, Union
 
 from django.conf import settings
 from google.protobuf import json_format
-from internal.jwt_utils import JWTManager, JWTProvider
 from kessel.inventory.v1beta2 import (
     inventory_service_pb2_grpc,
     read_tuples_request_pb2,
@@ -35,21 +34,17 @@ from kessel.inventory.v1beta2 import (
     tuple_service_pb2_grpc,
 )
 from kessel.inventory.v1beta2.check_request_pb2 import CheckRequest
-from management.cache import JWTCache
 from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
 from management.inventory_replicator.types import RelationTuple
 from management.permission.scope_service import ImplicitResourceService, Scope
 from management.role.platform import admin_platform_parent_scopes_for_seeded_system_role, platform_v2_role_uuid_for
 from management.role.relations import role_child_relationship
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
-from management.utils import create_client_channel_inventory
+from management.utils import create_client_channel_inventory, get_inventory_auth_metadata
 from migration_tool.utils import create_relationship
 
 from api.models import Tenant
 
-jwt_cache = JWTCache()
-jwt_provider = JWTProvider()
-jwt_manager = JWTManager(jwt_provider, jwt_cache)
 logger = logging.getLogger(__name__)
 
 
@@ -92,17 +87,19 @@ class InventoryApiBaseChecker:
         if isinstance(checks, CheckRequest):
             checks = [checks]
 
+        metadata = get_inventory_auth_metadata()
         with create_client_channel_inventory(settings.INVENTORY_API_SERVER) as channel:
             stub = inventory_service_pb2_grpc.KesselInventoryServiceStub(channel)
 
-            responses = [stub.Check(req) for req in checks]
+            responses = [stub.Check(req, metadata=metadata) for req in checks]
             return all(self._is_allowed(res) for res in responses)
 
     def _check_inventory_batch(self, checks: List[CheckRequest]) -> list[bool]:
         """Check multiple relations via a single gRPC channel, returning per-request results."""
+        metadata = get_inventory_auth_metadata()
         with create_client_channel_inventory(settings.INVENTORY_API_SERVER) as channel:
             stub = inventory_service_pb2_grpc.KesselInventoryServiceStub(channel)
-            return [self._is_allowed(stub.Check(req)) for req in checks]
+            return [self._is_allowed(stub.Check(req, metadata=metadata)) for req in checks]
 
     def _is_allowed(self, response):
         response_dict = json_format.MessageToDict(response)
@@ -473,12 +470,8 @@ class CustomRolePermissionChecker(InventoryApiBaseChecker):
         All custom role permission tuples use wildcard subjects (rbac/principal:*) by SpiceDB
         schema design. The Check API rejects wildcards, so we use ReadTuples which queries
         stored relationships directly.
-
-        Uses JWT metadata for auth because the Relations API channel does not bundle
-        call credentials (unlike the Inventory API channel used by check_inventory_core).
         """
-        token = jwt_manager.get_jwt_from_redis()
-        metadata = [("authorization", f"Bearer {token}")] if token else []
+        metadata = get_inventory_auth_metadata()
         all_present = True
 
         with create_client_channel_inventory(settings.INVENTORY_API_SERVER) as channel:

@@ -40,7 +40,6 @@ from internal.custom_v2_role_tenant_migration import (
     replicate_custom_v2_role_owner_relationships,
 )
 from internal.errors import SentryDiagnosticError, UserNotFoundError
-from internal.jwt_utils import JWTManager, JWTProvider
 from internal.utils import (
     UngroupedWorkspaceError,
     delete_bindings,
@@ -65,7 +64,7 @@ from kessel.inventory.v1beta2 import (
 )
 from management.atomic_transactions import atomic_with_retry
 from management.audit_log.model import AuditLog
-from management.cache import JWTCache, TenantCache
+from management.cache import TenantCache
 from management.group.inventory_api_dual_write_group_handler import (
     InventoryApiDualWriteGroupHandler,
 )
@@ -134,6 +133,7 @@ from management.tenant_mapping.v2_activation import InvalidV2OptOutError, is_v2_
 from management.tenant_service.v2 import V2TenantBootstrapService
 from management.utils import (
     create_client_channel_inventory,
+    get_inventory_auth_metadata,
     get_principal,
     groups_for_principal,
 )
@@ -162,9 +162,6 @@ from api.utils import RESOURCE_MODEL_MAPPING, get_resources, populate_tenant_org
 logger = logging.getLogger(__name__)
 TENANTS = TenantCache()
 PROXY = PrincipalProxy()
-jwt_cache = JWTCache()
-jwt_provider = JWTProvider()
-jwt_manager = JWTManager(jwt_provider, jwt_cache)
 BootstrappedTenantChecker = BootstrappedTenantInventoryChecker()
 GroupPrincipalChecker = GroupPrincipalInventoryChecker()
 WorkspaceRelationChecker = WorkspaceRelationInventoryChecker()
@@ -1920,7 +1917,6 @@ def lookup_resource(request):
     subject_resource_id = req_data["subject"]["resource"]["resource_id"]
     subject_resource_type = req_data["subject"]["resource"]["resource_type"]
     subject_resource_reporter_type = req_data["subject"]["resource"]["reporter"]["type"]
-    token = jwt_manager.get_jwt_from_redis()
 
     try:
         with create_client_channel_inventory(settings.INVENTORY_API_SERVER) as channel:
@@ -1941,8 +1937,7 @@ def lookup_resource(request):
                 ),
             )
 
-            # Pass JWT token in metadata
-            metadata = [("authorization", f"Bearer {token}")]
+            metadata = get_inventory_auth_metadata()
             responses = stub.StreamedListObjects(request_data, metadata=metadata)
             response_data = [json_format.MessageToDict(r) for r in responses]
 
@@ -2033,7 +2028,6 @@ def lookup_subjects(request):
     subject_type = req_data["subject_type"]["resource_type"]
     subject_reporter_type = req_data["subject_type"]["reporter_type"]
     subject_relation = req_data.get("subject_relation") or ""
-    token = jwt_manager.get_jwt_from_redis()
 
     try:
         with create_client_channel_inventory(settings.INVENTORY_API_SERVER) as channel:
@@ -2053,8 +2047,7 @@ def lookup_subjects(request):
                 subject_relation=subject_relation,
             )
 
-            # Pass JWT token in metadata
-            metadata = [("authorization", f"Bearer {token}")]
+            metadata = get_inventory_auth_metadata()
             responses = stub.StreamedListSubjects(request_data, metadata=metadata)
             response_data = [json_format.MessageToDict(r) for r in responses]
 

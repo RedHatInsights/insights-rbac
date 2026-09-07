@@ -22,7 +22,6 @@ from typing import Optional
 
 from django.conf import settings
 from google.protobuf import json_format
-from internal.jwt_utils import JWTManager, JWTProvider
 from kessel.inventory.v1beta2 import (
     inventory_service_pb2_grpc,
     reporter_reference_pb2,
@@ -30,15 +29,9 @@ from kessel.inventory.v1beta2 import (
     resource_reference_pb2,
     streamed_list_subjects_request_pb2,
 )
-from management.cache import JWTCache
-from management.utils import create_client_channel_inventory
+from management.utils import create_client_channel_inventory, get_inventory_auth_metadata
 
 logger = logging.getLogger(__name__)
-
-# Module-level JWT manager singleton
-_jwt_cache = JWTCache()
-_jwt_provider = JWTProvider()
-_jwt_manager = JWTManager(_jwt_provider, _jwt_cache)
 
 
 def parse_resource_type(resource_type: str) -> tuple[str, str]:
@@ -98,8 +91,7 @@ def lookup_binding_subjects(
             subject_name,
         )
 
-        token = _jwt_manager.get_jwt_from_redis()
-        metadata = [("authorization", f"Bearer {token}")] if token else []
+        metadata = get_inventory_auth_metadata()
         subject_ids: set[str] = set()
 
         with create_client_channel_inventory(settings.INVENTORY_API_SERVER) as channel:
