@@ -23,6 +23,7 @@ from management.models import Access, Group, Permission, Principal, Policy, Role
 from management.principal.view import VALID_PRINCIPAL_TYPE_VALUE
 from management.utils import (
     access_for_principal,
+    get_inventory_auth_metadata,
     get_principal_for_auth,
     get_principal_from_request,
     groups_for_principal,
@@ -800,6 +801,38 @@ class ValidatePskTests(IdentityRequest):
         """Test that empty string PSK does not match real secrets."""
         self.assertFalse(validate_psk("", "test-client"))
         self.assertFalse(validate_psk("", "unknown-client"))
+
+
+class GetInventoryAuthMetadataTests(IdentityRequest):
+    """Test get_inventory_auth_metadata builds/fails auth metadata correctly."""
+
+    @override_settings(INVENTORY_API_CLIENT_ID="", INVENTORY_API_CLIENT_SECRET="")
+    def test_returns_empty_metadata_when_credentials_not_configured(self):
+        """Test that no credentials configured means unauthenticated (expected for local/ephemeral)."""
+        self.assertEqual(get_inventory_auth_metadata(), [])
+
+    @override_settings(INVENTORY_API_CLIENT_ID="client-id", INVENTORY_API_CLIENT_SECRET="client-secret")
+    @mock.patch("management.utils.inventory_auth_credentials")
+    def test_returns_bearer_metadata_when_token_fetched(self, mock_credentials):
+        """Test that a fetched token is wrapped as gRPC bearer metadata."""
+        mock_credentials.get_token.return_value = Mock(access_token="the-token")
+        self.assertEqual(get_inventory_auth_metadata(), [("authorization", "Bearer the-token")])
+
+    @override_settings(INVENTORY_API_CLIENT_ID="client-id", INVENTORY_API_CLIENT_SECRET="client-secret")
+    @mock.patch("management.utils.inventory_auth_credentials")
+    def test_raises_when_token_fetch_fails(self, mock_credentials):
+        """Test that a failed token fetch raises instead of silently returning unauthenticated metadata."""
+        mock_credentials.get_token.side_effect = Exception("SSO unreachable")
+        with self.assertRaises(Exception):
+            get_inventory_auth_metadata()
+
+    @override_settings(INVENTORY_API_CLIENT_ID="client-id", INVENTORY_API_CLIENT_SECRET="client-secret")
+    @mock.patch("management.utils.inventory_auth_credentials")
+    def test_raises_when_access_token_missing(self, mock_credentials):
+        """Test that a token response without an access_token raises instead of sending 'Bearer None'."""
+        mock_credentials.get_token.return_value = Mock(access_token=None)
+        with self.assertRaises(Exception):
+            get_inventory_auth_metadata()
 
     @override_settings(SERVICE_PSKS=PSK_CONFIG)
     def test_non_ascii_psk(self):

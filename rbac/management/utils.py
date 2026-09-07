@@ -67,16 +67,18 @@ inventory_auth_credentials = OAuth2ClientCredentials(
 def get_inventory_auth_metadata() -> list:
     """Build gRPC auth metadata for Inventory API calls using OAuth2 client credentials.
 
-    Returns empty metadata (unauthenticated) when Inventory API credentials aren't
-    configured, e.g. local/ephemeral environments where Inventory API doesn't enforce auth.
+    Returns empty metadata (unauthenticated) only when Inventory API credentials aren't
+    configured at all, e.g. local/ephemeral environments where Inventory API doesn't
+    enforce auth. If credentials are configured but the token fetch fails or returns no
+    access_token, this raises rather than silently returning unauthenticated metadata --
+    swallowing that failure is what caused every Inventory API call to go out
+    unauthenticated in a prior incident.
     """
     if not settings.INVENTORY_API_CLIENT_ID or not settings.INVENTORY_API_CLIENT_SECRET:
         return []
-    try:
-        token_response = inventory_auth_credentials.get_token()
-    except Exception:
-        logger.exception("Failed to obtain OAuth2 token for Inventory API")
-        return []
+    token_response = inventory_auth_credentials.get_token()
+    if not token_response.access_token:
+        raise RuntimeError("Inventory API OAuth token response did not include an access_token")
     return [("authorization", f"Bearer {token_response.access_token}")]
 
 

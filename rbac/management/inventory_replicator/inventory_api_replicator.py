@@ -178,8 +178,6 @@ class InventoryApiReplicator(InventoryReplicator):
                 {"consistency_token": type("obj", (object,), {"token": None})()},
             )()
 
-        metadata = get_inventory_auth_metadata()
-
         with create_client_channel_inventory(settings.INVENTORY_API_SERVER) as channel:
             stub = tuple_service_pb2_grpc.KesselTupleServiceStub(channel)
 
@@ -210,9 +208,10 @@ class InventoryApiReplicator(InventoryReplicator):
 
                 request = delete_tuples_request_pb2.DeleteTuplesRequest(**request_kwargs)
 
+                # Fetch metadata per-call: a long-running batch could otherwise outlast the token.
                 response = execute_grpc_call(
                     operation_name="delete relationship from the Inventory API server",
-                    grpc_callable=lambda req=request: stub.DeleteTuples(req, metadata=metadata),
+                    grpc_callable=lambda req=request: stub.DeleteTuples(req, metadata=get_inventory_auth_metadata()),
                     fencing_check=fencing_check,
                     log_context={"relationship": relationship},
                 )

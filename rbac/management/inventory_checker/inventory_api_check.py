@@ -87,19 +87,19 @@ class InventoryApiBaseChecker:
         if isinstance(checks, CheckRequest):
             checks = [checks]
 
-        metadata = get_inventory_auth_metadata()
         with create_client_channel_inventory(settings.INVENTORY_API_SERVER) as channel:
             stub = inventory_service_pb2_grpc.KesselInventoryServiceStub(channel)
 
-            responses = [stub.Check(req, metadata=metadata) for req in checks]
+            # Fetch metadata per-call, not once for the whole batch: a long-running batch
+            # could otherwise outlast the token and start failing partway through.
+            responses = [stub.Check(req, metadata=get_inventory_auth_metadata()) for req in checks]
             return all(self._is_allowed(res) for res in responses)
 
     def _check_inventory_batch(self, checks: List[CheckRequest]) -> list[bool]:
         """Check multiple relations via a single gRPC channel, returning per-request results."""
-        metadata = get_inventory_auth_metadata()
         with create_client_channel_inventory(settings.INVENTORY_API_SERVER) as channel:
             stub = inventory_service_pb2_grpc.KesselInventoryServiceStub(channel)
-            return [self._is_allowed(stub.Check(req, metadata=metadata)) for req in checks]
+            return [self._is_allowed(stub.Check(req, metadata=get_inventory_auth_metadata())) for req in checks]
 
     def _is_allowed(self, response):
         response_dict = json_format.MessageToDict(response)
@@ -471,7 +471,6 @@ class CustomRolePermissionChecker(InventoryApiBaseChecker):
         schema design. The Check API rejects wildcards, so we use ReadTuples which queries
         stored relationships directly.
         """
-        metadata = get_inventory_auth_metadata()
         all_present = True
 
         with create_client_channel_inventory(settings.INVENTORY_API_SERVER) as channel:
@@ -491,7 +490,8 @@ class CustomRolePermissionChecker(InventoryApiBaseChecker):
                         ),
                     )
                 )
-                responses = list(stub.ReadTuples(request, metadata=metadata))
+                # Fetch metadata per-call: a long-running batch could otherwise outlast the token.
+                responses = list(stub.ReadTuples(request, metadata=get_inventory_auth_metadata()))
                 if not responses:
                     logger.warning(
                         f"CustomRole: {role_uuid} missing relation "
