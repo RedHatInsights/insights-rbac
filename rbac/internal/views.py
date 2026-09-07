@@ -2141,7 +2141,8 @@ def check_inventory(request):
             relation=resource_relation,
             object=resource_ref,
         )
-        response = stub.Check(request)
+        metadata = get_inventory_auth_metadata()
+        response = stub.Check(request, metadata=metadata)
 
         if response:
             response_to_dict = json_format.MessageToDict(response)
