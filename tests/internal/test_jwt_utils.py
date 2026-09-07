@@ -19,7 +19,7 @@
 import base64
 import json
 import time
-from unittest.mock import MagicMock, Mock, patch
+from unittest.mock import MagicMock, Mock, create_autospec, patch
 
 from django.test import TestCase
 from internal.jwt_utils import JWTManager, JWTProvider
@@ -154,7 +154,7 @@ class JWTManagerTest(TestCase):
 
         self.assertEqual(result, new_token)
         self.jwt_cache.get_jwt_response.assert_called_once()
-        self.jwt_provider.get_jwt_token.assert_called_once()
+        self.jwt_provider.get_jwt_token.assert_called_once_with()
         self.jwt_cache.set_jwt_response.assert_called_once_with(new_token)
 
     @patch("internal.jwt_utils.settings.REDHAT_SSO", "sso.example.com")
@@ -169,8 +169,28 @@ class JWTManagerTest(TestCase):
 
         self.assertEqual(result, new_token)
         self.jwt_cache.get_jwt_response.assert_called_once()
-        self.jwt_provider.get_jwt_token.assert_called_once()
+        self.jwt_provider.get_jwt_token.assert_called_once_with()
         self.jwt_cache.set_jwt_response.assert_called_once_with(new_token)
+
+    @patch("internal.jwt_utils.settings.REDHAT_SSO", "sso.example.com")
+    def test_get_jwt_from_redis_calls_provider_with_real_signature(self):
+        """Regression test: get_jwt_token must be called with the args JWTProvider actually accepts.
+
+        Uses an autospec (unlike the plain Mock(spec=...) in setUp) so that calling
+        get_jwt_token with arguments it doesn't accept raises a TypeError here, the
+        same way it would against the real JWTProvider. This guards against
+        get_jwt_from_redis silently swallowing a signature mismatch and returning None.
+        """
+        autospec_provider = create_autospec(JWTProvider, instance=True)
+        autospec_provider.get_jwt_token.return_value = "new-token"
+        jwt_cache = Mock()
+        jwt_cache.get_jwt_response.return_value = None
+        manager = JWTManager(autospec_provider, jwt_cache)
+
+        result = manager.get_jwt_from_redis()
+
+        self.assertEqual(result, "new-token")
+        autospec_provider.get_jwt_token.assert_called_once_with()
 
     @patch("internal.jwt_utils.settings.REDHAT_SSO", "sso.example.com")
     def test_get_jwt_from_redis_handles_provider_failure(self):

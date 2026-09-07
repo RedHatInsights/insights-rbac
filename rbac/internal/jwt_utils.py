@@ -145,9 +145,7 @@ class JWTManager:
             else:
                 logger.info("No token in cache, requesting new token.")
 
-            token = self.jwt_provider.get_jwt_token(
-                settings.INVENTORY_API_CLIENT_ID, settings.INVENTORY_API_CLIENT_SECRET
-            )
+            token = self.jwt_provider.get_jwt_token()
             # Token obtained store it in redis
             if token:
                 self.jwt_cache.set_jwt_response(token)
