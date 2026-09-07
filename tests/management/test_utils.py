@@ -802,6 +802,36 @@ class ValidatePskTests(IdentityRequest):
         self.assertFalse(validate_psk("", "test-client"))
         self.assertFalse(validate_psk("", "unknown-client"))
 
+    @override_settings(SERVICE_PSKS=PSK_CONFIG)
+    def test_non_ascii_psk(self):
+        """Test that non-ASCII PSK is rejected, not a TypeError."""
+        self.assertFalse(validate_psk("\u00e9\u00e8\u00ea", "test-client"))
+        self.assertFalse(validate_psk("\U0001f600", "test-client"))
+
+    @override_settings(SERVICE_PSKS=PSK_CONFIG)
+    def test_valid_psk_wrong_client_id(self):
+        """PSK valid for one client must not authenticate a different client."""
+        self.assertFalse(validate_psk("primary-secret-value", "no-alt-client"))
+
+    @override_settings(SERVICE_PSKS={"test-client": {"secret": "", "alt-secret": "real-key"}})
+    def test_empty_string_secret_in_config(self):
+        """Empty string secret in config should not match empty PSK."""
+        self.assertTrue(validate_psk("real-key", "test-client"))
+        self.assertFalse(validate_psk("", "test-client"))
+
+    @override_settings(SERVICE_PSKS=PSK_CONFIG)
+    def test_psk_type_mismatch_triggers_type_error(self):
+        """Verify that TypeError (e.g. bytes vs str) is caught and returns False."""
+        with (
+            mock.patch(
+                "management.utils.hmac.compare_digest",
+                side_effect=TypeError("type mismatch"),
+            ),
+            mock.patch("management.utils.logger.warning") as warning,
+        ):
+            self.assertFalse(validate_psk("some-psk", "test-client"))
+        warning.assert_called_once()
+
 
 class GetInventoryAuthMetadataTests(IdentityRequest):
     """Test get_inventory_auth_metadata builds/fails auth metadata correctly."""
@@ -833,33 +863,3 @@ class GetInventoryAuthMetadataTests(IdentityRequest):
         mock_credentials.get_token.return_value = Mock(access_token=None)
         with self.assertRaises(Exception):
             get_inventory_auth_metadata()
-
-    @override_settings(SERVICE_PSKS=PSK_CONFIG)
-    def test_non_ascii_psk(self):
-        """Test that non-ASCII PSK is rejected, not a TypeError."""
-        self.assertFalse(validate_psk("\u00e9\u00e8\u00ea", "test-client"))
-        self.assertFalse(validate_psk("\U0001f600", "test-client"))
-
-    @override_settings(SERVICE_PSKS=PSK_CONFIG)
-    def test_valid_psk_wrong_client_id(self):
-        """PSK valid for one client must not authenticate a different client."""
-        self.assertFalse(validate_psk("primary-secret-value", "no-alt-client"))
-
-    @override_settings(SERVICE_PSKS={"test-client": {"secret": "", "alt-secret": "real-key"}})
-    def test_empty_string_secret_in_config(self):
-        """Empty string secret in config should not match empty PSK."""
-        self.assertTrue(validate_psk("real-key", "test-client"))
-        self.assertFalse(validate_psk("", "test-client"))
-
-    @override_settings(SERVICE_PSKS=PSK_CONFIG)
-    def test_psk_type_mismatch_triggers_type_error(self):
-        """Verify that TypeError (e.g. bytes vs str) is caught and returns False."""
-        with (
-            mock.patch(
-                "management.utils.hmac.compare_digest",
-                side_effect=TypeError("type mismatch"),
-            ),
-            mock.patch("management.utils.logger.warning") as warning,
-        ):
-            self.assertFalse(validate_psk("some-psk", "test-client"))
-        warning.assert_called_once()
