@@ -87,8 +87,8 @@ class Group(TenantAwareModel):
         return self.roles().prefetch_related("access")
 
     def role_count(self):
-        """Role count for a group."""
-        return self.roles().count()
+        """Role count for a group, derived from V2 RoleBindingGroup entries."""
+        return self.role_binding_entries.values("binding__role").distinct().count()
 
     def platform_default_set():
         """Queryset for platform default group."""
