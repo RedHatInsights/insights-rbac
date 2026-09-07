@@ -16,6 +16,7 @@
 #
 """Test the group model."""
 
+from api.models import Tenant
 from management.models import CustomRoleV2, Group, Policy, Role, RoleBinding, RoleBindingGroup
 from tests.identity_request import IdentityRequest
 
@@ -83,3 +84,17 @@ class GroupModelTests(IdentityRequest):
         """Test role count is zero when group has no role binding entries."""
         empty_group = Group.objects.create(name="emptyGroup", tenant=self.tenant)
         self.assertEqual(empty_group.role_count(), 0)
+
+    def test_role_count_excludes_cross_tenant_bindings(self):
+        """Test role count excludes bindings from a different tenant."""
+        other_tenant = Tenant.objects.create(
+            tenant_name="acctOther", account_id="other-acct", org_id="other-org", ready=True
+        )
+        other_role = CustomRoleV2.objects.create(name="otherRole", tenant=other_tenant)
+        cross_binding = RoleBinding.objects.create(
+            tenant=other_tenant, role=other_role, resource_type="workspace", resource_id="ws-cross"
+        )
+        # Link cross-tenant binding to our group
+        RoleBindingGroup.objects.create(group=self.group, binding=cross_binding)
+        # Should only count same-tenant binding (1), not the cross-tenant one
+        self.assertEqual(self.group.role_count(), 1)
