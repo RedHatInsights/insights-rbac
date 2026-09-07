@@ -31,7 +31,6 @@ from django.conf import settings
 from django.core.exceptions import PermissionDenied
 from django.utils.translation import gettext as _
 from kessel.auth import OAuth2ClientCredentials
-from kessel.grpc import oauth2_call_credentials
 from management.authorization.invalid_token import InvalidTokenError
 from management.authorization.missing_authorization import MissingAuthorizationError
 from management.authorization.token_validator import TokenValidator
@@ -64,7 +63,23 @@ inventory_auth_credentials = OAuth2ClientCredentials(
     token_endpoint=settings.INVENTORY_API_TOKEN_URL,  # Direct token endpoint
 )
 
-call_credentials = oauth2_call_credentials(inventory_auth_credentials)
+
+def get_inventory_auth_metadata() -> list:
+    """Build gRPC auth metadata for Inventory API calls using OAuth2 client credentials.
+
+    Returns empty metadata (unauthenticated) only when Inventory API credentials aren't
+    configured at all, e.g. local/ephemeral environments where Inventory API doesn't
+    enforce auth. If credentials are configured but the token fetch fails or returns no
+    access_token, this raises rather than silently returning unauthenticated metadata --
+    swallowing that failure is what caused every Inventory API call to go out
+    unauthenticated in a prior incident.
+    """
+    if not settings.INVENTORY_API_CLIENT_ID or not settings.INVENTORY_API_CLIENT_SECRET:
+        return []
+    token_response = inventory_auth_credentials.get_token()
+    if not token_response.access_token:
+        raise RuntimeError("Inventory API OAuth token response did not include an access_token")
+    return [("authorization", f"Bearer {token_response.access_token}")]
 
 
 @contextmanager
@@ -87,15 +102,18 @@ def create_client_channel(addr):
 
 @contextmanager
 def create_client_channel_inventory(addr):
-    """Create secure channel for grpc requests for inventory api."""
+    """Create secure channel for grpc requests for inventory api.
+
+    Uses insecure channel in development/Clowder environments, TLS otherwise.
+    Auth is attached per-call via get_inventory_auth_metadata() rather than at the
+    channel level, since insecure channels can't carry gRPC call credentials.
+    """
     if settings.DEVELOPMENT or os.getenv("CLOWDER_ENABLED", "false").lower() == "true":
         channel = grpc.insecure_channel(addr)
         yield channel
     else:
-        # Combine with TLS for secure channel
         ssl_credentials = grpc.ssl_channel_credentials()
-        channel_credentials = grpc.composite_channel_credentials(ssl_credentials, call_credentials)
-        secure_channel = grpc.secure_channel(addr, channel_credentials)
+        secure_channel = grpc.secure_channel(addr, ssl_credentials)
         yield secure_channel
 
 

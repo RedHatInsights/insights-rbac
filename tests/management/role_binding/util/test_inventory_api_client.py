@@ -88,11 +88,11 @@ class LookupBindingSubjectsTests(TestCase):
         self.assertIsNone(result)
 
     @override_settings(INVENTORY_API_SERVER="localhost:9000")
-    @patch("management.role_binding.util.inventory_api_client._jwt_manager")
+    @patch("management.role_binding.util.inventory_api_client.get_inventory_auth_metadata")
     @patch("management.role_binding.util.inventory_api_client.create_client_channel_inventory")
-    def test_returns_subject_ids_from_response(self, mock_create_channel, mock_jwt_manager):
+    def test_returns_subject_ids_from_response(self, mock_create_channel, mock_get_auth_metadata):
         """Test that subject IDs are extracted from successful response."""
-        mock_jwt_manager.get_jwt_from_redis.return_value = "test-token"
+        mock_get_auth_metadata.return_value = [("authorization", "Bearer test-token")]
 
         mock_stub = MagicMock()
         mock_response_1 = MagicMock()
@@ -118,11 +118,11 @@ class LookupBindingSubjectsTests(TestCase):
         self.assertEqual(set(result), {VALID_UUID_1, VALID_UUID_2})
 
     @override_settings(INVENTORY_API_SERVER="localhost:9000")
-    @patch("management.role_binding.util.inventory_api_client._jwt_manager")
+    @patch("management.role_binding.util.inventory_api_client.get_inventory_auth_metadata")
     @patch("management.role_binding.util.inventory_api_client.create_client_channel_inventory")
-    def test_returns_empty_list_when_no_subjects_found(self, mock_create_channel, mock_jwt_manager):
+    def test_returns_empty_list_when_no_subjects_found(self, mock_create_channel, mock_get_auth_metadata):
         """Test that empty list is returned when no subjects are found."""
-        mock_jwt_manager.get_jwt_from_redis.return_value = "test-token"
+        mock_get_auth_metadata.return_value = [("authorization", "Bearer test-token")]
 
         mock_stub = MagicMock()
         mock_stub.StreamedListSubjects.return_value = []
@@ -138,11 +138,11 @@ class LookupBindingSubjectsTests(TestCase):
         self.assertEqual(result, [])
 
     @override_settings(INVENTORY_API_SERVER="localhost:9000")
-    @patch("management.role_binding.util.inventory_api_client._jwt_manager")
+    @patch("management.role_binding.util.inventory_api_client.get_inventory_auth_metadata")
     @patch("management.role_binding.util.inventory_api_client.create_client_channel_inventory")
-    def test_returns_none_on_grpc_error(self, mock_create_channel, mock_jwt_manager):
+    def test_returns_none_on_grpc_error(self, mock_create_channel, mock_get_auth_metadata):
         """Test that None is returned when gRPC call fails."""
-        mock_jwt_manager.get_jwt_from_redis.return_value = "test-token"
+        mock_get_auth_metadata.return_value = [("authorization", "Bearer test-token")]
 
         mock_create_channel.return_value.__enter__.side_effect = RpcError()
 
@@ -151,11 +151,11 @@ class LookupBindingSubjectsTests(TestCase):
         self.assertIsNone(result)
 
     @override_settings(INVENTORY_API_SERVER="localhost:9000")
-    @patch("management.role_binding.util.inventory_api_client._jwt_manager")
+    @patch("management.role_binding.util.inventory_api_client.get_inventory_auth_metadata")
     @patch("management.role_binding.util.inventory_api_client.create_client_channel_inventory")
-    def test_returns_none_on_generic_exception(self, mock_create_channel, mock_jwt_manager):
+    def test_returns_none_on_generic_exception(self, mock_create_channel, mock_get_auth_metadata):
         """Test that None is returned when an unexpected exception occurs."""
-        mock_jwt_manager.get_jwt_from_redis.return_value = "test-token"
+        mock_get_auth_metadata.return_value = [("authorization", "Bearer test-token")]
 
         mock_create_channel.return_value.__enter__.side_effect = Exception("Unexpected error")
 
@@ -164,11 +164,11 @@ class LookupBindingSubjectsTests(TestCase):
         self.assertIsNone(result)
 
     @override_settings(INVENTORY_API_SERVER="localhost:9000")
-    @patch("management.role_binding.util.inventory_api_client._jwt_manager")
+    @patch("management.role_binding.util.inventory_api_client.get_inventory_auth_metadata")
     @patch("management.role_binding.util.inventory_api_client.create_client_channel_inventory")
-    def test_deduplicates_subject_ids(self, mock_create_channel, mock_jwt_manager):
+    def test_deduplicates_subject_ids(self, mock_create_channel, mock_get_auth_metadata):
         """Test that duplicate subject IDs are deduplicated."""
-        mock_jwt_manager.get_jwt_from_redis.return_value = "test-token"
+        mock_get_auth_metadata.return_value = [("authorization", "Bearer test-token")]
 
         mock_stub = MagicMock()
         mock_response_1 = MagicMock()
@@ -196,11 +196,11 @@ class LookupBindingSubjectsTests(TestCase):
         self.assertEqual(set(result), {VALID_UUID_1, VALID_UUID_2})
 
     @override_settings(INVENTORY_API_SERVER="localhost:9000")
-    @patch("management.role_binding.util.inventory_api_client._jwt_manager")
+    @patch("management.role_binding.util.inventory_api_client.get_inventory_auth_metadata")
     @patch("management.role_binding.util.inventory_api_client.create_client_channel_inventory")
-    def test_skips_responses_without_subject_id(self, mock_create_channel, mock_jwt_manager):
+    def test_skips_responses_without_subject_id(self, mock_create_channel, mock_get_auth_metadata):
         """Test that responses without subject ID are skipped."""
-        mock_jwt_manager.get_jwt_from_redis.return_value = "test-token"
+        mock_get_auth_metadata.return_value = [("authorization", "Bearer test-token")]
 
         mock_stub = MagicMock()
         mock_response_1 = MagicMock()
@@ -227,11 +227,11 @@ class LookupBindingSubjectsTests(TestCase):
         self.assertEqual(result, [VALID_UUID_1])
 
     @override_settings(INVENTORY_API_SERVER="localhost:9000")
-    @patch("management.role_binding.util.inventory_api_client._jwt_manager")
+    @patch("management.role_binding.util.inventory_api_client.get_inventory_auth_metadata")
     @patch("management.role_binding.util.inventory_api_client.create_client_channel_inventory")
-    def test_uses_default_parameters(self, mock_create_channel, mock_jwt_manager):
+    def test_uses_default_parameters(self, mock_create_channel, mock_get_auth_metadata):
         """Test that default parameters are correctly passed to the API."""
-        mock_jwt_manager.get_jwt_from_redis.return_value = "test-token"
+        mock_get_auth_metadata.return_value = [("authorization", "Bearer test-token")]
 
         mock_stub = MagicMock()
         mock_stub.StreamedListSubjects.return_value = []
@@ -266,11 +266,11 @@ class LookupBindingSubjectsTests(TestCase):
                         )
 
     @override_settings(INVENTORY_API_SERVER="localhost:9000")
-    @patch("management.role_binding.util.inventory_api_client._jwt_manager")
+    @patch("management.role_binding.util.inventory_api_client.get_inventory_auth_metadata")
     @patch("management.role_binding.util.inventory_api_client.create_client_channel_inventory")
-    def test_uses_custom_parameters(self, mock_create_channel, mock_jwt_manager):
+    def test_uses_custom_parameters(self, mock_create_channel, mock_get_auth_metadata):
         """Test that custom parameters are correctly passed to the API."""
-        mock_jwt_manager.get_jwt_from_redis.return_value = "test-token"
+        mock_get_auth_metadata.return_value = [("authorization", "Bearer test-token")]
 
         mock_stub = MagicMock()
         mock_stub.StreamedListSubjects.return_value = []
@@ -303,11 +303,11 @@ class LookupBindingSubjectsTests(TestCase):
                     )
 
     @override_settings(INVENTORY_API_SERVER="localhost:9000")
-    @patch("management.role_binding.util.inventory_api_client._jwt_manager")
+    @patch("management.role_binding.util.inventory_api_client.get_inventory_auth_metadata")
     @patch("management.role_binding.util.inventory_api_client.create_client_channel_inventory")
-    def test_includes_auth_token_when_available(self, mock_create_channel, mock_jwt_manager):
+    def test_includes_auth_token_when_available(self, mock_create_channel, mock_get_auth_metadata):
         """Test that authorization header is included when token is available."""
-        mock_jwt_manager.get_jwt_from_redis.return_value = "test-token"
+        mock_get_auth_metadata.return_value = [("authorization", "Bearer test-token")]
 
         mock_stub = MagicMock()
         mock_stub.StreamedListSubjects.return_value = []
@@ -326,11 +326,11 @@ class LookupBindingSubjectsTests(TestCase):
             self.assertIn(("authorization", "Bearer test-token"), metadata)
 
     @override_settings(INVENTORY_API_SERVER="localhost:9000")
-    @patch("management.role_binding.util.inventory_api_client._jwt_manager")
+    @patch("management.role_binding.util.inventory_api_client.get_inventory_auth_metadata")
     @patch("management.role_binding.util.inventory_api_client.create_client_channel_inventory")
-    def test_no_auth_metadata_when_token_not_available(self, mock_create_channel, mock_jwt_manager):
+    def test_no_auth_metadata_when_token_not_available(self, mock_create_channel, mock_get_auth_metadata):
         """Test that no auth metadata is sent when token is not available."""
-        mock_jwt_manager.get_jwt_from_redis.return_value = None
+        mock_get_auth_metadata.return_value = []
 
         mock_stub = MagicMock()
         mock_stub.StreamedListSubjects.return_value = []
@@ -349,11 +349,11 @@ class LookupBindingSubjectsTests(TestCase):
             self.assertEqual(metadata, [])
 
     @override_settings(INVENTORY_API_SERVER="localhost:9000")
-    @patch("management.role_binding.util.inventory_api_client._jwt_manager")
+    @patch("management.role_binding.util.inventory_api_client.get_inventory_auth_metadata")
     @patch("management.role_binding.util.inventory_api_client.create_client_channel_inventory")
-    def test_parses_namespace_from_resource_type(self, mock_create_channel, mock_jwt_manager):
+    def test_parses_namespace_from_resource_type(self, mock_create_channel, mock_get_auth_metadata):
         """Test that namespace is correctly parsed from resource_type with slash."""
-        mock_jwt_manager.get_jwt_from_redis.return_value = "test-token"
+        mock_get_auth_metadata.return_value = [("authorization", "Bearer test-token")]
 
         mock_stub = MagicMock()
         mock_stub.StreamedListSubjects.return_value = []
@@ -386,11 +386,11 @@ class LookupBindingSubjectsTests(TestCase):
                         mock_reporter_reference_pb2.ReporterReference.assert_any_call(type="custom")
 
     @override_settings(INVENTORY_API_SERVER="localhost:9000")
-    @patch("management.role_binding.util.inventory_api_client._jwt_manager")
+    @patch("management.role_binding.util.inventory_api_client.get_inventory_auth_metadata")
     @patch("management.role_binding.util.inventory_api_client.create_client_channel_inventory")
-    def test_skips_non_uuid_subject_ids(self, mock_create_channel, mock_jwt_manager):
+    def test_skips_non_uuid_subject_ids(self, mock_create_channel, mock_get_auth_metadata):
         """Test that non-UUID subject IDs are skipped."""
-        mock_jwt_manager.get_jwt_from_redis.return_value = "test-token"
+        mock_get_auth_metadata.return_value = [("authorization", "Bearer test-token")]
 
         mock_stub = MagicMock()
         mock_response_1 = MagicMock()
@@ -419,11 +419,11 @@ class LookupBindingSubjectsTests(TestCase):
         self.assertNotIn("not-a-valid-uuid", result)
 
     @override_settings(INVENTORY_API_SERVER="localhost:9000")
-    @patch("management.role_binding.util.inventory_api_client._jwt_manager")
+    @patch("management.role_binding.util.inventory_api_client.get_inventory_auth_metadata")
     @patch("management.role_binding.util.inventory_api_client.create_client_channel_inventory")
-    def test_returns_empty_list_when_all_ids_are_non_uuid(self, mock_create_channel, mock_jwt_manager):
+    def test_returns_empty_list_when_all_ids_are_non_uuid(self, mock_create_channel, mock_get_auth_metadata):
         """Test that empty list is returned when all subject IDs are non-UUIDs."""
-        mock_jwt_manager.get_jwt_from_redis.return_value = "test-token"
+        mock_get_auth_metadata.return_value = [("authorization", "Bearer test-token")]
 
         mock_stub = MagicMock()
         mock_response_1 = MagicMock()
@@ -449,11 +449,11 @@ class LookupBindingSubjectsTests(TestCase):
 
     @override_settings(INVENTORY_API_SERVER="localhost:9000")
     @patch("management.role_binding.util.inventory_api_client.logger")
-    @patch("management.role_binding.util.inventory_api_client._jwt_manager")
+    @patch("management.role_binding.util.inventory_api_client.get_inventory_auth_metadata")
     @patch("management.role_binding.util.inventory_api_client.create_client_channel_inventory")
-    def test_logs_warning_for_non_uuid_subject_ids(self, mock_create_channel, mock_jwt_manager, mock_logger):
+    def test_logs_warning_for_non_uuid_subject_ids(self, mock_create_channel, mock_get_auth_metadata, mock_logger):
         """Test that a warning is logged when non-UUID subject IDs are encountered."""
-        mock_jwt_manager.get_jwt_from_redis.return_value = "test-token"
+        mock_get_auth_metadata.return_value = [("authorization", "Bearer test-token")]
 
         mock_stub = MagicMock()
         mock_response = MagicMock()

@@ -1826,7 +1826,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         # Track (workspace_id, relation) tuples for precise assertions on target check
         check_calls = []
 
-        def check_side_effect(request):
+        def check_side_effect(request, **kwargs):
             # Capture both workspace ID and relation being checked
             workspace_id = getattr(getattr(request, "object", None), "resource_id", None)
             check_calls.append((workspace_id, request.relation))
@@ -1902,7 +1902,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         # All checks are allowed EXCEPT 'create' on target workspace
         denied_checks = {(target_workspace_id, "create")}
 
-        def check_side_effect(request):
+        def check_side_effect(request, **kwargs):
             mock_response = MagicMock()
             workspace_id = getattr(getattr(request, "object", None), "resource_id", None)
             check_key = (workspace_id, request.relation)

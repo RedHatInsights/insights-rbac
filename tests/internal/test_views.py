@@ -4181,7 +4181,7 @@ def invalid_destructive_time():
 class InternalRelationsViewsetTests(BaseInternalViewsetTests):
     """Test the /_private/api/inventory/ lookup/read_tuples endpoints from internal viewset."""
 
-    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.get_inventory_auth_metadata", return_value=[("authorization", "Bearer mocked_valid_token")])
     @patch("internal.views.create_client_channel_inventory")
     def test_lookup_resources(self, mock_create_channel, mock_get_token):
         """Test a request to lookup_resource endpoint returns the correct response."""
@@ -4236,7 +4236,7 @@ class InternalRelationsViewsetTests(BaseInternalViewsetTests):
             self.assertEqual(resource_2["resourceId"], "67891")
             self.assertEqual(resource_2["resourceType"], "group")
 
-    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.get_inventory_auth_metadata", return_value=[("authorization", "Bearer mocked_valid_token")])
     @patch("internal.views.create_client_channel_inventory")
     def test_lookup_resources_empty(self, mock_create_channel, mock_get_token):
         """Test a request to lookup_resource endpoint returns the correct response when no resources are found."""
@@ -4267,7 +4267,7 @@ class InternalRelationsViewsetTests(BaseInternalViewsetTests):
             )
             self.assertEqual(response.status_code, 204)
 
-    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.get_inventory_auth_metadata", return_value=[("authorization", "Bearer mocked_valid_token")])
     @patch("internal.views.create_client_channel_inventory", side_effect=RpcError("Simulated GRPC error"))
     def test_lookup_resources_grpc_error(self, mock_channel, mock_token):
         """Test a request to lookup_resource endpoint returns the correct response in case of grpc error."""
@@ -4326,7 +4326,7 @@ class InternalRelationsViewsetTests(BaseInternalViewsetTests):
         self.assertEqual(response_body["detail"], "Error occurred in call to lookup resources endpoint")
         self.assertEqual(response_body["error"], "Simulated internal error")
 
-    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.get_inventory_auth_metadata", return_value=[("authorization", "Bearer mocked_valid_token")])
     @patch("internal.views.create_client_channel_inventory")
     def test_lookup_resources_invalid_body(self, mock_create_channel, mock_get_token):
         """Test a request to lookup_resource endpoint returns the correct response in case of input validation failure."""
@@ -4352,7 +4352,7 @@ class InternalRelationsViewsetTests(BaseInternalViewsetTests):
         self.assertEqual(response.status_code, 500)
         self.assertEqual(response_body["detail"], "Invalid request body provided in request to lookup_resources.")
 
-    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.get_inventory_auth_metadata", return_value=[("authorization", "Bearer mocked_valid_token")])
     def test_read_tuples(self, mock_get_token):
         """Test a request to read_tuples endpoint returns the correct response."""
 
@@ -4411,7 +4411,7 @@ class InternalRelationsViewsetTests(BaseInternalViewsetTests):
                 subject_namespace="rbac",
             )
 
-    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.get_inventory_auth_metadata", return_value=[("authorization", "Bearer mocked_valid_token")])
     def test_read_tuples_empty(self, mock_get_token):
         """Test a request to read_tuples endpoint returns the correct response when no tuples are found."""
 
@@ -4441,7 +4441,7 @@ class InternalRelationsViewsetTests(BaseInternalViewsetTests):
 
             self.assertEqual(response.status_code, 204)
 
-    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.get_inventory_auth_metadata", return_value=[("authorization", "Bearer mocked_valid_token")])
     def test_read_tuples_grpc_error(self, mock_token):
         """Test a request to read_tuples endpoint returns the correct response in case of grpc error."""
 
@@ -4537,7 +4537,7 @@ class InternalRelationsViewsetTests(BaseInternalViewsetTests):
         self.assertEqual(response.status_code, 500)
         self.assertEqual(response_body["detail"], "Invalid request body provided in request to read_tuples.")
 
-    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.get_inventory_auth_metadata", return_value=[("authorization", "Bearer mocked_valid_token")])
     @patch("internal.views.create_client_channel_inventory")
     def test_lookup_subjects(self, mock_create_channel, mock_get_token):
         """Test a request to lookup_subjects endpoint returns the correct response."""
@@ -4594,7 +4594,7 @@ class InternalRelationsViewsetTests(BaseInternalViewsetTests):
             self.assertEqual(subject_2["resourceId"], "user-67891")
             self.assertEqual(subject_2["resourceType"], "principal")
 
-    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.get_inventory_auth_metadata", return_value=[("authorization", "Bearer mocked_valid_token")])
     @patch("internal.views.create_client_channel_inventory")
     def test_lookup_subjects_with_subject_relation(self, mock_create_channel, mock_get_token):
         """Test a request to lookup_subjects endpoint with optional subject_relation parameter."""
@@ -4640,7 +4640,7 @@ class InternalRelationsViewsetTests(BaseInternalViewsetTests):
             self.assertEqual(subject["relation"], "member")
             self.assertEqual(subject["resource"]["resourceId"], "group-12345")
 
-    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.get_inventory_auth_metadata", return_value=[("authorization", "Bearer mocked_valid_token")])
     @patch("internal.views.create_client_channel_inventory")
     def test_lookup_subjects_empty(self, mock_create_channel, mock_get_token):
         """Test a request to lookup_subjects endpoint returns the correct response when no subjects are found."""
@@ -4669,7 +4669,7 @@ class InternalRelationsViewsetTests(BaseInternalViewsetTests):
             )
             self.assertEqual(response.status_code, 204)
 
-    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.get_inventory_auth_metadata", return_value=[("authorization", "Bearer mocked_valid_token")])
     @patch("internal.views.create_client_channel_inventory", side_effect=RpcError("Simulated GRPC error"))
     def test_lookup_subjects_grpc_error(self, mock_channel, mock_token):
         """Test a request to lookup_subjects endpoint returns the correct response in case of grpc error."""
@@ -4724,7 +4724,7 @@ class InternalRelationsViewsetTests(BaseInternalViewsetTests):
         self.assertEqual(response_body["detail"], "Error occurred in call to lookup subjects endpoint")
         self.assertEqual(response_body["error"], "Simulated internal error")
 
-    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.get_inventory_auth_metadata", return_value=[("authorization", "Bearer mocked_valid_token")])
     @patch("internal.views.create_client_channel_inventory")
     def test_lookup_subjects_invalid_body(self, mock_create_channel, mock_get_token):
         """Test a request to lookup_subjects endpoint returns the correct response in case of input validation failure."""
@@ -4752,7 +4752,7 @@ class InternalRelationsViewsetTests(BaseInternalViewsetTests):
 class InternalInventoryViewsetTests(BaseInternalViewsetTests):
     """Test the /_private/api/inventory/ endpoints from internal viewset."""
 
-    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.get_inventory_auth_metadata", return_value=[("authorization", "Bearer mocked_valid_token")])
     @patch("management.utils.create_client_channel")
     def test_check_inventory(self, mock_create_channel, mock_get_token):
         """Test a request to check inventory endpoint returns the correct response."""
@@ -4783,7 +4783,7 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
             self.assertEqual(response.status_code, 200)
             self.assertEqual(response_body["allowed"], True)
 
-    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.get_inventory_auth_metadata", return_value=[("authorization", "Bearer mocked_valid_token")])
     @patch("management.utils.create_client_channel", side_effect=RpcError("Simulated GRPC error"))
     def test_check_inventory_grpc_error(self, mock_channel, mock_token):
         """Test a request to check inventory endpoint returns the correct response in case of grpc error."""
@@ -4835,7 +4835,7 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
         self.assertEqual(response_body["detail"], "Error occurred in call to check inventory endpoint")
         self.assertEqual(response_body["error"], "Simulated internal error")
 
-    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.get_inventory_auth_metadata", return_value=[("authorization", "Bearer mocked_valid_token")])
     @patch("management.utils.create_client_channel")
     def test_check_inventory_invalid_body(self, mock_create_channel, mock_get_token):
         """Test a request to check inventory endpoint returns the correct response in case of input validation failure."""
@@ -4871,7 +4871,7 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
         self.default_workspace = bootstrap_result.default_workspace
         self.root_workspace = bootstrap_result.root_workspace
 
-    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.get_inventory_auth_metadata", return_value=[("authorization", "Bearer mocked_valid_token")])
     @patch("management.utils.create_client_channel")
     @patch("management.inventory_checker.inventory_api_check.GroupPrincipalInventoryChecker.check_relationships")
     def test_inventory_group_assignments(self, mock_check_relationships, mock_create_channel, mock_get_token):
@@ -4945,7 +4945,7 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
         self.assertEqual(response_body["detail"], "Unexpected error during inventory group assignment check")
         self.assertEqual(response_body["error"], "Simulated internal error")
 
-    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.get_inventory_auth_metadata", return_value=[("authorization", "Bearer mocked_valid_token")])
     @patch("management.utils.create_client_channel")
     @patch(
         "management.inventory_checker.inventory_api_check.BootstrappedTenantInventoryChecker.check_bootstrapped_tenant"
@@ -5023,7 +5023,7 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
         self.assertEqual(response_body["detail"], "Unexpected error during inventory bootstrapped tenant check")
         self.assertEqual(response_body["error"], "Simulated internal error")
 
-    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.get_inventory_auth_metadata", return_value=[("authorization", "Bearer mocked_valid_token")])
     @patch("management.utils.create_client_channel")
     @patch("management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace")
     @patch("internal.views.check_workspace_relation")
@@ -5067,7 +5067,7 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
         self.assertEqual(response_body["workspace_parent_id"], str(self.test_workspace.parent.id))
         self.assertEqual(response_body["workspace_relation_correct"], "true")
 
-    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.get_inventory_auth_metadata", return_value=[("authorization", "Bearer mocked_valid_token")])
     @patch("management.utils.create_client_channel")
     @patch(
         "management.inventory_checker.inventory_api_check.WorkspaceRelationInventoryChecker.check_workspace_descendants"
@@ -5274,7 +5274,7 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
         )
         self.assertEqual(response_body["error"], "Simulated internal error")
 
-    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.get_inventory_auth_metadata", return_value=[("authorization", "Bearer mocked_valid_token")])
     @patch("management.utils.create_client_channel")
     @patch("management.inventory_checker.inventory_api_check.RoleRelationInventoryChecker.check_role")
     @patch("internal.views.check_role")
@@ -5325,7 +5325,7 @@ class InternalInventoryViewsetTests(BaseInternalViewsetTests):
 
         self.assertEqual(BindingMapping.objects.all().count(), 0)
 
-    @patch("internal.jwt_utils.JWTProvider.get_jwt_token", return_value={"access_token": "mocked_valid_token"})
+    @patch("internal.views.get_inventory_auth_metadata", return_value=[("authorization", "Bearer mocked_valid_token")])
     @patch("management.utils.create_client_channel")
     @patch("management.inventory_checker.inventory_api_check.RoleRelationInventoryChecker.check_role")
     @patch("internal.views.check_role")
