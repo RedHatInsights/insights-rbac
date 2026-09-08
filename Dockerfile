@@ -41,7 +41,10 @@ LABEL summary="$SUMMARY" \
 # glibc-langpack-en is needed to set locale to en_US and disable warning about it
 # gcc to compile some python packages (e.g. ciso8601)
 # postgresql-devel for psycopg2, libffi-devel for cffi
-RUN INSTALL_PKGS="glibc-langpack-en postgresql-server-devel postgresql gcc libffi-devel python3.12-devel curl" && \
+# snappy-devel provides libsnappy headers for python-snappy (used to decompress
+# snappy-encoded IT-managed Kafka messages); the runtime .so reaches the final
+# stage via `COPY --from=base /usr/lib64/`
+RUN INSTALL_PKGS="glibc-langpack-en postgresql-server-devel postgresql gcc libffi-devel python3.12-devel curl snappy snappy-devel" && \
     microdnf --nodocs -y upgrade && \
     microdnf -y --setopt=tsflags=nodocs --setopt=install_weak_deps=0 install $INSTALL_PKGS && \
     rpm -V $INSTALL_PKGS && \
