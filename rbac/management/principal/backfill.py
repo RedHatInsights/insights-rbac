@@ -14,7 +14,7 @@
 # You should have received a copy of the GNU Affero General Public License
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
-"""Service layer for group principal synchronization."""
+"""Backfill remote principals in SpiceDB via TenantMapping update_user."""
 
 import logging
 from typing import List
@@ -29,18 +29,39 @@ from management.tenant_service import get_tenant_bootstrap_service
 logger = logging.getLogger(__name__)
 
 
-def backfill_remote_principal(bootstrap_service, user, org_id=None):
+def backfill_remote_principal(bootstrap_service, user, tenant=None, org_id=None):
     """Backfill a single user's TenantMapping membership via update_user.
 
-    Wraps update_user() in a savepoint so that a database error does not mark
-    the caller's outer transaction for rollback.  Exceptions are caught and
-    logged so callers can continue processing other principals.
+    When *tenant* is provided, first checks whether the user's Principal record
+    already exists with a ``user_id`` set — if so, no sync is needed and the
+    call returns early.  System users and service accounts are also skipped.
+
+    Wraps ``update_user()`` in a savepoint so that a database error does not
+    mark the caller's outer transaction for rollback.  Exceptions are caught
+    and logged so callers can continue processing other principals.
 
     Args:
         bootstrap_service: TenantBootstrapService instance.
         user: User object to sync.
+        tenant: Optional Tenant instance; when provided, checks principal
+            existence and user_id before syncing.
         org_id: Fallback org_id for log context when user.org_id is unavailable.
     """
+    # Skip system users and service accounts.
+    if getattr(user, "system", False) or getattr(user, "is_service_account", False):
+        return
+    if not getattr(user, "username", None):
+        return
+
+    # When tenant is provided, check if sync is actually needed.
+    if tenant is not None:
+        try:
+            principal = Principal.objects.get(username__iexact=user.username, tenant=tenant)
+            if principal.user_id is not None:
+                return
+        except Principal.DoesNotExist:
+            pass  # New principal — needs sync.
+
     try:
         with transaction.atomic():
             bootstrap_service.update_user(user, upsert=True)
@@ -53,39 +74,19 @@ def backfill_remote_principal(bootstrap_service, user, org_id=None):
         )
 
 
-def maybe_backfill_remote_principal(bootstrap_service, user, tenant):
-    """Check if a user's principal needs backfill and perform it if so.
-
-    Checks whether the user's Principal record is nonexistent or missing
-    a user_id.  If so, calls backfill_remote_principal to sync the user's
-    TenantMapping default/admin group membership in SpiceDB.
-
-    Args:
-        bootstrap_service: TenantBootstrapService instance.
-        user: User object (typically from request.user).
-        tenant: Tenant instance to scope the principal lookup.
-    """
-    try:
-        principal = Principal.objects.get(username__iexact=user.username, tenant=tenant)
-        needs_sync = principal.user_id is None
-    except Principal.DoesNotExist:
-        needs_sync = True
-
-    if needs_sync:
-        backfill_remote_principal(bootstrap_service, user)
-
-
 def backfill_remote_principals(principals_needing_sync: List[dict], org_id: str) -> None:
     """Backfill remote principals from BOP response items.
 
-    Converts BOP response items to User objects and calls update_user() for each
-    active principal that has a user_id. Failures are logged per-principal so that
-    one bad record does not prevent the remaining principals from being synced.
+    Converts BOP response items to User objects and calls ``update_user()`` for
+    each active principal that has a ``user_id``.  Failures are logged
+    per-principal so that one bad record does not prevent the remaining
+    principals from being synced.
 
     Args:
         principals_needing_sync: BOP response items for principals that were
             newly created or had user_id populated for the first time.
-        org_id: The organization ID to use as fallback for principals missing org_id.
+        org_id: The organization ID to use as fallback for principals missing
+            org_id.
     """
     if not principals_needing_sync:
         return
@@ -96,4 +97,4 @@ def backfill_remote_principals(principals_needing_sync: List[dict], org_id: str)
         if not user_obj.org_id:
             user_obj.org_id = org_id
         if user_obj.user_id and user_obj.is_active:
-            backfill_remote_principal(bootstrap_service, user_obj, org_id)
+            backfill_remote_principal(bootstrap_service, user_obj, org_id=org_id)

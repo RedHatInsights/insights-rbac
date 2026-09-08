@@ -41,7 +41,7 @@ from management.group.definer import (
 from management.group.inventory_api_dual_write_group_handler import (
     InventoryApiDualWriteGroupHandler,
 )
-from management.group.service import backfill_remote_principals
+from management.principal.backfill import backfill_remote_principals
 from management.group.serializer import (
     GroupInputSerializer,
     GroupPrincipalInputSerializer,

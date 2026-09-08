@@ -4499,7 +4499,7 @@ class GroupPrincipalV2SyncTests(IdentityRequest):
     )
     def test_add_new_principal_calls_update_user(self, mock_proxy):
         """Test that adding a new principal triggers update_user for TenantMapping sync."""
-        with patch("management.group.service.get_tenant_bootstrap_service") as mock_get_service:
+        with patch("management.principal.backfill.get_tenant_bootstrap_service") as mock_get_service:
             mock_service = Mock()
             mock_get_service.return_value = mock_service
 
@@ -4536,7 +4536,7 @@ class GroupPrincipalV2SyncTests(IdentityRequest):
         # Create a lazy principal without user_id
         Principal.objects.create(username="lazy_user", tenant=self.tenant, user_id=None)
 
-        with patch("management.group.service.get_tenant_bootstrap_service") as mock_get_service:
+        with patch("management.principal.backfill.get_tenant_bootstrap_service") as mock_get_service:
             mock_service = Mock()
             mock_get_service.return_value = mock_service
 
@@ -4576,7 +4576,7 @@ class GroupPrincipalV2SyncTests(IdentityRequest):
         # Create a principal that already has user_id
         Principal.objects.create(username="existing_user", tenant=self.tenant, user_id="88001")
 
-        with patch("management.group.service.get_tenant_bootstrap_service") as mock_get_service:
+        with patch("management.principal.backfill.get_tenant_bootstrap_service") as mock_get_service:
             mock_service = Mock()
             mock_get_service.return_value = mock_service
 
@@ -4614,7 +4614,7 @@ class GroupPrincipalV2SyncTests(IdentityRequest):
         """Test that an IntegrityError in update_user for one principal does not roll back the group addition."""
         from django.db import IntegrityError
 
-        with patch("management.group.service.get_tenant_bootstrap_service") as mock_get_service:
+        with patch("management.principal.backfill.get_tenant_bootstrap_service") as mock_get_service:
             mock_service = Mock()
             mock_service.update_user.side_effect = [IntegrityError("duplicate key"), None]
             mock_get_service.return_value = mock_service
@@ -4664,7 +4664,7 @@ class GroupPrincipalV2SyncTests(IdentityRequest):
                 },
             ),
             patch(
-                "management.group.service.OutboxReplicator",
+                "management.principal.backfill.OutboxReplicator",
                 new=partial(InMemoryRelationReplicator, tuples),
             ),
         ):

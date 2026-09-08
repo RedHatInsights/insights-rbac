@@ -33,7 +33,7 @@ from django.urls import Resolver404, resolve, reverse
 from feature_flags import FEATURE_FLAGS
 from management.authorization.token_validator import ITSSOTokenValidator, TokenValidator
 from management.cache import TenantCache
-from management.group.service import maybe_backfill_remote_principal
+from management.principal.backfill import backfill_remote_principal
 from management.models import Principal
 from management.principal.proxy import PrincipalProxy
 from management.inventory_replicator.outbox_replicator import OutboxReplicator
@@ -231,22 +231,10 @@ class IdentityHeaderMiddleware:
                     tenant = Tenant.objects.get(org_id=request.user.org_id)
             TENANTS.save_tenant(tenant)
 
-        # Sync requesting user's principal to TenantMapping groups independently of tenant cache.
-        self._sync_requesting_user_principal(request, tenant)
+        # Backfill requesting user's TenantMapping groups independently of tenant cache.
+        backfill_remote_principal(self.bootstrap_service, request.user, tenant=tenant)
 
         return tenant
-
-    def _sync_requesting_user_principal(self, request, tenant):
-        """Sync the requesting user's principal to TenantMapping default/admin groups if needed.
-
-        Runs on every request independently of the tenant cache so that new users
-        in an already-cached tenant are still synchronized.  Skips system accounts,
-        service accounts, and principals that already have a user_id set.
-        """
-        if request.user.system or getattr(request.user, "is_service_account", False) or not request.user.username:
-            return
-
-        maybe_backfill_remote_principal(self.bootstrap_service, request.user, tenant)
 
     @staticmethod  # noqa: C901
     def _get_access_for_user(username, tenant):  # pylint: disable=too-many-locals,too-many-branches
