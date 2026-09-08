@@ -55,3 +55,40 @@ class InventoryApiReplicatorTests(TestCase):
         request = mock_stub.CreateTuples.call_args.args[0]
         self.assertTrue(request.upsert)
         self.assertEqual(list(request.tuples), [relationship])
+
+    @patch("management.inventory_replicator.inventory_api_replicator.tuple_service_pb2_grpc.KesselTupleServiceStub")
+    @patch("management.inventory_replicator.inventory_api_replicator.create_client_channel_inventory")
+    @patch("management.inventory_replicator.inventory_api_replicator.get_inventory_auth_metadata", return_value=[])
+    def test_write_relationships_converts_relation_tuples(
+        self, mock_auth_metadata, mock_create_channel, mock_stub_class
+    ):
+        """RelationTuple inputs are converted via as_message before sending."""
+        relation_tuple = make_relation_tuple()
+        expected = relation_tuple.as_message()
+        mock_stub = MagicMock()
+        mock_stub_class.return_value = mock_stub
+
+        InventoryApiReplicator().write_relationships([relation_tuple])
+
+        request = mock_stub.CreateTuples.call_args.args[0]
+        self.assertTrue(request.upsert)
+        self.assertEqual(list(request.tuples), [expected])
+
+    @patch("management.inventory_replicator.inventory_api_replicator.tuple_service_pb2_grpc.KesselTupleServiceStub")
+    @patch("management.inventory_replicator.inventory_api_replicator.create_client_channel_inventory")
+    @patch("management.inventory_replicator.inventory_api_replicator.get_inventory_auth_metadata", return_value=[])
+    def test_write_relationships_handles_mixed_input(self, mock_auth_metadata, mock_create_channel, mock_stub_class):
+        """Mixed RelationTuple and protobuf Relationship inputs are handled correctly."""
+        relation_tuple = make_relation_tuple()
+        protobuf_relationship = make_relation_tuple().as_message()
+        mock_stub = MagicMock()
+        mock_stub_class.return_value = mock_stub
+
+        InventoryApiReplicator().write_relationships([relation_tuple, protobuf_relationship])
+
+        request = mock_stub.CreateTuples.call_args.args[0]
+        self.assertTrue(request.upsert)
+        tuples = list(request.tuples)
+        self.assertEqual(len(tuples), 2)
+        self.assertEqual(tuples[0], relation_tuple.as_message())
+        self.assertEqual(tuples[1], protobuf_relationship)
