@@ -20,10 +20,9 @@ import logging
 from typing import List
 
 from django.db import transaction
-
+from management.inventory_replicator.outbox_replicator import OutboxReplicator
 from management.models import Principal
 from management.principal.proxy import external_principal_to_user
-from management.inventory_replicator.outbox_replicator import OutboxReplicator
 from management.tenant_service import get_tenant_bootstrap_service
 
 logger = logging.getLogger(__name__)

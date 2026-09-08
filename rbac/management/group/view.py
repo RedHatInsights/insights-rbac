@@ -41,7 +41,6 @@ from management.group.definer import (
 from management.group.inventory_api_dual_write_group_handler import (
     InventoryApiDualWriteGroupHandler,
 )
-from management.principal.backfill import backfill_remote_principals
 from management.group.serializer import (
     GroupInputSerializer,
     GroupPrincipalInputSerializer,
@@ -50,6 +49,7 @@ from management.group.serializer import (
     GroupSerializer,
     RoleMinimumSerializer,
 )
+from management.inventory_replicator.inventory_replicator import ReplicationEventType
 from management.models import AuditLog, Group, Role
 from management.notifications.notification_handlers import (
     group_obj_change_notification_handler,
@@ -57,6 +57,7 @@ from management.notifications.notification_handlers import (
 )
 from management.permissions import GroupAccessPermission
 from management.permissions.v2_edit_api_access import is_v2_edit_enabled_for_request
+from management.principal.backfill import backfill_remote_principals
 from management.principal.it_service import ITService
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
@@ -66,7 +67,6 @@ from management.querysets import (
     get_group_queryset,
     get_role_queryset,
 )
-from management.inventory_replicator.inventory_replicator import ReplicationEventType
 from management.role.view import RoleViewSet
 from management.role_binding.service import RoleBindingService
 from management.tenant_mapping.v2_activation import V1WriteBlockedError, assert_v1_write_allowed
