@@ -36,6 +36,7 @@ from kessel.inventory.v1beta2 import (
     tuple_service_pb2_grpc,
 )
 from management.inventory_replicator.inventory_replicator import InventoryReplicator, ReplicationEvent
+from management.inventory_replicator.types import RelationTuple
 from management.utils import create_client_channel_inventory, get_inventory_auth_metadata
 
 logger = logging.getLogger(__name__)  # pylint: disable=invalid-name
@@ -138,7 +139,10 @@ class InventoryApiReplicator(InventoryReplicator):
             # Build request with optional fencing check
             request_kwargs = {
                 "upsert": True,
-                "tuples": [relationship.as_message() for relationship in relationships],
+                "tuples": [
+                    relationship.as_message() if isinstance(relationship, RelationTuple) else relationship
+                    for relationship in relationships
+                ],
             }
 
             if fencing_check is not None:
