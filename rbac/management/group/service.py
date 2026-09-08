@@ -21,6 +21,7 @@ from typing import List
 
 from django.db import transaction
 
+from management.models import Principal
 from management.principal.proxy import external_principal_to_user
 from management.inventory_replicator.outbox_replicator import OutboxReplicator
 from management.tenant_service import get_tenant_bootstrap_service
@@ -50,6 +51,28 @@ def backfill_remote_principal(bootstrap_service, user, org_id=None):
             org_id or getattr(user, "org_id", "unknown"),
             exc_info=True,
         )
+
+
+def maybe_backfill_remote_principal(bootstrap_service, user, tenant):
+    """Check if a user's principal needs backfill and perform it if so.
+
+    Checks whether the user's Principal record is nonexistent or missing
+    a user_id.  If so, calls backfill_remote_principal to sync the user's
+    TenantMapping default/admin group membership in SpiceDB.
+
+    Args:
+        bootstrap_service: TenantBootstrapService instance.
+        user: User object (typically from request.user).
+        tenant: Tenant instance to scope the principal lookup.
+    """
+    try:
+        principal = Principal.objects.get(username__iexact=user.username, tenant=tenant)
+        needs_sync = principal.user_id is None
+    except Principal.DoesNotExist:
+        needs_sync = True
+
+    if needs_sync:
+        backfill_remote_principal(bootstrap_service, user)
 
 
 def backfill_remote_principals(principals_needing_sync: List[dict], org_id: str) -> None:

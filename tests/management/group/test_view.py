@@ -4635,6 +4635,65 @@ class GroupPrincipalV2SyncTests(IdentityRequest):
             # Second update_user should still have been called
             self.assertEqual(mock_service.update_user.call_count, 2)
 
+    @override_settings(V2_BOOTSTRAP_TENANT=True, PRINCIPAL_USER_DOMAIN="redhat")
+    def test_add_new_principal_creates_tuples(self):
+        """Test that adding a new principal creates TenantMapping group membership tuples."""
+        from functools import partial
+
+        from management.group.definer import seed_group
+
+        Tenant.objects.get_or_create(tenant_name="public")
+        seed_group()
+
+        tuples = InMemoryTuples()
+        org_id = self.customer_data["org_id"]
+
+        with (
+            patch(
+                "management.principal.proxy.PrincipalProxy.request_filtered_principals",
+                return_value={
+                    "status_code": 200,
+                    "data": [
+                        {
+                            "username": "tuple_user",
+                            "user_id": "77001",
+                            "is_org_admin": True,
+                            "is_active": True,
+                        }
+                    ],
+                },
+            ),
+            patch(
+                "management.group.service.OutboxReplicator",
+                new=partial(InMemoryRelationReplicator, tuples),
+            ),
+        ):
+            url = reverse("v1_management:group-principals", kwargs={"uuid": self.group.uuid})
+            client = APIClient()
+            response = client.post(url, {"principals": [{"username": "tuple_user"}]}, format="json", **self.headers)
+
+            self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+            # Verify TenantMapping was created and tuples were written
+            mapping = TenantMapping.objects.get(tenant=self.tenant)
+            default_group_tuple_count = tuples.count_tuples(
+                all_of(
+                    resource("rbac", "group", str(mapping.default_group_uuid)),
+                    relation("member"),
+                    subject("rbac", "principal", "redhat/77001"),
+                )
+            )
+            self.assertEqual(default_group_tuple_count, 1, "Expected default group membership tuple")
+
+            admin_group_tuple_count = tuples.count_tuples(
+                all_of(
+                    resource("rbac", "group", str(mapping.default_admin_group_uuid)),
+                    relation("member"),
+                    subject("rbac", "principal", "redhat/77001"),
+                )
+            )
+            self.assertEqual(admin_group_tuple_count, 1, "Expected admin group membership tuple")
+
 
 class GroupViewNonAdminTests(IdentityRequest):
     """Test the group view for nonadmin user."""

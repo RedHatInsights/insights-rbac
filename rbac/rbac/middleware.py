@@ -33,7 +33,7 @@ from django.urls import Resolver404, resolve, reverse
 from feature_flags import FEATURE_FLAGS
 from management.authorization.token_validator import ITSSOTokenValidator, TokenValidator
 from management.cache import TenantCache
-from management.group.service import backfill_remote_principal
+from management.group.service import maybe_backfill_remote_principal
 from management.models import Principal
 from management.principal.proxy import PrincipalProxy
 from management.inventory_replicator.outbox_replicator import OutboxReplicator
@@ -246,14 +246,7 @@ class IdentityHeaderMiddleware:
         if request.user.system or getattr(request.user, "is_service_account", False) or not request.user.username:
             return
 
-        try:
-            principal = Principal.objects.get(username__iexact=request.user.username, tenant=tenant)
-            needs_v2_sync = principal.user_id is None
-        except Principal.DoesNotExist:
-            needs_v2_sync = True
-
-        if needs_v2_sync:
-            backfill_remote_principal(self.bootstrap_service, request.user)
+        maybe_backfill_remote_principal(self.bootstrap_service, request.user, tenant)
 
     @staticmethod  # noqa: C901
     def _get_access_for_user(username, tenant):  # pylint: disable=too-many-locals,too-many-branches
