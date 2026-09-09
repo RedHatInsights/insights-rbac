@@ -26,14 +26,14 @@ from typing import NamedTuple, Optional
 from xml.parsers.expat import ExpatError
 
 import xmltodict
-from core.kafka import RBACProducer
+from core.kafka import RBACProducer, get_cluster_config
 from django.conf import settings
 from django.db import connection, transaction
 from kafka import KafkaConsumer
 from kafka.errors import KafkaError
+from management.inventory_replicator.outbox_replicator import OutboxReplicator
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy, external_principal_to_user
-from management.relation_replicator.outbox_replicator import OutboxReplicator
 from management.tenant_service import get_tenant_bootstrap_service
 from management.tenant_service.tenant_service import TenantBootstrapService
 from prometheus_client import Counter
@@ -621,7 +621,11 @@ def process_principal_events_from_umb(bootstrap_service: Optional[TenantBootstra
     try:
         while UMB_CLIENT.canRead(15):  # Check if queue is empty, 15 sec timeout
             frame = UMB_CLIENT.receiveFrame()
-            logger.info("process_tenant_principal_events: Processing frame. info=%s", frame.info())
+            logger.info(
+                "process_tenant_principal_events: Processing frame for %s",
+                frame.headers.get("esbWebUserId", "unknown"),
+            )
+            logger.debug("process_tenant_principal_events: Processing frame. info=%s", frame.info())
             if not process_umb_event(frame, UMB_CLIENT, bootstrap_service):
                 break
     finally:
@@ -669,29 +673,38 @@ def process_principal_events_from_kafka(
     # In multi-env setups (staging, ephemeral, CI) that share a Kafka cluster, environments
     # must use distinct consumer groups to avoid message loss and offset conflicts
     env_name = getattr(settings, "ENV_NAME", "stage")
+
+    it_kafka_servers, consumer_auth = get_cluster_config("it_managed", for_consumer=True)
+    if not it_kafka_servers or not consumer_auth:
+        # No IT-managed credentials wired yet (or missing) -> safely no-op instead of falling back to
+        # the Clowder cluster, which does not host the principal-cleanup topics.
+        logger.warning(
+            "process_principal_events_from_kafka: IT-managed Kafka cluster is not configured "
+            "(missing bootstrap servers or credentials). Skipping Kafka consume for topic '%s'.",
+            topic,
+        )
+        return
+
     kafka_config = {
-        "bootstrap_servers": settings.KAFKA_SERVERS,
+        "bootstrap_servers": it_kafka_servers,
         "group_id": f"{settings.SA_NAME}-{env_name}-principal-cleanup",
         "auto_offset_reset": "earliest",
         "enable_auto_commit": False,  # Manual commit for at-least-once semantics
         # No value_deserializer - leave as bytes to handle tombstones and UTF-8 errors in process_kafka_message
         "consumer_timeout_ms": 15000,  # 15 second timeout per run, matches UMB behavior
     }
-
-    # Add authentication if configured
-    kafka_auth = getattr(settings, "KAFKA_AUTH", None)
-    if kafka_auth:
-        kafka_config.update(kafka_auth)
+    kafka_config.update(consumer_auth)
 
     # Initialize consumer to None to avoid UnboundLocalError in finally block
     consumer = None
 
-    # Initialize DLQ producer if DLQ topic is configured
+    # Initialize DLQ producer if DLQ topic is configured. The DLQ topic is also on the IT-managed
+    # cluster, so the producer must target that profile (not the default Clowder one).
     dlq_topic = getattr(settings, "KAFKA_PRINCIPAL_CLEANUP_DLQ_TOPIC", None)
     dlq_producer = None
     if dlq_topic:
         try:
-            dlq_producer = RBACProducer()
+            dlq_producer = RBACProducer(cluster="it_managed")
             logger.info("process_principal_events_from_kafka: DLQ producer initialized for topic: %s", dlq_topic)
         except Exception as e:
             logger.warning(

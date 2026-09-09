@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import grpc
+from core.kafka import PRODUCER_ONLY_CONFIGS
 from django.conf import settings
 from django.db import OperationalError, connection, transaction
 from google.protobuf import json_format
@@ -36,15 +37,13 @@ from kafka import KafkaConsumer, TopicPartition
 from kafka.consumer.subscription_state import ConsumerRebalanceListener
 from kafka.errors import KafkaError
 from kafka.structs import OffsetAndMetadata
-from kessel.relations.v1beta1 import common_pb2
-from management.relation_replicator.relations_api_replicator import (
-    RelationsApiReplicator,
-)
+from kessel.inventory.v1beta2 import relationship_pb2
+from management.inventory_replicator.inventory_api_replicator import InventoryApiReplicator
 from prometheus_client import Counter, Gauge, Histogram
 
 from api.models import Tenant
 
-relations_api_replication = RelationsApiReplicator()
+inventory_api_replication = InventoryApiReplicator()
 
 logger = logging.getLogger("rbac.core.kafka_consumer")
 
@@ -74,7 +73,7 @@ message_processing_duration = Histogram(
 
 kessel_write_duration = Histogram(
     "rbac_kessel_write_duration_seconds",
-    "Time spent on Kessel Relations API write and delete calls",
+    "Time spent on Kessel Inventory API write and delete calls",
     ["operation", "event_type"],
     buckets=(0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0),
 )
@@ -854,24 +853,9 @@ class RBACKafkaConsumer:
         try:
             if kafka_auth:
                 # Filter out producer-specific configurations that are not valid for consumers
-                # Producer-only configs: retries, max_in_flight_requests_per_connection, acks, etc.
-                producer_only_configs = {
-                    "retries",
-                    "max_in_flight_requests_per_connection",
-                    "acks",
-                    "enable_idempotence",
-                    "transactional_id",
-                    "transaction_timeout_ms",
-                    "compression_type",
-                    "batch_size",
-                    "linger_ms",
-                    "buffer_memory",
-                    "max_block_ms",
-                    "delivery_timeout_ms",
-                }
-                consumer_auth = {k: v for k, v in kafka_auth.items() if k not in producer_only_configs}
+                consumer_auth = {k: v for k, v in kafka_auth.items() if k not in PRODUCER_ONLY_CONFIGS}
                 # Log if any producer-specific configs were filtered out
-                filtered_configs = set(kafka_auth.keys()) & producer_only_configs
+                filtered_configs = set(kafka_auth.keys()) & PRODUCER_ONLY_CONFIGS
                 if filtered_configs:
                     logger.info(f"Filtered out producer-specific configs for consumer: {filtered_configs}")
                 consumer = KafkaConsumer(
@@ -912,7 +896,7 @@ class RBACKafkaConsumer:
         Raises:
             grpc.RpcError: If the lock acquisition fails
         """
-        return relations_api_replication.acquire_lock(lock_id)
+        return inventory_api_replication.acquire_lock(lock_id)
 
     def _acquire_lock_with_retry(
         self,
@@ -1368,12 +1352,12 @@ class RBACKafkaConsumer:
             # Convert JSON dictionaries to protobuf objects
             relations_to_add_pb = []
             for relation_dict in replication_msg.relations_to_add:
-                relation_pb = json_format.ParseDict(relation_dict, common_pb2.Relationship())
+                relation_pb = json_format.ParseDict(relation_dict, relationship_pb2.Relationship())
                 relations_to_add_pb.append(relation_pb)
 
             relations_to_remove_pb = []
             for relation_dict in replication_msg.relations_to_remove:
-                relation_pb = json_format.ParseDict(relation_dict, common_pb2.Relationship())
+                relation_pb = json_format.ParseDict(relation_dict, relationship_pb2.Relationship())
                 relations_to_remove_pb.append(relation_pb)
 
             # Build fencing check with lock token (thread-safe read)
@@ -1383,9 +1367,9 @@ class RBACKafkaConsumer:
             fencing_check = None
             with self._lock_mutex:
                 if self.lock_id and self.lock_token:
-                    from kessel.relations.v1beta1 import relation_tuples_pb2
+                    from kessel.inventory.v1beta2 import relation_fencing_check_pb2
 
-                    fencing_check = relation_tuples_pb2.FencingCheck(
+                    fencing_check = relation_fencing_check_pb2.RelationFencingCheck(
                         lock_id=self.lock_id,
                         lock_token=self.lock_token,
                     )
@@ -1404,14 +1388,14 @@ class RBACKafkaConsumer:
 
             # Do tuple deletes for relationships with fencing check
             delete_start = time.time()
-            replication_delete_response = relations_api_replication.delete_relationships(
+            replication_delete_response = inventory_api_replication.delete_relationships(
                 relationships=relations_to_remove_pb, fencing_check=fencing_check
             )
             delete_duration = time.time() - delete_start
 
             # Do tuple writes for relationships with fencing check
             add_start = time.time()
-            replication_add_response = relations_api_replication.write_relationships(
+            replication_add_response = inventory_api_replication.write_relationships(
                 relationships=relations_to_add_pb, fencing_check=fencing_check
             )
             add_duration = time.time() - add_start

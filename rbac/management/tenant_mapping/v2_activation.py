@@ -42,32 +42,12 @@ import logging
 
 from django.db import transaction
 from django.utils import timezone
-from management.tenant_mapping.model import TenantMapping
+from management.tenant_mapping.model import TenantMapping, lock_mapping_for_share
 from management.tenant_service.v2 import TenantNotBootstrappedError
 
 from api.models import Tenant
 
 logger = logging.getLogger(__name__)
-
-# We unfortunately need raw SQL due to Django not having a built-in way to do locks FOR SHARE.
-_LOCK_FOR_SHARE_SQL = (  # sourcery: disable=sql-injection-risk
-    "SELECT * FROM management_tenantmapping WHERE tenant_id = %s FOR SHARE"
-)
-
-
-def _lock_mapping_for_share(tenant: Tenant) -> TenantMapping:
-    """Return the TenantMapping for the provided tenant locked FOR SHARE."""
-    mappings = list(TenantMapping.objects.raw(_LOCK_FOR_SHARE_SQL, [tenant.id]))
-
-    if len(mappings) > 1:
-        raise AssertionError(f"Found multiple tenant mappings for tenant {tenant.org_id}?")
-
-    if len(mappings) == 0:
-        raise TenantNotBootstrappedError(
-            f"Tenant {tenant.org_id} has no TenantMapping; writes require tenant bootstrapping."
-        )
-
-    return mappings[0]
 
 
 class V1WriteBlockedError(Exception):
@@ -83,7 +63,7 @@ def ensure_v2_write_activated(tenant: Tenant):
     reads). If not yet V2, escalates to an exclusive lock and writes. This minimises
     contention compared to always using FOR UPDATE.
     """
-    mapping = _lock_mapping_for_share(tenant)
+    mapping = lock_mapping_for_share(tenant)
 
     if mapping.v2_write_activated_at is not None:
         return
@@ -129,7 +109,7 @@ class TenantVersion(enum.IntEnum):
 
 def lock_tenant_version(tenant: Tenant):
     """Lock a tenant to its current version for the duration of the transaction. Returns the version of the tenant."""
-    mapping = _lock_mapping_for_share(tenant)
+    mapping = lock_mapping_for_share(tenant)
 
     if mapping.v2_write_activated_at is None:
         return TenantVersion.VERSION_1
@@ -147,7 +127,7 @@ def assert_v1_write_allowed(tenant: Tenant):
     # We could just use lock_tenant_version here, but we instead do the check directly in order to give a better error
     # message.
 
-    mapping = _lock_mapping_for_share(tenant)
+    mapping = lock_mapping_for_share(tenant)
 
     if mapping.v2_write_activated_at is not None:
         raise V1WriteBlockedError(
@@ -207,5 +187,5 @@ def lock_v2_opt_in_state(tenant: Tenant) -> bool:
     This is only meaningful to use within a database transaction. (Otherwise, if a lock is not needed,
     use is_v2_opted_in.)
     """
-    mapping = _lock_mapping_for_share(tenant)
+    mapping = lock_mapping_for_share(tenant)
     return mapping.v2_opted_in_at is not None

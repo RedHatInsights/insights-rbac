@@ -98,10 +98,9 @@ urlpatterns = [
     path("api/utils/resource_definitions/", views.correct_resource_definitions),
     path("api/utils/principal/", views.principal_removal),
     path("api/utils/user_lookup/", views.user_lookup),
-    path("api/relations/lookup_resource/", views.lookup_resource),
-    path("api/relations/lookup_subjects/", views.lookup_subjects),
-    path("api/relations/check_relation/", views.check_relation),
-    path("api/relations/read_tuples/", views.read_tuples),
+    path("api/inventory/lookup_resource/", views.lookup_resource),
+    path("api/inventory/lookup_subjects/", views.lookup_subjects),
+    path("api/inventory/read_tuples/", views.read_tuples),
     path("api/inventory/bootstrap_tenants/<org_id>/", views.check_bootstrapped_tenants),
     path("api/inventory/group_assignments/<group_uuid>/", views.group_assignments),
     path("api/inventory/check_workspace/<workspace_uuid>/", views.check_workspace_relation),
@@ -139,6 +138,7 @@ urlpatterns = [
     path("api/disaster_recovery/reconcile/", views.disaster_recovery_reconcile),
     path("api/utils/kessel_parity_check/", views.kessel_parity_check),
     path("api/utils/bootstrap_users_from_user_ids/", views.bootstrap_users_from_user_ids),
+    path("api/utils/tenant_v2_opt_in/<str:org_id>/", views.update_tenant_v2_opt_in),
 ]
 
 urlpatterns.extend(integration_urlpatterns)

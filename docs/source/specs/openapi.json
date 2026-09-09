@@ -42,6 +42,10 @@
     {
       "name": "Audit Logs",
       "description": "Operations about audit logs requests"
+    },
+    {
+      "name": "V2OptIn",
+      "description": "Operations related to opting into the V2 interface"
     }
   ],
   "paths": {
@@ -2804,6 +2808,171 @@
           }
         }
       }
+    },
+    "/tenant/opt-in/": {
+      "get": {
+        "tags": [
+          "V2OptIn"
+        ],
+        "summary": "Get whether the current tenant has opted into V2",
+        "operationId": "OptInStatus",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "The request has succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OptInStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The server could not understand the request due to invalid syntax."
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "V2OptIn"
+        ],
+        "summary": "Opt the current tenant into V2",
+        "operationId": "OptInUpdate",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "v2_opted_in": {
+                    "type": "boolean",
+                    "enum": [true]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The request has succeeded.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OptInStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Input"
+          },
+          "401": {
+            "description": "Unauthorized"
+          },
+          "403": {
+            "description": "Insufficient permissions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error403"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Opt-in is not possible",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OptInIneligibleResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Unexpected Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/tenant/opt-in/eligibility/": {
+      "get": {
+        "tags": [
+          "V2OptIn"
+        ],
+        "summary": "Get information about whether the current tenant can be opted into V2",
+        "operationId": "OptInEligibility",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Contains information about the tenant's eligibility to opt-in to V2.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/OptInEligibleResponse"
+                    },
+                    {
+                      "$ref": "#/components/schemas/OptInIneligibleResponse"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The server could not understand the request due to invalid syntax."
+          },
+          "401": {
+            "description": "Access is unauthorized."
+          },
+          "403": {
+            "description": "Access is forbidden.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error403"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "servers": [
@@ -4504,6 +4673,110 @@
             }
           }
         ]
+      },
+      "OptInIneligibleGroup": {
+        "type": "object",
+        "required": [
+          "name",
+          "uuid",
+          "ineligible_system_roles"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "uuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ineligible_system_roles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OptInIneligibleRole"
+            }
+          }
+        }
+      },
+      "OptInIneligibleResponse": {
+        "type": "object",
+        "required": [
+          "eligible",
+          "bootstrapped",
+          "ineligible_custom_roles",
+          "ineligible_groups"
+        ],
+        "properties": {
+          "eligible": {
+            "type": "boolean",
+            "enum": [
+              false
+            ]
+          },
+          "bootstrapped": {
+            "type" : "boolean"
+          },
+          "ineligible_custom_roles": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OptInIneligibleRole"
+            }
+          },
+          "ineligible_groups": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OptInIneligibleGroup"
+            }
+          }
+        }
+      },
+      "OptInIneligibleRole": {
+        "type": "object",
+        "required": [
+          "name",
+          "uuid",
+          "ineligible_applications"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "uuid": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "ineligible_applications": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "OptInEligibleResponse": {
+        "type": "object",
+        "required": [
+          "eligible"
+        ],
+        "properties": {
+          "eligible": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          }
+        }
+      },
+      "OptInStatus": {
+        "type": "object",
+        "required": [
+          "v2_opted_in"
+        ],
+        "properties": {
+          "v2_opted_in": {
+            "type": "boolean",
+            "description": "Whether the tenant has opted into RBAC V2."
+          }
+        }
       }
     }
   }

@@ -309,6 +309,22 @@ def create_mock_kafka_message(message_body, partition=0, offset=0):
     return mock_message
 
 
+IT_MANAGED_KAFKA_CLUSTERS = {
+    "it_managed": {
+        "servers": ["it-broker-1:9096", "it-broker-2:9096"],
+        "auth": {
+            "bootstrap_servers": ["it-broker-1:9096", "it-broker-2:9096"],
+            "sasl_plain_username": "it-user",
+            "sasl_plain_password": "it-pass",
+            "sasl_mechanism": "SCRAM-SHA-512",
+            "security_protocol": "SASL_SSL",
+            "retries": 5,
+        },
+    },
+}
+
+
+@override_settings(KAFKA_CLUSTERS=IT_MANAGED_KAFKA_CLUSTERS)
 class PrincipalKafkaTests(IdentityRequest):
     """Test the principal processor functions with Kafka."""
 
@@ -368,6 +384,38 @@ class PrincipalKafkaTests(IdentityRequest):
         self.assertIn("test-rbac-service", group_id)
         # Verify it includes the topic discriminator
         self.assertIn("principal-cleanup", group_id)
+
+    @patch("management.principal.cleaner.KafkaConsumer")
+    @patch("management.principal.cleaner.settings.KAFKA_PRINCIPAL_CLEANUP_TOPIC", "test-topic")
+    def test_consumer_targets_it_managed_cluster(self, consumer_mock):
+        """The cleanup consumer connects to the IT-managed cluster, not the Clowder one."""
+        consumer_instance = MagicMock()
+        consumer_instance.__iter__.return_value = iter([])
+        consumer_mock.return_value = consumer_instance
+
+        process_principal_events_from_kafka()
+
+        consumer_mock.assert_called_once()
+        call_kwargs = consumer_mock.call_args[1]
+        self.assertEqual(
+            call_kwargs["bootstrap_servers"],
+            ["it-broker-1:9096", "it-broker-2:9096"],
+        )
+        # SASL auth from the it_managed profile is forwarded to the consumer...
+        self.assertEqual(call_kwargs["sasl_plain_username"], "it-user")
+        self.assertEqual(call_kwargs["sasl_mechanism"], "SCRAM-SHA-512")
+        self.assertEqual(call_kwargs["security_protocol"], "SASL_SSL")
+        # ...but producer-only configs are stripped so KafkaConsumer does not reject them.
+        self.assertNotIn("retries", call_kwargs)
+
+    @patch("management.principal.cleaner.KafkaConsumer")
+    @patch("management.principal.cleaner.settings.KAFKA_PRINCIPAL_CLEANUP_TOPIC", "test-topic")
+    @override_settings(KAFKA_CLUSTERS={})
+    def test_consumer_no_ops_when_it_managed_unconfigured(self, consumer_mock):
+        """With no IT-managed cluster configured, the consumer safely no-ops (no Clowder fallback)."""
+        process_principal_events_from_kafka()
+
+        consumer_mock.assert_not_called()
 
     @patch(
         "management.principal.proxy.PrincipalProxy._request_principals",
@@ -1229,7 +1277,7 @@ class PrincipalKafkaTestsWithV2TenantBootstrap(PrincipalKafkaTests):
         tenant.refresh_from_db()
         self.assertFalse(tenant.ready)
 
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    @patch("management.inventory_replicator.outbox_replicator.OutboxReplicator.replicate")
     @patch(
         "management.principal.proxy.PrincipalProxy.request_filtered_principals",
         return_value={"status_code": 200, "data": []},

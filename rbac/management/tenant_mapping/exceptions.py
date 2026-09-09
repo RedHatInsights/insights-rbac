@@ -1,5 +1,5 @@
 #
-# Copyright 2024 Red Hat, Inc.
+# Copyright 2026 Red Hat, Inc.
 #
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU Affero General Public License as
@@ -15,14 +15,10 @@
 # along with this program.  If not, see <https://www.gnu.org/licenses/>.
 #
 
-"""A RelationReplicator which does nothing."""
-
-from management.relation_replicator.relation_replicator import RelationReplicator, ReplicationEvent
+"""Exceptions for TenantMappings."""
 
 
-class NoopReplicator(RelationReplicator):
-    """Noop replicator."""
+class TenantNotBootstrappedError(Exception):
+    """Raised when a tenant is required to have been bootstrapped but has not been."""
 
-    def replicate(self, event: ReplicationEvent):
-        """Noop."""
-        pass
+    pass

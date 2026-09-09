@@ -26,29 +26,27 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/2.0/ref/settings/
 """
 
+import datetime
+import logging
 import os
 import ssl
+import sys
 from urllib.parse import quote as _url_quote
 
-import datetime
-import sys
-import logging
 import pytz
 import redis
-
+from app_common_python import DependencyEndpoints, KafkaTopics, LoadedConfig
 from boto3 import client as boto_client
 from corsheaders.defaults import default_headers
 from dateutil.parser import parse as parse_dt
-from app_common_python import LoadedConfig, KafkaTopics, DependencyEndpoints
 from feature_flags import FEATURE_FLAGS
+
+from . import database
+from .env import ENVIRONMENT
 
 # Database
 # https://docs.djangoproject.com/en/2.0/ref/settings/#databases
 
-
-from . import database
-
-from .env import ENVIRONMENT
 
 # Sentry monitoring configuration
 # Note: Sentry is disabled unless it is explicitly turned on by setting DSN
@@ -482,7 +480,9 @@ ROLE_CREATE_ALLOW_LIST = ENVIRONMENT.get_value("ROLE_CREATE_ALLOW_LIST", default
 # Dual write migration configuration
 REPLICATION_TO_RELATION_ENABLED = ENVIRONMENT.bool("REPLICATION_TO_RELATION_ENABLED", default=False)
 EPH_ENV = ENVIRONMENT.bool("EPH_ENV", default=False)
-V2_MIGRATION_APP_EXCLUDE_LIST = ENVIRONMENT.get_value("V2_MIGRATION_APP_EXCLUDE_LIST", default="").split(",")
+V2_MIGRATION_APP_EXCLUDE_LIST = [
+    app.strip() for app in ENVIRONMENT.get_value("V2_MIGRATION_APP_EXCLUDE_LIST", default="").split(",") if app.strip()
+]
 V2_BOOTSTRAP_TENANT = ENVIRONMENT.bool("V2_BOOTSTRAP_TENANT", default=False)
 
 # Migration Setup
@@ -618,6 +618,29 @@ if KAFKA_ENABLED:
     if clowder_principal_cleanup_dlq_topic:
         KAFKA_PRINCIPAL_CLEANUP_DLQ_TOPIC = clowder_principal_cleanup_dlq_topic.name
 
+
+IT_KAFKA_BOOTSTRAP_SERVERS = ENVIRONMENT.get_value("IT_KAFKA_BOOTSTRAP_SERVERS", default="")
+IT_KAFKA_USERNAME = ENVIRONMENT.get_value("IT_KAFKA_USERNAME", default="")
+IT_KAFKA_PASSWORD = ENVIRONMENT.get_value("IT_KAFKA_PASSWORD", default="")
+IT_KAFKA_SASL_MECHANISM = ENVIRONMENT.get_value("IT_KAFKA_SASL_MECHANISM", default="SCRAM-SHA-512")
+IT_KAFKA_SECURITY_PROTOCOL = ENVIRONMENT.get_value("IT_KAFKA_SECURITY_PROTOCOL", default="SASL_SSL")
+
+IT_KAFKA_SERVERS = [server.strip() for server in IT_KAFKA_BOOTSTRAP_SERVERS.split(",") if server.strip()]
+IT_KAFKA_AUTH = {}
+if IT_KAFKA_SERVERS and IT_KAFKA_USERNAME and IT_KAFKA_PASSWORD:
+    IT_KAFKA_AUTH = {
+        "bootstrap_servers": IT_KAFKA_SERVERS,
+        "sasl_plain_username": IT_KAFKA_USERNAME,
+        "sasl_plain_password": IT_KAFKA_PASSWORD,
+        "sasl_mechanism": IT_KAFKA_SASL_MECHANISM.upper(),
+        "security_protocol": IT_KAFKA_SECURITY_PROTOCOL.upper(),
+        "retries": 5,  # producer-only; PRODUCER_ONLY_CONFIGS strips it for consumers
+    }
+
+KAFKA_CLUSTERS = {
+    "it_managed": {"servers": IT_KAFKA_SERVERS, "auth": IT_KAFKA_AUTH},
+}
+
 # BOP TLS settings
 if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False) and ENVIRONMENT.bool("USE_CLOWDER_CA_FOR_BOP", default=False):
     BOP_CLIENT_CERT_PATH = LoadedConfig.tlsCAPath
@@ -684,13 +707,6 @@ if ENVIRONMENT.bool("CLOWDER_ENABLED", default=False):
             f"WARNING: Dependency endpoint for '{KESSEL_RELATION_CLOWDER_APPLICATION_NAME}' not found: {e}. "
             f"Falling back to default RELATION_API_SERVER value: {RELATION_API_SERVER}"
         )
-
-RELATIONS_API_CLIENT_ID = ENVIRONMENT.get_value("RELATION_API_CLIENT_ID", default="")
-RELATIONS_API_CLIENT_SECRET = ENVIRONMENT.get_value("RELATION_API_CLIENT_SECRET", default="")
-RELATIONS_API_TOKEN_URL = ENVIRONMENT.get_value(
-    "RELATIONS_API_TOKEN_URL",
-    default="https://sso.stage.redhat.com/auth/realms/redhat-external/protocol/openid-connect/token",
-)
 
 INVENTORY_API_CLIENT_ID = ENVIRONMENT.get_value("INVENTORY_API_CLIENT_ID", default="")
 INVENTORY_API_CLIENT_SECRET = ENVIRONMENT.get_value("INVENTORY_API_CLIENT_SECRET", default="")

@@ -260,8 +260,22 @@ objects:
                 key: rbac-client-secret
                 name: service-accounts
                 optional: true
+          - name: INVENTORY_API_CLIENT_ID
+            valueFrom:
+              secretKeyRef:
+                key: rbac-client-id
+                name: service-accounts
+                optional: true
+          - name: INVENTORY_API_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                key: rbac-client-secret
+                name: service-accounts
+                optional: true
           - name: INVENTORY_API_SERVER
             value: ${INVENTORY_API_SERVER}
+          - name: INVENTORY_API_TOKEN_URL
+            value: ${INVENTORY_API_TOKEN_URL}
           - name: REDHAT_SSO
             value: ${REDHAT_SSO}
           - name: REPLICATION_TO_RELATION_ENABLED
@@ -276,6 +290,24 @@ objects:
             value: ${KAFKA_PRINCIPAL_CLEANUP_TOPIC}
           - name: KAFKA_PRINCIPAL_CLEANUP_DLQ_TOPIC
             value: ${KAFKA_PRINCIPAL_CLEANUP_DLQ_TOPIC}
+          - name: IT_KAFKA_BOOTSTRAP_SERVERS
+            valueFrom:
+              secretKeyRef:
+                key: kafka-it-bootstrap-servers
+                name: rbac-secret
+                optional: true
+          - name: IT_KAFKA_USERNAME
+            valueFrom:
+              secretKeyRef:
+                key: kafka-it-username
+                name: rbac-secret
+                optional: true
+          - name: IT_KAFKA_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                key: kafka-it-password
+                name: rbac-secret
+                optional: true
           - name: V2_MIGRATION_APP_EXCLUDE_LIST
             value: ${V2_MIGRATION_APP_EXCLUDE_LIST}
           - name: V2_STRICT_ACCESS_CHECK_FLAG_APPLICATION_NAMES
@@ -894,6 +926,23 @@ objects:
                 key: rbac-client-secret
                 name: service-accounts
                 optional: true
+          # Inventory API variables
+          - name: INVENTORY_API_CLIENT_ID
+            valueFrom:
+              secretKeyRef:
+                key: rbac-client-id
+                name: service-accounts
+                optional: true
+          - name: INVENTORY_API_CLIENT_SECRET
+            valueFrom:
+              secretKeyRef:
+                key: rbac-client-secret
+                name: service-accounts
+                optional: true
+          - name: INVENTORY_API_SERVER
+            value: ${INVENTORY_API_SERVER}
+          - name: INVENTORY_API_TOKEN_URL
+            value: ${INVENTORY_API_TOKEN_URL}
           - name: SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID
             value: ${SYSTEM_DEFAULT_ROOT_WORKSPACE_ROLE_UUID}
           - name: SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID

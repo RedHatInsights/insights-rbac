@@ -272,10 +272,7 @@ class FeatureFlags:
 
         # Flag is enabled -> check for variant to determine mode
         try:
-            variant = self.client.get_variant(
-                self.TOGGLE_USE_KAFKA_CLEANUP,
-                fallback_variant={"name": "umb_only", "enabled": False},
-            )
+            variant = self.client.get_variant(self.TOGGLE_USE_KAFKA_CLEANUP)
 
             mode = variant.get("name", "umb_only")
 
