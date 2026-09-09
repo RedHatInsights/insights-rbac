@@ -4,7 +4,7 @@
 Flow:
   1. Create workspace via HTTP POST → outbox row written
   2. Debezium captures WAL change → publishes to Kafka
-  3. Kafka consumer reads message → writes Kessel Inventory → sends pg_notify
+  3. Kafka consumer reads message → calls mock Kessel → sends pg_notify
   4. API server's RYW wait receives pg_notify → returns response
   5. This script verifies the response succeeded without timeout
 
@@ -24,9 +24,7 @@ import psycopg2
 import psycopg2.extensions
 import requests
 
-DEFAULT_API_URL = "http://localhost:9080"
-DEFAULT_API_PATH_PREFIX = "/api/rbac"
-DEFAULT_INVENTORY_API_ENDPOINT = "localhost:9081"
+DEFAULT_API_URL = "http://localhost:8000"
 DEFAULT_DB_HOST = "localhost"
 DEFAULT_DB_PORT = 15432
 DEFAULT_DB_NAME = "postgres"
@@ -54,27 +52,17 @@ def make_identity_header(org_id, account_id="12345678", username="test-ryw-user"
     return base64.b64encode(json.dumps(identity).encode()).decode()
 
 
-def workspace_url(api_url, api_path_prefix, workspace_id=None):
-    """Build v2 workspaces URL with the configured API path prefix."""
-    prefix = api_path_prefix.rstrip("/")
-    base = f"{api_url.rstrip('/')}{prefix}/v2/workspaces"
-    if workspace_id:
-        return f"{base}/{workspace_id}/"
-    return f"{base}/"
-
-
-def wait_for_api_ready(api_url, api_path_prefix=DEFAULT_API_PATH_PREFIX, timeout=30):
+def wait_for_api_ready(api_url, timeout=30):
     """Wait for the API server to be ready."""
-    probe_url = workspace_url(api_url, api_path_prefix)
-    print(f"  Waiting for API server at {probe_url}...")
+    print(f"  Waiting for API server at {api_url}...")
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         try:
-            r = requests.get(probe_url, timeout=2)
+            r = requests.get(f"{api_url}/api/v2/workspaces/", timeout=2)
             if r.status_code in (200, 401, 403):
                 print(f"  API server ready (status={r.status_code})")
                 return True
-        except requests.RequestException:
+        except requests.ConnectionError:
             pass
         time.sleep(1)
     print("  ERROR: API server not ready within timeout")
@@ -125,7 +113,7 @@ def listen_for_notify(host, port, dbname, user, password, channel, timeout=30):
         conn.close()
 
 
-def create_workspace_via_api(api_url, org_id, workspace_name, api_path_prefix=DEFAULT_API_PATH_PREFIX):
+def create_workspace_via_api(api_url, org_id, workspace_name):
     """Create a workspace via the v2 API. Returns (response, elapsed_seconds)."""
     identity = make_identity_header(org_id)
     headers = {
@@ -135,108 +123,24 @@ def create_workspace_via_api(api_url, org_id, workspace_name, api_path_prefix=DE
     payload = {"name": workspace_name}
 
     started = time.monotonic()
-    response = requests.post(workspace_url(api_url, api_path_prefix), json=payload, headers=headers, timeout=60)
+    response = requests.post(f"{api_url}/api/v2/workspaces/", json=payload, headers=headers, timeout=60)
     elapsed = time.monotonic() - started
     return response, elapsed
 
 
-def delete_workspace_via_api(api_url, org_id, workspace_id, api_path_prefix=DEFAULT_API_PATH_PREFIX):
+def delete_workspace_via_api(api_url, org_id, workspace_id):
     """Delete a workspace via the v2 API. Returns (response, elapsed_seconds)."""
     identity = make_identity_header(org_id)
     headers = {"x-rh-identity": identity}
 
     started = time.monotonic()
-    response = requests.delete(workspace_url(api_url, api_path_prefix, workspace_id), headers=headers, timeout=60)
+    response = requests.delete(f"{api_url}/api/v2/workspaces/{workspace_id}/", headers=headers, timeout=60)
     elapsed = time.monotonic() - started
     return response, elapsed
 
 
-def verify_workspace_in_kessel_inventory(
-    workspace_id,
-    parent_id,
-    inventory_endpoint=DEFAULT_INVENTORY_API_ENDPOINT,
-    timeout=30,
-):
-    """Verify workspace parent relation exists in Kessel Inventory API (used by HBI).
-
-    HBI does not store workspaces in its own database; it resolves them via Kessel
-    Inventory (ListAllowedWorkspaces / Check). This mirrors the RBAC internal
-    inventory checker used in production.
-    """
-    if not parent_id:
-        print(f"  WARN: workspace {workspace_id} has no parent_id; skipping inventory check")
-        return True
-
-    try:
-        from kessel.inventory.v1beta2 import (
-            ClientBuilder,
-            check_request_pb2,
-            reporter_reference_pb2,
-            resource_reference_pb2,
-            subject_reference_pb2,
-        )
-    except ImportError:
-        print("  WARN: kessel-sdk not installed; skipping HBI/Kessel inventory check (pipenv install --dev)")
-        return True
-
-    object_ref = resource_reference_pb2.ResourceReference(
-        resource_id=workspace_id,
-        resource_type="workspace",
-        reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
-    )
-    parent_ref = resource_reference_pb2.ResourceReference(
-        resource_id=parent_id,
-        resource_type="workspace",
-        reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
-    )
-    check_request = check_request_pb2.CheckRequest(
-        object=object_ref,
-        relation="parent",
-        subject=subject_reference_pb2.SubjectReference(resource=parent_ref),
-    )
-
-    print(
-        f"  Checking Kessel Inventory ({inventory_endpoint}) for workspace parent relation "
-        f"(HBI source of truth)..."
-    )
-    deadline = time.monotonic() + timeout
-    client, channel = ClientBuilder(inventory_endpoint).insecure().build()
-    try:
-        while time.monotonic() < deadline:
-            try:
-                response = client.Check(check_request, timeout=5)
-            except Exception as exc:
-                print(f"  Inventory Check RPC error: {exc}")
-                time.sleep(1)
-                continue
-
-            if response.allowed == 1:
-                print(f"  OK: workspace {workspace_id} replicated to Kessel Inventory (visible to HBI)")
-                return True
-            time.sleep(1)
-    finally:
-        channel.close()
-
-    print(f"  FAIL: workspace {workspace_id} not found in Kessel Inventory after {timeout}s")
-    return False
-
-
-def run_test(
-    api_url,
-    db_host,
-    db_port,
-    db_name,
-    db_user,
-    db_password,
-    test_ryw_listener=False,
-    num_workspaces=3,
-    api_path_prefix=DEFAULT_API_PATH_PREFIX,
-    check_hbi=False,
-    inventory_api_endpoint=DEFAULT_INVENTORY_API_ENDPOINT,
-    inventory_check_timeout=30,
-):
+def run_test(api_url, db_host, db_port, db_name, db_user, db_password, test_ryw_listener=False, num_workspaces=3):
     """Run the full RYW test."""
-    total_steps = 5 if check_hbi else 4
     org_id = f"ryw-test-{uuid.uuid4().hex[:8]}"
 
     print("=" * 60)
@@ -246,12 +150,12 @@ def run_test(
     print()
 
     # Step 1: Check prerequisites
-    print("[1/{}] Checking prerequisites...".format(total_steps))
+    print("[1/4] Checking prerequisites...")
     if not check_db_connection(db_host, db_port, db_name, db_user, db_password):
         return False, None, []
     print(f"  PostgreSQL OK ({db_host}:{db_port})")
 
-    if not wait_for_api_ready(api_url, api_path_prefix=api_path_prefix):
+    if not wait_for_api_ready(api_url):
         return False, None, []
 
     # Step 2: Optionally start a parallel LISTEN to observe NOTIFYs independently
@@ -260,7 +164,7 @@ def run_test(
         import threading
 
         print()
-        print(f"[2/{total_steps}] Starting independent LISTEN on channel '{RYW_CHANNEL}'...")
+        print(f"[2/4] Starting independent LISTEN on channel '{RYW_CHANNEL}'...")
 
         def listener():
             conn = psycopg2.connect(host=db_host, port=db_port, dbname=db_name, user=db_user, password=db_password)
@@ -294,22 +198,20 @@ def run_test(
         print("  LISTEN active")
     else:
         print()
-        print(f"[2/{total_steps}] Skipping independent LISTEN (RYW is tested via API response timing)")
+        print("[2/4] Skipping independent LISTEN (RYW is tested via API response timing)")
 
     # Step 3: Create workspaces via API
     print()
-    print(f"[3/{total_steps}] Creating {num_workspaces} workspace(s)...")
+    print(f"[3/4] Creating {num_workspaces} workspace(s)...")
 
     results = []
     all_passed = True
     for i in range(num_workspaces):
         workspace_name = f"ryw-test-ws-{i + 1}-{uuid.uuid4().hex[:8]}"
         print(f"\n  --- Workspace {i + 1}/{num_workspaces}: '{workspace_name}' ---")
-        print(f"  POST {workspace_url(api_url, api_path_prefix)}")
+        print(f"  POST {api_url}/api/v2/workspaces/")
 
-        response, api_elapsed = create_workspace_via_api(
-            api_url, org_id, workspace_name, api_path_prefix=api_path_prefix
-        )
+        response, api_elapsed = create_workspace_via_api(api_url, org_id, workspace_name)
 
         print(f"  Status: {response.status_code}")
         print(f"  API response time: {api_elapsed:.3f}s")
@@ -317,63 +219,24 @@ def run_test(
         if response.status_code == 201:
             body = response.json()
             workspace_id = body.get("id", "unknown")
-            parent_id = body.get("parent_id")
             print(f"  Workspace ID: {workspace_id}")
-            if parent_id:
-                print(f"  Parent ID: {parent_id}")
-            results.append(
-                {
-                    "name": workspace_name,
-                    "id": workspace_id,
-                    "parent_id": parent_id,
-                    "elapsed": api_elapsed,
-                    "ok": True,
-                    "inventory_ok": None,
-                }
-            )
+            results.append({"name": workspace_name, "id": workspace_id, "elapsed": api_elapsed, "ok": True})
         else:
             print(f"  ERROR: {response.text[:200]}")
-            results.append(
-                {"name": workspace_name, "id": None, "parent_id": None, "elapsed": api_elapsed, "ok": False}
-            )
+            results.append({"name": workspace_name, "id": None, "elapsed": api_elapsed, "ok": False})
             all_passed = False
 
-    if check_hbi:
-        print()
-        print(f"[4/{total_steps}] Verifying workspace(s) in Kessel Inventory (HBI)...")
-        for r in results:
-            if not r.get("ok") or not r.get("id"):
-                continue
-            inventory_ok = verify_workspace_in_kessel_inventory(
-                r["id"],
-                r.get("parent_id"),
-                inventory_endpoint=inventory_api_endpoint,
-                timeout=inventory_check_timeout,
-            )
-            r["inventory_ok"] = inventory_ok
-            if not inventory_ok:
-                all_passed = False
-        verify_step = 5
-    else:
-        verify_step = 4
-
-    # Verify results summary
+    # Step 4: Verify results
     print()
-    print(f"[{verify_step}/{total_steps}] Verifying pipeline...")
+    print("[4/4] Verifying pipeline...")
     print()
 
-    print(f"  {'#':<4} {'Status':<8} {'Inv':<5} {'Time':>8}  {'Workspace ID'}")
-    print(f"  {'─' * 4} {'─' * 8} {'─' * 5} {'─' * 8}  {'─' * 36}")
+    print(f"  {'#':<4} {'Status':<8} {'Time':>8}  {'Workspace ID'}")
+    print(f"  {'─' * 4} {'─' * 8} {'─' * 8}  {'─' * 36}")
     for i, r in enumerate(results):
         status = "PASS" if r["ok"] else "FAIL"
-        if r.get("inventory_ok") is True:
-            inv = "OK"
-        elif r.get("inventory_ok") is False:
-            inv = "FAIL"
-        else:
-            inv = "—"
         wid = r["id"] or "—"
-        print(f"  {i + 1:<4} {status:<8} {inv:<5} {r['elapsed']:>7.3f}s  {wid}")
+        print(f"  {i + 1:<4} {status:<8} {r['elapsed']:>7.3f}s  {wid}")
 
     if test_ryw_listener:
         # Give listener a few more seconds to collect remaining NOTIFYs
@@ -393,7 +256,7 @@ def run_test(
     if all_passed:
         print()
         print("  All workspaces created successfully. The full pipeline")
-        print("  (outbox -> Debezium -> Kafka -> consumer -> Kessel Inventory")
+        print("  (outbox -> Debezium -> Kafka -> consumer -> mock Kessel")
         print("  -> pg_notify) was exercised for each workspace.")
     print("=" * 60)
 
@@ -412,7 +275,7 @@ def print_summary_table(label, results):
         print(f"  {i + 1:<4} {op:<8} {status:<8} {r['elapsed']:>7.3f}s  {wid}")
 
 
-def run_phase2(api_url, org_id, init_results, db_host, db_port, db_name, db_user, db_password, api_path_prefix):
+def run_phase2(api_url, org_id, init_results, db_host, db_port, db_name, db_user, db_password):
     """Phase 2: create 2 new workspaces, delete 2 from init phase."""
     print()
     print("=" * 60)
@@ -425,8 +288,8 @@ def run_phase2(api_url, org_id, init_results, db_host, db_port, db_name, db_user
     print("\n  --- Creating 2 new workspaces (phase-2) ---")
     for i in range(2):
         ws_name = f"phase-2-ws-{i + 1}-{uuid.uuid4().hex[:8]}"
-        print(f"\n  POST {workspace_url(api_url, api_path_prefix)}  name='{ws_name}'")
-        response, elapsed = create_workspace_via_api(api_url, org_id, ws_name, api_path_prefix=api_path_prefix)
+        print(f"\n  POST {api_url}/api/v2/workspaces/  name='{ws_name}'")
+        response, elapsed = create_workspace_via_api(api_url, org_id, ws_name)
         print(f"  Status: {response.status_code}  Time: {elapsed:.3f}s")
         if response.status_code == 201:
             body = response.json()
@@ -443,8 +306,8 @@ def run_phase2(api_url, org_id, init_results, db_host, db_port, db_name, db_user
 
     print(f"\n  --- Deleting {len(to_delete)} workspace(s) from init phase ---")
     for r in to_delete:
-        print(f"\n  DELETE {workspace_url(api_url, api_path_prefix, r['id'])}  ('{r['name']}')")
-        response, elapsed = delete_workspace_via_api(api_url, org_id, r["id"], api_path_prefix=api_path_prefix)
+        print(f"\n  DELETE {api_url}/api/v2/workspaces/{r['id']}/  ('{r['name']}')")
+        response, elapsed = delete_workspace_via_api(api_url, org_id, r["id"])
         print(f"  Status: {response.status_code}  Time: {elapsed:.3f}s")
         ok = response.status_code == 204
         if not ok:
@@ -467,27 +330,6 @@ def run_phase2(api_url, org_id, init_results, db_host, db_port, db_name, db_user
 def main():
     parser = argparse.ArgumentParser(description="Test RYW pipeline")
     parser.add_argument("--api-url", default=DEFAULT_API_URL, help="RBAC API base URL")
-    parser.add_argument(
-        "--inventory-api-endpoint",
-        default=DEFAULT_INVENTORY_API_ENDPOINT,
-        help="Kessel Inventory API gRPC endpoint for HBI verification (default: localhost:9081)",
-    )
-    parser.add_argument(
-        "--check-hbi",
-        action="store_true",
-        help="Verify workspace parent relation exists in Kessel Inventory (HBI source of truth)",
-    )
-    parser.add_argument(
-        "--inventory-check-timeout",
-        type=int,
-        default=30,
-        help="Seconds to wait for workspace to appear in Kessel Inventory (default: 30)",
-    )
-    parser.add_argument(
-        "--api-path-prefix",
-        default=DEFAULT_API_PATH_PREFIX,
-        help="API path prefix before /v2 (default: /api/rbac)",
-    )
     parser.add_argument("--db-host", default=DEFAULT_DB_HOST, help="PostgreSQL host")
     parser.add_argument("--db-port", type=int, default=DEFAULT_DB_PORT, help="PostgreSQL port")
     parser.add_argument("--db-name", default=DEFAULT_DB_NAME, help="Database name")
@@ -519,7 +361,6 @@ def main():
             db_name=args.db_name,
             db_user=args.db_user,
             db_password=args.db_password,
-            api_path_prefix=args.api_path_prefix,
         )
         sys.exit(0 if phase2_passed else 1)
 
@@ -532,13 +373,9 @@ def main():
         db_password=args.db_password,
         test_ryw_listener=args.listen,
         num_workspaces=args.count,
-        api_path_prefix=args.api_path_prefix,
-        check_hbi=args.check_hbi,
-        inventory_api_endpoint=args.inventory_api_endpoint,
-        inventory_check_timeout=args.inventory_check_timeout,
     )
 
-    if args.save_results:
+    if args.save_results and init_passed:
         with open(args.save_results, "w") as f:
             json.dump({"org_id": org_id, "results": init_results}, f, indent=2)
         print(f"\n  Init results saved to {args.save_results}")
