@@ -1517,18 +1517,18 @@ class PrincipalKafkaTestsWithV2TenantBootstrap(PrincipalKafkaTests):
     @patch("management.principal.cleaner._try_acquire_kafka_consumer_lock", return_value=True)
     @patch("management.principal.cleaner.KafkaConsumer")
     @patch("management.principal.cleaner.settings.KAFKA_PRINCIPAL_CLEANUP_TOPIC", "test-topic")
-    def test_consumer_lock_released_even_when_exception_raised(
+    def test_consumer_lock_released_even_when_kafka_error_raised(
         self, consumer_mock, lock_acquire_mock, lock_release_mock
     ):
-        """Test that lock is released in finally even when exception is raised after lock acquisition."""
-        # Make KafkaConsumer raise an exception after lock is acquired
-        consumer_mock.side_effect = Exception("Simulated Kafka connection error")
+        """Test that lock is released when KafkaError is raised after lock acquisition (designed error path)."""
+        # Import KafkaError to simulate the designed error path
+        from kafka.errors import KafkaError
 
-        # Should not raise (exception is logged and captured)
-        try:
-            process_principal_events_from_kafka()
-        except Exception:
-            pass  # Expected to be caught internally
+        # Make KafkaConsumer raise KafkaError after lock is acquired
+        consumer_mock.side_effect = KafkaError("Simulated Kafka connection error")
+
+        # KafkaError should NOT propagate (caught by except KafkaError clause)
+        process_principal_events_from_kafka()
 
         # Lock was acquired
         lock_acquire_mock.assert_called_once()
@@ -1537,4 +1537,28 @@ class PrincipalKafkaTestsWithV2TenantBootstrap(PrincipalKafkaTests):
         consumer_mock.assert_called_once()
 
         # Lock MUST still be released in finally (because consumer_lock_held=True)
+        lock_release_mock.assert_called_once()
+
+    @patch("management.principal.cleaner._release_kafka_consumer_lock")
+    @patch("management.principal.cleaner._try_acquire_kafka_consumer_lock", return_value=True)
+    @patch("management.principal.cleaner.KafkaConsumer")
+    @patch("management.principal.cleaner.settings.KAFKA_PRINCIPAL_CLEANUP_TOPIC", "test-topic")
+    def test_consumer_lock_released_when_non_kafka_exception_propagates(
+        self, consumer_mock, lock_acquire_mock, lock_release_mock
+    ):
+        """Test that lock is released even when non-KafkaError exception propagates from constructor."""
+        # Make KafkaConsumer raise a generic exception (not KafkaError)
+        consumer_mock.side_effect = Exception("Simulated Kafka connection error")
+
+        # Generic Exception should propagate (NOT caught by except KafkaError clause)
+        with self.assertRaisesRegex(Exception, "Simulated Kafka connection error"):
+            process_principal_events_from_kafka()
+
+        # Lock was acquired
+        lock_acquire_mock.assert_called_once()
+
+        # Consumer construction was attempted
+        consumer_mock.assert_called_once()
+
+        # Lock MUST still be released in finally despite exception propagation (because consumer_lock_held=True)
         lock_release_mock.assert_called_once()

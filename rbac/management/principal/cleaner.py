@@ -706,8 +706,7 @@ def process_principal_events_from_kafka(
 
     # Initialize consumer to None to avoid UnboundLocalError in finally block
     consumer = None
-    # Track whether we hold the single-consumer advisory lock so the finally block only
-    # releases it when we actually acquired it (guards against leaking a session-level lock).
+
     consumer_lock_held = False
 
     # Initialize DLQ producer if DLQ topic is configured. The DLQ topic is also on the IT-managed
@@ -726,10 +725,6 @@ def process_principal_events_from_kafka(
             )
 
     try:
-        # Single-consumer-per-cycle guard: prevent multiple ForkPoolWorkers from each joining the
-        # group. Non-blocking session-level advisory lock. If not acquired, this worker no-ops.
-        # Acquired inside the try so the finally always runs its (guarded) release, even if
-        # anything below raises before/after the consumer is built.
         consumer_lock_held = _try_acquire_kafka_consumer_lock()
         if not consumer_lock_held:
             logger.info(
@@ -790,9 +785,6 @@ def process_principal_events_from_kafka(
                 logger.info("process_principal_events_from_kafka: Kafka consumer closed.")
             except Exception as e:
                 logger.error("process_principal_events_from_kafka: Error closing consumer: %s", str(e))
-        # Release the consumer construction lock (session-level, must be explicit) only if we hold
-        # it. Releasing a lock we never acquired would emit a spurious warning and, worse, could
-        # unlock a lock held by another logical acquire on the same reused Celery DB connection.
         if consumer_lock_held:
             _release_kafka_consumer_lock()
         logger.info("process_principal_events_from_kafka: Principal event processing finished.")
