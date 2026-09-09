@@ -58,6 +58,7 @@ KEY_LOC = "/opt/rbac/rbac/management/principal/umb_certificates/tls.key"
 
 
 LOCK_ID = 42  # For Keith, with Love
+KAFKA_CONSUMER_LOCK_ID = 43  # Guards Kafka consumer construction to prevent multi-worker join thrash
 
 # UMB Metric Messages
 METRIC_STOMP_MESSAGES_ACK_TOTAL = "stomp_messages_ack_total"
@@ -692,11 +693,22 @@ def process_principal_events_from_kafka(
         "enable_auto_commit": False,  # Manual commit for at-least-once semantics
         # No value_deserializer - leave as bytes to handle tombstones and UTF-8 errors in process_kafka_message
         "consumer_timeout_ms": 15000,  # 15 second timeout per run, matches UMB behavior
+        # Timeout tuning: 60s beat cycle + 15s drain must fit in session_timeout_ms without causing LeaveGroup
+        "session_timeout_ms": settings.KAFKA_PRINCIPAL_CLEANUP_SESSION_TIMEOUT_MS,
+        "heartbeat_interval_ms": settings.KAFKA_PRINCIPAL_CLEANUP_HEARTBEAT_INTERVAL_MS,
+        "max_poll_interval_ms": settings.KAFKA_PRINCIPAL_CLEANUP_MAX_POLL_INTERVAL_MS,
     }
     kafka_config.update(consumer_auth)
 
+    # Static membership: reuse same group.instance.id across periodic cycles to avoid full rebalance
+    if settings.KAFKA_PRINCIPAL_CLEANUP_STATIC_MEMBERSHIP_ENABLED:
+        kafka_config["group_instance_id"] = f"{settings.SA_NAME}-{env_name}-principal-cleanup-static"
+
     # Initialize consumer to None to avoid UnboundLocalError in finally block
     consumer = None
+    # Track whether we hold the single-consumer advisory lock so the finally block only
+    # releases it when we actually acquired it (guards against leaking a session-level lock).
+    consumer_lock_held = False
 
     # Initialize DLQ producer if DLQ topic is configured. The DLQ topic is also on the IT-managed
     # cluster, so the producer must target that profile (not the default Clowder one).
@@ -714,6 +726,18 @@ def process_principal_events_from_kafka(
             )
 
     try:
+        # Single-consumer-per-cycle guard: prevent multiple ForkPoolWorkers from each joining the
+        # group. Non-blocking session-level advisory lock. If not acquired, this worker no-ops.
+        # Acquired inside the try so the finally always runs its (guarded) release, even if
+        # anything below raises before/after the consumer is built.
+        consumer_lock_held = _try_acquire_kafka_consumer_lock()
+        if not consumer_lock_held:
+            logger.info(
+                "process_principal_events_from_kafka: Another worker is already running the Kafka consumer. "
+                "Skipping this cycle to avoid consumer group rebalance thrash."
+            )
+            return
+
         consumer = KafkaConsumer(topic, **kafka_config)
         logger.info("process_principal_events_from_kafka: Connected to Kafka, subscribed to topic: %s", topic)
 
@@ -766,6 +790,11 @@ def process_principal_events_from_kafka(
                 logger.info("process_principal_events_from_kafka: Kafka consumer closed.")
             except Exception as e:
                 logger.error("process_principal_events_from_kafka: Error closing consumer: %s", str(e))
+        # Release the consumer construction lock (session-level, must be explicit) only if we hold
+        # it. Releasing a lock we never acquired would emit a spurious warning and, worse, could
+        # unlock a lock held by another logical acquire on the same reused Celery DB connection.
+        if consumer_lock_held:
+            _release_kafka_consumer_lock()
         logger.info("process_principal_events_from_kafka: Principal event processing finished.")
 
 
@@ -777,3 +806,30 @@ def _lock_listener() -> bool:
     if result is None:
         raise Exception("Advisory lock returned none, expected bool.")
     return result[0]  # Returns True if lock acquired, False otherwise
+
+
+def _try_acquire_kafka_consumer_lock() -> bool:
+    """
+    Attempt to acquire session-level advisory lock for Kafka consumer construction.
+
+    Uses a session-level lock (not transaction-level) so it can span the entire consume loop.
+    Returns True if lock acquired, False if another worker already holds it.
+    Must call _release_kafka_consumer_lock() in finally block when done.
+    """
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_try_advisory_lock(%s);", [KAFKA_CONSUMER_LOCK_ID])
+        result = cursor.fetchone()
+    if result is None:
+        raise Exception("Advisory lock returned none, expected bool.")
+    return result[0]  # Returns True if lock acquired, False otherwise
+
+
+def _release_kafka_consumer_lock():
+    """Release the session-level advisory lock for Kafka consumer."""
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT pg_advisory_unlock(%s);", [KAFKA_CONSUMER_LOCK_ID])
+        result = cursor.fetchone()
+    if result is None:
+        raise Exception("Advisory unlock returned none, expected bool.")
+    if not result[0]:
+        logger.warning("_release_kafka_consumer_lock: Failed to release lock (was it held?)")
