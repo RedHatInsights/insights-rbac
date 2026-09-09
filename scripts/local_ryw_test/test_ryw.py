@@ -4,7 +4,7 @@
 Flow:
   1. Create workspace via HTTP POST → outbox row written
   2. Debezium captures WAL change → publishes to Kafka
-  3. Kafka consumer reads message → calls mock Kessel → sends pg_notify
+  3. Kafka consumer reads message → writes Kessel Inventory → sends pg_notify
   4. API server's RYW wait receives pg_notify → returns response
   5. This script verifies the response succeeded without timeout
 
@@ -393,7 +393,7 @@ def run_test(
     if all_passed:
         print()
         print("  All workspaces created successfully. The full pipeline")
-        print("  (outbox -> Debezium -> Kafka -> consumer -> mock Kessel")
+        print("  (outbox -> Debezium -> Kafka -> consumer -> Kessel Inventory")
         print("  -> pg_notify) was exercised for each workspace.")
     print("=" * 60)
 

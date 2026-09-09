@@ -166,8 +166,10 @@ resolve_inventory_api_repo
 if [[ "${SKIP_BUILD}" != true ]]; then
   log-info "Building local RBAC image ${RBAC_IMAGE}..."
   "${CONTAINER_RUNTIME}" build -t "${RBAC_IMAGE}" "${REPO_ROOT}"
+  export RBAC_FORCE_RECREATE=true
 else
   log-info "Skipping RBAC image build (RBAC_IMAGE=${RBAC_IMAGE})"
+  export RBAC_FORCE_RECREATE=false
 fi
 
 start_kessel_stack

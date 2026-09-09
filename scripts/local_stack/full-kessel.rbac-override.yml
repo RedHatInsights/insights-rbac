@@ -49,6 +49,18 @@ services:
       READ_YOUR_WRITES_TIMEOUT_SECONDS: "30"
       SERVICE_PSKS: '{"inventory":{"secret":"local-dev-psk"}}'
 
+  inventory-api:
+    # The full-kessel config permits unauthenticated gRPC transport but does
+    # not set its compatibility option. The generated local config enables it
+    # so Inventory selects its local tuple authorizer and RBAC can acquire the
+    # fencing lock used by the Kafka consumer.
+    volumes:
+      - "${RBAC_INVENTORY_API_CONFIG}:/inventory-api-compose.yaml:ro,z"
+
+  invmigrate:
+    volumes:
+      - "${RBAC_INVENTORY_API_CONFIG}:/inventory-api-compose.yaml:ro,z"
+
   kafka-connect:
     environment:
       KAFKA_HEAP_OPTS: "-Xms64M -Xmx128M"

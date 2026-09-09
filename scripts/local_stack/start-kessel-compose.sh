@@ -29,9 +29,15 @@ fi
 
 export DOCKER="${CONTAINER_RUNTIME}"
 export COMPOSE_PULL_MODE="${COMPOSE_PULL_MODE:-missing}"
+export RBAC_IMAGE="${RBAC_IMAGE:?RBAC_IMAGE must be set by up-full.sh}"
 
-RBAC_IMAGE="${RBAC_IMAGE:?RBAC_IMAGE must be set by up-full.sh}" "${COMPOSE_CMD[@]}" --env-file "${ENV_FILE}" \
+compose_up_args=(up --pull "${COMPOSE_PULL_MODE}" -d)
+if [[ "${RBAC_FORCE_RECREATE:-false}" == "true" ]]; then
+  compose_up_args+=(--force-recreate)
+fi
+
+"${COMPOSE_CMD[@]}" --env-file "${ENV_FILE}" \
   --profile relations --profile consumer --profile rbac \
   -f "${COMPOSE_DIR}/docker-compose.yaml" \
   -f "${RBAC_OVERRIDE}" \
-  up --pull "${COMPOSE_PULL_MODE}" -d
+  "${compose_up_args[@]}"

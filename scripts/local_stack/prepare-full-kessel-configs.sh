@@ -9,6 +9,7 @@ prepare_full_kessel_configs() {
 
   local compose_dir="${inventory_api_repo}/development/full-kessel"
   local env_file="${compose_dir}/.env"
+  local requested_rbac_image="${RBAC_IMAGE:-}"
 
   if [[ -f "${env_file}" ]]; then
     set -a
@@ -16,8 +17,25 @@ prepare_full_kessel_configs() {
     source "${env_file}"
     set +a
   fi
+  if [[ -n "${requested_rbac_image}" ]]; then
+    export RBAC_IMAGE="${requested_rbac_image}"
+  fi
 
   local schema_dest="${compose_dir}/configs/schema.zed"
+  local local_config_dir="${TMPDIR:-/tmp}/insights-rbac-full-kessel"
+  local local_inventory_config="${local_config_dir}/inventory-api.yaml"
+
+  mkdir -p "${local_config_dir}"
+  awk '
+    /^authn:$/ {
+      print
+      print "  allow-unauthenticated: true"
+      next
+    }
+    { print }
+  ' "${compose_dir}/configs/inventory-api.yaml" > "${local_inventory_config}"
+  export RBAC_INVENTORY_API_CONFIG="${local_inventory_config}"
+
   if [[ -n "${SCHEMA_ZED_FILE:-}" ]]; then
     log-info "Using local schema file: ${SCHEMA_ZED_FILE}"
     cp "${SCHEMA_ZED_FILE}" "${schema_dest}"
