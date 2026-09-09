@@ -139,7 +139,35 @@ def delete_workspace_via_api(api_url, org_id, workspace_id):
     return response, elapsed
 
 
-def run_test(api_url, db_host, db_port, db_name, db_user, db_password, test_ryw_listener=False, num_workspaces=3):
+def wait_for_hbi_workspace(hbi_api_url, org_id, workspace_id, timeout=30):
+    """Wait until Host Inventory returns the workspace through its group API."""
+    identity = make_identity_header(org_id)
+    headers = {"x-rh-identity": identity}
+    url = f"{hbi_api_url.rstrip('/')}/api/inventory/v1/groups/{workspace_id}"
+    deadline = time.monotonic() + timeout
+
+    while time.monotonic() < deadline:
+        try:
+            response = requests.get(url, headers=headers, timeout=5)
+            if response.status_code == 200 and response.json().get("id") == workspace_id:
+                return True
+        except requests.RequestException:
+            pass
+        time.sleep(1)
+    return False
+
+
+def run_test(
+    api_url,
+    db_host,
+    db_port,
+    db_name,
+    db_user,
+    db_password,
+    test_ryw_listener=False,
+    num_workspaces=3,
+    hbi_api_url=None,
+):
     """Run the full RYW test."""
     org_id = f"ryw-test-{uuid.uuid4().hex[:8]}"
 
@@ -230,6 +258,15 @@ def run_test(api_url, db_host, db_port, db_name, db_user, db_password, test_ryw_
     print()
     print("[4/4] Verifying pipeline...")
     print()
+
+    if hbi_api_url:
+        print(f"  Verifying workspace visibility in Host Inventory ({hbi_api_url})...")
+        for result in results:
+            if result["ok"] and result["id"]:
+                result["hbi_ok"] = wait_for_hbi_workspace(hbi_api_url, org_id, result["id"])
+                if not result["hbi_ok"]:
+                    print(f"  HBI did not return workspace {result['id']} within 30s")
+                    all_passed = False
 
     print(f"  {'#':<4} {'Status':<8} {'Time':>8}  {'Workspace ID'}")
     print(f"  {'─' * 4} {'─' * 8} {'─' * 8}  {'─' * 36}")
@@ -337,6 +374,7 @@ def main():
     parser.add_argument("--db-password", default=DEFAULT_DB_PASSWORD, help="Database password")
     parser.add_argument("--listen", action="store_true", help="Also run an independent LISTEN to observe pg_notify")
     parser.add_argument("--count", type=int, default=3, help="Number of workspaces to create (default: 3)")
+    parser.add_argument("--hbi-api-url", help="Verify created workspaces through this Host Inventory API URL")
     parser.add_argument(
         "--phase2-from",
         metavar="FILE",
@@ -373,6 +411,7 @@ def main():
         db_password=args.db_password,
         test_ryw_listener=args.listen,
         num_workspaces=args.count,
+        hbi_api_url=args.hbi_api_url,
     )
 
     if args.save_results and init_passed:

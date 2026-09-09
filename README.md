@@ -87,6 +87,13 @@ To start only Kessel, Debezium, and RBAC, omit Host Inventory:
 ./scripts/local_stack/up-full.sh --no-hbi
 ```
 
+Verify a workspace create, the RBAC Read-Your-Writes notification, and that
+Host Inventory exposes the created workspace:
+
+```bash
+./scripts/create_workspace_local.sh --no-start --check-hbi
+```
+
 Stop the full stack with `make docker-local-full-down`. This preserves volumes;
 pass `--volumes` to `scripts/local_stack/down-full.sh` when a clean HBI data
 volume is required. If the RBAC Kafka consumer is unhealthy, restart the stack

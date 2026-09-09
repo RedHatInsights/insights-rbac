@@ -104,6 +104,8 @@ resolve_hbi_repo() {
     HBI_REPO="${clone_dir}"
   fi
   log-info "Using Host Inventory at ${HBI_REPO}"
+  log-info "Initializing Host Inventory git submodules..."
+  git -C "${HBI_REPO}" submodule update --init --recursive
 }
 
 start_kessel_stack() {
@@ -129,7 +131,7 @@ start_hbi() {
   "${COMPOSE_CMD[@]}" -p "${HBI_COMPOSE_PROJECT}" \
     -f "${HBI_REPO}/dev.yml" \
     -f "${REPO_ROOT}/scripts/local_stack/hbi.integration.yml" \
-    up -d --build db hbi-web hbi-mq
+    up -d --build --no-deps db hbi-web hbi-mq
 }
 
 print_endpoints() {
