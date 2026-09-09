@@ -265,7 +265,10 @@ namespace Problems {
         type: ProblemType.ServiceUnavailable,
         title: "A downstream dependency is temporarily unavailable. Please retry shortly.",
         @example("Inventory authorization is temporarily unavailable. Please try again shortly.")
-        detail: string
+        detail: string,
+        @header("Retry-After")
+        @example("1")
+        retryAfter: string
     }
 
     @error

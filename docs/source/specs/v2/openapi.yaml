@@ -1282,6 +1282,11 @@ paths:
                 $ref: '#/components/schemas/Problems.Problem500'
         '503':
           description: Service unavailable.
+          headers:
+            Retry-After:
+              required: true
+              schema:
+                type: string
           content:
             application/problem+json:
               schema:
@@ -1428,6 +1433,11 @@ paths:
                 $ref: '#/components/schemas/Problems.Problem500'
         '503':
           description: Service unavailable.
+          headers:
+            Retry-After:
+              required: true
+              schema:
+                type: string
           content:
             application/problem+json:
               schema:
