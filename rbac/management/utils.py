@@ -24,9 +24,11 @@ import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from typing import ClassVar, Optional, TypedDict
+from urllib.parse import urlparse
 from uuid import UUID
 
 import grpc
+import requests
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
 from django.utils.translation import gettext as _
@@ -36,6 +38,7 @@ from management.authorization.missing_authorization import MissingAuthorizationE
 from management.authorization.token_validator import TokenValidator
 from management.cache import PrincipalCache
 from management.models import Access, Group, Policy, Principal, Role
+from management.exceptions import InventoryAuthUnavailableError
 from management.permissions.principal_access import PrincipalAccessPermission
 from management.principal.it_service import ITService
 from management.principal.proxy import PrincipalProxy
@@ -76,7 +79,17 @@ def get_inventory_auth_metadata() -> list:
     """
     if not settings.INVENTORY_API_CLIENT_ID or not settings.INVENTORY_API_CLIENT_SECRET:
         return []
-    token_response = inventory_auth_credentials.get_token()
+    try:
+        token_response = inventory_auth_credentials.get_token()
+    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as exc:
+        token_endpoint_host = urlparse(settings.INVENTORY_API_TOKEN_URL).netloc or "unknown"
+        logger.warning(
+            "Inventory API OAuth token request failed at SSO endpoint: endpoint_host=%s error_type=%s",
+            token_endpoint_host,
+            type(exc).__name__,
+            exc_info=True,
+        )
+        raise InventoryAuthUnavailableError() from exc
     if not token_response.access_token:
         raise RuntimeError("Inventory API OAuth token response did not include an access_token")
     return [("authorization", f"Bearer {token_response.access_token}")]

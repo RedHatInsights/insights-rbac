@@ -18,8 +18,10 @@
 
 import uuid
 
+import requests
 from api.models import Tenant, User
 from management.models import Access, Group, Permission, Principal, Policy, Role
+from management.exceptions import InventoryAuthUnavailableError
 from management.principal.view import VALID_PRINCIPAL_TYPE_VALUE
 from management.utils import (
     access_for_principal,
@@ -855,6 +857,17 @@ class GetInventoryAuthMetadataTests(IdentityRequest):
         mock_credentials.get_token.side_effect = Exception("SSO unreachable")
         with self.assertRaises(Exception):
             get_inventory_auth_metadata()
+
+    @override_settings(INVENTORY_API_CLIENT_ID="client-id", INVENTORY_API_CLIENT_SECRET="client-secret")
+    @mock.patch("management.utils.inventory_auth_credentials")
+    def test_wraps_transient_token_fetch_failure(self, mock_credentials):
+        """Transient OAuth connection failures become a service-unavailable domain error."""
+        mock_credentials.get_token.side_effect = requests.exceptions.ConnectionError("SSO reset connection")
+
+        with self.assertRaises(InventoryAuthUnavailableError) as context:
+            get_inventory_auth_metadata()
+
+        self.assertIsInstance(context.exception.__cause__, requests.exceptions.ConnectionError)
 
     @override_settings(INVENTORY_API_CLIENT_ID="client-id", INVENTORY_API_CLIENT_SECRET="client-secret")
     @mock.patch("management.utils.inventory_auth_credentials")

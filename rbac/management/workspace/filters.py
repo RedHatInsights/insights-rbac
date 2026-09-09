@@ -19,6 +19,7 @@
 import logging
 
 from feature_flags import FEATURE_FLAGS
+from management.exceptions import InventoryAuthUnavailableError
 from management.workspace.utils import permission_from_request
 from management.workspace.utils.access import is_user_allowed_v2
 from rest_framework import filters
@@ -80,6 +81,17 @@ class WorkspaceAccessFilterBackend(filters.BaseFilterBackend):
         with_ancestry = getattr(request, "with_ancestry", False) if workspace_id is None else False
         try:
             has_access = is_user_allowed_v2(request, relation, workspace_id, with_ancestry=with_ancestry)
+        except InventoryAuthUnavailableError:
+            logger.warning(
+                "Inventory SSO unavailable during workspace access filtering: "
+                "user=%s org_id=%s workspace_id=%s relation=%s",
+                getattr(request.user, "username", "unknown"),
+                getattr(request.user, "org_id", "unknown"),
+                workspace_id,
+                relation,
+                exc_info=True,
+            )
+            raise
         except Exception as e:
             logger.exception(
                 "Exception in is_user_allowed_v2: user=%s, org_id=%s, workspace_id=%s, relation=%s, error=%s",
