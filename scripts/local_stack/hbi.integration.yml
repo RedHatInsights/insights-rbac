@@ -1,0 +1,39 @@
+# Attach Host Inventory to the external `kessel` Docker network created by
+# inventory-api development/full-kessel/docker-compose.yaml.
+
+services:
+  hbi-web:
+    environment:
+      BYPASS_RBAC: "false"
+      BYPASS_KESSEL: "false"
+      BYPASS_UNLEASH: "true"
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9093
+      RBAC_ENDPOINT: http://rbac-server:8080
+      KESSEL_INVENTORY_API_ENDPOINT: inventory-api:9081
+      KESSEL_INSECURE: "true"
+      KESSEL_AUTH_ENABLED: "false"
+      RBAC_PSKS: '{"inventory":{"secret":"local-dev-psk"}}'
+      CACHE_HOST: redis
+      CACHE_PORT: "6379"
+      OTEL_ENABLED: "false"
+    networks:
+      - default
+      - kessel
+
+  hbi-mq:
+    environment:
+      BYPASS_KESSEL: "false"
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9093
+      KESSEL_INVENTORY_API_ENDPOINT: inventory-api:9081
+      KESSEL_INSECURE: "true"
+      KESSEL_AUTH_ENABLED: "false"
+      CACHE_HOST: redis
+      CACHE_PORT: "6379"
+      OTEL_ENABLED: "false"
+    networks:
+      - default
+      - kessel
+
+networks:
+  kessel:
+    external: true
