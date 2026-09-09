@@ -1,0 +1,114 @@
+# Compose override for inventory-api development/full-kessel stack.
+# Applied by scripts/local_stack/up-full.sh when starting the integrated stack.
+#
+# Enables Read-Your-Writes for workspace creates and configures a local PSK so
+# Host Inventory can call RBAC internal APIs without BYPASS_RBAC.
+
+services:
+  # Podman can omit the service-name alias when attaching an existing external
+  # network. Make the broker name used by the RBAC consumer explicit.
+  kafka:
+    environment:
+      # The full local stack runs within a small Docker VM. Keep Kafka from
+      # consuming the memory needed by the RBAC, Kessel, and Debezium services.
+      KAFKA_HEAP_OPTS: "-Xms64M -Xmx192M"
+      KAFKA_LOG_CLEANER_DEDUPE_BUFFER_SIZE: "33554432"
+    command:
+      - sh
+      - -c
+      - >-
+        bin/kafka-server-start.sh config/server.properties
+        --override listeners=$${KAFKA_LISTENERS}
+        --override advertised.listeners=$${KAFKA_ADVERTISED_LISTENERS}
+        --override zookeeper.connect=$${KAFKA_ZOOKEEPER_CONNECT}
+        --override listener.security.protocol.map=$${KAFKA_LISTENER_SECURITY_PROTOCOL_MAP}
+        --override inter.broker.listener.name=$${KAFKA_INTER_BROKER_LISTENER_NAME}
+        --override log.cleaner.dedupe.buffer.size=$${KAFKA_LOG_CLEANER_DEDUPE_BUFFER_SIZE}
+    healthcheck:
+      # The broker API probe can exceed the healthcheck timeout while Kafka
+      # loads its local metadata. A listener probe is sufficient for compose
+      # ordering and avoids starting another JVM client in the small VM.
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/9093'"]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 60s
+    networks:
+      kessel:
+        aliases:
+          - kafka
+
+  rbac-server:
+    environment:
+      # The local VM exposes two CPUs, which otherwise starts four Gunicorn
+      # workers and leaves too little memory for the rest of the stack.
+      POD_CPU_LIMIT: "1"
+      GUNICORN_WORKER_MULTIPLIER: "1"
+      GUNICORN_THREAD_LIMIT: "2"
+      READ_YOUR_WRITES_WORKSPACE_ENABLED: "True"
+      READ_YOUR_WRITES_TIMEOUT_SECONDS: "30"
+      SERVICE_PSKS: '{"inventory":{"secret":"local-dev-psk"}}'
+
+  inventory-api:
+    # The full-kessel config permits unauthenticated gRPC transport but does
+    # not set its compatibility option. The generated local config enables it
+    # so Inventory selects its local tuple authorizer and RBAC can acquire the
+    # fencing lock used by the Kafka consumer.
+    volumes:
+      - "${RBAC_INVENTORY_API_CONFIG}:/inventory-api-compose.yaml:ro,z"
+
+  invmigrate:
+    volumes:
+      - "${RBAC_INVENTORY_API_CONFIG}:/inventory-api-compose.yaml:ro,z"
+
+  kafka-connect:
+    environment:
+      KAFKA_HEAP_OPTS: "-Xms64M -Xmx128M"
+
+  relations-api:
+    # The RBAC consumer must acquire its fencing lock over this gRPC listener
+    # before it can process Kafka messages.
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/9000'"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+  zookeeper:
+    environment:
+      KAFKA_HEAP_OPTS: "-Xms32M -Xmx64M"
+
+  rbac-kafka-consumer:
+    environment:
+      # Partition fencing is implemented by Kessel Inventory, whose gRPC
+      # listener is on 9081. Without this, settings.py defaults to localhost:9000.
+      INVENTORY_API_SERVER: inventory-api:9081
+      READ_YOUR_WRITES_WORKSPACE_ENABLED: "True"
+      READ_YOUR_WRITES_TIMEOUT_SECONDS: "30"
+    depends_on:
+      inventory-api:
+        condition: service_healthy
+      relations-api:
+        condition: service_healthy
+
+  rbac-worker:
+    environment:
+      READ_YOUR_WRITES_WORKSPACE_ENABLED: "True"
+      READ_YOUR_WRITES_TIMEOUT_SECONDS: "30"
+    # `celery status` starts a broker RPC for every probe and is unreliable
+    # while the constrained local stack is starting. The process check still
+    # lets rbac-server wait for the worker container to be running.
+    healthcheck:
+      test: ["CMD-SHELL", "kill -0 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # The upstream check probes Celery workers, but beat is not a worker.
+  # Keep the scheduler dependency meaningful by checking that its PID is alive.
+  rbac-scheduler:
+    healthcheck:
+      test: ["CMD-SHELL", "kill -0 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3

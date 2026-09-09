@@ -3,22 +3,24 @@
 # timestamp
 TIMESTAMP=$(date "+%Y-%m-%d %H:%M:%S")
 
-if which tput &> /dev/null; then
-  # colors
-  ERR=$(tput setaf 1)
-  INFO=$(tput setaf 178)
-  WARN=$(tput setaf 165)
-  TRACE=$(tput setaf 27)
-  TS=$(tput setaf 2)
-  TAG=$(tput setaf 10)
-  RESET=$(tput sgr0)
+_USE_COLORS=false
+if command -v tput &>/dev/null && [ -n "${TERM:-}" ]; then
+  # tput can fail in non-TTY environments; never abort callers using set -e
+  if ERR=$(tput setaf 1 2>/dev/null) && INFO=$(tput setaf 3 2>/dev/null) && WARN=$(tput setaf 5 2>/dev/null) \
+    && TRACE=$(tput setaf 6 2>/dev/null) && TS=$(tput setaf 2 2>/dev/null) && TAG=$(tput setaf 10 2>/dev/null) \
+    && RESET=$(tput sgr0 2>/dev/null); then
+    _USE_COLORS=true
+  fi
+fi
 
-  log(){
+if [ "${_USE_COLORS}" = true ]; then
+  log() {
     local _tag_name=${1}
     local _msg=${@:2}
 
+    # shellcheck disable=SC2059
     printf "${TS}${TIMESTAMP} ${TAG}[${_tag_name}\t] ${_msg}\n"
-    printf  ${RESET}
+    printf "%b" "${RESET}"
   }
 
   log-info() {
@@ -34,14 +36,15 @@ if which tput &> /dev/null; then
   }
 
   log-debug() {
-    local _debug=$(tr '[:upper:]' '[:lower:]' <<<"$DEBUG")
-    if [[ ! -z "${DEBUG}" && ${_debug} == true ]];then
-        log "DEBUG" "${TRACE} $@"
+    local _debug
+    _debug=$(tr '[:upper:]' '[:lower:]' <<<"${DEBUG:-}")
+    if [[ -n "${DEBUG:-}" && ${_debug} == true ]]; then
+      log "DEBUG" "${TRACE} $@"
     fi
   }
 
 else
-  log(){
+  log() {
     local _tag_name=${1}
     local _msg=${@:2}
 
@@ -57,9 +60,10 @@ else
   }
 
   log-debug() {
-    local _debug=$(tr '[:upper:]' '[:lower:]' <<<"$DEBUG")
-    if [[ ! -z "${DEBUG}" && ${_debug} == true ]];then
-        log "DEBUG" "$@"
+    local _debug
+    _debug=$(tr '[:upper:]' '[:lower:]' <<<"${DEBUG:-}")
+    if [[ -n "${DEBUG:-}" && ${_debug} == true ]]; then
+      log "DEBUG" "$@"
     fi
   }
 
