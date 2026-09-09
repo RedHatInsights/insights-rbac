@@ -57,6 +57,7 @@ from management.notifications.notification_handlers import (
 )
 from management.permissions import GroupAccessPermission
 from management.permissions.v2_edit_api_access import is_v2_edit_enabled_for_request
+from management.principal.backfill import backfill_remote_principals
 from management.principal.it_service import ITService
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
@@ -580,7 +581,16 @@ class GroupViewSet(
         return resp
 
     def add_users(self, group, principals_from_response, org_id=None):
-        """Add principals to the group."""
+        """Add principals to the group.
+
+        Remote principal backfill (TenantMapping sync via update_user) should be
+        performed *before* calling this method so that SpiceDB membership is
+        established before the group association is written.
+
+        Returns:
+            tuple: (group, new_principals)
+                - new_principals: all Principal objects added to the group
+        """
         tenant = self.request.tenant
         new_principals = []
         for item in principals_from_response:
@@ -935,6 +945,12 @@ class GroupViewSet(
                         sa,
                         Principal.Types.SERVICE_ACCOUNT,
                     )
+            # Backfill remote principals in SpiceDB before updating group membership.
+            # Passes tenant so already-synced principals (user_id set) are skipped.
+            # Best-effort: failures are logged per-principal and do not break the group-add operation.
+            if principals_from_response:
+                backfill_remote_principals(principals_from_response, org_id, tenant=self.request.tenant)
+
             new_users = []
             if len(principals) > 0:
                 group, new_users = self.add_users(group, principals_from_response, org_id=org_id)
