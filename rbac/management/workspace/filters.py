@@ -82,14 +82,13 @@ class WorkspaceAccessFilterBackend(filters.BaseFilterBackend):
         try:
             has_access = is_user_allowed_v2(request, relation, workspace_id, with_ancestry=with_ancestry)
         except InventoryAuthUnavailableError:
-            logger.warning(
+            logger.debug(
                 "Inventory SSO unavailable during workspace access filtering: "
                 "user=%s org_id=%s workspace_id=%s relation=%s",
                 getattr(request.user, "username", "unknown"),
                 getattr(request.user, "org_id", "unknown"),
                 workspace_id,
                 relation,
-                exc_info=True,
             )
             raise
         except Exception as e:

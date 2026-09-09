@@ -50,4 +50,4 @@ class InventoryAuthUnavailableError(Exception):
 
     def __init__(self):
         """Initialize the exception with a safe client-facing message."""
-        super().__init__("Inventory API authentication is temporarily unavailable")
+        super().__init__("Inventory authorization is temporarily unavailable")

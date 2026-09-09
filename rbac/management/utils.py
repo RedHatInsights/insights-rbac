@@ -81,8 +81,8 @@ def get_inventory_auth_metadata() -> list:
         return []
     try:
         token_response = inventory_auth_credentials.get_token()
-    except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as exc:
-        token_endpoint_host = urlparse(settings.INVENTORY_API_TOKEN_URL).netloc or "unknown"
+    except requests.exceptions.RequestException as exc:
+        token_endpoint_host = urlparse(settings.INVENTORY_API_TOKEN_URL).hostname or "unknown"
         logger.warning(
             "Inventory API OAuth token request failed at SSO endpoint: endpoint_host=%s error_type=%s",
             token_endpoint_host,
