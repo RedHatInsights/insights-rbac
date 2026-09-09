@@ -88,7 +88,8 @@ To start only Kessel, Debezium, and RBAC, omit Host Inventory:
 ```
 
 Verify a workspace create, the RBAC Read-Your-Writes notification, and that
-Host Inventory exposes the created workspace:
+the workspace is visible through Kessel Inventory, which Host Inventory uses
+as its workspace source of truth:
 
 ```bash
 ./scripts/create_workspace_local.sh --no-start --check-hbi

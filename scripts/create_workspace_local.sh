@@ -38,7 +38,6 @@ API_URL="${API_URL:-http://localhost:9080}"
 API_PORT="${API_PORT:-9080}"
 API_PATH_PREFIX="${API_PATH_PREFIX:-/api/rbac}"
 INVENTORY_API_ENDPOINT="${INVENTORY_API_ENDPOINT:-localhost:9081}"
-HBI_API_URL="${HBI_API_URL:-http://localhost:8080}"
 CHECK_HBI="${CHECK_HBI:-auto}"
 DB_HOST="${DB_HOST:-localhost}"
 DB_PORT="${DB_PORT:-15432}"
@@ -549,7 +548,7 @@ run_workspace_create_test() {
         args+=("--save-results" "$RESULTS_FILE")
     fi
     if [ "$RUN_CHECK_HBI" = true ]; then
-        args+=("--hbi-api-url" "$HBI_API_URL")
+        args+=("--check-hbi" "--inventory-api-endpoint" "$INVENTORY_API_ENDPOINT")
     fi
 
     cd "$PROJECT_DIR"
@@ -604,7 +603,6 @@ Environment:
   API_URL                  RBAC API URL (default: http://localhost:9080)
   API_PATH_PREFIX          API path prefix (default: /api/rbac)
   INVENTORY_API_ENDPOINT   Kessel Inventory gRPC host:port for HBI check (default: localhost:9081)
-  HBI_API_URL              Host Inventory API base URL (default: http://localhost:8080)
   CHECK_HBI                auto|true|false — verify workspace in Kessel Inventory (default: auto)
   RELATIONS_API_CLIENT_ID  OAuth client id for Kessel JWT (required for stage)
   RELATIONS_API_CLIENT_SECRET  OAuth client secret for Kessel JWT
