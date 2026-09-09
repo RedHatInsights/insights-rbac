@@ -55,6 +55,7 @@ Defined in `api/common/renderers.py`. A thin `JSONRenderer` subclass with `media
 - `RequiredFieldError(field_name)` -- missing required field. Stores `field_name`.
 - `InvalidFieldError(field, message)` -- invalid field value. Stores `field`.
 - `NotFoundError(resource_type, resource_id)` -- resource not found.
+- `InventoryAuthUnavailableError` -- Inventory API OAuth token service temporarily unavailable (503 with `Retry-After`).
 
 ### Role v2 (`management/role/v2_exceptions.py`)
 Hierarchy rooted at `RoleV2Error`:

@@ -37,8 +37,8 @@ from management.authorization.invalid_token import InvalidTokenError
 from management.authorization.missing_authorization import MissingAuthorizationError
 from management.authorization.token_validator import TokenValidator
 from management.cache import PrincipalCache
-from management.models import Access, Group, Policy, Principal, Role
 from management.exceptions import InventoryAuthUnavailableError
+from management.models import Access, Group, Policy, Principal, Role
 from management.permissions.principal_access import PrincipalAccessPermission
 from management.principal.it_service import ITService
 from management.principal.proxy import PrincipalProxy
