@@ -290,6 +290,14 @@ objects:
             value: ${KAFKA_PRINCIPAL_CLEANUP_TOPIC}
           - name: KAFKA_PRINCIPAL_CLEANUP_DLQ_TOPIC
             value: ${KAFKA_PRINCIPAL_CLEANUP_DLQ_TOPIC}
+          - name: KAFKA_PRINCIPAL_CLEANUP_SESSION_TIMEOUT_MS
+            value: ${KAFKA_PRINCIPAL_CLEANUP_SESSION_TIMEOUT_MS}
+          - name: KAFKA_PRINCIPAL_CLEANUP_HEARTBEAT_INTERVAL_MS
+            value: ${KAFKA_PRINCIPAL_CLEANUP_HEARTBEAT_INTERVAL_MS}
+          - name: KAFKA_PRINCIPAL_CLEANUP_MAX_POLL_INTERVAL_MS
+            value: ${KAFKA_PRINCIPAL_CLEANUP_MAX_POLL_INTERVAL_MS}
+          - name: KAFKA_PRINCIPAL_CLEANUP_STATIC_MEMBERSHIP_ENABLED
+            value: ${KAFKA_PRINCIPAL_CLEANUP_STATIC_MEMBERSHIP_ENABLED}
           - name: IT_KAFKA_BOOTSTRAP_SERVERS
             valueFrom:
               secretKeyRef:
@@ -907,6 +915,14 @@ objects:
             value: ${KAFKA_PRINCIPAL_CLEANUP_TOPIC}
           - name: KAFKA_PRINCIPAL_CLEANUP_DLQ_TOPIC
             value: ${KAFKA_PRINCIPAL_CLEANUP_DLQ_TOPIC}
+          - name: KAFKA_PRINCIPAL_CLEANUP_SESSION_TIMEOUT_MS
+            value: ${KAFKA_PRINCIPAL_CLEANUP_SESSION_TIMEOUT_MS}
+          - name: KAFKA_PRINCIPAL_CLEANUP_HEARTBEAT_INTERVAL_MS
+            value: ${KAFKA_PRINCIPAL_CLEANUP_HEARTBEAT_INTERVAL_MS}
+          - name: KAFKA_PRINCIPAL_CLEANUP_MAX_POLL_INTERVAL_MS
+            value: ${KAFKA_PRINCIPAL_CLEANUP_MAX_POLL_INTERVAL_MS}
+          - name: KAFKA_PRINCIPAL_CLEANUP_STATIC_MEMBERSHIP_ENABLED
+            value: ${KAFKA_PRINCIPAL_CLEANUP_STATIC_MEMBERSHIP_ENABLED}
           - name: REPLICATION_TO_RELATION_ENABLED
             value: ${REPLICATION_TO_RELATION_ENABLED}
           - name: EPH_ENV
@@ -2144,6 +2160,18 @@ parameters:
 - name: KAFKA_PRINCIPAL_CLEANUP_DLQ_TOPIC
   description: Kafka Dead Letter Queue topic for failed principal cleanup messages (optional, prevents infinite retry loops)
   value: ''
+- name: KAFKA_PRINCIPAL_CLEANUP_SESSION_TIMEOUT_MS
+  description: Kafka consumer session timeout (ms) for the principal-cleanup consumer group; sized so the ~60s beat + 15s drain cycle does not trigger LeaveGroup timeouts.
+  value: '45000'
+- name: KAFKA_PRINCIPAL_CLEANUP_HEARTBEAT_INTERVAL_MS
+  description: Kafka consumer heartbeat interval (ms) for the principal-cleanup consumer group.
+  value: '15000'
+- name: KAFKA_PRINCIPAL_CLEANUP_MAX_POLL_INTERVAL_MS
+  description: Kafka consumer max poll interval (ms) for the principal-cleanup consumer group.
+  value: '300000'
+- name: KAFKA_PRINCIPAL_CLEANUP_STATIC_MEMBERSHIP_ENABLED
+  description: Enable static consumer-group membership (group.instance.id) for the principal-cleanup consumer to avoid full rebalance on each periodic rejoin.
+  value: 'True'
 - name: ROOT_SCOPE_PERMISSIONS
   description: Comma-separated list of permissions that bind to root workspace scope (supports wildcards like rbac:*:read)
   value: ''
