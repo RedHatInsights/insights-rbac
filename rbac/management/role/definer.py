@@ -34,7 +34,7 @@ from management.group.platform import DefaultGroupNotAvailableError, GlobalPolic
 from management.inventory_replicator.inventory_replicator import ReplicationEventType
 from management.notifications.notification_handlers import role_obj_change_notification_handler
 from management.permission.model import Permission
-from management.permission.scope_service import ImplicitResourceService, Scope
+from management.permission.scope_service import CONCRETE_SCOPES, ImplicitResourceService
 from management.role.inventory_api_dual_write_handler import (
     InventoryApiDualWriteHandler,
     SeedingInventoryApiDualWriteHandler,
@@ -438,7 +438,7 @@ def _seed_platform_roles():
     platform_roles = {}
 
     for access_type in DefaultAccessType:
-        for scope in Scope:
+        for scope in CONCRETE_SCOPES:
             try:
                 platform_role = _create_single_platform_role(access_type, scope, policy_service, public_tenant)
                 platform_roles[(access_type, scope)] = platform_role

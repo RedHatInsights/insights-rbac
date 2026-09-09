@@ -35,7 +35,7 @@ from management.inventory_replicator.noop_replicator import NoopReplicator
 from management.inventory_replicator.outbox_replicator import OutboxReplicator
 from management.inventory_replicator.types import RelationTuple
 from management.models import Workspace
-from management.permission.scope_service import ImplicitResourceService, Scope, bound_model_for_scope
+from management.permission.scope_service import CONCRETE_SCOPES, ImplicitResourceService, bound_model_for_scope
 from management.role.model import BindingMapping, Role
 from management.role.platform import (
     admin_platform_parent_scopes_for_seeded_system_role,
@@ -160,7 +160,7 @@ class SeedingInventoryApiDualWriteHandler(BaseInventoryApiDualWriteHandler):
         scopes are removed (regardless of the role's current scopes).
         """
         if for_removal:
-            binding_scopes = set(Scope)
+            binding_scopes = set(CONCRETE_SCOPES)
             admin_scopes = binding_scopes
         else:
             binding_scopes = set(self.implicit_resource_service.binding_scopes_for_role(role))
