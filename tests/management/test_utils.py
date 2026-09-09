@@ -18,8 +18,10 @@
 
 import uuid
 
+import requests
 from api.models import Tenant, User
 from management.models import Access, Group, Permission, Principal, Policy, Role
+from management.exceptions import InventoryAuthUnavailableError
 from management.principal.view import VALID_PRINCIPAL_TYPE_VALUE
 from management.utils import (
     access_for_principal,
@@ -855,6 +857,56 @@ class GetInventoryAuthMetadataTests(IdentityRequest):
         mock_credentials.get_token.side_effect = Exception("SSO unreachable")
         with self.assertRaises(Exception):
             get_inventory_auth_metadata()
+
+    @override_settings(INVENTORY_API_CLIENT_ID="client-id", INVENTORY_API_CLIENT_SECRET="client-secret")
+    @mock.patch("management.utils.inventory_auth_credentials")
+    def test_wraps_transient_token_fetch_failure(self, mock_credentials):
+        """Transient OAuth connection failures become a service-unavailable domain error."""
+        mock_credentials.get_token.side_effect = requests.exceptions.ConnectionError("SSO reset connection")
+
+        with self.assertRaises(InventoryAuthUnavailableError) as context:
+            get_inventory_auth_metadata()
+
+        self.assertIsInstance(context.exception.__cause__, requests.exceptions.ConnectionError)
+
+    @override_settings(INVENTORY_API_CLIENT_ID="client-id", INVENTORY_API_CLIENT_SECRET="client-secret")
+    @mock.patch("management.utils.inventory_auth_credentials")
+    def test_wraps_http_error_as_unavailable(self, mock_credentials):
+        """HTTPError (e.g. SSO returns 503) is wrapped as InventoryAuthUnavailableError."""
+        mock_credentials.get_token.side_effect = requests.exceptions.HTTPError("503 Server Error")
+
+        with self.assertRaises(InventoryAuthUnavailableError) as context:
+            get_inventory_auth_metadata()
+
+        self.assertIsInstance(context.exception.__cause__, requests.exceptions.HTTPError)
+
+    @override_settings(INVENTORY_API_CLIENT_ID="client-id", INVENTORY_API_CLIENT_SECRET="client-secret")
+    @mock.patch("management.utils.inventory_auth_credentials")
+    def test_wraps_ssl_error_as_unavailable(self, mock_credentials):
+        """SSLError during token fetch is wrapped as InventoryAuthUnavailableError."""
+        mock_credentials.get_token.side_effect = requests.exceptions.SSLError("SSL handshake failed")
+
+        with self.assertRaises(InventoryAuthUnavailableError) as context:
+            get_inventory_auth_metadata()
+
+        self.assertIsInstance(context.exception.__cause__, requests.exceptions.SSLError)
+
+    @override_settings(
+        INVENTORY_API_CLIENT_ID="client-id",
+        INVENTORY_API_CLIENT_SECRET="client-secret",
+        INVENTORY_API_TOKEN_URL="https://user:pass@sso.example.com/token",
+    )
+    @mock.patch("management.utils.inventory_auth_credentials")
+    def test_logs_hostname_not_netloc(self, mock_credentials):
+        """Log message must use .hostname (no userinfo) instead of .netloc."""
+        mock_credentials.get_token.side_effect = requests.exceptions.ConnectionError("down")
+
+        with self.assertRaises(InventoryAuthUnavailableError):
+            with mock.patch("management.utils.logger") as mock_logger:
+                get_inventory_auth_metadata()
+                # The warning call should log hostname ("sso.example.com"), never netloc ("user:pass@sso.example.com")
+                args = mock_logger.warning.call_args[0]
+                self.assertEqual(args[1], "sso.example.com")
 
     @override_settings(INVENTORY_API_CLIENT_ID="client-id", INVENTORY_API_CLIENT_SECRET="client-secret")
     @mock.patch("management.utils.inventory_auth_credentials")
