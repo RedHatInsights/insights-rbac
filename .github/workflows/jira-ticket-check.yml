@@ -18,6 +18,7 @@ jobs:
     if: >-
       !contains(github.event.pull_request.labels.*.name, 'bot')
       && !startsWith(github.event.pull_request.title, 'chore(deps):')
+      && github.event.pull_request.user.login != 'red-hat-konflux[bot]'
     steps:
       - name: Check PR title for JIRA ticket
         env:
