@@ -73,27 +73,29 @@ def backfill_remote_principal(bootstrap_service, user, tenant=None, org_id=None)
         )
 
 
-def backfill_remote_principals(principals_needing_sync: List[dict], org_id: str) -> None:
+def backfill_remote_principals(principals_data: List[dict], org_id: str, tenant=None) -> None:
     """Backfill remote principals from BOP response items.
 
     Converts BOP response items to User objects and calls ``update_user()`` for
-    each active principal that has a ``user_id``.  Failures are logged
-    per-principal so that one bad record does not prevent the remaining
-    principals from being synced.
+    each active principal that has a ``user_id``.  When *tenant* is provided,
+    principals whose DB record already has a ``user_id`` are skipped (they are
+    already synced).  Failures are logged per-principal so that one bad record
+    does not prevent the remaining principals from being synced.
 
     Args:
-        principals_needing_sync: BOP response items for principals that were
-            newly created or had user_id populated for the first time.
+        principals_data: BOP response items for principals to consider.
         org_id: The organization ID to use as fallback for principals missing
             org_id.
+        tenant: Optional Tenant instance; passed through to
+            ``backfill_remote_principal`` so it can skip already-synced users.
     """
-    if not principals_needing_sync:
+    if not principals_data:
         return
 
     bootstrap_service = get_tenant_bootstrap_service(OutboxReplicator())
-    for bop_item in principals_needing_sync:
+    for bop_item in principals_data:
         user_obj = external_principal_to_user(bop_item)
         if not user_obj.org_id:
             user_obj.org_id = org_id
         if user_obj.user_id and user_obj.is_active:
-            backfill_remote_principal(bootstrap_service, user_obj, org_id=org_id)
+            backfill_remote_principal(bootstrap_service, user_obj, tenant=tenant, org_id=org_id)
