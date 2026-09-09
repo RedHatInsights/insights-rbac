@@ -1,19 +1,6 @@
 # Ignore everything
 **
 
-# Explicitly prune large local build and tool state before Buildah walks the
-# context. The broad allowlist below is correct for Docker, but Buildah can
-# still traverse excluded trees while resolving negated directory patterns.
-.git/
-.tox/
-.mypy_cache/
-htmlcov/
-.playwright-mcp/
-.claude-chat/
-.cursor/
-.cves/
-review_reports/
-
 # ... except for dependencies and source
 !LICENSE
 !Pipfile

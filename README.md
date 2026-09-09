@@ -51,56 +51,6 @@ make run-migrations      # Apply database migrations
 make serve               # App available at http://localhost:8000
 ```
 
-### Option 3: Full Kessel and Host Inventory integration stack
-
-Start RBAC with Kessel Inventory, Kessel Relations, SpiceDB, Kafka, Debezium,
-and Host Inventory:
-
-```bash
-make docker-local-full-up
-```
-
-The command builds `insights-rbac-local:dev`, uses Docker or Podman Compose,
-and discovers sibling `../inventory-api` and `../insights-host-inventory`
-checkouts. If either checkout is absent, it creates a shallow clone under
-`.local-deps/`. Ensure the container VM has enough memory for the full stack.
-
-Useful endpoints after startup:
-
-| Service | Endpoint |
-| --- | --- |
-| RBAC API and metrics | http://localhost:9080 and http://localhost:9080/metrics |
-| Kessel Relations API | http://localhost:9000 |
-| Kessel Inventory API | http://localhost:9081 |
-| Kafka Connect | http://localhost:8083 |
-| Host Inventory API | http://localhost:8080 |
-
-For an existing image, skip the RBAC build:
-
-```bash
-./scripts/local_stack/up-full.sh --no-build
-```
-
-To start only Kessel, Debezium, and RBAC, omit Host Inventory:
-
-```bash
-./scripts/local_stack/up-full.sh --no-hbi
-```
-
-Verify a workspace create, the RBAC Read-Your-Writes notification, and that
-the workspace is visible through Kessel Inventory, which Host Inventory uses
-as its workspace source of truth:
-
-```bash
-./scripts/create_workspace_local.sh --no-start --check-hbi
-```
-
-Stop the full stack with `make docker-local-full-down`. This preserves volumes;
-pass `--volumes` to `scripts/local_stack/down-full.sh` when a clean HBI data
-volume is required. If the RBAC Kafka consumer is unhealthy, restart the stack
-with `make docker-local-full-up`; the consumer should report that it acquired a
-fencing lock and is listening on `outbox.event.relations-replication-event`.
-
 ## Testing
 
 Tests require a running PostgreSQL instance (SQLite is not supported):

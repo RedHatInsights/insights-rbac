@@ -356,6 +356,8 @@ objects:
             value: ${TENANT_SCOPE_PERMISSIONS}
           - name: DEFAULT_SCOPE_PERMISSIONS
             value: ${DEFAULT_SCOPE_PERMISSIONS}
+          - name: ALL_SCOPE_PERMISSIONS
+            value: ${ALL_SCOPE_PERMISSIONS}
           - name: AUTOMATIC_SCOPE_MIGRATION_ENABLED
             value: ${AUTOMATIC_SCOPE_MIGRATION_ENABLED}
           ####### Following envs are for scheduler, doesn't hurt to put in worker
@@ -714,6 +716,8 @@ objects:
             value: ${TENANT_SCOPE_PERMISSIONS}
           - name: DEFAULT_SCOPE_PERMISSIONS
             value: ${DEFAULT_SCOPE_PERMISSIONS}
+          - name: ALL_SCOPE_PERMISSIONS
+            value: ${ALL_SCOPE_PERMISSIONS}
           - name: AUTOMATIC_SCOPE_MIGRATION_ENABLED
             value: ${AUTOMATIC_SCOPE_MIGRATION_ENABLED}
           - name: WORKSPACE_ACCESS_TIMING_ENABLED
@@ -836,6 +840,8 @@ objects:
             value: ${TENANT_SCOPE_PERMISSIONS}
           - name: DEFAULT_SCOPE_PERMISSIONS
             value: ${DEFAULT_SCOPE_PERMISSIONS}
+          - name: ALL_SCOPE_PERMISSIONS
+            value: ${ALL_SCOPE_PERMISSIONS}
           - name: AUTOMATIC_SCOPE_MIGRATION_ENABLED
             value: ${AUTOMATIC_SCOPE_MIGRATION_ENABLED}
           - name: PARITY_CHECK_ENABLED
@@ -973,6 +979,8 @@ objects:
             value: ${TENANT_SCOPE_PERMISSIONS}
           - name: DEFAULT_SCOPE_PERMISSIONS
             value: ${DEFAULT_SCOPE_PERMISSIONS}
+          - name: ALL_SCOPE_PERMISSIONS
+            value: ${ALL_SCOPE_PERMISSIONS}
           - name: AUTOMATIC_SCOPE_MIGRATION_ENABLED
             value: ${AUTOMATIC_SCOPE_MIGRATION_ENABLED}
           - name: REDHAT_SSO
@@ -1218,6 +1226,14 @@ objects:
               value: ${UNLEASH_REFRESH_INTERVAL}
             - name: UNLEASH_REQUEST_TIMEOUT
               value: ${UNLEASH_REQUEST_TIMEOUT}
+            - name: ROOT_SCOPE_PERMISSIONS
+              value: ${ROOT_SCOPE_PERMISSIONS}
+            - name: TENANT_SCOPE_PERMISSIONS
+              value: ${TENANT_SCOPE_PERMISSIONS}
+            - name: DEFAULT_SCOPE_PERMISSIONS
+              value: ${DEFAULT_SCOPE_PERMISSIONS}
+            - name: ALL_SCOPE_PERMISSIONS
+              value: ${ALL_SCOPE_PERMISSIONS}
             ######## Following envs are different from worker
             - name: S3_AWS_ACCESS_KEY_ID
               valueFrom:
@@ -1234,6 +1250,8 @@ objects:
                 secretKeyRef:
                   name: ${S3_AWS_SECRET}
                   key: bucket
+            - name: ALL_SCOPE_PERMISSIONS
+              value: ${ALL_SCOPE_PERMISSIONS}
             - name: REPLICATION_TO_RELATION_ENABLED
               value: "True"
           resources:
@@ -1461,6 +1479,8 @@ objects:
               value: ${TENANT_SCOPE_PERMISSIONS}
             - name: DEFAULT_SCOPE_PERMISSIONS
               value: ${DEFAULT_SCOPE_PERMISSIONS}
+            - name: ALL_SCOPE_PERMISSIONS
+              value: ${ALL_SCOPE_PERMISSIONS}
             - name: AUTOMATIC_SCOPE_MIGRATION_ENABLED
               value: ${AUTOMATIC_SCOPE_MIGRATION_ENABLED}
             ######## Following envs are different from worker
@@ -2180,6 +2200,9 @@ parameters:
   value: ''
 - name: DEFAULT_SCOPE_PERMISSIONS
   description: Comma-separated list of permissions that bind to default workspace scope (more specific patterns override broader TENANT_SCOPE_PERMISSIONS entries)
+  value: ''
+- name: ALL_SCOPE_PERMISSIONS
+  description: Comma-separated list of scope-agnostic permissions that can coexist with any other scope (supports wildcards like rbac:role_binding:*)
   value: ''
 - name: AUTOMATIC_SCOPE_MIGRATION_ENABLED
   description: |

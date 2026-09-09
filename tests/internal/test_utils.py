@@ -30,7 +30,7 @@ from management.group.definer import seed_group
 from management.group.model import Group
 from management.group.inventory_api_dual_write_group_handler import InventoryApiDualWriteGroupHandler
 from management.models import BindingMapping, Workspace, Access, Permission
-from management.permission.scope_service import Scope
+from management.permission.scope_service import CONCRETE_SCOPES, Scope
 from management.policy.model import Policy
 from management.principal.model import Principal
 from management.inventory_replicator.noop_replicator import NoopReplicator
@@ -359,7 +359,7 @@ class ReplicateMissingBindingTuplesTest(TestCase):
 
         self.assertEqual(BindingMapping.objects.filter(role=role).count(), 1)
         self.assertEqual(
-            RoleBinding.objects.filter(tenant=self.tenant).count(), len(Scope) * len(DefaultAccessType) + 1
+            RoleBinding.objects.filter(tenant=self.tenant).count(), len(CONCRETE_SCOPES) * len(DefaultAccessType) + 1
         )
 
         # Check that we actually created the default access RoleBinding.
