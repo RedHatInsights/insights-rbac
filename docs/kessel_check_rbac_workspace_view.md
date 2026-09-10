@@ -156,6 +156,7 @@ Step 1: START
 Step 2: TENANT resolves rbac_workspace_view
         = t_binding->rbac_workspace_view + t_platform->rbac_workspace_view
         → Find all role_bindings attached to tenant via t_binding
+        → Also traverse t_platform to reach the platform's t_binding role_bindings
 
 Step 3: ROLE_BINDING resolves rbac_workspace_view (AND gate)
         = t_subject & t_role->rbac_workspace_view
@@ -223,10 +224,17 @@ A role with **any** of these V2 permission strings will grant `rbac_workspace_vi
 │                                                                      │
 │  permission rbac_workspace_view =                                    │
 │      t_binding->rbac_workspace_view                                  │
-│                    │                                                 │
-└────────────────────┼─────────────────────────────────────────────────┘
-                     │ t_binding
-                     ▼
+│      + t_platform->rbac_workspace_view                               │
+│           │                    │                                     │
+└───────────┼────────────────────┼─────────────────────────────────────┘
+            │ t_binding          │ t_platform
+            ▼                    ▼
+                          ┌────────────────────────────┐
+                          │ rbac/platform:<PLATFORM_ID> │
+                          │   t_binding                 │
+                          └──────────────┬─────────────┘
+                                         │ t_binding
+                                         ▼
 ┌──────────────────────────────────────────────────────────────────────┐
 │  rbac/role_binding:<RB_UUID>                                         │
 │                                                                      │
