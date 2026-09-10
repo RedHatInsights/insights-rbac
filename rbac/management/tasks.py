@@ -26,39 +26,6 @@ from typing import Optional
 from celery import shared_task
 from django.conf import settings
 from django.core.management import call_command
-from internal.migrations.recompute_role_bindings import recompute_tenant_role_bindings
-from internal.migrations.remove_deleted_workspace_bindings import remove_deleted_workspace_bindings
-from internal.migrations.remove_orphan_relations import cleanup_tenant_orphan_bindings
-from internal.migrations.replicate_default_workspaces import replicate_default_workspaces
-from internal.utils import (
-    clean_invalid_workspace_resource_definitions,
-    expire_orphaned_cross_account_requests,
-    remove_unassigned_system_binding_mappings,
-    replicate_missing_binding_tuples,
-)
-from management.group.model import Group
-from management.health.healthcheck import redis_health
-from management.inventory_checker.inventory_api_check import (
-    BootstrappedTenantInventoryChecker,
-    CustomRolePermissionChecker,
-    GroupPrincipalInventoryChecker,
-    SeededRoleHierarchyChecker,
-    WorkspaceRelationInventoryChecker,
-    generate_seeded_role_hierarchy_tuples,
-)
-from management.parity_check import run_parity_checks
-from management.permission.scope_service import ImplicitResourceService
-from management.principal.cleaner import (
-    clean_tenants_principals,
-    process_principal_events_from_umb,
-)
-from management.role.v2_model import CustomRoleV2, SeededRoleV2
-from management.tenant_mapping.model import TenantMapping
-from management.workspace.model import Workspace
-from migration_tool.migrate import migrate_data
-from migration_tool.migrate_binding_scope import migrate_all_role_bindings
-
-from api.models import Tenant
 
 logger = logging.getLogger(__name__)
 
@@ -66,13 +33,192 @@ logger = logging.getLogger(__name__)
 @shared_task
 def principal_cleanup():
     """Celery task to clean up principals no longer existing."""
-    clean_tenants_principals()
+    from management.principal.cleaner import clean_tenants_principals
+
+    # Admin action - SEC-MON-REQ-1 compliance (EOI-3 admin_action, EOI-1 pii_manipulation)
+    logger.info(
+        "Principal cleanup task started",
+        extra={
+            "action": "DELETE",
+            "resource_type": "principal",
+            "outcome": "in_progress",
+            "principal": "system:celery:principal_cleanup",
+        },
+    )
+    try:
+
+        clean_tenants_principals()
+        # Admin action - SEC-MON-REQ-1 compliance (EOI-3 admin_action, EOI-1 pii_manipulation)
+        logger.info(
+            "Principal cleanup task completed",
+            extra={
+                "action": "DELETE",
+                "resource_type": "principal",
+                "outcome": "success",
+                "principal": "system:celery:principal_cleanup",
+            },
+        )
+    except Exception:
+        # Failed admin operation - SEC-MON-REQ-1 compliance (EOI-3 admin_action, EOI-11 warnings_or_errors)
+        logger.exception(
+            "Principal cleanup task failed",
+            extra={
+                "action": "DELETE",
+                "resource_type": "principal",
+                "outcome": "failure",
+                "principal": "system:celery:principal_cleanup",
+                "reason": "cleanup_error",
+            },
+        )
+        raise
 
 
 @shared_task
 def principal_cleanup_via_umb():
     """Celery task to clean up principals no longer existing."""
+    from management.principal.cleaner import process_principal_events_from_umb
+
     process_principal_events_from_umb()
+
+
+@shared_task
+def principal_cleanup_via_kafka():
+    """Celery task to clean up principals via Kafka messages."""
+    from management.principal.cleaner import process_principal_events_from_kafka
+
+    process_principal_events_from_kafka()
+
+
+@shared_task
+def principal_cleanup_via_message_bus():
+    """
+    Dispatcher task that checks Unleash flag at runtime to route principal cleanup.
+
+    This task is scheduled when both PRINCIPAL_CLEANUP_DELETION_ENABLED_UMB and
+    PRINCIPAL_CLEANUP_DELETION_ENABLED_KAFKA are enabled. It allows runtime switching
+    between message bus implementations via Unleash flag without requiring worker restart.
+
+    Supported modes (controlled by rbac.principal-cleanup.use-kafka.enabled flag):
+    - 'umb_only' (flag disabled or unknown variant): Only UMB consumer runs and writes to DB
+    - 'kafka_shadow' (flag enabled with kafka_shadow variant): Both UMB and Kafka run, only UMB writes (Kafka dry-run)
+    - 'kafka_validation' (flag enabled with kafka_validation variant): Kafka tries first, UMB fallback if Kafka fails
+    - 'kafka_active' (flag enabled with kafka_active variant): Only Kafka consumer runs and writes to DB
+      NOTE: Raises RuntimeError if Kafka is disabled (KAFKA_PRINCIPAL_CLEANUP_JOB_ENABLED=False)
+            to prevent silent fallback to UMB. Operators must explicitly change to 'umb_only' mode.
+    """
+    from feature_flags import FEATURE_FLAGS
+    from management.principal.cleaner import process_principal_events_from_kafka, process_principal_events_from_umb
+    from sentry_sdk import capture_exception
+
+    mode = FEATURE_FLAGS.get_principal_cleanup_mode()
+    logger.info(f"Principal cleanup mode: {mode}")
+
+    if mode == "umb_only":
+        # UMB-only mode: Only UMB processes and writes to DB
+        if settings.UMB_JOB_ENABLED:
+            logger.info("UMB-only mode: processing via UMB")
+            process_principal_events_from_umb()
+        else:
+            logger.warning("UMB mode selected but UMB_JOB_ENABLED is False")
+
+    elif mode == "kafka_shadow":
+        # Shadow mode: Both run, Kafka in dry-run (no DB writes)
+        # Isolate UMB and Kafka so one backend failure doesn't prevent the other from running
+        logger.info("Shadow mode: processing via UMB (active) and Kafka (dry-run)")
+
+        if settings.UMB_JOB_ENABLED:
+            try:
+                logger.info("Shadow mode: Running UMB consumer (active - writes to DB)")
+                process_principal_events_from_umb()
+            except Exception as umb_error:
+                logger.error("Shadow mode: UMB consumer failed: %s", str(umb_error))
+                capture_exception(umb_error)
+        else:
+            logger.warning("Shadow mode requires UMB but UMB_JOB_ENABLED is False")
+
+        if settings.KAFKA_PRINCIPAL_CLEANUP_JOB_ENABLED:
+            try:
+                logger.info("Shadow mode: Running Kafka consumer (dry-run - no DB writes)")
+                process_principal_events_from_kafka(dry_run=True)
+            except Exception as kafka_error:
+                logger.error("Shadow mode: Kafka consumer (dry-run) failed: %s", str(kafka_error))
+                capture_exception(kafka_error)
+        else:
+            logger.warning("Shadow mode requires Kafka but KAFKA_PRINCIPAL_CLEANUP_JOB_ENABLED is False")
+
+    elif mode == "kafka_validation":
+        # Validation mode: Kafka tries first, UMB fallback if Kafka fails
+        # This allows comparing Kafka behavior while ensuring no data loss
+        from management.principal.cleaner import kafka_validation_success_total, kafka_validation_fallback_total
+
+        logger.info("Validation mode: Kafka attempts DB write, UMB fallback if Kafka fails")
+
+        kafka_success = False
+
+        if settings.KAFKA_PRINCIPAL_CLEANUP_JOB_ENABLED:
+            try:
+                logger.info("Validation mode: Running Kafka consumer (primary - writes to DB)")
+                process_principal_events_from_kafka(dry_run=False)
+                kafka_success = True
+                kafka_validation_success_total.inc()
+                logger.info("Validation mode: Kafka consumer completed successfully")
+            except Exception as kafka_error:
+                logger.error("Validation mode: Kafka consumer failed: %s. Falling back to UMB.", str(kafka_error))
+                capture_exception(kafka_error)
+                kafka_success = False
+        else:
+            logger.warning("Validation mode requires Kafka but KAFKA_PRINCIPAL_CLEANUP_JOB_ENABLED is False")
+
+        # UMB runs as fallback only if Kafka failed or is disabled
+        if not kafka_success:
+            kafka_validation_fallback_total.inc()
+            if settings.UMB_JOB_ENABLED:
+                try:
+                    logger.info("Validation mode: Running UMB consumer (fallback - writes to DB)")
+                    process_principal_events_from_umb()
+                    logger.info("Validation mode: UMB fallback completed successfully")
+                except Exception as umb_error:
+                    logger.error("Validation mode: UMB fallback also failed: %s", str(umb_error))
+                    capture_exception(umb_error)
+                    # Both failed - raise to trigger alerting
+                    raise RuntimeError(
+                        "Validation mode: Both Kafka and UMB consumers failed. Principal cleanup incomplete."
+                    ) from umb_error
+            else:
+                logger.error(
+                    "Validation mode: Kafka failed and UMB_JOB_ENABLED is False. " "Principal cleanup incomplete."
+                )
+                raise RuntimeError("Validation mode: Kafka failed and no UMB fallback available")
+        else:
+            # Kafka succeeded - log for comparison purposes
+            logger.info(
+                "Validation mode: Kafka succeeded, UMB fallback not needed. "
+                "Monitor metrics to compare Kafka vs historical UMB performance."
+            )
+
+    elif mode == "kafka_active":
+        # Kafka-active mode: Only Kafka processes and writes to DB
+        if settings.KAFKA_PRINCIPAL_CLEANUP_JOB_ENABLED:
+            logger.info("Kafka-active mode: processing via Kafka")
+            process_principal_events_from_kafka(dry_run=False)
+        else:
+            # Kafka is disabled but kafka_active mode was explicitly selected via Unleash
+            # This is a configuration error - operators should change Unleash flag to umb_only
+            # instead of relying on silent fallback
+            error_msg = (
+                "Configuration mismatch: kafka_active mode selected in Unleash, "
+                "but KAFKA_PRINCIPAL_CLEANUP_JOB_ENABLED is False. "
+                "Change Unleash flag to 'umb_only' mode or enable Kafka via KAFKA_PRINCIPAL_CLEANUP_JOB_ENABLED."
+            )
+            logger.error(error_msg)
+            raise RuntimeError(error_msg)
+
+    else:
+        logger.error(f"Unknown principal cleanup mode: {mode}, defaulting to UMB")
+        if settings.UMB_JOB_ENABLED:
+            process_principal_events_from_umb()
+        else:
+            logger.warning("Fallback to UMB failed: UMB_JOB_ENABLED is False")
 
 
 @shared_task
@@ -84,7 +230,41 @@ def run_migrations_in_worker():
 @shared_task
 def run_seeds_in_worker(kwargs):
     """Celery task to run seeds."""
-    call_command("seeds", **kwargs)
+    # Admin action - SEC-MON-REQ-1 compliance (EOI-3 admin_action, EOI-2 system_object_manipulation)
+    logger.info(
+        "Seeding task started",
+        extra={
+            "action": "SEED",
+            "resource_type": "permissions_roles_groups",
+            "outcome": "in_progress",
+            "principal": "system:celery:run_seeds_in_worker",
+        },
+    )
+    try:
+        call_command("seeds", **kwargs)
+        # Admin action - SEC-MON-REQ-1 compliance (EOI-3 admin_action, EOI-2 system_object_manipulation)
+        logger.info(
+            "Seeding task completed",
+            extra={
+                "action": "SEED",
+                "resource_type": "permissions_roles_groups",
+                "outcome": "success",
+                "principal": "system:celery:run_seeds_in_worker",
+            },
+        )
+    except Exception:
+        # Failed admin operation - SEC-MON-REQ-1 compliance (EOI-3 admin_action, EOI-11 warnings_or_errors)
+        logger.exception(
+            "Seeding task failed",
+            extra={
+                "action": "SEED",
+                "resource_type": "permissions_roles_groups",
+                "outcome": "failure",
+                "principal": "system:celery:run_seeds_in_worker",
+                "reason": "seeding_error",
+            },
+        )
+        raise
 
 
 @shared_task
@@ -102,19 +282,80 @@ def run_ocm_performance_in_worker():
 @shared_task
 def run_redis_cache_health():
     """Celery task to check health of redis cache."""
+    from management.health.healthcheck import redis_health
+
     redis_health()
 
 
 @shared_task
 def migrate_data_in_worker(kwargs):
     """Celery task to migrate data from V1 to V2 spiceDB schema."""
-    migrate_data(**kwargs)
+    # Admin action - SEC-MON-REQ-1 compliance (EOI-3 admin_action, EOI-1 pii_manipulation)
+    logger.info(
+        "Data migration task started",
+        extra={
+            "action": "MIGRATE",
+            "resource_type": "tenant_data",
+            "outcome": "in_progress",
+            "principal": "system:celery:migrate_data_in_worker",
+        },
+    )
+    try:
+        from migration_tool.migrate import migrate_data
+
+        migrate_data(**kwargs)
+        # Admin action - SEC-MON-REQ-1 compliance (EOI-3 admin_action, EOI-1 pii_manipulation)
+        logger.info(
+            "Data migration task completed",
+            extra={
+                "action": "MIGRATE",
+                "resource_type": "tenant_data",
+                "outcome": "success",
+                "principal": "system:celery:migrate_data_in_worker",
+            },
+        )
+    except Exception:
+        # Failed admin operation - SEC-MON-REQ-1 compliance (EOI-3 admin_action, EOI-11 warnings_or_errors)
+        logger.exception(
+            "Data migration task failed",
+            extra={
+                "action": "MIGRATE",
+                "resource_type": "tenant_data",
+                "outcome": "failure",
+                "principal": "system:celery:migrate_data_in_worker",
+                "reason": "migration_error",
+            },
+        )
+        raise
 
 
 @shared_task
 def migrate_binding_scope_in_worker(sources: Optional[list[str]] = None):
     """Celery task to migrate role binding scopes."""
-    return migrate_all_role_bindings(sources=set(sources) if sources is not None else None)
+    from migration_tool.migrate_binding_scope import migrate_all_role_bindings
+
+    # Admin action - SEC-MON-REQ-1 compliance (EOI-3 admin_action, EOI-2 system_object_manipulation)
+    logger.info(
+        "Celery task: Migrate binding scope",
+        extra={
+            "action": "MIGRATE",
+            "resource_type": "role_binding",
+            "outcome": "in_progress",
+            "principal": "system:celery:migrate_binding_scope",
+            "sources": sources,
+        },
+    )
+    result = migrate_all_role_bindings(sources=set(sources) if sources is not None else None)
+    logger.info(
+        "Celery task completed: Migrate binding scope",
+        extra={
+            "action": "MIGRATE",
+            "resource_type": "role_binding",
+            "outcome": "success",
+            "principal": "system:celery:migrate_binding_scope",
+        },
+    )
+    return result
 
 
 @shared_task
@@ -128,6 +369,8 @@ def fix_missing_binding_base_tuples_in_worker(binding_uuids=None):
     Returns:
         dict: Results with bindings_checked, bindings_fixed, and tuples_added count.
     """
+    from internal.utils import replicate_missing_binding_tuples
+
     return replicate_missing_binding_tuples(binding_uuids=binding_uuids)
 
 
@@ -142,6 +385,8 @@ def clean_invalid_workspace_resource_definitions_in_worker(dry_run=False):
     Returns:
         dict: Results with roles_checked, resource_definitions_fixed, bindings_deleted, and changes list.
     """
+    from internal.utils import clean_invalid_workspace_resource_definitions
+
     return clean_invalid_workspace_resource_definitions(dry_run=dry_run)
 
 
@@ -157,7 +402,48 @@ def cleanup_tenant_orphan_bindings_in_worker(org_id, dry_run=False):
     Returns:
         dict: Results with cleanup counts and migration results
     """
-    return cleanup_tenant_orphan_bindings(org_id=org_id, dry_run=dry_run)
+    # Admin action - SEC-MON-REQ-1 compliance (EOI-3 admin_action, EOI-1 pii_manipulation)
+    logger.info(
+        "Orphan binding cleanup task started",
+        extra={
+            "action": "DELETE",
+            "resource_type": "role_binding",
+            "outcome": "in_progress",
+            "principal": "system:celery:cleanup_tenant_orphan_bindings",
+            "org_id": org_id,
+            "dry_run": dry_run,
+        },
+    )
+    try:
+        from internal.migrations.remove_orphan_relations import cleanup_tenant_orphan_bindings
+
+        result = cleanup_tenant_orphan_bindings(org_id=org_id, dry_run=dry_run)
+        # Admin action - SEC-MON-REQ-1 compliance (EOI-3 admin_action, EOI-1 pii_manipulation)
+        logger.info(
+            "Orphan binding cleanup task completed",
+            extra={
+                "action": "DELETE",
+                "resource_type": "role_binding",
+                "outcome": "success",
+                "principal": "system:celery:cleanup_tenant_orphan_bindings",
+                "org_id": org_id,
+            },
+        )
+        return result
+    except Exception:
+        # Failed admin operation - SEC-MON-REQ-1 compliance (EOI-3 admin_action, EOI-11 warnings_or_errors)
+        logger.exception(
+            "Orphan binding cleanup task failed",
+            extra={
+                "action": "DELETE",
+                "resource_type": "role_binding",
+                "outcome": "failure",
+                "principal": "system:celery:cleanup_tenant_orphan_bindings",
+                "org_id": org_id,
+                "reason": "cleanup_error",
+            },
+        )
+        raise
 
 
 @shared_task
@@ -168,37 +454,255 @@ def bulk_cleanup_orphan_bindings_in_worker(tenant_limit: int):
     Args:
         tenant_limit (int): maximum number of tenants to process
     """
-    return call_command("fix_orphan_relations", tenant_limit=tenant_limit)
+    # Admin action - SEC-MON-REQ-1 compliance (EOI-3 admin_action, EOI-1 pii_manipulation)
+    logger.info(
+        "Bulk orphan binding cleanup task started",
+        extra={
+            "action": "DELETE",
+            "resource_type": "role_binding",
+            "outcome": "in_progress",
+            "principal": "system:celery:bulk_cleanup_orphan_bindings",
+            "tenant_limit": tenant_limit,
+        },
+    )
+    try:
+        result = call_command("fix_orphan_relations", tenant_limit=tenant_limit)
+        # Admin action - SEC-MON-REQ-1 compliance (EOI-3 admin_action, EOI-1 pii_manipulation)
+        logger.info(
+            "Bulk orphan binding cleanup task completed",
+            extra={
+                "action": "DELETE",
+                "resource_type": "role_binding",
+                "outcome": "success",
+                "principal": "system:celery:bulk_cleanup_orphan_bindings",
+                "tenant_limit": tenant_limit,
+            },
+        )
+        return result
+    except Exception:
+        # Failed admin operation - SEC-MON-REQ-1 compliance (EOI-3 admin_action, EOI-11 warnings_or_errors)
+        logger.exception(
+            "Bulk orphan binding cleanup task failed",
+            extra={
+                "action": "DELETE",
+                "resource_type": "role_binding",
+                "outcome": "failure",
+                "principal": "system:celery:bulk_cleanup_orphan_bindings",
+                "tenant_limit": tenant_limit,
+                "reason": "cleanup_error",
+            },
+        )
+        raise
 
 
 @shared_task
 def remove_unassigned_system_binding_mappings_in_worker():
     """Celery to remove unassigned system BindingMappings."""
+    from internal.utils import remove_unassigned_system_binding_mappings
+
     return remove_unassigned_system_binding_mappings()
 
 
 @shared_task
 def expire_orphaned_cross_account_requests_in_worker():
     """Celery task to expire orphaned cross-account requests."""
-    return expire_orphaned_cross_account_requests()
+    from internal.utils import expire_orphaned_cross_account_requests
+
+    # Admin action - SEC-MON-REQ-1 compliance (EOI-3 admin_action, EOI-1 pii_manipulation)
+    logger.info(
+        "Celery task: Expire orphaned cross-account requests",
+        extra={
+            "action": "CLEANUP",
+            "resource_type": "cross_account_request",
+            "outcome": "in_progress",
+            "principal": "system:celery:expire_orphaned_cross_account_requests",
+        },
+    )
+    result = expire_orphaned_cross_account_requests()
+    logger.info(
+        "Celery task completed: Expire orphaned cross-account requests",
+        extra={
+            "action": "CLEANUP",
+            "resource_type": "cross_account_request",
+            "outcome": "success",
+            "principal": "system:celery:expire_orphaned_cross_account_requests",
+        },
+    )
+    return result
 
 
 @shared_task
 def remove_deleted_workspace_bindings_in_worker():
     """Celery task to remove role bindings that reference deleted workspaces."""
-    return remove_deleted_workspace_bindings()
+    from internal.migrations.remove_deleted_workspace_bindings import remove_deleted_workspace_bindings
+
+    # Admin action - SEC-MON-REQ-1 compliance (EOI-3 admin_action, EOI-1 pii_manipulation)
+    logger.info(
+        "Celery task: Remove deleted workspace bindings",
+        extra={
+            "action": "CLEANUP",
+            "resource_type": "role_binding",
+            "outcome": "in_progress",
+            "principal": "system:celery:remove_deleted_workspace_bindings",
+        },
+    )
+    result = remove_deleted_workspace_bindings()
+    logger.info(
+        "Celery task completed: Remove deleted workspace bindings",
+        extra={
+            "action": "CLEANUP",
+            "resource_type": "role_binding",
+            "outcome": "success",
+            "principal": "system:celery:remove_deleted_workspace_bindings",
+        },
+    )
+    return result
 
 
 @shared_task
 def replicate_default_workspaces_in_worker(limit: Optional[int] = None):
     """Celery task to replicate default workspaces."""
-    return replicate_default_workspaces(limit=limit)
+    from internal.migrations.replicate_workspaces import replicate_default_workspaces
+
+    # Admin action - SEC-MON-REQ-1 compliance (EOI-3 admin_action, EOI-2 system_object_manipulation)
+    logger.info(
+        "Celery task: Replicate default workspaces",
+        extra={
+            "action": "REPLICATE",
+            "resource_type": "workspace",
+            "outcome": "in_progress",
+            "principal": "system:celery:replicate_default_workspaces",
+            "limit": limit,
+        },
+    )
+    result = replicate_default_workspaces(limit=limit)
+    logger.info(
+        "Celery task completed: Replicate default workspaces",
+        extra={
+            "action": "REPLICATE",
+            "resource_type": "workspace",
+            "outcome": "success",
+            "principal": "system:celery:replicate_default_workspaces",
+        },
+    )
+    return result
+
+
+@shared_task
+def replicate_updated_workspaces_in_worker(since: str, stream: str, exclude_unchanged_default_workspaces: bool):
+    """Celery task to replicate updated workspaces."""
+    from internal.migrations.replicate_workspaces import replicate_updated_workspaces
+    from management.inventory_replicator.inventory_replicator import WorkspaceEventStream
+
+    # Admin action - SEC-MON-REQ-1 compliance (EOI-3 admin_action, EOI-2 system_object_manipulation)
+    logger.info(
+        "Celery task: Replicate updated workspaces",
+        extra={
+            "action": "REPLICATE",
+            "resource_type": "workspace",
+            "outcome": "in_progress",
+            "principal": "system:celery:replicate_updated_workspaces",
+            "since": since,
+            "stream": stream,
+        },
+    )
+
+    if stream == "standard":
+        parsed_stream = WorkspaceEventStream.STANDARD
+    elif stream == "bulk":
+        parsed_stream = WorkspaceEventStream.BULK
+    else:
+        raise ValueError(f"Unknown stream name: {stream}")
+
+    result = replicate_updated_workspaces(
+        since=datetime.datetime.fromisoformat(since),
+        stream=parsed_stream,
+        exclude_unchanged_default_workspaces=exclude_unchanged_default_workspaces,
+    )
+
+    logger.info(
+        "Celery task completed: Replicate updated workspaces",
+        extra={
+            "action": "REPLICATE",
+            "resource_type": "workspace",
+            "outcome": "success",
+            "principal": "system:celery:replicate_updated_workspaces",
+        },
+    )
+
+    return result
+
+
+@shared_task
+def replicate_deleted_workspaces_in_worker(since: str):
+    """Celery task to replicate deleted workspaces."""
+    from internal.migrations.replicate_workspaces import replicate_deleted_workspaces
+
+    # Admin action - SEC-MON-REQ-1 compliance (EOI-3 admin_action, EOI-2 system_object_manipulation)
+    logger.info(
+        "Celery task: Replicate deleted workspaces",
+        extra={
+            "action": "REPLICATE",
+            "resource_type": "workspace",
+            "outcome": "in_progress",
+            "principal": "system:celery:replicate_deleted_workspaces",
+            "since": since,
+        },
+    )
+
+    result = replicate_deleted_workspaces(since=datetime.datetime.fromisoformat(since))
+
+    logger.info(
+        "Celery task completed: Replicate deleted workspaces",
+        extra={
+            "action": "REPLICATE",
+            "resource_type": "workspace",
+            "outcome": "success",
+            "principal": "system:celery:replicate_deleted_workspaces",
+        },
+    )
+
+    return result
 
 
 @shared_task
 def recompute_tenant_role_bindings_in_worker(org_id: str):
     """Celery task to recompute role bindings for tenant."""
-    return recompute_tenant_role_bindings(tenant=Tenant.objects.get(org_id=org_id))
+    from api.models import Tenant
+    from internal.migrations.recompute_role_bindings import recompute_tenant_role_bindings
+
+    # Admin action - SEC-MON-REQ-1 compliance (EOI-3 admin_action, EOI-1 pii_manipulation)
+    logger.info(
+        "Celery task: Recompute tenant role bindings",
+        extra={
+            "action": "RECOMPUTE",
+            "resource_type": "role_binding",
+            "outcome": "in_progress",
+            "principal": "system:celery:recompute_tenant_role_bindings",
+            "org_id": org_id,
+        },
+    )
+    result = recompute_tenant_role_bindings(tenant=Tenant.objects.get(org_id=org_id))
+    logger.info(
+        "Celery task completed: Recompute tenant role bindings",
+        extra={
+            "action": "RECOMPUTE",
+            "resource_type": "role_binding",
+            "outcome": "success",
+            "principal": "system:celery:recompute_tenant_role_bindings",
+            "org_id": org_id,
+        },
+    )
+    return result
+
+
+@shared_task
+def migrate_role_scope_if_changed_in_worker(role_uuid: str):
+    """Celery task to migrate existing role bindings for a role if its scope has changed."""
+    from internal.migrations.migrate_role_scope import migrate_role_scope_if_changed
+    from management.role.model import Role
+
+    return migrate_role_scope_if_changed(v1_role=Role.objects.filter(uuid=role_uuid).get())
 
 
 @shared_task
@@ -219,6 +723,8 @@ def run_parity_access_checks_in_worker(
     Returns:
         dict: Summary of check results including counts and any discrepancies found.
     """
+    from management.parity_check import run_parity_checks
+
     result = run_parity_checks(
         tenant_sample_size=tenant_sample_size,
         principal_sample_size=principal_sample_size,
@@ -264,10 +770,25 @@ def run_kessel_parity_checks_in_worker(org_ids=None):
     org_ids = list(dict.fromkeys(org_ids))
 
     if not org_ids:
-        logger.info("PARITY_CHECK_ORG_IDS not configured, skipping parity checks")
+        logger.info("[PCH] PARITY_CHECK_ORG_IDS not configured, skipping parity checks")
         return {"message": "No org_ids configured"}
 
-    logger.info(f"Starting Kessel parity checks for {len(org_ids)} org(s): {org_ids}")
+    logger.info(f"[PCH] Starting Kessel parity checks for {len(org_ids)} org(s): {org_ids}")
+
+    from api.models import Tenant
+    from management.group.model import Group
+    from management.inventory_checker.inventory_api_check import (
+        BootstrappedTenantInventoryChecker,
+        CustomRolePermissionChecker,
+        GroupPrincipalInventoryChecker,
+        SeededRoleHierarchyChecker,
+        WorkspaceRelationInventoryChecker,
+        generate_seeded_role_hierarchy_tuples,
+    )
+    from management.permission.scope_service import ImplicitResourceService
+    from management.role.v2_model import CustomRoleV2, SeededRoleV2
+    from management.tenant_mapping.model import TenantMapping
+    from management.workspace.model import Workspace
 
     stats = {
         "total_tenants": 0,
@@ -305,19 +826,19 @@ def run_kessel_parity_checks_in_worker(org_ids=None):
             if not hierarchy_tuples:
                 continue
             role_passed = hierarchy_checker.check_seeded_role_hierarchy(hierarchy_tuples, str(seeded_role.uuid))
-            seeded_role_results.append(
-                {
-                    "role_uuid": str(seeded_role.uuid),
-                    "role_name": seeded_role.name,
-                    "v1_role_name": seeded_role.v1_source.name if seeded_role.v1_source else None,
-                    "tuple_count": len(hierarchy_tuples),
-                    "passed": role_passed,
-                }
-            )
+            seeded_result_entry = {
+                "role_uuid": str(seeded_role.uuid),
+                "role_name": seeded_role.name,
+                "v1_role_name": seeded_role.v1_source.name if seeded_role.v1_source else None,
+                "tuple_count": len(hierarchy_tuples),
+                "passed": role_passed,
+            }
             if not role_passed:
+                seeded_result_entry["expected_tuples"] = [t.stringify() for t in hierarchy_tuples[:5]]
                 seeded_hierarchy_passed = False
+            seeded_role_results.append(seeded_result_entry)
         except Exception as e:
-            logger.exception("Error checking seeded role hierarchy for role %s", seeded_role.name)
+            logger.exception("[PCH] Error checking seeded role hierarchy for role %s", seeded_role.name)
             seeded_hierarchy_passed = False
             seeded_role_results.append(
                 {
@@ -341,9 +862,27 @@ def run_kessel_parity_checks_in_worker(org_ids=None):
 
     if seeded_role_results:
         logger.info(
-            f"Seeded role hierarchy check: {len(seeded_role_results)} role(s) with hierarchy checked, "
+            f"[PCH] Seeded role hierarchy check: {len(seeded_role_results)} role(s) with hierarchy checked, "
             f"passed={seeded_hierarchy_passed}, took {seeded_elapsed:.3f}s"
         )
+
+    if not seeded_hierarchy_passed:
+        failed_seeded = [r for r in seeded_role_results if not r["passed"]]
+        seeded_detail_lines = []
+        seeded_missing_shown = 0
+        for r in failed_seeded:
+            if seeded_missing_shown >= 20:
+                break
+            for t_str in r.get("expected_tuples", [])[:5]:
+                if seeded_missing_shown >= 20:
+                    break
+                seeded_detail_lines.append(f"[PCH]   - MISSING ({r['role_name']}): {t_str}")
+                seeded_missing_shown += 1
+        total_seeded_missing = sum(r.get("tuple_count", 0) for r in failed_seeded)
+        if total_seeded_missing > seeded_missing_shown:
+            seeded_detail_lines.append(f"[PCH]   ... and {total_seeded_missing - seeded_missing_shown} more")
+        if seeded_detail_lines:
+            logger.warning("\n".join(seeded_detail_lines))
 
     # Bulk fetch all tenants to avoid N+1 queries
     tenants = {t.org_id: t for t in Tenant.objects.filter(org_id__in=org_ids)}
@@ -359,7 +898,7 @@ def run_kessel_parity_checks_in_worker(org_ids=None):
     for org_id in org_ids:
         tenant = tenants.get(org_id)
         if not tenant:
-            logger.warning(f"Tenant not found for org_id: {org_id}")
+            logger.warning(f"[PCH] Tenant not found for org_id: {org_id}")
             stats["tenants_not_found"] += 1
             continue
 
@@ -374,7 +913,7 @@ def run_kessel_parity_checks_in_worker(org_ids=None):
 
         try:
             tenant_start = time.monotonic()
-            logger.info(f"Running parity check for tenant {org_id}")
+            logger.info(f"[PCH] Running parity check for tenant {org_id}")
             stats["total_tenants"] += 1
 
             workspaces = (
@@ -386,11 +925,14 @@ def run_kessel_parity_checks_in_worker(org_ids=None):
             workspace_pairs = [(str(w_id), str(parent_id)) for (w_id, parent_id) in workspaces]
             pairs_count = len(workspace_pairs)
 
+            workspace_pair_results = []
             if workspace_pairs:
-                logger.info(f"Checking {pairs_count} workspace parent relations for tenant {org_id}")
-                workspace_check_passed = workspace_checker.check_workspace_descendants(workspace_pairs)
+                logger.info(f"[PCH] Checking {pairs_count} workspace parent relations for tenant {org_id}")
+                workspace_check_passed, workspace_pair_results = workspace_checker.check_workspace_descendants(
+                    workspace_pairs
+                )
             else:
-                logger.warning(f"No workspace pairs to check for tenant {org_id} — missing default workspace?")
+                logger.warning(f"[PCH] No workspace pairs to check for tenant {org_id} — missing default workspace?")
                 workspace_check_passed = False
 
             stats["total_workspace_pairs_checked"] += pairs_count
@@ -402,20 +944,20 @@ def run_kessel_parity_checks_in_worker(org_ids=None):
             for role in custom_roles:
                 permission_tuples = [CustomRoleV2._permission_tuple(role, perm) for perm in role.permissions.all()]
                 role_passed = role_permission_checker.check_custom_role_permissions(permission_tuples, str(role.uuid))
-                role_results.append(
-                    {
-                        "role_uuid": str(role.uuid),
-                        "role_name": role.name,
-                        "permission_count": len(permission_tuples),
-                        "passed": role_passed,
-                    }
-                )
+                role_result_entry = {
+                    "role_uuid": str(role.uuid),
+                    "role_name": role.name,
+                    "permission_count": len(permission_tuples),
+                    "passed": role_passed,
+                }
                 if not role_passed:
+                    role_result_entry["expected_tuples"] = [t.stringify() for t in permission_tuples[:5]]
                     custom_role_check_passed = False
+                role_results.append(role_result_entry)
 
             stats["total_custom_roles_checked"] += len(role_results)
             if role_results:
-                logger.info(f"Checked {len(role_results)} custom role(s) for tenant {org_id}")
+                logger.info(f"[PCH] Checked {len(role_results)} custom role(s) for tenant {org_id}")
 
             # Bootstrap completeness check
             mapping = tenant_mappings.get(tenant.id)
@@ -434,10 +976,12 @@ def run_kessel_parity_checks_in_worker(org_ids=None):
                     )
                     stats["total_bootstrap_checks"] += len(bootstrap_details)
                 else:
-                    logger.warning(f"Missing root/default workspace for tenant {org_id}, skipping bootstrap check")
+                    logger.warning(
+                        f"[PCH] Missing root/default workspace for tenant {org_id}, skipping bootstrap check"
+                    )
                     bootstrap_check_passed = False
             else:
-                logger.warning(f"No tenant mapping for org_id: {org_id}, skipping bootstrap check")
+                logger.warning(f"[PCH] No tenant mapping for org_id: {org_id}, skipping bootstrap check")
                 bootstrap_check_passed = False
 
             groups = Group.objects.filter(tenant=tenant).prefetch_related("principals")
@@ -455,22 +999,25 @@ def run_kessel_parity_checks_in_worker(org_ids=None):
                 else:
                     all_exist = True
 
-                group_results.append(
-                    {
-                        "group_uuid": str(group.uuid),
-                        "group_name": group.name,
-                        "principal_count": principal_count,
-                        "passed": all_exist,
-                    }
-                )
+                group_result_entry = {
+                    "group_uuid": str(group.uuid),
+                    "group_name": group.name,
+                    "principal_count": principal_count,
+                    "passed": all_exist,
+                }
                 if not all_exist:
+                    missing_ids = {pr["id"] for pr in result["principal_relations"] if not pr["relation_exists"]}
+                    missing_rels = [r for r in relationships if r.subject.subject.id in missing_ids]
+                    group_result_entry["missing_tuples"] = [r.stringify() for r in missing_rels[:5]]
+                    group_result_entry["missing_count"] = len(missing_rels)
                     group_principal_check_passed = False
+                group_results.append(group_result_entry)
 
             stats["total_groups_checked"] += len(group_results)
             stats["total_group_principal_relations_checked"] += tenant_group_principal_relations
             if group_results:
                 logger.info(
-                    f"Checked {len(group_results)} group(s) with "
+                    f"[PCH] Checked {len(group_results)} group(s) with "
                     f"{tenant_group_principal_relations} principal relation(s) for tenant {org_id}"
                 )
 
@@ -483,14 +1030,87 @@ def run_kessel_parity_checks_in_worker(org_ids=None):
 
             if tenant_passed:
                 stats["passed_tenants"] += 1
-                logger.info(f"Parity check PASSED for tenant {org_id}")
+                logger.info(f"[PCH] Parity check PASSED for tenant {org_id}")
             else:
                 stats["failed_tenants"] += 1
-                logger.warning(f"Parity check FAILED for tenant {org_id}")
+                logger.warning(f"[PCH] Parity check FAILED for tenant {org_id}")
+
+            sub_check_log = logger.info if tenant_passed else logger.warning
+
+            detail_lines = []
+            detail_lines.append(f"[PCH]   Sub-check results for tenant {org_id}:")
+            detail_lines.append(
+                f"[PCH]     Workspace hierarchy: {'PASSED' if workspace_check_passed else 'FAILED'}"
+                f" ({pairs_count} pairs)"
+            )
+            if not workspace_check_passed and workspace_pair_results:
+                missing = [r for r in workspace_pair_results if not r["exists"]]
+                ws_missing_shown = 0
+                for r in missing:
+                    if ws_missing_shown >= 20:
+                        break
+                    detail_lines.append(
+                        f"[PCH]       - MISSING: rbac/workspace:{r['workspace_id']}"
+                        f"#parent@rbac/workspace:{r['parent_id']}"
+                    )
+                    ws_missing_shown += 1
+                if len(missing) > ws_missing_shown:
+                    detail_lines.append(f"[PCH]       ... and {len(missing) - ws_missing_shown} more")
+
+            detail_lines.append(
+                f"[PCH]     Custom roles:        {'PASSED' if custom_role_check_passed else 'FAILED'}"
+                f" ({len(role_results)} roles)"
+            )
+            if not custom_role_check_passed:
+                failed_roles = [r for r in role_results if not r["passed"]]
+                cr_missing_shown = 0
+                for r in failed_roles:
+                    if cr_missing_shown >= 20:
+                        break
+                    for t_str in r.get("expected_tuples", [])[:5]:
+                        if cr_missing_shown >= 20:
+                            break
+                        detail_lines.append(f"[PCH]       - MISSING ({r['role_name']}): {t_str}")
+                        cr_missing_shown += 1
+                total_cr_missing = sum(r.get("permission_count", 0) for r in failed_roles)
+                if total_cr_missing > cr_missing_shown:
+                    detail_lines.append(f"[PCH]       ... and {total_cr_missing - cr_missing_shown} more")
+
+            detail_lines.append(
+                f"[PCH]     Bootstrap:           {'PASSED' if bootstrap_check_passed else 'FAILED'}"
+                f" ({len(bootstrap_details)} checks)"
+            )
+            if not bootstrap_check_passed and bootstrap_details:
+                missing = [d for d in bootstrap_details if not d["exists"]]
+                for d in missing[:20]:
+                    detail_lines.append(f"[PCH]       - MISSING: {d['name']} ({d.get('check', '')})")
+                if len(missing) > 20:
+                    detail_lines.append(f"[PCH]       ... and {len(missing) - 20} more")
+
+            detail_lines.append(
+                f"[PCH]     Group-principal:     {'PASSED' if group_principal_check_passed else 'FAILED'}"
+                f" ({len(group_results)} groups, {tenant_group_principal_relations} relations)"
+            )
+            if not group_principal_check_passed:
+                failed_groups = [g for g in group_results if not g["passed"]]
+                gp_missing_shown = 0
+                for g in failed_groups:
+                    if gp_missing_shown >= 20:
+                        break
+                    for t_str in g.get("missing_tuples", [])[:5]:
+                        if gp_missing_shown >= 20:
+                            break
+                        detail_lines.append(f"[PCH]       - MISSING ({g['group_name']}): {t_str}")
+                        gp_missing_shown += 1
+                total_gp_missing = sum(g.get("missing_count", 0) for g in failed_groups)
+                if total_gp_missing > gp_missing_shown:
+                    detail_lines.append(f"[PCH]       ... and {total_gp_missing - gp_missing_shown} more")
+
+            sub_check_log("\n".join(detail_lines))
 
             tenant_elapsed = time.monotonic() - tenant_start
             tenant_durations.append(tenant_elapsed)
-            logger.info(f"Tenant {org_id} parity check took {tenant_elapsed:.3f}s")
+            logger.info(f"[PCH] Tenant {org_id} parity check took {tenant_elapsed:.3f}s")
 
             stats["tenants_checked"].append(
                 {
@@ -514,7 +1134,7 @@ def run_kessel_parity_checks_in_worker(org_ids=None):
         except Exception as e:
             tenant_elapsed = time.monotonic() - tenant_start
             tenant_durations.append(tenant_elapsed)
-            logger.exception(f"Error checking parity for tenant {org_id}: {e}")
+            logger.exception(f"[PCH] Error checking parity for tenant {org_id}: {e}")
             stats["failed_tenants"] += 1
             stats["tenants_checked"].append(
                 {
@@ -546,13 +1166,13 @@ def run_kessel_parity_checks_in_worker(org_ids=None):
             "p99_seconds": round(sorted_durations[min(int(n * 0.99), n - 1)], 3),
         }
         logger.info(
-            f"Timing: avg={timing_stats['avg_seconds']}s "
+            f"[PCH] Timing: avg={timing_stats['avg_seconds']}s "
             f"p95={timing_stats['p95_seconds']}s "
             f"p99={timing_stats['p99_seconds']}s"
         )
 
     logger.info(
-        f"Parity check complete. Checked: {stats['total_tenants']}, "
+        f"[PCH] Parity check complete. Checked: {stats['total_tenants']}, "
         f"Passed: {stats['passed_tenants']}, "
         f"Failed: {stats['failed_tenants']}, "
         f"Not Found: {stats['tenants_not_found']}, "
@@ -561,7 +1181,9 @@ def run_kessel_parity_checks_in_worker(org_ids=None):
         f"Total seeded roles: {stats['total_seeded_roles_checked']}, "
         f"Total bootstrap checks: {stats['total_bootstrap_checks']}, "
         f"Total groups: {stats['total_groups_checked']}, "
-        f"Total group-principal relations: {stats['total_group_principal_relations_checked']}"
+        f"Total group-principal relations: {stats['total_group_principal_relations_checked']}, "
+        f"Seeded role hierarchy: {'PASSED' if seeded_hierarchy_passed else 'FAILED'}"
+        f" ({stats['total_seeded_roles_checked']} roles)"
     )
 
     stats["timing"] = timing_stats
@@ -604,7 +1226,7 @@ def recover_workspace_events_in_worker(
 
         buffer_delta = datetime.timedelta(minutes=buffer_minutes)
         start_dt = restore_dt - buffer_delta
-        end_dt = datetime.datetime.now(datetime.timezone.utc)
+        end_dt = restore_dt
 
         start_ms = int(start_dt.timestamp() * 1000)
         end_ms = int(end_dt.timestamp() * 1000)
@@ -665,6 +1287,12 @@ def run_disaster_recovery_reconcile(
     """
     if not getattr(settings, "DR_RELATIONS_RECONCILE_ENABLED", False):
         return {"message": "Disaster recovery reconciliation is disabled"}
+
+    if not getattr(settings, "KAFKA_ENABLED", False):
+        return {"message": "Disaster recovery reconciliation requires Kafka (KAFKA_ENABLED=False)"}
+
+    if not getattr(settings, "RBAC_KAFKA_CONSUMER_TOPIC", None):
+        return {"message": "Disaster recovery reconciliation requires RBAC_KAFKA_CONSUMER_TOPIC to be configured"}
 
     try:
         from management.disaster_recovery.service import reconcile

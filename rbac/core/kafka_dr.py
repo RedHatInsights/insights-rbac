@@ -31,6 +31,26 @@ logger = logging.getLogger(__name__)
 DR_CONSUMER_GROUP = "rbac-dr-recovery"
 
 
+def _unwrap_schema_envelope(value: dict[str, Any]) -> dict[str, Any] | Any:
+    """Unwrap Kafka JsonConverter schema envelope if present.
+
+    When Kafka Connect uses JsonConverter with schemas.enable=true and
+    Debezium's table.expand.json.payload=false, the message looks like:
+        {"schema": {...}, "payload": "<json-string>"}
+    This extracts and parses the inner payload.
+    """
+    if "schema" in value and "payload" in value and len(value) == 2:
+        inner = value["payload"]
+        if isinstance(inner, str):
+            try:
+                return json.loads(inner)
+            except (json.JSONDecodeError, TypeError):
+                return value
+        if isinstance(inner, dict):
+            return inner
+    return value
+
+
 @dataclass
 class KafkaEvent:
     """A Kafka event with its timestamp and parsed value."""
@@ -49,12 +69,22 @@ def _create_consumer(group_id: str = DR_CONSUMER_GROUP) -> KafkaConsumer:
         "enable_auto_commit": False,
         "auto_offset_reset": "earliest",
         "consumer_timeout_ms": getattr(settings, "DR_KAFKA_CONSUMER_TIMEOUT_MS", 30000),
+        "session_timeout_ms": 45000,  # Explicit: kafka-python v3 default (was 10000 in v2)
         "value_deserializer": lambda m: json.loads(m.decode("utf-8")),
     }
 
     kafka_auth = getattr(settings, "KAFKA_AUTH", None)
     if kafka_auth:
-        kwargs.update(kafka_auth)
+        for key in (
+            "bootstrap_servers",
+            "sasl_plain_username",
+            "sasl_plain_password",
+            "sasl_mechanism",
+            "security_protocol",
+            "ssl_cafile",
+        ):
+            if key in kafka_auth:
+                kwargs[key] = kafka_auth[key]
     elif getattr(settings, "KAFKA_SERVERS", None):
         kwargs["bootstrap_servers"] = settings.KAFKA_SERVERS
     else:
@@ -107,7 +137,7 @@ def read_events_by_timestamp(
         for tp in topic_partitions:
             offset_info = start_offsets.get(tp)
             if offset_info is None:
-                consumer.pause([tp])
+                consumer.pause(tp)
                 continue
             consumer.seek(tp, offset_info.offset)
             active_partitions.append(tp)
@@ -131,7 +161,7 @@ def read_events_by_timestamp(
             end_offset = partition_end_offsets.get(tp)
             if end_offset is not None and message.offset >= end_offset:
                 finished_partitions.add(tp)
-                consumer.pause([tp])
+                consumer.pause(tp)
                 if len(finished_partitions) == len(active_partitions):
                     break
                 continue
@@ -139,7 +169,7 @@ def read_events_by_timestamp(
             if message.timestamp > end_timestamp_ms:
                 if tp not in partition_end_offsets:
                     finished_partitions.add(tp)
-                    consumer.pause([tp])
+                    consumer.pause(tp)
                     if len(finished_partitions) == len(active_partitions):
                         break
                 continue
@@ -149,6 +179,10 @@ def read_events_by_timestamp(
 
             try:
                 value = message.value
+                if not isinstance(value, dict):
+                    continue
+
+                value = _unwrap_schema_envelope(value)
                 if not isinstance(value, dict):
                     continue
 

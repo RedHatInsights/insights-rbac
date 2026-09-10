@@ -27,7 +27,6 @@ Please use `make <target>` where <target> is one of:
 --- General Commands ---
   clean                    clean the project directory of any scratch files, bytecode, logs, etc.
   help                     show this message
-  html                     create html documentation for the project
   lint                     run linting against the project
   format                   format linting errors found by lint task
   typecheck                run type check
@@ -51,6 +50,11 @@ Please use `make <target>` where <target> is one of:
 
 --- Commands using Docker Compose ---
   docker-up                 run django and database
+  docker-local-up           RBAC-only stack (kafka, debezium, mock kessel, consumer, RYW)
+  docker-local-down         stop RBAC-only local stack
+  docker-local-logs         tail RBAC-only local stack logs
+  docker-local-full-up      Kessel + Debezium + RBAC + HBI (docker or podman compose)
+  docker-local-full-down    stop full Kessel + Debezium + RBAC + HBI stack
   docker-down               shut down service containers
   docker-shell              run django and db containers with shell access to server (for pdb)
   docker-logs               connect to console logs for all services
@@ -81,9 +85,6 @@ help:
 
 clean:
 	git clean -fdx -e .idea/ -e *env/
-
-html:
-	@pipenv run sphinx-build -b html docs/source docs/_build/html
 
 lint:
 	tox -elint
@@ -302,6 +303,21 @@ docker-up:
 	@docker network ls --format '{{.Name}}' |grep -q  rbac-network > /dev/null 2>&1 && echo "" || docker network create rbac-network
 	docker-compose up --build -d
 
+docker-local-up:
+	docker compose -f docker-compose.local.yml up --build -d
+
+docker-local-down:
+	docker compose -f docker-compose.local.yml down
+
+docker-local-logs:
+	docker compose -f docker-compose.local.yml logs -f
+
+docker-local-full-up:
+	./scripts/local_stack/up-full.sh
+
+docker-local-full-down:
+	./scripts/local_stack/down-full.sh
+
 docker-logs:
 	docker-compose logs -f
 
@@ -314,5 +330,3 @@ docker-down:
 
 generate_v2_spec:
 	cd docs/source/specs/typespec/ && npm ci --silent && ./compile_tsp_spec
-
-.PHONY: docs

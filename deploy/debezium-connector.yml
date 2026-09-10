@@ -14,6 +14,7 @@ objects:
   spec:
     class: io.debezium.connector.postgresql.PostgresConnector
     tasksMax: ${{MAX_TASKS}}
+    state: ${CONNECTOR_STATE}
     config:
       database.server.name: ${DB_SERVERNAME}
       database.dbname: ${DB_NAME}
@@ -31,6 +32,7 @@ objects:
       heartbeat.interval.ms: ${DEBEZIUM_HEARTBEAT_INTERVAL_MS}
       heartbeat.action.query: ${DEBEZIUM_ACTION_QUERY}
       topic.heartbeat.prefix: ${TOPIC_HEARTBEAT_PREFIX}
+      snapshot.mode: ${SNAPSHOT_MODE}
 parameters:
 - name: DB_SERVERNAME
   required: true
@@ -77,3 +79,9 @@ parameters:
 - name: DEBEZIUM_HEARTBEAT_INTERVAL_MS
   value: "300000"
   description: The interval for the Debezium heartbeat in ms
+- name: CONNECTOR_STATE
+  description: "Defines the state the connector should be deployed in ('stopped', 'running', 'paused' only)"
+  value: running
+- name: SNAPSHOT_MODE
+  value: "initial"
+  description: The snapshot mode for the connector

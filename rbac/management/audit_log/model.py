@@ -54,12 +54,14 @@ class AuditLog(TenantAwareModel):
     EDIT = "edit"
     CREATE = "create"
     REMOVE = "remove"
+    READ = "read"
     ACTION_CHOICES = (
         (DELETE, "Delete"),
         (ADD, "Add"),
         (EDIT, "Edit"),
         (CREATE, "Create"),
         (REMOVE, "Remove"),
+        (READ, "Read"),
     )
 
     SOURCE_AI_ASSISTANT = "ai_assistant"
@@ -73,7 +75,7 @@ class AuditLog(TenantAwareModel):
     }
 
     created = models.DateTimeField(default=timezone.now)
-    principal_username = models.TextField(max_length=255, null=False)
+    principal_username = models.CharField(max_length=255, null=False, db_index=True)
     description = models.TextField(max_length=255, null=False)
     resource_type = models.CharField(max_length=32, choices=RESOURCE_CHOICES)
     resource_id = models.IntegerField(null=True)

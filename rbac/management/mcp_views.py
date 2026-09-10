@@ -18,12 +18,14 @@
 """MCP endpoint for RBAC using Anthropic MCP Python SDK for tool registration and schema generation."""
 
 import asyncio
+import atexit
 import concurrent.futures
 import hashlib
 import inspect
 import json
 import logging
 import re
+import threading
 import time
 import uuid
 from dataclasses import dataclass
@@ -58,8 +60,9 @@ from management.role.view import RoleViewSet
 from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
 from management.role_binding.view import RoleBindingViewSet
 from management.tenant_mapping.v2_activation import is_v2_write_activated
+from management.utils import is_valid_uuid
 from management.workspace.view import WorkspaceViewSet
-from mcp.server.fastmcp import FastMCP
+from mcp.server import MCPServer
 from prometheus_client import Counter, Histogram
 from redis import Redis, exceptions as redis_exceptions
 
@@ -199,12 +202,12 @@ def _get_all_description_overrides() -> dict[str, str]:
 
 # --- MCP Server setup using the Anthropic MCP Python SDK ---
 
-mcp = FastMCP("RBAC")
+mcp = MCPServer("RBAC")
 
 
 # --- Tool configuration ---
 #
-# @register_tool registers each tool with both FastMCP (for schema generation)
+# @register_tool registers each tool with both MCPServer (for schema generation)
 # and _TOOL_CONFIG (for sync execution). This eliminates the need for separate
 # stub functions and a manual config dict.
 
@@ -250,10 +253,10 @@ def register_tool(
     caveats: str = "",
     redacted_fields: tuple[str, ...] = (),
 ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
-    """Register a tool with both FastMCP and _TOOL_CONFIG.
+    """Register a tool with both MCPServer and _TOOL_CONFIG.
 
     If the function's first parameter is named ``request``, a schema-only
-    wrapper (without the ``request`` param) is registered with FastMCP so
+    wrapper (without the ``request`` param) is registered with MCPServer so
     the generated JSON schema matches what MCP clients send. The real
     implementation receives the Django request at call time via
     ``_handle_tools_call``.
@@ -283,14 +286,14 @@ def register_tool(
         )
 
         if passes_request:
-            # Build a wrapper whose signature omits `request` so FastMCP
+            # Build a wrapper whose signature omits `request` so MCPServer
             # generates a schema without it.
             remaining = [p for name, p in sig.parameters.items() if name != "request"]
             wrapper_sig = sig.replace(parameters=remaining)
 
             @wraps(fn)
             def _schema_stub(**kwargs: Any) -> str:
-                raise RuntimeError(f"{tool_name} should not be called via FastMCP dispatch")
+                raise RuntimeError(f"{tool_name} should not be called via MCPServer dispatch")
 
             _schema_stub.__signature__ = wrapper_sig  # type: ignore[attr-defined]
             mcp.tool(name=tool_name, description=description)(_schema_stub)
@@ -374,9 +377,22 @@ def _call_view_json(
     if response.status_code == 204:
         return json.dumps({"status": "no_content"})
     content = response.content.decode()
-    if response.status_code >= 400:
-        return json.dumps({"error": f"HTTP {response.status_code}", "detail": content})
-    return content
+    if response.status_code >= 500:
+        logger.warning("mcp: _call_view_json got HTTP %d from %s: %s", response.status_code, path, content[:500])
+        detail = "Internal server error"
+    elif response.status_code >= 400:
+        try:
+            parsed = json.loads(content)
+            detail = parsed.get("detail", content) if isinstance(parsed, dict) else content
+        except ValueError:
+            detail = f"HTTP {response.status_code}"
+        if not isinstance(detail, str):
+            detail = json.dumps(detail)
+        if len(detail) > 512:
+            detail = detail[:512]
+    else:
+        return content
+    return json.dumps({"error": f"HTTP {response.status_code}", "detail": detail})
 
 
 def _call_view_write(
@@ -3090,9 +3106,16 @@ def _check_user_permission_v1(request: HttpRequest, username: str, permission: s
     try:
         raw = _call_view(request, _access_view, path, query_params)
     except Exception as e:
+        logger.warning(
+            "mcp: check_user_permission failed for user=%s permission=%s application=%s: %s",
+            username,
+            permission,
+            application,
+            e,
+        )
         return json.dumps(
             {
-                "error": f"Failed to check permissions: {e}",
+                "error": "Failed to check permissions",
                 "hint": "Requires org admin or rbac:principal:read permission to check another user.",
             }
         )
@@ -3100,10 +3123,13 @@ def _check_user_permission_v1(request: HttpRequest, username: str, permission: s
     data = json.loads(raw)
 
     if "detail" in data:
+        detail = data["detail"]
+        if not isinstance(detail, str) or len(detail) > 256:
+            detail = "Access denied or unexpected error"
         return json.dumps(
             {
                 "allowed": False,
-                "error": data["detail"],
+                "error": detail,
                 "hint": "Requires org admin or rbac:principal:read permission to check another user.",
             }
         )
@@ -4020,7 +4046,7 @@ def investigate_user_access(
             data = json.loads(raw)
             effective_access = data.get("data", [])
         except Exception as e:
-            effective_access_error = str(e)
+            effective_access_error = "Failed to retrieve effective access"
             logger.warning("mcp: failed to get effective access for user=%s app=%s: %s", username, application, e)
 
     # Step 5: Analyze the expected permission
@@ -5387,6 +5413,9 @@ class MCPView(View):
 
     def post(self, request: HttpRequest) -> HttpResponse:
         """Handle MCP JSON-RPC requests via HTTP POST."""
+        if _shutdown_in_progress.is_set():
+            return _error_response(None, -32000, "Server is shutting down")
+
         org_id = getattr(getattr(request, "user", None), "org_id", None)
         req_id = getattr(request, "req_id", "unknown")
 
@@ -5417,9 +5446,17 @@ class MCPView(View):
         logger.warning("mcp: unknown method=%s, org_id=%s, req_id=%s", rpc_req.method, org_id, req_id)
         return _error_response(rpc_req.request_id, -32601, f"Method not found: {rpc_req.method}")
 
-    def get(self, request: HttpRequest) -> HttpResponse:
-        """SSE streaming is not supported in WSGI mode."""
-        return HttpResponse("SSE streaming not supported in WSGI mode", status=405, content_type="text/plain")
+    def get(self, request: HttpRequest) -> JsonResponse:
+        """Return server status for health probes and capability discovery.
+
+        SSE streaming is not supported in WSGI mode, but GET on the base
+        path is commonly used by health-check probes and MCP clients to
+        verify the endpoint is alive.  Return a JSON status instead of 405
+        so these probes succeed without a POST.
+        """
+        if _shutdown_in_progress.is_set():
+            return JsonResponse({"status": "shutting_down"}, status=503)
+        return JsonResponse({"status": "ok"})
 
     def delete(self, request: HttpRequest) -> HttpResponse:
         """Handle MCP session termination."""
@@ -5546,7 +5583,7 @@ def _handle_initialize(request: HttpRequest, request_id: Any, params: dict[str, 
 
 @lru_cache(maxsize=1)
 def _get_tools() -> list[Any]:
-    """Resolve and cache tool metadata from FastMCP on first call.
+    """Resolve and cache tool metadata from MCPServer on first call.
 
     Tools are static (listChanged: False). Lazy initialization avoids
     import-time side effects. Runs in WSGI context where no event loop
@@ -5558,7 +5595,7 @@ def _get_tools() -> list[Any]:
 @lru_cache(maxsize=1)
 def _get_tool_schemas() -> dict[str, dict[str, Any]]:
     """Build a {tool_name: inputSchema} lookup from the cached tool list."""
-    return {tool.name: tool.inputSchema for tool in _get_tools()}
+    return {tool.name: tool.input_schema for tool in _get_tools()}
 
 
 def _sanitize_validation_error(error: jsonschema.ValidationError) -> str:
@@ -5593,7 +5630,7 @@ def _validate_tool_arguments(tool_name: str, arguments: dict[str, Any]) -> str |
     """Validate arguments against the tool's JSON schema.
 
     Injects ``additionalProperties: false`` so unknown arguments are
-    rejected even though FastMCP-generated schemas omit that keyword.
+    rejected even though MCPServer-generated schemas omit that keyword.
 
     Returns None on success, or a sanitized error message on failure.
     """
@@ -5611,6 +5648,219 @@ def _validate_tool_arguments(tool_name: str, arguments: dict[str, Any]) -> str |
     except jsonschema.ValidationError as exc:
         return _sanitize_validation_error(exc)
     return None
+
+
+# --- Semantic write payload validation ---
+
+_MAX_PERMISSIONS_PER_ROLE = 100
+
+
+def _validate_permission_format(permission: str) -> str | None:
+    """Validate a V1 permission string matches 'application:resource_type:verb' format."""
+    parts = permission.split(":")
+    if len(parts) != 3:
+        return (
+            f"Permission '{permission}' is malformed. "
+            "Expected format 'application:resource_type:verb' (e.g. 'cost-management:cost_model:read')."
+        )
+    for i, label in enumerate(("application", "resource_type", "verb")):
+        part = parts[i]
+        if not part or part != part.strip():
+            return (
+                f"Permission '{permission}' has an empty or whitespace-padded {label}. "
+                "Each segment must be a non-empty string with no leading/trailing spaces."
+            )
+    return None
+
+
+def _validate_v2_permission(perm: dict[str, Any], index: int) -> str | None:
+    """Validate a V2 permission dict has non-empty application, resource_type, and operation."""
+    required_keys = ("application", "resource_type", "operation")
+    for key in required_keys:
+        value = perm.get(key)
+        if not value or not isinstance(value, str) or not value.strip():
+            return (
+                f"permissions[{index}] is missing or has empty '{key}'. "
+                f"Each permission needs: {', '.join(required_keys)}."
+            )
+    return None
+
+
+def _validate_uuid_field(value: str, field_name: str) -> str | None:
+    """Validate that a string is a valid UUID format."""
+    if not value:
+        return None
+    if not is_valid_uuid(value):
+        return f"'{field_name}' value '{value}' is not a valid UUID."
+    return None
+
+
+def _validate_uuid_list(values: list | None, field_prefix: str) -> str | None:
+    """Validate each item in a list is a valid UUID, returning the first error found."""
+    for i, value in enumerate(values or []):
+        error = _validate_uuid_field(value, f"{field_prefix}[{i}]")
+        if error:
+            return error
+    return None
+
+
+def _validate_v1_perm_entry(entry: Any, index: int) -> str | None:
+    """Validate a single V1 access entry (dict with 'permission' key in correct format)."""
+    perm = entry.get("permission", "") if isinstance(entry, dict) else ""
+    error = _validate_permission_format(perm)
+    return f"access[{index}]: {error}" if error else None
+
+
+def _validate_v2_perm_entry(perm: Any, index: int) -> str | None:
+    """Validate a single V2 permission dict."""
+    if not isinstance(perm, dict):
+        return f"permissions[{index}] must be an object with application, resource_type, operation."
+    return _validate_v2_permission(perm, index)
+
+
+def _validate_role_permissions(
+    arguments: dict[str, Any],
+    *,
+    is_update: bool,
+    role_id_field: str,
+    perms_field: str,
+    per_perm_validator: Callable[[Any, int], str | None],
+) -> str | None:
+    """Validate role arguments: optional UUID on update, permission count limit, per-entry validation."""
+    if is_update:
+        error = _validate_uuid_field(arguments.get(role_id_field, ""), role_id_field)
+        if error:
+            return error
+    perms = arguments.get(perms_field) or []
+    if len(perms) > _MAX_PERMISSIONS_PER_ROLE:
+        return (
+            f"Role has {len(perms)} permissions, which exceeds the maximum of "
+            f"{_MAX_PERMISSIONS_PER_ROLE}. Split into multiple roles for better manageability."
+        )
+    for i, perm in enumerate(perms):
+        error = per_perm_validator(perm, i)
+        if error:
+            return error
+    return None
+
+
+def _validate_add_roles_to_group(arguments: dict[str, Any]) -> str | None:
+    """Validate add_roles_to_group: group_uuid and each role UUID."""
+    error = _validate_uuid_field(arguments.get("group_uuid", ""), "group_uuid")
+    if error:
+        return error
+    return _validate_uuid_list(arguments.get("roles"), "roles")
+
+
+def _validate_create_role_bindings(arguments: dict[str, Any]) -> str | None:
+    """Validate create_role_bindings: UUID fields across all binding entries."""
+    for i, binding in enumerate(arguments.get("bindings") or []):
+        if not isinstance(binding, dict):
+            continue
+        role_val = binding.get("role", "")
+        if isinstance(role_val, str) and role_val:
+            error = _validate_uuid_field(role_val, f"bindings[{i}].role")
+            if error:
+                return error
+        resource = binding.get("resource") or {}
+        if isinstance(resource, dict):
+            res_id = resource.get("id", "")
+            if isinstance(res_id, str) and res_id:
+                error = _validate_uuid_field(res_id, f"bindings[{i}].resource.id")
+                if error:
+                    return error
+        subject = binding.get("subject") or {}
+        if isinstance(subject, dict):
+            sub_id = subject.get("id", "")
+            if isinstance(sub_id, str) and sub_id:
+                error = _validate_uuid_field(sub_id, f"bindings[{i}].subject.id")
+                if error:
+                    return error
+    return None
+
+
+def _validate_workspace_args(arguments: dict[str, Any]) -> str | None:
+    """Validate update_workspace/move_workspace: workspace_id and optional parent_id."""
+    error = _validate_uuid_field(arguments.get("workspace_id", ""), "workspace_id")
+    if error:
+        return error
+    parent = arguments.get("parent_id", "")
+    if parent:
+        return _validate_uuid_field(parent, "parent_id")
+    return None
+
+
+def _validate_update_role_binding(arguments: dict[str, Any]) -> str | None:
+    """Validate update_role_binding: resource_id, subject_id, and role IDs."""
+    error = _validate_uuid_field(arguments.get("resource_id", ""), "resource_id")
+    if error:
+        return error
+    error = _validate_uuid_field(arguments.get("subject_id", ""), "subject_id")
+    if error:
+        return error
+    for i, role in enumerate(arguments.get("roles") or []):
+        if isinstance(role, dict):
+            error = _validate_uuid_field(role.get("id", ""), f"roles[{i}].id")
+            if error:
+                return error
+    return None
+
+
+_WRITE_VALIDATORS: dict[str, Callable[[dict[str, Any]], str | None]] = {
+    "create_role_v1": lambda args: _validate_role_permissions(
+        args,
+        is_update=False,
+        role_id_field="role_uuid",
+        perms_field="access",
+        per_perm_validator=_validate_v1_perm_entry,
+    ),
+    "update_role_v1": lambda args: _validate_role_permissions(
+        args,
+        is_update=True,
+        role_id_field="role_uuid",
+        perms_field="access",
+        per_perm_validator=_validate_v1_perm_entry,
+    ),
+    "create_role": lambda args: _validate_role_permissions(
+        args,
+        is_update=False,
+        role_id_field="role_uuid",
+        perms_field="permissions",
+        per_perm_validator=_validate_v2_perm_entry,
+    ),
+    "update_role": lambda args: _validate_role_permissions(
+        args,
+        is_update=True,
+        role_id_field="role_uuid",
+        perms_field="permissions",
+        per_perm_validator=_validate_v2_perm_entry,
+    ),
+    "patch_role_v1": lambda args: _validate_uuid_field(args.get("role_uuid", ""), "role_uuid"),
+    "add_roles_to_group": _validate_add_roles_to_group,
+    "create_role_bindings": _validate_create_role_bindings,
+    "delete_role_v1": lambda args: _validate_uuid_field(args.get("role_uuid", ""), "role_uuid"),
+    "bulk_delete_roles": lambda args: _validate_uuid_list(args.get("ids"), "ids"),
+    "update_workspace": _validate_workspace_args,
+    "move_workspace": _validate_workspace_args,
+    "delete_workspace": lambda args: _validate_uuid_field(args.get("workspace_uuid", ""), "workspace_uuid"),
+    "update_role_binding": _validate_update_role_binding,
+    "update_cross_account_request": lambda args: _validate_uuid_field(args.get("request_id", ""), "request_id"),
+    "patch_cross_account_request": lambda args: _validate_uuid_field(args.get("request_id", ""), "request_id"),
+}
+
+
+def _validate_write_payload(tool_name: str, arguments: dict[str, Any]) -> str | None:
+    """Validate semantic constraints on write tool arguments.
+
+    Runs after JSON schema validation to catch domain-specific issues:
+    - Permission strings match 'application:resource_type:verb' format
+    - UUID arguments are valid UUID format
+    - Permission counts don't exceed limits
+    """
+    validator = _WRITE_VALIDATORS.get(tool_name)
+    if validator is None:
+        return None
+    return validator(arguments)
 
 
 def _is_v2_available() -> bool:
@@ -5740,7 +5990,7 @@ def _generate_write_preview(tool_name: str, arguments: dict[str, Any]) -> str:
 
 
 def _handle_tools_list(request: HttpRequest, request_id: Any, params: dict[str, Any]) -> JsonResponse:
-    """Handle MCP tools/list request using FastMCP's registered tools."""
+    """Handle MCP tools/list request using MCPServer's registered tools."""
     v2_available = _is_v2_available()
     write_enabled = _is_write_enabled()
     overrides = _get_all_description_overrides()
@@ -5758,7 +6008,7 @@ def _handle_tools_list(request: HttpRequest, request_id: Any, params: dict[str, 
             {
                 "name": tool.name,
                 "description": description,
-                "inputSchema": tool.inputSchema,
+                "inputSchema": tool.input_schema,
             }
         )
     return _success_response(request_id, {"tools": tools_data})
@@ -5784,6 +6034,38 @@ _MCP_TOOL_EXECUTOR = concurrent.futures.ThreadPoolExecutor(
     max_workers=settings.MCP_TOOL_MAX_WORKERS,
     thread_name_prefix="mcp-tool",
 )
+
+_shutdown_in_progress = threading.Event()
+
+
+def mcp_shutdown() -> None:
+    """Gracefully shut down MCP resources.
+
+    Idempotent — safe to call multiple times (atexit + Gunicorn worker_exit).
+    """
+    if _shutdown_in_progress.is_set():
+        return
+    _shutdown_in_progress.set()
+
+    shutdown_timeout = settings.MCP_SHUTDOWN_TIMEOUT_SECONDS
+    logger.info("mcp: shutting down ThreadPoolExecutor (timeout=%ss)...", shutdown_timeout)
+    t = threading.Thread(target=_MCP_TOOL_EXECUTOR.shutdown, kwargs={"wait": True, "cancel_futures": True})
+    t.start()
+    t.join(timeout=shutdown_timeout)
+    if t.is_alive():
+        logger.warning("mcp: ThreadPoolExecutor shutdown timed out after %ss", shutdown_timeout)
+
+    try:
+        pool = _get_connection_pool()
+        if pool is not None:
+            pool.disconnect()
+    except Exception:
+        logger.debug("mcp: Redis connection pool disconnect failed (non-fatal)", exc_info=True)
+
+    logger.info("mcp: shutdown complete")
+
+
+atexit.register(mcp_shutdown)
 
 
 def _execute_with_timeout(fn: Callable[..., Any], timeout: int, *args: Any, **kwargs: Any) -> Any:
@@ -5861,7 +6143,7 @@ def _handle_tools_call(request: HttpRequest, request_id: Any, params: dict[str, 
     """Handle MCP tools/call request.
 
     Calls tool functions directly in the sync WSGI context (not through
-    FastMCP's async call_tool) to avoid Django's SynchronousOnlyOperation
+    MCPServer's async call_tool) to avoid Django's SynchronousOnlyOperation
     error when tools access the ORM.
 
     Tools that need auth context receive the Django request as the first
@@ -5942,6 +6224,12 @@ def _handle_tools_call(request: HttpRequest, request_id: Any, params: dict[str, 
         logger.warning("mcp: tools/call tool='%s' schema validation failed: %s", tool_name, validation_error)
         return _error_response(request_id, -32602, f"Invalid params for tool '{tool_name}': {validation_error}")
 
+    if config.write:
+        write_error = _validate_write_payload(tool_name, arguments)
+        if write_error:
+            logger.warning("mcp: tools/call tool='%s' write payload validation failed: %s", tool_name, write_error)
+            return _error_response(request_id, -32602, f"Invalid params for tool '{tool_name}': {write_error}")
+
     if config.write and _is_write_confirmation_enabled():
         if confirmation_token:
             valid, error_msg = _validate_confirmation_token(confirmation_token, tool_name, arguments, org_id)
@@ -5994,21 +6282,76 @@ def _handle_tools_call(request: HttpRequest, request_id: Any, params: dict[str, 
                 {"type": "text", "text": f"IMPORTANT — INCLUDE THESE CAVEATS IN YOUR ANSWER:\n{config.caveats}"}
             )
 
+        # MCP write tool execution - SEC-MON-REQ-1 compliance (EOI-3 admin_action)
+        if config.write:
+            username = getattr(getattr(request, "user", None), "username", None)
+            logger.info(
+                "MCP write tool executed",
+                extra={
+                    "action": "EXECUTE",
+                    "resource_type": "mcp_tool",
+                    "resource_id": tool_name,
+                    "outcome": "success",
+                    "org_id": org_id,
+                    "username": username,
+                    "tool_arguments": list(arguments.keys()),
+                },
+            )
+
         return _success_response(request_id, {"content": content, "isError": False})
     except ToolTimeoutError:
         duration = time.monotonic() - start if track else timeout
         if track:
             _record_metric(tool_name, "timeout", duration)
-        logger.error("mcp: tools/call tool='%s' timed out after %ds", tool_name, timeout)
+        # SEC-MON-REQ-1 compliance (EOI-3 admin_action, EOI-11 warnings_or_errors)
+        logger.error(
+            "mcp: tools/call tool='%s' timed out after %ds",
+            tool_name,
+            timeout,
+            extra={
+                "action": "EXECUTE",
+                "resource_type": "mcp_tool",
+                "resource_id": tool_name,
+                "outcome": "failure",
+                "org_id": org_id,
+                "reason": "timeout",
+            },
+        )
         return _error_response(request_id, -32603, f"Tool execution timed out after {timeout}s")
     except TypeError as exc:
         if track:
             _record_metric(tool_name, "invalid_params", time.monotonic() - start)
-        return _error_response(request_id, -32602, f"Invalid params for tool '{tool_name}': {exc}")
+        # SEC-MON-REQ-1 compliance (EOI-3 admin_action, EOI-11 warnings_or_errors)
+        logger.warning(
+            "mcp: tools/call tool='%s' TypeError: %s",
+            tool_name,
+            exc,
+            extra={
+                "action": "EXECUTE",
+                "resource_type": "mcp_tool",
+                "resource_id": tool_name,
+                "outcome": "failure",
+                "org_id": org_id,
+                "reason": "invalid_params",
+            },
+        )
+        return _error_response(request_id, -32602, f"Invalid params for tool '{tool_name}'")
     except Exception:
         if track:
             _record_metric(tool_name, "error", time.monotonic() - start)
-        logger.exception("mcp: tools/call tool='%s' failed", tool_name)
+        # SEC-MON-REQ-1 compliance (EOI-3 admin_action, EOI-11 warnings_or_errors)
+        logger.exception(
+            "mcp: tools/call tool='%s' failed",
+            tool_name,
+            extra={
+                "action": "EXECUTE",
+                "resource_type": "mcp_tool",
+                "resource_id": tool_name,
+                "outcome": "failure",
+                "org_id": org_id,
+                "reason": "internal_error",
+            },
+        )
         return _error_response(request_id, -32603, "Internal error executing tool")
 
 
@@ -6030,3 +6373,19 @@ def _success_response(request_id: Any, result: dict[str, Any]) -> JsonResponse:
 def _error_response(request_id: Any, code: int, message: str) -> JsonResponse:
     """Create a JSON-RPC error response."""
     return JsonResponse({"jsonrpc": "2.0", "error": {"code": code, "message": message}, "id": request_id})
+
+
+# --- Health check endpoint (unauthenticated, for Kubernetes probes) ---
+
+
+@csrf_exempt
+def mcp_health(request: HttpRequest) -> JsonResponse:
+    """Readiness probe for the MCP subsystem — no auth required.
+
+    Returns 200 while the subsystem is accepting requests and 503 once
+    shutdown has begun, so Kubernetes removes the pod from Service
+    endpoints and lets in-flight requests drain.
+    """
+    if _shutdown_in_progress.is_set():
+        return JsonResponse({"status": "shutting_down"}, status=503)
+    return JsonResponse({"status": "ok"})

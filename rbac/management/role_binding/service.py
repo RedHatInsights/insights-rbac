@@ -28,6 +28,15 @@ from management.atomic_transactions import atomic
 from management.exceptions import InvalidFieldError, NotFoundError, RequiredFieldError
 from management.group.model import Group
 from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
+from management.inventory_replicator.inventory_replicator import (
+    InventoryReplicator,
+    PartitionKey,
+    ReplicationEvent,
+    ReplicationEventType,
+)
+from management.inventory_replicator.noop_replicator import NoopReplicator
+from management.inventory_replicator.outbox_replicator import OutboxReplicator
+from management.inventory_replicator.types import RelationTuple
 from management.permission.scope_service import (
     SCOPE_DISPLAY_NAME,
     Scope,
@@ -37,15 +46,6 @@ from management.permission.scope_service import (
     scope_for_resource,
 )
 from management.principal.model import Principal
-from management.relation_replicator.noop_replicator import NoopReplicator
-from management.relation_replicator.outbox_replicator import OutboxReplicator
-from management.relation_replicator.relation_replicator import (
-    PartitionKey,
-    RelationReplicator,
-    ReplicationEvent,
-    ReplicationEventType,
-)
-from management.relation_replicator.types import RelationTuple
 from management.role.platform import platform_v2_role_uuid_for
 from management.role.v2_model import PlatformRoleV2, RoleV2
 from management.role_binding.model import RoleBinding, RoleBindingGroup, RoleBindingPrincipal
@@ -102,7 +102,7 @@ class RoleBindingService:
     def __init__(
         self,
         tenant: Tenant,
-        replicator: RelationReplicator | None = None,
+        replicator: InventoryReplicator | None = None,
         principal_source: str = API_PRINCIPAL_SOURCE,
         allow_external_subjects: bool = False,
         skip_scope_validation: bool = False,
@@ -212,8 +212,11 @@ class RoleBindingService:
 
         # Handle edge case: exclude_direct but no inherited bindings available
         if exclude_direct and binding_uuids is None:
-            # Relations API failed or not configured — cannot determine inherited bindings
-            return RoleBinding.objects.for_tenant(self.tenant).none()
+            # Relations API failed or not configured — cannot determine inherited bindings.
+            # We still call .with_expanded_platform_roles() before .none() because
+            # CursorPagination validates ordering fields via .order_by() even on empty
+            # querysets, so the ``effective_role_created`` annotation must exist.
+            return RoleBinding.objects.for_tenant(self.tenant).with_expanded_platform_roles().none()
 
         queryset = RoleBinding.objects.for_tenant(self.tenant)
 
@@ -245,6 +248,10 @@ class RoleBindingService:
                 resource_type=resource_type,
                 resource_id=str(resource_id) if resource_id else None,
             )
+
+        # Expand platform-role bindings into per-child-role rows at the DB level
+        # so that pagination (limit/offset) operates on the expanded count.
+        queryset = queryset.with_expanded_platform_roles()
 
         return queryset
 

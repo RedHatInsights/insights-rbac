@@ -18,9 +18,12 @@
 
 import threading
 import time
+from unittest.mock import MagicMock, patch
+
 from django.conf import settings
-from django.test import TestCase
-from feature_flags import FEATURE_FLAGS
+from django.test import TestCase, override_settings
+
+from feature_flags import FEATURE_FLAGS, FeatureFlags, rbac_unleash_fetch_total, rbac_unleash_last_fetch_timestamp
 
 
 class FeatureFlagsTest(TestCase):
@@ -125,3 +128,246 @@ class FeatureFlagsTest(TestCase):
         # which defaults to True
         self.assertTrue(settings.USE_ROLE_BINDING_VIEW_PERMISSION)
         self.assertTrue(FEATURE_FLAGS.is_use_role_binding_view_permission_enabled())
+
+    @patch("feature_flags.FEATURE_FLAGS.initialize")
+    def test_get_principal_cleanup_mode_defaults_to_umb_only_without_client(self, mock_initialize):
+        """Test that get_principal_cleanup_mode returns 'umb_only' when client is not initialized."""
+        FEATURE_FLAGS.client = None
+        mode = FEATURE_FLAGS.get_principal_cleanup_mode()
+        self.assertEqual(mode, "umb_only")
+        # Verify that initialize was called when client was None
+        mock_initialize.assert_called_once()
+
+    def test_get_principal_cleanup_mode_returns_umb_only_when_flag_disabled(self):
+        """Test that get_principal_cleanup_mode returns 'umb_only' when flag is disabled."""
+        FEATURE_FLAGS.initialize()
+        # Mock the is_enabled method to return False
+        original_is_enabled = FEATURE_FLAGS.is_enabled
+
+        def mock_is_enabled(feature_name, **kwargs):
+            if feature_name == FEATURE_FLAGS.TOGGLE_USE_KAFKA_CLEANUP:
+                return False
+            return original_is_enabled(feature_name, **kwargs)
+
+        FEATURE_FLAGS.is_enabled = mock_is_enabled
+
+        mode = FEATURE_FLAGS.get_principal_cleanup_mode()
+        self.assertEqual(mode, "umb_only")
+
+        # Restore original method
+        FEATURE_FLAGS.is_enabled = original_is_enabled
+
+    def test_get_principal_cleanup_mode_returns_kafka_shadow_with_variant(self):
+        """Test that get_principal_cleanup_mode returns 'kafka_shadow' when variant is set."""
+        FEATURE_FLAGS.initialize()
+        # Fail explicitly if client is unavailable
+        self.assertIsNotNone(FEATURE_FLAGS.client, "FEATURE_FLAGS.client is None - cannot run test")
+
+        # Mock both is_enabled and get_variant
+        original_is_enabled = FEATURE_FLAGS.is_enabled
+
+        def mock_is_enabled(feature_name, **kwargs):
+            if feature_name == FEATURE_FLAGS.TOGGLE_USE_KAFKA_CLEANUP:
+                return True
+            return original_is_enabled(feature_name, **kwargs)
+
+        FEATURE_FLAGS.is_enabled = mock_is_enabled
+
+        # Mock get_variant to return kafka_shadow
+        original_get_variant = FEATURE_FLAGS.client.get_variant
+
+        def mock_get_variant(feature_name, **kwargs):
+            if feature_name == FEATURE_FLAGS.TOGGLE_USE_KAFKA_CLEANUP:
+                return {"name": "kafka_shadow", "enabled": True}
+            return original_get_variant(feature_name, **kwargs)
+
+        FEATURE_FLAGS.client.get_variant = mock_get_variant
+
+        # Run the test - moved outside conditional so it always runs
+        mode = FEATURE_FLAGS.get_principal_cleanup_mode()
+        self.assertEqual(mode, "kafka_shadow")
+
+        # Restore original methods
+        FEATURE_FLAGS.client.get_variant = original_get_variant
+        FEATURE_FLAGS.is_enabled = original_is_enabled
+
+    def test_get_principal_cleanup_mode_returns_kafka_active_with_default_variant(self):
+        """Test that get_principal_cleanup_mode returns 'kafka_active' when flag is enabled without specific variant."""
+        FEATURE_FLAGS.initialize()
+        # Fail explicitly if client is unavailable
+        self.assertIsNotNone(FEATURE_FLAGS.client, "FEATURE_FLAGS.client is None - cannot run test")
+
+        # Mock both is_enabled and get_variant
+        original_is_enabled = FEATURE_FLAGS.is_enabled
+
+        def mock_is_enabled(feature_name, **kwargs):
+            if feature_name == FEATURE_FLAGS.TOGGLE_USE_KAFKA_CLEANUP:
+                return True
+            return original_is_enabled(feature_name, **kwargs)
+
+        FEATURE_FLAGS.is_enabled = mock_is_enabled
+
+        # Mock get_variant to return kafka_active (or any other variant)
+        original_get_variant = FEATURE_FLAGS.client.get_variant
+
+        def mock_get_variant(feature_name, **kwargs):
+            if feature_name == FEATURE_FLAGS.TOGGLE_USE_KAFKA_CLEANUP:
+                return {"name": "kafka_active", "enabled": True}
+            return original_get_variant(feature_name, **kwargs)
+
+        FEATURE_FLAGS.client.get_variant = mock_get_variant
+
+        # Run the test - moved outside conditional so it always runs
+        mode = FEATURE_FLAGS.get_principal_cleanup_mode()
+        self.assertEqual(mode, "kafka_active")
+
+        # Restore original methods
+        FEATURE_FLAGS.client.get_variant = original_get_variant
+        FEATURE_FLAGS.is_enabled = original_is_enabled
+
+    def test_get_principal_cleanup_mode_returns_umb_only_with_unknown_variant(self):
+        """Test that get_principal_cleanup_mode returns 'umb_only' when flag is enabled with unknown variant (safe default)."""
+        FEATURE_FLAGS.initialize()
+        # Fail explicitly if client is unavailable
+        self.assertIsNotNone(FEATURE_FLAGS.client, "FEATURE_FLAGS.client is None - cannot run test")
+
+        # Mock both is_enabled and get_variant
+        original_is_enabled = FEATURE_FLAGS.is_enabled
+
+        def mock_is_enabled(feature_name, **kwargs):
+            if feature_name == FEATURE_FLAGS.TOGGLE_USE_KAFKA_CLEANUP:
+                return True
+            return original_is_enabled(feature_name, **kwargs)
+
+        FEATURE_FLAGS.is_enabled = mock_is_enabled
+
+        # Mock get_variant to return an unknown/invalid variant name
+        original_get_variant = FEATURE_FLAGS.client.get_variant
+
+        def mock_get_variant(feature_name, **kwargs):
+            if feature_name == FEATURE_FLAGS.TOGGLE_USE_KAFKA_CLEANUP:
+                # Return unknown variant (e.g. "disabled", "unknown", etc.)
+                return {"name": "disabled", "enabled": True}
+            return original_get_variant(feature_name, **kwargs)
+
+        FEATURE_FLAGS.client.get_variant = mock_get_variant
+
+        # Run the test - should default to umb_only for unknown variant (safe default)
+        mode = FEATURE_FLAGS.get_principal_cleanup_mode()
+        self.assertEqual(mode, "umb_only")
+
+        # Restore original methods
+        FEATURE_FLAGS.client.get_variant = original_get_variant
+        FEATURE_FLAGS.is_enabled = original_is_enabled
+
+    def test_is_kafka_shadow_mode_enabled_returns_true_for_shadow_mode(self):
+        """Test that is_kafka_shadow_mode_enabled returns True when in shadow mode."""
+        FEATURE_FLAGS.initialize()
+        # Mock get_principal_cleanup_mode to return 'kafka_shadow'
+        original_get_mode = FEATURE_FLAGS.get_principal_cleanup_mode
+
+        def mock_get_mode():
+            return "kafka_shadow"
+
+        FEATURE_FLAGS.get_principal_cleanup_mode = mock_get_mode
+
+        self.assertTrue(FEATURE_FLAGS.is_kafka_shadow_mode_enabled())
+
+        # Restore original method
+        FEATURE_FLAGS.get_principal_cleanup_mode = original_get_mode
+
+    def test_is_kafka_shadow_mode_enabled_returns_false_for_other_modes(self):
+        """Test that is_kafka_shadow_mode_enabled returns False for non-shadow modes."""
+        FEATURE_FLAGS.initialize()
+        # Test for umb_only
+        original_get_mode = FEATURE_FLAGS.get_principal_cleanup_mode
+
+        def mock_get_mode_umb():
+            return "umb_only"
+
+        FEATURE_FLAGS.get_principal_cleanup_mode = mock_get_mode_umb
+        self.assertFalse(FEATURE_FLAGS.is_kafka_shadow_mode_enabled())
+
+        # Test for kafka_active
+        def mock_get_mode_kafka():
+            return "kafka_active"
+
+        FEATURE_FLAGS.get_principal_cleanup_mode = mock_get_mode_kafka
+        self.assertFalse(FEATURE_FLAGS.is_kafka_shadow_mode_enabled())
+
+        # Restore original method
+        FEATURE_FLAGS.get_principal_cleanup_mode = original_get_mode
+
+    @override_settings(
+        FEATURE_FLAGS_URL="http://unleash:4242/api",
+        FEATURE_FLAGS_TOKEN="test-token",
+        UNLEASH_REFRESH_INTERVAL=45,
+        UNLEASH_REQUEST_TIMEOUT=20,
+    )
+    @patch("feature_flags.UnleashClient")
+    def test_init_uses_configurable_refresh_interval(self, mock_unleash_cls):
+        """Test that _init_unleash_client passes configurable refresh_interval and request_timeout."""
+        mock_client = MagicMock()
+        mock_unleash_cls.return_value = mock_client
+
+        FEATURE_FLAGS.client = None
+        result = FEATURE_FLAGS._init_unleash_client()
+
+        self.assertEqual(result, mock_client)
+        mock_client.initialize_client.assert_called_once()
+        mock_unleash_cls.assert_called_once()
+        call_kwargs = mock_unleash_cls.call_args[1]
+        self.assertEqual(call_kwargs["refresh_interval"], 45)
+        self.assertEqual(call_kwargs["request_timeout"], 20)
+        self.assertIn("event_callback", call_kwargs)
+
+    @override_settings(FEATURE_FLAGS_URL="http://unleash:4242/api", FEATURE_FLAGS_TOKEN="test-token")
+    @patch("feature_flags.UnleashClient")
+    def test_init_default_refresh_interval(self, mock_unleash_cls):
+        """Test that _init_unleash_client uses default refresh_interval and request_timeout."""
+        mock_client = MagicMock()
+        mock_unleash_cls.return_value = mock_client
+
+        FEATURE_FLAGS.client = None
+        result = FEATURE_FLAGS._init_unleash_client()
+
+        self.assertEqual(result, mock_client)
+        mock_client.initialize_client.assert_called_once()
+        call_kwargs = mock_unleash_cls.call_args[1]
+        self.assertEqual(call_kwargs["refresh_interval"], 30)
+        self.assertEqual(call_kwargs["request_timeout"], 30)
+
+    def test_on_unleash_event_tracks_fetched(self):
+        """Test that _on_unleash_event increments poll counter on FETCHED events."""
+        from UnleashClient.events import UnleashEventType, UnleashFetchedEvent
+        import uuid
+
+        before_count = rbac_unleash_fetch_total.labels(status="success")._value.get()
+
+        event = UnleashFetchedEvent(
+            event_type=UnleashEventType.FETCHED,
+            event_id=uuid.uuid4(),
+            raw_features="{}",
+        )
+        FeatureFlags._on_unleash_event(event)
+
+        after_count = rbac_unleash_fetch_total.labels(status="success")._value.get()
+        self.assertEqual(after_count, before_count + 1)
+
+    def test_on_unleash_event_updates_timestamp(self):
+        """Test that _on_unleash_event updates last poll timestamp on FETCHED events."""
+        from UnleashClient.events import UnleashEventType, UnleashFetchedEvent
+        import uuid
+
+        event = UnleashFetchedEvent(
+            event_type=UnleashEventType.FETCHED,
+            event_id=uuid.uuid4(),
+            raw_features="{}",
+        )
+        before_time = time.time()
+        FeatureFlags._on_unleash_event(event)
+        after_time = time.time()
+
+        ts = rbac_unleash_last_fetch_timestamp._value.get()
+        self.assertGreaterEqual(ts, before_time)
+        self.assertLessEqual(ts, after_time)

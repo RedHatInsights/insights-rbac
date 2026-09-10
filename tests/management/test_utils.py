@@ -18,11 +18,14 @@
 
 import uuid
 
+import requests
 from api.models import Tenant, User
 from management.models import Access, Group, Permission, Principal, Policy, Role
+from management.exceptions import InventoryAuthUnavailableError
 from management.principal.view import VALID_PRINCIPAL_TYPE_VALUE
 from management.utils import (
     access_for_principal,
+    get_inventory_auth_metadata,
     get_principal_for_auth,
     get_principal_from_request,
     groups_for_principal,
@@ -35,6 +38,7 @@ from management.utils import (
     is_valid_uuid,
     value_to_list,
     build_system_user_from_token,
+    validate_psk,
 )
 from management.authorization.token_validator import ITSSOTokenValidator
 from tests.identity_request import IdentityRequest
@@ -737,3 +741,177 @@ class SystemUserFromTokenTests(IdentityRequest):
         result_user = build_system_user_from_token(request, token_validator)
 
         self._assert_system_user_fields(result_user, existing_username)
+
+
+class ValidatePskTests(IdentityRequest):
+    """Test validate_psk uses constant-time comparison."""
+
+    PSK_CONFIG = {
+        "test-client": {"secret": "primary-secret-value", "alt-secret": "alt-secret-value"},
+        "no-alt-client": {"secret": "only-primary"},
+    }
+
+    @override_settings(SERVICE_PSKS=PSK_CONFIG)
+    def test_valid_primary_key(self):
+        """Test that a valid primary PSK returns True."""
+        self.assertTrue(validate_psk("primary-secret-value", "test-client"))
+
+    @override_settings(SERVICE_PSKS=PSK_CONFIG)
+    def test_valid_alt_key(self):
+        """Test that a valid alt PSK returns True."""
+        self.assertTrue(validate_psk("alt-secret-value", "test-client"))
+
+    @override_settings(SERVICE_PSKS=PSK_CONFIG)
+    def test_invalid_key(self):
+        """Test that an invalid PSK returns False."""
+        self.assertFalse(validate_psk("wrong-secret", "test-client"))
+
+    @override_settings(SERVICE_PSKS=PSK_CONFIG)
+    def test_unknown_client_id(self):
+        """Test that an unknown client_id returns False."""
+        self.assertFalse(validate_psk("primary-secret-value", "unknown-client"))
+
+    @override_settings(SERVICE_PSKS=PSK_CONFIG)
+    def test_none_psk(self):
+        """Test that None PSK does not raise and returns False."""
+        self.assertFalse(validate_psk(None, "test-client"))
+
+    @override_settings(SERVICE_PSKS=PSK_CONFIG)
+    def test_none_primary_key_in_config(self):
+        """Test that missing secret in config does not raise."""
+        config_with_none = {"partial-client": {}}
+        with override_settings(SERVICE_PSKS=config_with_none):
+            self.assertFalse(validate_psk("some-psk", "partial-client"))
+
+    @override_settings(SERVICE_PSKS={})
+    def test_empty_psks_config(self):
+        """Test that empty SERVICE_PSKS returns False."""
+        self.assertFalse(validate_psk("any-value", "any-client"))
+
+    @override_settings(SERVICE_PSKS=PSK_CONFIG)
+    def test_no_alt_secret_valid_primary(self):
+        """Test client with only primary secret, no alt-secret key."""
+        self.assertTrue(validate_psk("only-primary", "no-alt-client"))
+
+    @override_settings(SERVICE_PSKS=PSK_CONFIG)
+    def test_no_alt_secret_wrong_psk(self):
+        """Test client with only primary secret rejects wrong PSK."""
+        self.assertFalse(validate_psk("wrong", "no-alt-client"))
+
+    @override_settings(SERVICE_PSKS=PSK_CONFIG)
+    def test_empty_string_psk(self):
+        """Test that empty string PSK does not match real secrets."""
+        self.assertFalse(validate_psk("", "test-client"))
+        self.assertFalse(validate_psk("", "unknown-client"))
+
+    @override_settings(SERVICE_PSKS=PSK_CONFIG)
+    def test_non_ascii_psk(self):
+        """Test that non-ASCII PSK is rejected, not a TypeError."""
+        self.assertFalse(validate_psk("\u00e9\u00e8\u00ea", "test-client"))
+        self.assertFalse(validate_psk("\U0001f600", "test-client"))
+
+    @override_settings(SERVICE_PSKS=PSK_CONFIG)
+    def test_valid_psk_wrong_client_id(self):
+        """PSK valid for one client must not authenticate a different client."""
+        self.assertFalse(validate_psk("primary-secret-value", "no-alt-client"))
+
+    @override_settings(SERVICE_PSKS={"test-client": {"secret": "", "alt-secret": "real-key"}})
+    def test_empty_string_secret_in_config(self):
+        """Empty string secret in config should not match empty PSK."""
+        self.assertTrue(validate_psk("real-key", "test-client"))
+        self.assertFalse(validate_psk("", "test-client"))
+
+    @override_settings(SERVICE_PSKS=PSK_CONFIG)
+    def test_psk_type_mismatch_triggers_type_error(self):
+        """Verify that TypeError (e.g. bytes vs str) is caught and returns False."""
+        with (
+            mock.patch(
+                "management.utils.hmac.compare_digest",
+                side_effect=TypeError("type mismatch"),
+            ),
+            mock.patch("management.utils.logger.warning") as warning,
+        ):
+            self.assertFalse(validate_psk("some-psk", "test-client"))
+        warning.assert_called_once()
+
+
+class GetInventoryAuthMetadataTests(IdentityRequest):
+    """Test get_inventory_auth_metadata builds/fails auth metadata correctly."""
+
+    @override_settings(INVENTORY_API_CLIENT_ID="", INVENTORY_API_CLIENT_SECRET="")
+    def test_returns_empty_metadata_when_credentials_not_configured(self):
+        """Test that no credentials configured means unauthenticated (expected for local/ephemeral)."""
+        self.assertEqual(get_inventory_auth_metadata(), [])
+
+    @override_settings(INVENTORY_API_CLIENT_ID="client-id", INVENTORY_API_CLIENT_SECRET="client-secret")
+    @mock.patch("management.utils.inventory_auth_credentials")
+    def test_returns_bearer_metadata_when_token_fetched(self, mock_credentials):
+        """Test that a fetched token is wrapped as gRPC bearer metadata."""
+        mock_credentials.get_token.return_value = Mock(access_token="the-token")
+        self.assertEqual(get_inventory_auth_metadata(), [("authorization", "Bearer the-token")])
+
+    @override_settings(INVENTORY_API_CLIENT_ID="client-id", INVENTORY_API_CLIENT_SECRET="client-secret")
+    @mock.patch("management.utils.inventory_auth_credentials")
+    def test_raises_when_token_fetch_fails(self, mock_credentials):
+        """Test that a failed token fetch raises instead of silently returning unauthenticated metadata."""
+        mock_credentials.get_token.side_effect = Exception("SSO unreachable")
+        with self.assertRaises(Exception):
+            get_inventory_auth_metadata()
+
+    @override_settings(INVENTORY_API_CLIENT_ID="client-id", INVENTORY_API_CLIENT_SECRET="client-secret")
+    @mock.patch("management.utils.inventory_auth_credentials")
+    def test_wraps_transient_token_fetch_failure(self, mock_credentials):
+        """Transient OAuth connection failures become a service-unavailable domain error."""
+        mock_credentials.get_token.side_effect = requests.exceptions.ConnectionError("SSO reset connection")
+
+        with self.assertRaises(InventoryAuthUnavailableError) as context:
+            get_inventory_auth_metadata()
+
+        self.assertIsInstance(context.exception.__cause__, requests.exceptions.ConnectionError)
+
+    @override_settings(INVENTORY_API_CLIENT_ID="client-id", INVENTORY_API_CLIENT_SECRET="client-secret")
+    @mock.patch("management.utils.inventory_auth_credentials")
+    def test_wraps_http_error_as_unavailable(self, mock_credentials):
+        """HTTPError (e.g. SSO returns 503) is wrapped as InventoryAuthUnavailableError."""
+        mock_credentials.get_token.side_effect = requests.exceptions.HTTPError("503 Server Error")
+
+        with self.assertRaises(InventoryAuthUnavailableError) as context:
+            get_inventory_auth_metadata()
+
+        self.assertIsInstance(context.exception.__cause__, requests.exceptions.HTTPError)
+
+    @override_settings(INVENTORY_API_CLIENT_ID="client-id", INVENTORY_API_CLIENT_SECRET="client-secret")
+    @mock.patch("management.utils.inventory_auth_credentials")
+    def test_wraps_ssl_error_as_unavailable(self, mock_credentials):
+        """SSLError during token fetch is wrapped as InventoryAuthUnavailableError."""
+        mock_credentials.get_token.side_effect = requests.exceptions.SSLError("SSL handshake failed")
+
+        with self.assertRaises(InventoryAuthUnavailableError) as context:
+            get_inventory_auth_metadata()
+
+        self.assertIsInstance(context.exception.__cause__, requests.exceptions.SSLError)
+
+    @override_settings(
+        INVENTORY_API_CLIENT_ID="client-id",
+        INVENTORY_API_CLIENT_SECRET="client-secret",
+        INVENTORY_API_TOKEN_URL="https://user:pass@sso.example.com/token",
+    )
+    @mock.patch("management.utils.inventory_auth_credentials")
+    def test_logs_hostname_not_netloc(self, mock_credentials):
+        """Log message must use .hostname (no userinfo) instead of .netloc."""
+        mock_credentials.get_token.side_effect = requests.exceptions.ConnectionError("down")
+
+        with self.assertRaises(InventoryAuthUnavailableError):
+            with mock.patch("management.utils.logger") as mock_logger:
+                get_inventory_auth_metadata()
+                # The warning call should log hostname ("sso.example.com"), never netloc ("user:pass@sso.example.com")
+                args = mock_logger.warning.call_args[0]
+                self.assertEqual(args[1], "sso.example.com")
+
+    @override_settings(INVENTORY_API_CLIENT_ID="client-id", INVENTORY_API_CLIENT_SECRET="client-secret")
+    @mock.patch("management.utils.inventory_auth_credentials")
+    def test_raises_when_access_token_missing(self, mock_credentials):
+        """Test that a token response without an access_token raises instead of sending 'Bearer None'."""
+        mock_credentials.get_token.return_value = Mock(access_token=None)
+        with self.assertRaises(Exception):
+            get_inventory_auth_metadata()

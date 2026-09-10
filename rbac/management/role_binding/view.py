@@ -26,7 +26,6 @@ from management.permissions.role_binding_access import (
     RoleBindingSystemUserAccessPermission,
 )
 from management.permissions.v2_edit_api_access import V2WriteRequiresWorkspacesEnabled
-from management.role.v2_model import RoleV2
 from management.v2_mixins import AtomicOperationsMixin
 from rest_framework import status
 from rest_framework.decorators import action
@@ -47,43 +46,6 @@ from .serializer import (
 from .service import RoleBindingService
 
 logger = logging.getLogger(__name__)
-
-
-class _BindingWithRole:
-    """Proxy that presents a RoleBinding with a different role.
-
-    Used to expand platform-role bindings into per-child-role entries
-    so the list endpoint returns concrete roles instead of abstract parents.
-    """
-
-    def __init__(self, binding, role):
-        self._binding = binding
-        self.role = role
-
-    def __getattr__(self, name):
-        return getattr(self._binding, name)
-
-
-def _expand_platform_roles(bindings):
-    """Replace platform-role bindings with one entry per child role.
-
-    Non-platform bindings pass through unchanged.  Platform bindings are
-    expanded: each child role produces a separate proxy entry that shares
-    the original binding's subject/resource data but overrides the role.
-
-    Note: this runs after pagination, so the actual number of items
-    returned may slightly exceed the requested page size when platform
-    roles are expanded into multiple children.  This is acceptable
-    because platform-role bindings are few (only default bindings).
-    """
-    expanded = []
-    for binding in bindings:
-        if binding.role and binding.role.type == RoleV2.Types.PLATFORM:
-            for child in binding.role.children.all():
-                expanded.append(_BindingWithRole(binding, child))
-        else:
-            expanded.append(binding)
-    return expanded
 
 
 class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
@@ -191,7 +153,6 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
                 queryset = queryset.with_resource_names()
 
         page = self.paginate_queryset(queryset)
-        page = _expand_platform_roles(page)
 
         # Build context for output serializer
         context = {
@@ -223,6 +184,19 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
             AuditLog.CREATE,
             f"Created {len(created_bindings)} role binding(s) for {len(subjects)} subject(s)"
             f" on {len(resources)} resource(s)",
+        )
+        # CREATE operation - SEC-MON-REQ-1 compliance (EOI-4 access_manipulation, EOI-1 pii_manipulation)
+        logger.info(
+            "Role bindings created",
+            extra={
+                "action": "CREATE",
+                "resource_type": "role_binding",
+                "resource_id": f"{len(created_bindings)}_bindings",
+                "outcome": "success",
+                "org_id": getattr(request.user, "org_id", None),
+                "username": getattr(request.user, "username", None),
+                "binding_count": len(created_bindings),
+            },
         )
 
         fields = serializer.validated_data.get("fields")
@@ -302,6 +276,19 @@ class RoleBindingViewSet(AtomicOperationsMixin, BaseV2ViewSet):
             AuditLog.EDIT,
             f"Updated role bindings for {result.subject_type} '{subject_name}'"
             f" on {result.resource_type} '{resource_label}': {len(result.roles)} role(s) assigned",
+        )
+        # UPDATE operation - SEC-MON-REQ-1 compliance (EOI-4 access_manipulation, EOI-1 pii_manipulation)
+        logger.info(
+            "Role bindings updated",
+            extra={
+                "action": "UPDATE",
+                "resource_type": "role_binding",
+                "resource_id": f"{result.subject_type}_{str(result.subject.uuid)}",
+                "outcome": "success",
+                "org_id": getattr(request.user, "org_id", None),
+                "username": getattr(request.user, "username", None),
+                "role_count": len(result.roles),
+            },
         )
 
         response_context = {

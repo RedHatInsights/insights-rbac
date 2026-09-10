@@ -23,7 +23,12 @@ from django.test import TestCase
 from management.authorization.invalid_token import InvalidTokenError
 from management.authorization.missing_authorization import MissingAuthorizationError
 from management.authorization.unable_meet_prerequisites import UnableMeetPrerequisitesError
-from management.exceptions import InvalidFieldError, NotFoundError, RequiredFieldError
+from management.exceptions import (
+    InvalidFieldError,
+    InventoryAuthUnavailableError,
+    NotFoundError,
+    RequiredFieldError,
+)
 from management.role.v2_exceptions import RolesNotFoundError
 from rest_framework import status
 from rest_framework.exceptions import ValidationError as DRFValidationError
@@ -32,7 +37,7 @@ from unittest.mock import Mock
 
 from api.common.exception_handler import custom_exception_handler, custom_exception_handler_v2
 from api.common.exception_handler import _generate_errors_from_dict, _generate_error_data_payload_response
-from management.utils import v2response_error_from_errors, PROBLEM_TITLES
+from management.utils import v2response_error_from_errors, PROBLEM_TITLES, PROBLEM_TYPES
 
 
 class ExceptionHandlerTest(TestCase):
@@ -188,6 +193,17 @@ class ExceptionHandlerTest(TestCase):
             "unexpected source view in the response for the 'UnableMeetPrerequisitesError' exception handling",
         )
 
+    def test_inventory_auth_unavailable_exception_handled(self):
+        """Inventory auth outages return a retryable 503 instead of an unhandled 500."""
+        response = custom_exception_handler(InventoryAuthUnavailableError(), context={})
+
+        self.assertEqual(status.HTTP_503_SERVICE_UNAVAILABLE, response.status_code)
+        self.assertEqual("1", response["Retry-After"])
+        self.assertEqual(
+            "Inventory authorization is temporarily unavailable. Please try again shortly.",
+            response.data["errors"][0]["detail"],
+        )
+
     def test_generate_error_data_payload_with_view_response(self):
         """Tests that the function under test generates the data payload correctly when a view is passed in the context."""
         # Prepare a payload with a view in the context.
@@ -289,8 +305,8 @@ class V2ProblemDetailsTest(TestCase):
         mock_request.path = "/api/v2/roles/"
         return {"request": mock_request}
 
-    def test_v2response_includes_status_title_detail(self):
-        """Test that v2 response includes all ProblemDetails fields."""
+    def test_v2response_includes_status_title_detail_type(self):
+        """Test that v2 response includes all ProblemDetails fields including type."""
         errors = [{"detail": "Test error message", "status": "400"}]
         context = self._mock_context()
 
@@ -299,71 +315,80 @@ class V2ProblemDetailsTest(TestCase):
         self.assertIn("status", result)
         self.assertIn("title", result)
         self.assertIn("detail", result)
+        self.assertIn("type", result)
         self.assertEqual(result["status"], 400)
         self.assertEqual(result["detail"], "Test error message")
+        self.assertEqual(result["type"], PROBLEM_TYPES[400])
 
-    def test_v2response_400_has_correct_title(self):
-        """Test that 400 errors have the correct title."""
+    def test_v2response_400_has_correct_title_and_type(self):
+        """Test that 400 errors have the correct title and type."""
         errors = [{"detail": "Invalid input", "status": "400"}]
         context = self._mock_context()
 
         result = v2response_error_from_errors(errors, context=context)
 
         self.assertEqual(result["title"], PROBLEM_TITLES[400])
+        self.assertEqual(result["type"], PROBLEM_TYPES[400])
 
-    def test_v2response_401_has_correct_title(self):
-        """Test that 401 errors have the correct title."""
+    def test_v2response_401_has_correct_title_and_type(self):
+        """Test that 401 errors have the correct title and type."""
         errors = [{"detail": "Not authenticated", "status": "401"}]
         context = self._mock_context()
 
         result = v2response_error_from_errors(errors, context=context)
 
         self.assertEqual(result["title"], PROBLEM_TITLES[401])
+        self.assertEqual(result["type"], PROBLEM_TYPES[401])
 
-    def test_v2response_403_has_correct_title(self):
-        """Test that 403 errors have the correct title."""
+    def test_v2response_403_has_correct_title_and_type(self):
+        """Test that 403 errors have the correct title and type."""
         errors = [{"detail": "Permission denied", "status": "403"}]
         context = self._mock_context()
 
         result = v2response_error_from_errors(errors, context=context)
 
         self.assertEqual(result["title"], PROBLEM_TITLES[403])
+        self.assertEqual(result["type"], PROBLEM_TYPES[403])
 
-    def test_v2response_404_has_correct_title(self):
-        """Test that 404 errors have the correct title."""
+    def test_v2response_404_has_correct_title_and_type(self):
+        """Test that 404 errors have the correct title and type."""
         errors = [{"detail": "Resource not found", "status": "404"}]
         context = self._mock_context()
 
         result = v2response_error_from_errors(errors, context=context)
 
         self.assertEqual(result["title"], PROBLEM_TITLES[404])
+        self.assertEqual(result["type"], PROBLEM_TYPES[404])
 
-    def test_v2response_409_has_correct_title(self):
-        """Test that 409 errors have the correct title."""
+    def test_v2response_409_has_no_type(self):
+        """Test that 409 errors have correct title but no type (no URI defined for 409)."""
         errors = [{"detail": "Concurrent update conflict", "status": "409"}]
         context = self._mock_context()
 
         result = v2response_error_from_errors(errors, context=context)
 
         self.assertEqual(result["title"], PROBLEM_TITLES[409])
+        self.assertNotIn("type", result)
 
-    def test_v2response_500_has_correct_title(self):
-        """Test that 500 errors have the correct title."""
+    def test_v2response_500_has_correct_title_and_type(self):
+        """Test that 500 errors have the correct title and type."""
         errors = [{"detail": "Internal error", "status": "500"}]
         context = self._mock_context()
 
         result = v2response_error_from_errors(errors, context=context)
 
         self.assertEqual(result["title"], PROBLEM_TITLES[500])
+        self.assertEqual(result["type"], PROBLEM_TYPES[500])
 
-    def test_v2response_unknown_status_has_fallback_title(self):
-        """Test that unknown status codes get a fallback title."""
+    def test_v2response_unknown_status_has_fallback_title_and_no_type(self):
+        """Test that unknown status codes get a fallback title and no type."""
         errors = [{"detail": "Some error", "status": "418"}]
         context = self._mock_context()
 
         result = v2response_error_from_errors(errors, context=context)
 
         self.assertEqual(result["title"], "An error occurred.")
+        self.assertNotIn("type", result)
 
     def test_v2response_includes_instance_for_put(self):
         """Test that PUT requests include instance field."""
@@ -411,6 +436,16 @@ class V2ProblemDetailsTest(TestCase):
 
         self.assertNotIn("instance", result)
 
+    def test_v2response_problem_type_override(self):
+        """Test that explicit problem_type overrides the status-code default."""
+        errors = [{"detail": "Duplicate name", "status": "400"}]
+        context = self._mock_context()
+        override = "http://project-kessel.org/problems/already-exists"
+
+        result = v2response_error_from_errors(errors, context=context, problem_type=override)
+
+        self.assertEqual(result["type"], override)
+
 
 class V2ExceptionHandlerTests(TestCase):
     """Tests for every branch in custom_exception_handler_v2.
@@ -444,6 +479,7 @@ class V2ExceptionHandlerTests(TestCase):
             {
                 "status": 400,
                 "title": PROBLEM_TITLES[400],
+                "type": PROBLEM_TYPES[400],
                 "detail": "This field is required.",
                 "errors": [{"message": "This field is required.", "field": "name"}],
                 "instance": self.PATH,
@@ -466,6 +502,7 @@ class V2ExceptionHandlerTests(TestCase):
             {
                 "status": 400,
                 "title": PROBLEM_TITLES[400],
+                "type": PROBLEM_TYPES[400],
                 "detail": "Error one.",
                 "errors": [{"message": "Error one."}, {"message": "Error two."}],
                 "instance": self.PATH,
@@ -492,6 +529,7 @@ class V2ExceptionHandlerTests(TestCase):
             {
                 "status": 400,
                 "title": PROBLEM_TITLES[400],
+                "type": PROBLEM_TYPES[400],
                 "detail": detail,
                 "errors": [{"message": detail, "field": "role-bindings"}],
                 "instance": self.PATH,
@@ -513,6 +551,7 @@ class V2ExceptionHandlerTests(TestCase):
             {
                 "status": 401,
                 "title": PROBLEM_TITLES[401],
+                "type": PROBLEM_TYPES[401],
                 "detail": "Invalid token provided.",
                 "errors": [{"message": "Invalid token provided."}],
             },
@@ -534,6 +573,7 @@ class V2ExceptionHandlerTests(TestCase):
             {
                 "status": 401,
                 "title": PROBLEM_TITLES[401],
+                "type": PROBLEM_TYPES[401],
                 "detail": detail,
                 "errors": [{"message": detail}],
             },
@@ -554,10 +594,24 @@ class V2ExceptionHandlerTests(TestCase):
             {
                 "status": 500,
                 "title": PROBLEM_TITLES[500],
+                "type": PROBLEM_TYPES[500],
                 "detail": "Unable to validate the provided token.",
                 "errors": [{"message": "Unable to validate the provided token."}],
             },
         )
+
+    def test_inventory_auth_unavailable_error_returns_503(self):
+        """Inventory auth outages produce a v2 Problem Details 503 response."""
+        response = custom_exception_handler_v2(InventoryAuthUnavailableError(), self._mock_v2_context())
+
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.content_type, "application/problem+json")
+        self.assertEqual(response.data["status"], 503)
+        self.assertEqual(
+            response.data["detail"],
+            "Inventory authorization is temporarily unavailable. Please try again shortly.",
+        )
+        self.assertEqual(response["Retry-After"], "1")
 
     # ── Branch: RolesNotFoundError ─────────────────────────────────────
 
@@ -577,6 +631,7 @@ class V2ExceptionHandlerTests(TestCase):
             {
                 "status": 404,
                 "title": PROBLEM_TITLES[404],
+                "type": PROBLEM_TYPES[404],
                 "detail": detail,
                 "errors": [{"message": detail, "field": "detail"}],
                 "instance": self.PATH,
@@ -600,6 +655,7 @@ class V2ExceptionHandlerTests(TestCase):
             {
                 "status": 404,
                 "title": PROBLEM_TITLES[404],
+                "type": PROBLEM_TYPES[404],
                 "detail": detail,
                 "errors": [{"message": detail, "field": "detail"}],
                 "instance": self.PATH,
@@ -623,6 +679,7 @@ class V2ExceptionHandlerTests(TestCase):
             {
                 "status": 400,
                 "title": PROBLEM_TITLES[400],
+                "type": PROBLEM_TYPES[400],
                 "detail": detail,
                 "errors": [{"message": detail, "field": "roles"}],
                 "instance": self.PATH,
@@ -645,6 +702,7 @@ class V2ExceptionHandlerTests(TestCase):
             {
                 "status": 400,
                 "title": PROBLEM_TITLES[400],
+                "type": PROBLEM_TYPES[400],
                 "detail": "resource_type is required",
                 "errors": [{"message": "resource_type is required", "field": "resource_type"}],
                 "instance": self.PATH,

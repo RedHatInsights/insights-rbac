@@ -28,7 +28,7 @@ from typing import Optional
 
 import jsonschema
 from django.conf import settings
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import Q
 from django.urls import resolve
 from internal.pg_notify_wait import replicate_with_notify
@@ -36,21 +36,21 @@ from internal.schemas import INVENTORY_INPUT_SCHEMAS, RELATION_INPUT_SCHEMAS
 from jsonschema import validate
 from management.atomic_transactions import atomic, atomic_block, atomic_with_retry
 from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
+from management.inventory_replicator.inventory_api_replicator import InventoryApiReplicator
+from management.inventory_replicator.inventory_replicator import (
+    InventoryReplicator,
+    PartitionKey,
+    ReplicationEvent,
+    ReplicationEventType,
+)
+from management.inventory_replicator.logging_replicator import LoggingReplicator, stringify_spicedb_relationship
+from management.inventory_replicator.noop_replicator import NoopReplicator
+from management.inventory_replicator.outbox_replicator import OutboxReplicator
+from management.inventory_replicator.types import RelationTuple
 from management.models import BindingMapping, Role, Workspace
 from management.permission.scope_service import TenantScopeResources
 from management.principal.model import Principal
 from management.principal.proxy import PrincipalProxy
-from management.relation_replicator.logging_replicator import LoggingReplicator, stringify_spicedb_relationship
-from management.relation_replicator.noop_replicator import NoopReplicator
-from management.relation_replicator.outbox_replicator import OutboxReplicator
-from management.relation_replicator.relation_replicator import (
-    PartitionKey,
-    RelationReplicator,
-    ReplicationEvent,
-    ReplicationEventType,
-)
-from management.relation_replicator.relations_api_replicator import RelationsApiReplicator
-from management.relation_replicator.types import RelationTuple
 from management.role.v2_model import RoleV2
 from management.role_binding.model import RoleBinding, RoleBindingPrincipal
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
@@ -63,18 +63,18 @@ from management.tenant_mapping.v2_activation import (
 from management.tenant_service.relations import default_role_binding_tuples
 from management.tenant_service.v2 import TenantNotBootstrappedError, lock_tenant_for_bootstrap
 from management.utils import as_uuid
-from management.workspace.relation_api_dual_write_workspace_handler import RelationApiDualWriteWorkspaceHandler
+from management.workspace.inventory_api_dual_write_workspace_handler import InventoryApiDualWriteWorkspaceHandler
 from migration_tool.utils import create_relationship
 
+from api.cross_access.inventory_api_dual_write_cross_access_handler import InventoryApiDualWriteCrossAccessHandler
 from api.cross_access.model import CrossAccountRequest
-from api.cross_access.relation_api_dual_write_cross_access_handler import RelationApiDualWriteCrossAccessHandler
 from api.models import Tenant, User
 
 logger = logging.getLogger(__name__)
 PROXY = PrincipalProxy()
 
 
-def get_replicator(write_relationships: str) -> RelationReplicator:
+def get_replicator(write_relationships: str) -> InventoryReplicator:
     """
     Get the appropriate replicator based on write_relationships setting.
 
@@ -85,7 +85,7 @@ def get_replicator(write_relationships: str) -> RelationReplicator:
             - "False" or other: Create NoopReplicator (no replication)
 
     Returns:
-        RelationReplicator instance
+        InventoryReplicator instance
     """
     option = write_relationships.lower()
 
@@ -169,9 +169,9 @@ def delete_bindings(bindings):
 
 def read_tuples_from_kessel(resource_type: str, resource_id: str, relation: str, subject_type: str, subject_id: str):
     """
-    Read tuples from Kessel Relations API.
+    Read tuples from Kessel Inventory API.
 
-    This is a convenience wrapper around RelationsApiReplicator.read_tuples()
+    This is a convenience wrapper around InventoryApiReplicator.read_tuples()
     that uses the default "rbac" namespace.
 
     Args:
@@ -184,7 +184,7 @@ def read_tuples_from_kessel(resource_type: str, resource_id: str, relation: str,
     Returns:
         list[dict]: List of tuple dictionaries from Kessel
     """
-    replicator = RelationsApiReplicator()
+    replicator = InventoryApiReplicator()
     return replicator.read_tuples(
         resource_type=resource_type,
         resource_id=resource_id,
@@ -198,12 +198,12 @@ def iterate_tuples_from_kessel(
     resource_type: str, resource_id: str, relation: str, subject_type: str, subject_id: str
 ) -> Iterable[dict]:
     """
-    Read tuples from Kessel Relations API while handling pagination.
+    Read tuples from Kessel Inventory API while handling pagination.
 
     This is similar to read_tuples_from_kessel, except that it also returns subsequent pages from Kessel, and it does
     not necessarily return a list.
     """
-    replicator = RelationsApiReplicator()
+    replicator = InventoryApiReplicator()
 
     continuation_token = None
     first = True
@@ -735,8 +735,8 @@ def clean_invalid_workspace_resource_definitions(dry_run: bool = False) -> dict:
         dict: Results with roles_checked, resource_definitions_fixed, and changes list.
     """
     logger = logging.getLogger(__name__)
-    from management.role.relation_api_dual_write_handler import RelationApiDualWriteHandler
-    from management.relation_replicator.relation_replicator import ReplicationEventType
+    from management.role.inventory_api_dual_write_handler import InventoryApiDualWriteHandler
+    from management.inventory_replicator.inventory_replicator import ReplicationEventType
 
     roles_checked = 0
     resource_defs_fixed = 0
@@ -767,7 +767,7 @@ def clean_invalid_workspace_resource_definitions(dry_run: bool = False) -> dict:
 
             roles_checked += 1
 
-            dual_write = RelationApiDualWriteHandler(role, ReplicationEventType.FIX_RESOURCE_DEFINITIONS)
+            dual_write = InventoryApiDualWriteHandler(role, ReplicationEventType.FIX_RESOURCE_DEFINITIONS)
             dual_write.prepare_for_update()
 
             for access in role.access.all():
@@ -900,32 +900,143 @@ def clean_invalid_workspace_resource_definitions(dry_run: bool = False) -> dict:
     return results
 
 
+class UngroupedWorkspaceError(ValueError):
+    """Raised when ungrouped-hosts workspace cannot be created with the requested ID."""
+
+
 @transaction.atomic
-def get_or_create_ungrouped_workspace(tenant: str) -> Workspace:
+def get_or_create_ungrouped_workspace(tenant: Tenant, workspace_id: Optional[uuid.UUID] = None) -> Workspace:
     """
-    Retrieve the ungrouped workspace for the given tenant.
+    Retrieve or create the ungrouped-hosts workspace for the given tenant.
 
     Args:
-        tenant (str): The tenant for which to retrieve the ungrouped workspace.
+        tenant: The tenant for which to retrieve/create the ungrouped workspace.
+        workspace_id: Optional UUID to use when creating the workspace. When the tenant
+            already has an ungrouped-hosts workspace, it must match this ID if provided.
+
     Returns:
         Workspace: The ungrouped workspace object for the given tenant.
+
+    Raises:
+        UngroupedWorkspaceError: If workspace_id conflicts with an existing workspace.
     """
-    # fetch parent only once
     default_ws = Workspace.objects.get(tenant=tenant, type=Workspace.Types.DEFAULT)
 
-    # single select_for_update + get_or_create
-    workspace, created = Workspace.objects.select_for_update().get_or_create(
-        tenant=tenant,
-        type=Workspace.Types.UNGROUPED_HOSTS,
-        defaults={"name": Workspace.SpecialNames.UNGROUPED_HOSTS, "parent": default_ws},
+    existing = (
+        Workspace.objects.select_for_update().filter(tenant=tenant, type=Workspace.Types.UNGROUPED_HOSTS).first()
     )
+    if existing:
+        if workspace_id is not None and existing.id != workspace_id:
+            raise UngroupedWorkspaceError(
+                f"Tenant org_id={tenant.org_id} already has ungrouped-hosts workspace "
+                f"{existing.id}, which does not match requested id {workspace_id}."
+            )
+        return existing
+
+    if workspace_id is not None:
+        conflict = Workspace.objects.filter(id=workspace_id).first()
+        if conflict is not None:
+            raise UngroupedWorkspaceError(
+                f"Workspace id {workspace_id} already exists "
+                f"(tenant org_id={conflict.tenant.org_id}, type={conflict.type})."
+            )
+        workspace = Workspace(
+            id=workspace_id,
+            tenant=tenant,
+            type=Workspace.Types.UNGROUPED_HOSTS,
+            name=Workspace.SpecialNames.UNGROUPED_HOSTS,
+            parent=default_ws,
+            description=Workspace.SpecialDescriptions.UNGROUPED_HOSTS,
+        )
+        try:
+            # Nested savepoint so IntegrityError does not poison the outer atomic block.
+            with transaction.atomic():
+                workspace.save()
+            created = True
+        except IntegrityError:
+            # Savepoint rolled back; outer transaction can continue with retry queries.
+            raced = (
+                Workspace.objects.select_for_update()
+                .filter(tenant=tenant, type=Workspace.Types.UNGROUPED_HOSTS)
+                .first()
+            )
+            if raced is not None:
+                if raced.id != workspace_id:
+                    raise UngroupedWorkspaceError(
+                        f"Tenant org_id={tenant.org_id} already has ungrouped-hosts workspace "
+                        f"{raced.id}, which does not match requested id {workspace_id}."
+                    ) from None
+                workspace = raced
+                created = False
+            else:
+                conflict = Workspace.objects.select_for_update().filter(id=workspace_id).first()
+                if conflict is not None:
+                    raise UngroupedWorkspaceError(
+                        f"Workspace id {workspace_id} already exists "
+                        f"(tenant org_id={conflict.tenant.org_id}, type={conflict.type})."
+                    ) from None
+                raise UngroupedWorkspaceError(
+                    f"Workspace id {workspace_id} conflicted during creation but is no longer found."
+                ) from None
+    else:
+        workspace, created = Workspace.objects.select_for_update().get_or_create(
+            tenant=tenant,
+            type=Workspace.Types.UNGROUPED_HOSTS,
+            defaults={"name": Workspace.SpecialNames.UNGROUPED_HOSTS, "parent": default_ws},
+        )
 
     if created:
-        RelationApiDualWriteWorkspaceHandler(
+        InventoryApiDualWriteWorkspaceHandler(
             workspace, ReplicationEventType.CREATE_WORKSPACE
         ).replicate_new_workspace()
 
     return workspace
+
+
+def parse_bootstrap_tenant_request(body: dict) -> list[tuple[str, Optional[uuid.UUID]]]:
+    """
+    Parse bootstrap_tenant request body into (org_id, ungrouped_hosts_id) pairs.
+
+    Accepts either:
+      {"org_ids": ["12345", "67890"]}
+      {"tenants": [{"org_id": "12345", "ungrouped_hosts_id": "<uuid>"}]}
+
+    Raises:
+        ValueError: If the body is invalid.
+    """
+    if not isinstance(body, dict):
+        raise ValueError("Invalid request: body must be a JSON object.")  # pyright: ignore[reportUnreachable]
+
+    if "tenants" in body and "org_ids" in body:
+        raise ValueError('Invalid request: supply either "org_ids" or "tenants", not both.')
+
+    if "tenants" in body:
+        tenants = body["tenants"]
+        if not isinstance(tenants, list) or len(tenants) == 0:
+            raise ValueError('Invalid request: the "tenants" array must contain at least one entry.')
+
+        parsed: list[tuple[str, Optional[uuid.UUID]]] = []
+        for entry in tenants:
+            if not isinstance(entry, dict) or not entry.get("org_id"):
+                raise ValueError('Invalid request: each tenants entry must include a non-empty "org_id".')
+            org_id = str(entry["org_id"])
+            raw_id = entry.get("ungrouped_hosts_id")
+            if raw_id is None or raw_id == "":
+                parsed.append((org_id, None))
+                continue
+            try:
+                parsed.append((org_id, as_uuid(raw_id)))
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f'Invalid ungrouped_hosts_id for org_id {org_id}: "{raw_id}".') from exc
+        return parsed
+
+    if "org_ids" in body:
+        org_ids = body["org_ids"]
+        if not isinstance(org_ids, list) or len(org_ids) == 0:
+            raise ValueError('Invalid request: the "org_ids" array in the body must contain at least one org_id')
+        return [(str(org_id), None) for org_id in org_ids]
+
+    raise ValueError('Invalid request: must supply "org_ids" or "tenants" in body.')
 
 
 def validate_relations_input(action, request_data) -> bool:
@@ -1093,7 +1204,7 @@ def fix_admin_default_bindings(org_id: str) -> dict:
         return {"org_id": org_id, "error": str(e)}
 
 
-def remove_unassigned_system_binding_mappings(replicator: Optional[RelationReplicator] = None):
+def remove_unassigned_system_binding_mappings(replicator: Optional[InventoryReplicator] = None):
     """
     Remove unassigned BindingMappings for system roles.
 
@@ -1230,7 +1341,7 @@ def remove_unassigned_system_binding_mappings(replicator: Optional[RelationRepli
 
 
 @atomic
-def _do_remove_orphaned_car(raw_car: CrossAccountRequest, replicator: RelationReplicator):
+def _do_remove_orphaned_car(raw_car: CrossAccountRequest, replicator: InventoryReplicator):
     logger.info(f"Processing orphaned CAR: pk={raw_car.pk!r}")
 
     orphaned_car: CrossAccountRequest = CrossAccountRequest.objects.select_for_update().filter(pk=raw_car.pk).first()
@@ -1305,7 +1416,7 @@ def _do_remove_orphaned_car(raw_car: CrossAccountRequest, replicator: RelationRe
     orphaned_car.status = "expired"
     orphaned_car.save()
 
-    dual_write_handler = RelationApiDualWriteCrossAccessHandler(
+    dual_write_handler = InventoryApiDualWriteCrossAccessHandler(
         cross_account_request=orphaned_car,
         event_type=ReplicationEventType.EXPIRE_CROSS_ACCOUNT_REQUEST,
         replicator=replicator,
@@ -1325,7 +1436,7 @@ def _do_remove_orphaned_car(raw_car: CrossAccountRequest, replicator: RelationRe
 
 
 @atomic
-def expire_orphaned_cross_account_requests(replicator: Optional[RelationReplicator] = None):
+def expire_orphaned_cross_account_requests(replicator: Optional[InventoryReplicator] = None):
     """Expire cross-account requests that refer to a principal that no longer exists."""
     if replicator is None:
         replicator = OutboxReplicator()

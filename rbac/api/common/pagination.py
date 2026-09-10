@@ -134,16 +134,16 @@ class V2CursorPagination(CursorPagination):
     Available ordering fields (for subject_type=group):
     - group.name, group.description, group.user_count, group.uuid,
       group.created, group.modified
-    - role.name, role.uuid, role.created, role.modified
+    - role.name, role.created, role.modified
     - last_modified (max RoleBindingGroup/RoleBindingPrincipal created for the resource)
 
     Available ordering fields (for subject_type=user):
     - user.username, user.uuid
-    - role.name, role.uuid, role.created, role.modified
+    - role.name, role.created, role.modified
     - last_modified (max RoleBindingGroup/RoleBindingPrincipal created for the resource)
 
     Available ordering fields (for list endpoint, RoleBinding model):
-    - role.name, role.uuid, role.id, role.created, role.modified
+    - role.name, role.id, role.created, role.modified
     - resource.id, resource.type
     """
 
@@ -187,7 +187,6 @@ class V2CursorPagination(CursorPagination):
         "group.modified": "modified",
         # Role fields (accessed via related path from Group)
         "role.name": "role_binding_entries__binding__role__name",
-        "role.uuid": "role_binding_entries__binding__role__uuid",
         "role.modified": "role_binding_entries__binding__role__modified",
         "role.created": "role_binding_entries__binding__role__created",
         # Annotated in RoleBindingService (assignment time for this resource)
@@ -200,22 +199,20 @@ class V2CursorPagination(CursorPagination):
         "user.username": "username",
         "user.uuid": "uuid",
         "role.name": "role_binding_entries__binding__role__name",
-        "role.uuid": "role_binding_entries__binding__role__uuid",
         "role.modified": "role_binding_entries__binding__role__modified",
         "role.created": "role_binding_entries__binding__role__created",
         "last_modified": "latest_modified",
     }
 
     # For role binding list endpoint, the queryset is on RoleBinding model.
-    # Values map to annotations defined in RoleBindingQuerySet.for_tenant()
+    # Values map to annotations defined in RoleBindingQuerySet.with_expanded_platform_roles()
     # so that CursorPagination can extract cursor positions via getattr().
     ROLE_BINDING_FIELD_MAPPING = {
-        # Role fields (annotated in RoleBindingQuerySet.for_tenant)
-        "role.id": "role_uuid",
-        "role.name": "role_name",
-        "role.uuid": "role_uuid",
-        "role.modified": "role_modified",
-        "role.created": "role_created",
+        # Role fields (annotated in RoleBindingQuerySet.with_expanded_platform_roles)
+        "role.id": "effective_role_uuid",
+        "role.name": "effective_role_name",
+        "role.modified": "effective_role_modified",
+        "role.created": "effective_role_created",
         # Resource fields (direct model attributes)
         "resource.id": "resource_id",
         "resource.type": "resource_type",
@@ -224,7 +221,7 @@ class V2CursorPagination(CursorPagination):
     # Default ordering for each subject type
     GROUP_DEFAULT_ORDERING = "-modified"
     USER_DEFAULT_ORDERING = "username"
-    ROLE_BINDING_DEFAULT_ORDERING = "role_created"
+    ROLE_BINDING_DEFAULT_ORDERING = "effective_role_created"
 
     # Combined mapping for backward compatibility (defaults to group)
     FIELD_MAPPING = GROUP_FIELD_MAPPING

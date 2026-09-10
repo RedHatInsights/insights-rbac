@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 
 from django.conf import settings
 from kafka import KafkaConsumer, TopicPartition
-from management.relation_replicator.types import RelationTuple
+from management.inventory_replicator.types import RelationTuple
 
 logger = logging.getLogger(__name__)
 
@@ -116,6 +116,7 @@ def read_events_in_window(
         "enable_auto_commit": False,
         "auto_offset_reset": "earliest",
         "consumer_timeout_ms": 10000,
+        "session_timeout_ms": 45000,  # Explicit: kafka-python v3 default (was 10000 in v2)
         "value_deserializer": None,
     }
 

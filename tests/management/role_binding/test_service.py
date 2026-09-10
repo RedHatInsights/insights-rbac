@@ -23,8 +23,8 @@ from unittest.mock import patch
 from api.models import Tenant
 from django.test import TestCase, override_settings
 from management.principal.model import Principal as PrincipalModel
-from management.relation_replicator.outbox_replicator import OutboxReplicator
-from management.relation_replicator.relation_replicator import RelationReplicator, ReplicationEventType
+from management.inventory_replicator.outbox_replicator import OutboxReplicator
+from management.inventory_replicator.inventory_replicator import InventoryReplicator, ReplicationEventType
 from management.tenant_mapping.v2_activation import assert_v1_write_allowed, is_v2_write_activated
 from migration_tool.in_memory_tuples import (
     InMemoryRelationReplicator,
@@ -50,7 +50,7 @@ from tests.identity_request import IdentityRequest
 from tests.v2_util import bootstrap_tenant_for_v2_test
 
 
-class _ReplicationTracker(RelationReplicator):
+class _ReplicationTracker(InventoryReplicator):
     """Records tuples added and removed by replication events for testing.
 
     Instead of merging into a single set (like InMemoryTuples), this tracks
@@ -1129,7 +1129,7 @@ class RoleBindingSerializerTests(IdentityRequest):
     def test_default_roles_structure_matches_spec(self):
         """Test that roles structure matches default spec.
 
-        Default behavior returns only role id.
+        Default behavior returns role id, created, and modified.
         """
         serializer = RoleBindingByGroupSerializer(self.annotated_group, context=self.context)
         data = serializer.data
@@ -1139,12 +1139,12 @@ class RoleBindingSerializerTests(IdentityRequest):
 
         role = roles[0]
         self.assertIn("id", role)
+        self.assertIn("created", role)
+        self.assertIn("modified", role)
         # Default behavior: no name included
         self.assertNotIn("name", role)
         self.assertNotIn("description", role)
         self.assertNotIn("type", role)
-        self.assertNotIn("created", role)
-        self.assertNotIn("modified", role)
 
     def test_default_resource_structure_matches_spec(self):
         """Test that resource structure matches default spec.
@@ -1163,7 +1163,7 @@ class RoleBindingSerializerTests(IdentityRequest):
     def test_field_selection_filters_subject_fields(self):
         """Test that field selection filters subject group fields.
 
-        Only subject.type is always included. Other fields require explicit request.
+        subject.type and subject.id are always included. Other fields require explicit request.
         """
         field_selection = RoleBindingFieldSelection.parse("subject(group.name)")
         context = {**self.context, "field_selection": field_selection}
@@ -1172,10 +1172,9 @@ class RoleBindingSerializerTests(IdentityRequest):
         data = serializer.data
 
         subject = data["subject"]
-        # type is always included
+        # type and id are always included
         self.assertIn("type", subject)
-        # id is NOT included unless explicitly requested
-        self.assertNotIn("id", subject)
+        self.assertIn("id", subject)
 
         group = subject["group"]
         self.assertIn("name", group)
@@ -1194,7 +1193,7 @@ class RoleBindingSerializerTests(IdentityRequest):
         data = serializer.data
 
         role = data["roles"][0]
-        # id is always included
+        # id is always included for consistency with subject/resource
         self.assertIn("id", role)
         self.assertIn("name", role)
 
@@ -3446,7 +3445,7 @@ class PrepareToDeleteGroupV2Tests(_ReplicationAssertionsMixin, IdentityRequest):
 
     def setUp(self):
         super().setUp()
-        from management.group.relation_api_dual_write_group_handler import RelationApiDualWriteGroupHandler
+        from management.group.inventory_api_dual_write_group_handler import InventoryApiDualWriteGroupHandler
 
         bootstrap_result = bootstrap_tenant_for_v2_test(self.tenant)
         self.default_workspace = bootstrap_result.default_workspace
@@ -3490,7 +3489,7 @@ class PrepareToDeleteGroupV2Tests(_ReplicationAssertionsMixin, IdentityRequest):
         )
         self.tracker.clear()
 
-        self.RelationApiDualWriteGroupHandler = RelationApiDualWriteGroupHandler
+        self.InventoryApiDualWriteGroupHandler = InventoryApiDualWriteGroupHandler
 
     def tearDown(self):
         RoleBindingGroup.objects.all().delete()
@@ -3521,7 +3520,7 @@ class PrepareToDeleteGroupV2Tests(_ReplicationAssertionsMixin, IdentityRequest):
             expected_tuples_to_remove.add(binding.subject_tuple(self.group))
             expected_tuples_to_remove.update(binding.binding_tuples())
 
-        dual_write_handler = self.RelationApiDualWriteGroupHandler(
+        dual_write_handler = self.InventoryApiDualWriteGroupHandler(
             self.group,
             ReplicationEventType.DELETE_GROUP,
             replicator=self.tracker,
@@ -3553,7 +3552,7 @@ class PrepareToDeleteGroupV2Tests(_ReplicationAssertionsMixin, IdentityRequest):
             role=self.role2, resource_id=str(self.workspace.id), tenant=self.tenant
         )
 
-        dual_write_handler = self.RelationApiDualWriteGroupHandler(
+        dual_write_handler = self.InventoryApiDualWriteGroupHandler(
             self.group,
             ReplicationEventType.DELETE_GROUP,
             replicator=self.tracker,
@@ -3598,7 +3597,7 @@ class PrepareToDeleteGroupV2Tests(_ReplicationAssertionsMixin, IdentityRequest):
             role=self.role2, resource_id=str(self.workspace.id), tenant=self.tenant
         )
 
-        dual_write_handler = self.RelationApiDualWriteGroupHandler(
+        dual_write_handler = self.InventoryApiDualWriteGroupHandler(
             self.group,
             ReplicationEventType.DELETE_GROUP,
             replicator=self.tracker,
@@ -3628,7 +3627,7 @@ class PrepareToDeleteGroupV2Tests(_ReplicationAssertionsMixin, IdentityRequest):
         )
         self.group.principals.add(principal)
 
-        dual_write_handler = self.RelationApiDualWriteGroupHandler(
+        dual_write_handler = self.InventoryApiDualWriteGroupHandler(
             self.group,
             ReplicationEventType.DELETE_GROUP,
             replicator=self.tracker,
@@ -3651,7 +3650,7 @@ class PrepareToDeleteGroupV2Tests(_ReplicationAssertionsMixin, IdentityRequest):
         )
         lonely_group.principals.add(principal)
 
-        dual_write_handler = self.RelationApiDualWriteGroupHandler(
+        dual_write_handler = self.InventoryApiDualWriteGroupHandler(
             lonely_group,
             ReplicationEventType.DELETE_GROUP,
             replicator=self.tracker,
@@ -3688,7 +3687,7 @@ class PrepareToDeleteGroupV2Tests(_ReplicationAssertionsMixin, IdentityRequest):
         )
         self.assertEqual(len(all_bindings), 3)
 
-        dual_write_handler = self.RelationApiDualWriteGroupHandler(
+        dual_write_handler = self.InventoryApiDualWriteGroupHandler(
             self.group,
             ReplicationEventType.DELETE_GROUP,
             replicator=self.tracker,
@@ -3709,7 +3708,7 @@ class PrepareToDeleteGroupV2Tests(_ReplicationAssertionsMixin, IdentityRequest):
 
     def test_v2_path_platform_default_adds_default_binding(self):
         """Platform-default group triggers relations_to_add instead of member removals."""
-        from management.relation_replicator.types import ObjectReference, ObjectType, RelationTuple, SubjectReference
+        from management.inventory_replicator.types import ObjectReference, ObjectType, RelationTuple, SubjectReference
 
         sentinel_tuple = RelationTuple(
             resource=ObjectReference(type=ObjectType(namespace="rbac", name="sentinel"), id="default"),
@@ -3722,7 +3721,7 @@ class PrepareToDeleteGroupV2Tests(_ReplicationAssertionsMixin, IdentityRequest):
         self.group.platform_default = True
         self.group.save()
 
-        dual_write_handler = self.RelationApiDualWriteGroupHandler(
+        dual_write_handler = self.InventoryApiDualWriteGroupHandler(
             self.group,
             ReplicationEventType.DELETE_GROUP,
             replicator=self.tracker,

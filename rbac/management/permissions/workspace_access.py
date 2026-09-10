@@ -157,6 +157,20 @@ class WorkspaceAccessPermission(permissions.BasePermission):
         # ws_id is the parent workspace ID where the new workspace will be created
         if view.action == "create":
             if not is_user_allowed_v2(request, perm, ws_id):
+                # Authorization failure - SEC-MON-REQ-1 compliance (EOI-8 authorization_failure, EOI-1 pii_manipulation)
+                logger.warning(
+                    "Authorization denied",
+                    extra={
+                        "action": "CREATE",
+                        "resource_type": "workspace",
+                        "outcome": "failure",
+                        "org_id": getattr(request.user, "org_id", None),
+                        "username": getattr(request.user, "username", None),
+                        "reason": "insufficient_permissions_on_parent_workspace",
+                        "endpoint": request.path,
+                        "parent_workspace_id": ws_id,
+                    },
+                )
                 return False
             return True
 
@@ -167,9 +181,9 @@ class WorkspaceAccessPermission(permissions.BasePermission):
 
         # For list/detail operations, allow request to proceed
         # FilterBackend handles access filtering via queryset
-        # For list: users with no real workspace access get fallback workspaces
-        # (root, default, ungrouped) via FilterBackend instead of 403
-        # This ensures 404 for both non-existing and inaccessible workspaces
+        # For list with with_ancestry=true: users get fallback workspaces (root, default, ungrouped)
+        # For list with with_ancestry=false: FilterBackend raises 403 if user has no access
+        # For detail: 404 for both non-existing and inaccessible workspaces
         return True
 
     def _has_permission_v1(self, request, view, ws_id) -> bool:
@@ -203,8 +217,22 @@ class WorkspaceAccessPermission(permissions.BasePermission):
             log_ctx = _build_s2s_log_context(request, view, ws_id)
             logger.info("S2S system user access denied: not admin %s", log_ctx)
 
-        op = operation_from_request(request)
+        op = operation_from_request(request, view)
         if not is_user_allowed_v1(request, op, ws_id):
+            # Authorization failure - SEC-MON-REQ-1 compliance (EOI-8 authorization_failure)
+            logger.warning(
+                "Authorization denied",
+                extra={
+                    "action": request.method,
+                    "resource_type": "workspace",
+                    "outcome": "failure",
+                    "org_id": getattr(request.user, "org_id", None),
+                    "username": getattr(request.user, "username", None),
+                    "reason": "insufficient_permissions",
+                    "endpoint": request.path,
+                    "workspace_id": ws_id,
+                },
+            )
             return False
 
         # For move operations, also check target workspace access (V1 non-admin only)
@@ -262,6 +290,21 @@ class WorkspaceAccessPermission(permissions.BasePermission):
         # V2: Check 'create' permission on target workspace via Inventory API
         if not is_user_allowed_v2(request, "create", target_workspace_id):
             self.message = TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE
+            # Authorization failure on move - SEC-MON-REQ-1 compliance
+            # (EOI-8 authorization_failure, EOI-1 pii_manipulation)
+            logger.warning(
+                "Authorization denied",
+                extra={
+                    "action": "MOVE",
+                    "resource_type": "workspace",
+                    "outcome": "failure",
+                    "org_id": getattr(request.user, "org_id", None),
+                    "username": getattr(request.user, "username", None),
+                    "reason": "insufficient_permissions_on_target_workspace",
+                    "endpoint": request.path,
+                    "target_workspace_id": target_workspace_id,
+                },
+            )
             return False
 
         return True
@@ -286,6 +329,21 @@ class WorkspaceAccessPermission(permissions.BasePermission):
         # V1: Check 'write' operation on target workspace
         if not is_user_allowed_v1(request, "write", target_workspace_id):
             self.message = TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE
+            # Authorization failure on move - SEC-MON-REQ-1 compliance
+            # (EOI-8 authorization_failure, EOI-1 pii_manipulation)
+            logger.warning(
+                "Authorization denied",
+                extra={
+                    "action": "MOVE",
+                    "resource_type": "workspace",
+                    "outcome": "failure",
+                    "org_id": getattr(request.user, "org_id", None),
+                    "username": getattr(request.user, "username", None),
+                    "reason": "insufficient_permissions_on_target_workspace",
+                    "endpoint": request.path,
+                    "target_workspace_id": target_workspace_id,
+                },
+            )
             return False
 
         return True
@@ -312,6 +370,20 @@ class WorkspaceAccessPermission(permissions.BasePermission):
 
         if not Workspace.objects.filter(id=target_workspace_id, tenant=request.tenant).exists():
             self.message = TARGET_WORKSPACE_ACCESS_DENIED_MESSAGE
+            # Authorization failure on move - SEC-MON-REQ-1 compliance (EOI-8 authorization_failure)
+            logger.warning(
+                "Authorization denied",
+                extra={
+                    "action": "MOVE",
+                    "resource_type": "workspace",
+                    "outcome": "failure",
+                    "org_id": getattr(request.user, "org_id", None),
+                    "username": getattr(request.user, "username", None),
+                    "reason": "target_workspace_not_found",
+                    "endpoint": request.path,
+                    "target_workspace_id": target_workspace_id,
+                },
+            )
             return False
 
         return True

@@ -736,7 +736,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
             url = reverse("v2_management:workspace-list")
             client = APIClient()
-            response = client.get(url, format="json", **headers)
+            response = client.get(f"{url}?with_ancestry=true", format="json", **headers)
 
             # Should return 200 with fallback workspaces (root, default, ungrouped)
             self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -1211,7 +1211,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
             url = reverse("v2_management:workspace-list")
             client = APIClient()
-            response = client.get(url, format="json", **headers)
+            response = client.get(f"{url}?with_ancestry=true", format="json", **headers)
 
             # Should return 200 with fallback workspaces (root, default, ungrouped)
             self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -1321,7 +1321,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
             url = reverse("v2_management:workspace-list")
             client = APIClient()
-            response = client.get(url, format="json", **headers)
+            response = client.get(f"{url}?with_ancestry=true", format="json", **headers)
 
             # Should have access to the workspace and all its ancestors
             self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -1334,6 +1334,38 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             self.assertIn(str(self.standard_workspace.id), returned_ids)
             self.assertIn(str(self.default_workspace.id), returned_ids)
             self.assertIn(str(self.root_workspace.id), returned_ids)
+
+    @patch("management.inventory_client.create_client_channel_inventory")
+    @patch(
+        "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
+        return_value=True,
+    )
+    def test_workspace_list_excludes_ancestors_when_with_ancestry_false(self, mock_flag, mock_channel):
+        """with_ancestry=false returns only the accessible workspace, not its ancestors."""
+        mock_stub = MagicMock()
+        mock_channel.return_value.__enter__.return_value = MagicMock()
+        mock_responses = self._create_mock_workspace_responses([self.standard_sub_workspace.id])
+        mock_stub.StreamedListObjects.side_effect = lambda *args, **kwargs: iter(mock_responses)
+
+        with patch(
+            "kessel.inventory.v1beta2.inventory_service_pb2_grpc.KesselInventoryServiceStub",
+            return_value=mock_stub,
+        ):
+            request_context = self._create_request_context(self.customer_data, self.user_data, is_org_admin=False)
+            headers = request_context["request"].META
+            self._setup_access_for_principal(
+                self.user_data["username"],
+                "inventory:groups:read",
+                workspace_id=str(self.standard_sub_workspace.id),
+                platform_default=False,
+            )
+
+            url = reverse("v2_management:workspace-list")
+            response = APIClient().get(f"{url}?with_ancestry=false", format="json", **headers)
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        returned_ids = {str(ws["id"]) for ws in response.data["data"]}
+        self.assertEqual(returned_ids, {str(self.standard_sub_workspace.id)})
 
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch(
@@ -1367,7 +1399,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
 
             url = reverse("v2_management:workspace-list")
             client = APIClient()
-            response = client.get(url, format="json", **headers)
+            response = client.get(f"{url}?with_ancestry=true", format="json", **headers)
 
             # Should return 200 with fallback workspaces (root, default, ungrouped)
             self.assertEqual(response.status_code, status.HTTP_200_OK)
@@ -1794,7 +1826,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         # Track (workspace_id, relation) tuples for precise assertions on target check
         check_calls = []
 
-        def check_side_effect(request):
+        def check_side_effect(request, **kwargs):
             # Capture both workspace ID and relation being checked
             workspace_id = getattr(getattr(request, "object", None), "resource_id", None)
             check_calls.append((workspace_id, request.relation))
@@ -1870,7 +1902,7 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         # All checks are allowed EXCEPT 'create' on target workspace
         denied_checks = {(target_workspace_id, "create")}
 
-        def check_side_effect(request):
+        def check_side_effect(request, **kwargs):
             mock_response = MagicMock()
             workspace_id = getattr(getattr(request, "object", None), "resource_id", None)
             check_key = (workspace_id, request.relation)
@@ -2423,8 +2455,8 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
         return_value=True,
     )
-    def test_workspace_list_type_standard_returns_empty_without_real_access(self, mock_flag, mock_channel):
-        """Test that type=standard returns 200 with empty list when user has no real workspace access in V2 mode."""
+    def test_workspace_list_type_standard_returns_403_without_real_access(self, mock_flag, mock_channel):
+        """Test that type=standard returns 403 when user has no real workspace access and with_ancestry is false."""
         # Mock Inventory API to return empty list (no accessible workspaces)
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
@@ -2443,13 +2475,10 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             url = reverse("v2_management:workspace-list")
             client = APIClient()
 
-            # Query with type=standard - should return 200 with empty data
-            # (fallback workspaces are root/default/ungrouped, none are type=standard)
+            # Without with_ancestry, fallback workspaces are not applied
             response = client.get(f"{url}?type=standard", format="json", **headers)
 
-            self.assertEqual(response.status_code, status.HTTP_200_OK)
-            self.assertIn("data", response.data)
-            self.assertEqual(len(response.data["data"]), 0)
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch(
@@ -2476,8 +2505,8 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             url = reverse("v2_management:workspace-list")
             client = APIClient()
 
-            # Query with type=all - should return 200 with fallback workspaces
-            response = client.get(f"{url}?type=all", format="json", **headers)
+            # Query with type=all and with_ancestry - should return 200 with fallback workspaces
+            response = client.get(f"{url}?type=all&with_ancestry=true", format="json", **headers)
 
             self.assertEqual(response.status_code, status.HTTP_200_OK)
             self.assertIn("data", response.data)
@@ -2587,8 +2616,8 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
         "feature_flags.FEATURE_FLAGS.is_workspace_access_check_v2_enabled",
         return_value=True,
     )
-    def test_workspace_list_no_type_returns_fallback_without_real_access(self, mock_flag, mock_channel):
-        """Test that default list (no type filter) returns fallback workspaces when user has no real workspace access."""
+    def test_workspace_list_no_type_returns_403_without_real_access(self, mock_flag, mock_channel):
+        """Test that default list (no type filter) returns 403 when user has no real workspace access."""
         # Mock Inventory API to return empty list (no accessible workspaces)
         mock_stub = MagicMock()
         mock_channel.return_value.__enter__.return_value = MagicMock()
@@ -2607,13 +2636,10 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             url = reverse("v2_management:workspace-list")
             client = APIClient()
 
-            # Query without type filter - should return 200 with fallback workspaces
+            # Omitting with_ancestry defaults to false; no Inventory access returns 403
             response = client.get(url, format="json", **headers)
 
-            # Default type filter is 'standard', so fallback workspaces (root, default, ungrouped)
-            # are filtered out, resulting in empty data
-            self.assertEqual(response.status_code, status.HTTP_200_OK)
-            self.assertIn("data", response.data)
+            self.assertEqual(response.status_code, status.HTTP_403_FORBIDDEN)
 
     @patch("management.inventory_client.create_client_channel_inventory")
     @patch(
@@ -2640,8 +2666,8 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             url = reverse("v2_management:workspace-list")
             client = APIClient()
 
-            # Query with type=root - should return root workspace from fallback
-            response = client.get(f"{url}?type=root", format="json", **headers)
+            # Query with type=root and with_ancestry - should return root workspace from fallback
+            response = client.get(f"{url}?type=root&with_ancestry=true", format="json", **headers)
 
             self.assertEqual(response.status_code, status.HTTP_200_OK)
             self.assertIn("data", response.data)
@@ -2674,8 +2700,8 @@ class WorkspaceInventoryAccessV2Tests(TransactionIdentityRequest):
             url = reverse("v2_management:workspace-list")
             client = APIClient()
 
-            # Query with type=default - should return default workspace from fallback
-            response = client.get(f"{url}?type=default", format="json", **headers)
+            # Query with type=default and with_ancestry - should return default workspace from fallback
+            response = client.get(f"{url}?type=default&with_ancestry=true", format="json", **headers)
 
             self.assertEqual(response.status_code, status.HTTP_200_OK)
             self.assertIn("data", response.data)

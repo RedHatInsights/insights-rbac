@@ -16,6 +16,7 @@
 """Describes the urls and patterns for the management application."""
 
 from django.urls import include, path
+from management.tenant_mapping.v2_opt_in_view import OptInViewSet
 from management.views import (
     AccessView,
     AuditLogViewSet,
@@ -36,5 +37,7 @@ ROUTER.register(r"auditlogs", AuditLogViewSet)
 urlpatterns = [
     path("principals/", PrincipalView.as_view(), name="principals"),
     path("access/", AccessView.as_view(), name="access"),
+    path("tenant/opt-in/", OptInViewSet.as_view({"get": "status", "patch": "partial_update"}), name="opt-in"),
+    path("tenant/opt-in/eligibility/", OptInViewSet.as_view({"get": "eligibility"}), name="opt-in-eligibility"),
     path("", include(ROUTER.urls)),
 ]

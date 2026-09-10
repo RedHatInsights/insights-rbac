@@ -29,6 +29,7 @@ v2 uses `application/problem+json` content type. Built by `v2response_error_from
 {
   "status": 400,
   "title": "The request payload contains invalid syntax.",
+  "type": "http://project-kessel.org/problems/invalid-request",
   "detail": "A role with name 'foo' already exists for this tenant.",
   "errors": [
     {"message": "...", "field": "name"}
@@ -38,6 +39,7 @@ v2 uses `application/problem+json` content type. Built by `v2response_error_from
 ```
 
 Rules:
+- `type` comes from the `PROBLEM_TYPES` dict (keyed by HTTP status code). Uses RFC 9457 problem type URIs from the TypeSpec `ProblemType` enum (e.g. `http://project-kessel.org/problems/invalid-request`). Omitted when no URI is defined for the status code (e.g. 409). Can be overridden via the `problem_type` parameter for specialized types like `already-exists` or `workspace-not-empty`.
 - `title` comes from the `PROBLEM_TITLES` dict (keyed by HTTP status code: 400, 401, 403, 404, 409, 500).
 - `instance` is included only for PUT/PATCH/DELETE requests.
 - `errors` array is included only when field-level errors exist.
@@ -53,6 +55,7 @@ Defined in `api/common/renderers.py`. A thin `JSONRenderer` subclass with `media
 - `RequiredFieldError(field_name)` -- missing required field. Stores `field_name`.
 - `InvalidFieldError(field, message)` -- invalid field value. Stores `field`.
 - `NotFoundError(resource_type, resource_id)` -- resource not found.
+- `InventoryAuthUnavailableError` -- Inventory API OAuth token service temporarily unavailable (503 with `Retry-After`).
 
 ### Role v2 (`management/role/v2_exceptions.py`)
 Hierarchy rooted at `RoleV2Error`:
@@ -69,11 +72,11 @@ Hierarchy rooted at `RoleV2Error`:
 - `UnableMeetPrerequisitesError` -- can't validate token (500).
 
 ### Other
-- `DualWriteException` (`relation_replicator/relation_replicator.py`) -- wraps replication failures.
+- `DualWriteException` (`inventory_replicator/inventory_api_replicator.py`) -- wraps replication failures.
 - `V1WriteBlockedError` (`tenant_mapping/v2_activation.py`) -- v1 write on v2-activated tenant.
 - `InsufficientPrivilegesError` (`group/insufficient_privileges.py`) -- service account privilege check.
 - `FieldSelectionValidationError` (`management/utils.py`) -- invalid `?fields=` parameter.
-- `GRPCError` (`relation_replicator/relations_api_replicator.py`) -- wrapper for gRPC errors (not an Exception subclass).
+- `GRPCError` (`inventory_replicator/inventory_api_replicator.py`) -- wrapper for gRPC errors (not an Exception subclass).
 
 ## Where to Raise What
 

@@ -23,29 +23,28 @@ from typing import List, Optional, Union
 
 from django.conf import settings
 from google.protobuf import json_format
-from internal.jwt_utils import JWTManager, JWTProvider
 from kessel.inventory.v1beta2 import (
     inventory_service_pb2_grpc,
+    read_tuples_request_pb2,
+    relation_subject_filter_pb2,
+    relation_tuple_filter_pb2,
     reporter_reference_pb2,
     resource_reference_pb2,
     subject_reference_pb2,
+    tuple_service_pb2_grpc,
 )
 from kessel.inventory.v1beta2.check_request_pb2 import CheckRequest
-from management.cache import JWTCache
 from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
+from management.inventory_replicator.types import RelationTuple
 from management.permission.scope_service import ImplicitResourceService, Scope
-from management.relation_replicator.types import RelationTuple
-from management.role.platform import admin_platform_parent_scope_for_seeded_system_role, platform_v2_role_uuid_for
+from management.role.platform import admin_platform_parent_scopes_for_seeded_system_role, platform_v2_role_uuid_for
 from management.role.relations import role_child_relationship
 from management.tenant_mapping.model import DefaultAccessType, TenantMapping
-from management.utils import create_client_channel_inventory
+from management.utils import create_client_channel_inventory, get_inventory_auth_metadata
 from migration_tool.utils import create_relationship
 
 from api.models import Tenant
 
-jwt_cache = JWTCache()
-jwt_provider = JWTProvider()
-jwt_manager = JWTManager(jwt_provider, jwt_cache)
 logger = logging.getLogger(__name__)
 
 
@@ -91,14 +90,16 @@ class InventoryApiBaseChecker:
         with create_client_channel_inventory(settings.INVENTORY_API_SERVER) as channel:
             stub = inventory_service_pb2_grpc.KesselInventoryServiceStub(channel)
 
-            responses = [stub.Check(req) for req in checks]
+            # Fetch metadata per-call, not once for the whole batch: a long-running batch
+            # could otherwise outlast the token and start failing partway through.
+            responses = [stub.Check(req, metadata=get_inventory_auth_metadata()) for req in checks]
             return all(self._is_allowed(res) for res in responses)
 
     def _check_inventory_batch(self, checks: List[CheckRequest]) -> list[bool]:
         """Check multiple relations via a single gRPC channel, returning per-request results."""
         with create_client_channel_inventory(settings.INVENTORY_API_SERVER) as channel:
             stub = inventory_service_pb2_grpc.KesselInventoryServiceStub(channel)
-            return [self._is_allowed(stub.Check(req)) for req in checks]
+            return [self._is_allowed(stub.Check(req, metadata=get_inventory_auth_metadata())) for req in checks]
 
     def _is_allowed(self, response):
         response_dict = json_format.MessageToDict(response)
@@ -305,46 +306,51 @@ class WorkspaceRelationInventoryChecker(InventoryApiBaseChecker):
     """Subclass to check workspace parent relations are correct on inventory api."""
 
     def check_workspace_descendants(self, workspace_pairs):
-        """Core logic to check workspace descendant relations on inventory api."""
+        """Check workspace parent relations on inventory api, returning per-pair results."""
         checks = []
-        # Build the check requests for checking parent-child workspace relationship
         for workspace_uuid, workspace_parent_uuid in workspace_pairs:
             check_request = CheckRequest(
                 object=resource_reference_pb2.ResourceReference(
-                    resource_id=workspace_parent_uuid,
+                    resource_id=workspace_uuid,
                     resource_type="workspace",
                     reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
                 ),
                 relation="parent",
                 subject=subject_reference_pb2.SubjectReference(
                     resource=resource_reference_pb2.ResourceReference(
-                        resource_id=workspace_uuid,
+                        resource_id=workspace_parent_uuid,
                         resource_type="workspace",
                         reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
                     )
                 ),
             )
             checks.append(check_request)
-        workspace_check = self.check_inventory_core(checks)
-        if not workspace_check:
-            logger.warning(f"{workspace_uuid} does not have the expected parent workspace.")
+
+        results_list = self._check_inventory_batch(checks)
+        pair_results = []
+        for (ws_id, parent_id), exists in zip(workspace_pairs, results_list):
+            pair_results.append({"workspace_id": ws_id, "parent_id": parent_id, "exists": exists})
+
+        all_passed = all(r["exists"] for r in pair_results)
+        if all_passed:
+            logger.info(f"All {len(workspace_pairs)} workspace parent relations exist.")
         else:
-            logger.info(f"{workspace_uuid} has the correct parent workspace.")
-        return workspace_check
+            missing = [r for r in pair_results if not r["exists"]]
+            logger.warning(f"{len(missing)} of {len(workspace_pairs)} workspace parent relations missing.")
+        return all_passed, pair_results
 
     def check_workspace(self, workspace_id, workspace_parent_id):
         """Core logic to check workspace relation on inventory api."""
-        # Build the check request for checking parent-child workspace relationship
         check_request = CheckRequest(
             object=resource_reference_pb2.ResourceReference(
-                resource_id=workspace_parent_id,
+                resource_id=workspace_id,
                 resource_type="workspace",
                 reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
             ),
             relation="parent",
             subject=subject_reference_pb2.SubjectReference(
                 resource=resource_reference_pb2.ResourceReference(
-                    resource_id=workspace_id,
+                    resource_id=workspace_parent_id,
                     resource_type="workspace",
                     reporter=reporter_reference_pb2.ReporterReference(type="rbac"),
                 )
@@ -458,10 +464,51 @@ class CrossAccountRequestInventoryChecker(InventoryApiBaseChecker):
 class CustomRolePermissionChecker(InventoryApiBaseChecker):
     """Subclass to check custom role permission relations are correct on inventory api."""
 
+    def _check_permission_tuples_via_read(self, tuples: Sequence[RelationTuple], role_uuid: str) -> bool:
+        """Verify permission tuples exist using the Relations API ReadTuples.
+
+        All custom role permission tuples use wildcard subjects (rbac/principal:*) by SpiceDB
+        schema design. The Check API rejects wildcards, so we use ReadTuples which queries
+        stored relationships directly.
+        """
+        all_present = True
+
+        with create_client_channel_inventory(settings.INVENTORY_API_SERVER) as channel:
+            stub = tuple_service_pb2_grpc.KesselTupleServiceStub(channel)
+
+            for t in tuples:
+                request = read_tuples_request_pb2.ReadTuplesRequest(
+                    filter=relation_tuple_filter_pb2.RelationTupleFilter(
+                        resource_namespace=t.resource.type.namespace,
+                        resource_type=t.resource.type.name,
+                        resource_id=t.resource.id,
+                        relation=t.relation,
+                        subject_filter=relation_subject_filter_pb2.RelationSubjectFilter(
+                            subject_namespace=t.subject.subject.type.namespace,
+                            subject_type=t.subject.subject.type.name,
+                            subject_id=t.subject.subject.id,
+                        ),
+                    )
+                )
+                # Fetch metadata per-call: a long-running batch could otherwise outlast the token.
+                responses = list(stub.ReadTuples(request, metadata=get_inventory_auth_metadata()))
+                if not responses:
+                    logger.warning(
+                        f"CustomRole: {role_uuid} missing relation "
+                        f"{t.resource.type.name}:{t.resource.id}#{t.relation}"
+                    )
+                    all_present = False
+
+        return all_present
+
     def check_custom_role_permissions(self, permission_tuples: Sequence[RelationTuple], role_uuid: str) -> bool:
-        """Core logic to check custom role permission relations on inventory api.
+        """Core logic to check custom role permission relations via the Relations API.
 
         Each permission tuple represents: rbac/role:<uuid>#<permission>@rbac/principal:*
+
+        Uses ReadTuples instead of the Inventory Check API because all custom role
+        permission subjects are wildcards (principal:*) by SpiceDB schema design,
+        and the Check API does not support wildcard subjects.
 
         Args:
             permission_tuples: List of RelationTuple objects from CustomRoleV2._permission_tuple()
@@ -474,9 +521,7 @@ class CustomRolePermissionChecker(InventoryApiBaseChecker):
             logger.debug(f"CustomRole: {role_uuid} has no permissions, skipping check")
             return True
 
-        check_requests = [relation_tuple_to_check_request(tuple_obj) for tuple_obj in permission_tuples]
-
-        permission_check = self.check_inventory_core(check_requests)
+        permission_check = self._check_permission_tuples_via_read(permission_tuples, role_uuid)
         if not permission_check:
             logger.warning(f"CustomRole: {role_uuid} does not have the expected permission relations in inventory.")
         else:
@@ -489,7 +534,7 @@ def generate_seeded_role_hierarchy_tuples(
 ) -> list[RelationTuple]:
     """Generate expected parent-child tuples for a seeded role.
 
-    Replicates the logic from SeedingRelationApiDualWriteHandler._check_create_admin_platform_relation()
+    Replicates the logic from SeedingInventoryApiDualWriteHandler._check_create_admin_platform_relation()
     to determine what parent-child relationships should exist in Kessel for a given seeded role.
 
     Args:
@@ -509,24 +554,28 @@ def generate_seeded_role_hierarchy_tuples(
 
     if implicit_resource_service is None:
         implicit_resource_service = ImplicitResourceService.from_settings()
-    scope = implicit_resource_service.scope_for_role(v1_role)
+
+    binding_scopes = set(implicit_resource_service.binding_scopes_for_role(v1_role))
+    admin_scopes = set(admin_platform_parent_scopes_for_seeded_system_role(v1_role.name, binding_scopes))
+
     policy_service = GlobalPolicyIdService.shared()
     tuples = []
 
     if v1_role.admin_default:
-        try:
-            admin_scope = admin_platform_parent_scope_for_seeded_system_role(v1_role.name, scope, apply_override=True)
-            parent_uuid = platform_v2_role_uuid_for(DefaultAccessType.ADMIN, admin_scope, policy_service)
-            tuples.append(role_child_relationship(parent_uuid, seeded_role.uuid))
-        except DefaultGroupNotAvailableError:
-            logger.warning(f"Default admin group not available for seeded role {seeded_role.uuid}")
+        for scope in admin_scopes:
+            try:
+                parent_uuid = platform_v2_role_uuid_for(DefaultAccessType.ADMIN, scope, policy_service)
+                tuples.append(role_child_relationship(parent_uuid, seeded_role.uuid))
+            except DefaultGroupNotAvailableError:
+                logger.warning(f"Default admin group not available for seeded role {seeded_role.uuid}")
 
     if v1_role.platform_default:
-        try:
-            parent_uuid = platform_v2_role_uuid_for(DefaultAccessType.USER, scope, policy_service)
-            tuples.append(role_child_relationship(parent_uuid, seeded_role.uuid))
-        except DefaultGroupNotAvailableError:
-            logger.warning(f"Default platform group not available for seeded role {seeded_role.uuid}")
+        for scope in binding_scopes:
+            try:
+                parent_uuid = platform_v2_role_uuid_for(DefaultAccessType.USER, scope, policy_service)
+                tuples.append(role_child_relationship(parent_uuid, seeded_role.uuid))
+            except DefaultGroupNotAvailableError:
+                logger.warning(f"Default platform group not available for seeded role {seeded_role.uuid}")
 
     return tuples
 

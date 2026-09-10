@@ -172,5 +172,11 @@ class DisasterRecoveryTaskFeatureFlagTest(TestCase):
         from management.tasks import run_disaster_recovery_reconcile
 
         result = run_disaster_recovery_reconcile(restore_timestamp_ms=1000000, buffer_seconds=300)
-        self.assertEqual(result["status"], "failed")
-        self.assertIn("error", result)
+        self.assertIn("KAFKA_ENABLED", result["message"])
+
+    @override_settings(DR_RELATIONS_RECONCILE_ENABLED=True, KAFKA_ENABLED=True, RBAC_KAFKA_CONSUMER_TOPIC=None)
+    def test_task_enabled_but_topic_not_configured(self):
+        from management.tasks import run_disaster_recovery_reconcile
+
+        result = run_disaster_recovery_reconcile(restore_timestamp_ms=1000000, buffer_seconds=300)
+        self.assertIn("RBAC_KAFKA_CONSUMER_TOPIC", result["message"])

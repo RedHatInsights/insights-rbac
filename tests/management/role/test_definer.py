@@ -16,35 +16,34 @@
 #
 """Test the role definer."""
 
+from unittest.mock import ANY, call, mock_open, patch
 from uuid import UUID
+
 from django.conf import settings
 from django.test.utils import override_settings
-from unittest.mock import ANY, call, patch, mock_open
-
-from api.models import Tenant
 from management.group.definer import seed_group
 from management.group.platform import DefaultGroupNotAvailableError, GlobalPolicyIdService
 from management.models import (
     Access,
     ExtRoleRelation,
+    Group,
     Permission,
+    PlatformRoleV2,
     ResourceDefinition,
     Role,
-    Group,
-    PlatformRoleV2,
     SeededRoleV2,
 )
 from management.permission.scope_service import Scope
-from management.relation_replicator.relation_replicator import ReplicationEvent, ReplicationEventType
-from management.role.definer import seed_roles, seed_permissions, _seed_platform_roles
+from management.inventory_replicator.inventory_replicator import ReplicationEvent, ReplicationEventType
+from management.role.definer import _seed_platform_roles, seed_permissions, seed_roles
 from management.role.platform import (
     ADMIN_DEFAULT_SEEDED_ROLES_FORCE_ROOT_SCOPE,
-    admin_platform_parent_scope_for_seeded_system_role,
+    admin_platform_parent_scopes_for_seeded_system_role,
     platform_v2_role_uuid_for,
 )
-from management.role.relation_api_dual_write_handler import (
-    RelationApiDualWriteHandler,
-    SeedingRelationApiDualWriteHandler,
+from management.role.inventory_api_dual_write_handler import (
+    InventoryApiDualWriteHandler,
+    SeedingInventoryApiDualWriteHandler,
 )
 from management.tenant_mapping.model import DefaultAccessType
 from management.tenant_service.v2 import V2TenantBootstrapService
@@ -59,6 +58,8 @@ from migration_tool.in_memory_tuples import (
 from tests.core.test_kafka import copy_call_args
 from tests.identity_request import IdentityRequest
 from tests.management.role.test_dual_write import RbacFixture
+
+from api.models import Tenant
 
 
 def _role_resource(role_uuid: str | UUID):
@@ -371,7 +372,7 @@ class RoleDefinerTests(IdentityRequest):
         # Previous string verb still works
         self.assertEqual(Permission.objects.filter(permission="inventory:*:*").count(), 1)
 
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    @patch("management.inventory_replicator.outbox_replicator.OutboxReplicator.replicate")
     @patch("management.role.definer.destructive_ok")
     def test_seed_permissions_delete_permission(self, _, replicate):
         """Test permission seeding delete permission."""
@@ -387,7 +388,7 @@ class RoleDefinerTests(IdentityRequest):
         fixture = RbacFixture(V2TenantBootstrapService(replicator))
         fixture.bootstrap_tenant(self.tenant)
         role_system = fixture.new_system_role(name="system_role", permissions=["dummy:permission:delete"])
-        dual_write_handler = SeedingRelationApiDualWriteHandler(role_system, replicator=replicator)
+        dual_write_handler = SeedingInventoryApiDualWriteHandler(role_system, replicator=replicator)
         dual_write_handler.replicate_new_system_role()
 
         role_custom = fixture.new_custom_role(
@@ -395,7 +396,7 @@ class RoleDefinerTests(IdentityRequest):
             tenant=self.tenant,
             resource_access=fixture.workspace_access(["dummy:permission:delete"]),
         )
-        dual_write = RelationApiDualWriteHandler(
+        dual_write = InventoryApiDualWriteHandler(
             role_custom, ReplicationEventType.CREATE_CUSTOM_ROLE, replicator=replicator
         )
         dual_write.replicate_new_or_updated_role(role_custom)
@@ -470,14 +471,14 @@ class RoleDefinerTests(IdentityRequest):
             t.relation == relation for t in evt.add
         )
 
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    @patch("management.inventory_replicator.outbox_replicator.OutboxReplicator.replicate")
     def test_seed_roles_new_role(self, mock_replicate):
         seed_roles()
         self.assertTrue(
             any(self.is_create_event("inventory_hosts_read", args[0]) for args, _ in mock_replicate.call_args_list)
         )
 
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    @patch("management.inventory_replicator.outbox_replicator.OutboxReplicator.replicate")
     @patch("management.role.definer.destructive_ok")
     @patch("builtins.open", new_callable=mock_open, read_data='{"roles": []}')
     @patch("os.listdir")
@@ -511,7 +512,7 @@ class RoleDefinerTests(IdentityRequest):
         # verify role was deleted from the database
         self.assertFalse(Role.objects.filter(id=role_to_delete.id).exists())
 
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    @patch("management.inventory_replicator.outbox_replicator.OutboxReplicator.replicate")
     @patch(
         "builtins.open",
         new_callable=mock_open,
@@ -539,7 +540,7 @@ class RoleDefinerTests(IdentityRequest):
             any(self.is_update_event("dummy_hosts_read", args[0]) for args, _ in mock_replicate.call_args_list)
         )
 
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    @patch("management.inventory_replicator.outbox_replicator.OutboxReplicator.replicate")
     def test_seed_roles_create_and_delete_role(
         self,
         mock_replicate,
@@ -568,7 +569,7 @@ class RoleDefinerTests(IdentityRequest):
                 any(self.is_remove_event("inventory_hosts_read", args[0]) for args, _ in mock_replicate.call_args_list)
             )
 
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    @patch("management.inventory_replicator.outbox_replicator.OutboxReplicator.replicate")
     @patch(
         "builtins.open",
         new_callable=mock_open,
@@ -632,7 +633,7 @@ class RoleDefinerTests(IdentityRequest):
 
         self.assertFalse(Role.objects.get(pk=custom.pk).system)
 
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    @patch("management.inventory_replicator.outbox_replicator.OutboxReplicator.replicate")
     @patch(
         "builtins.open",
         new_callable=mock_open,
@@ -681,7 +682,7 @@ class RoleDefinerTests(IdentityRequest):
         )
 
     @override_settings(REPLICATION_TO_RELATION_ENABLED=True)
-    @patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+    @patch("management.inventory_replicator.outbox_replicator.OutboxReplicator.replicate")
     def test_force_update_relationships(self, replicate):
         """Test that using force_update_relationships results in updating default scopes when they have changed."""
         tuples = InMemoryTuples()
@@ -866,30 +867,17 @@ class RoleDefinerTests(IdentityRequest):
         """Test that all roles in ADMIN_DEFAULT_SEEDED_ROLES_FORCE_ROOT_SCOPE are overridden to ROOT."""
         for role_name in ADMIN_DEFAULT_SEEDED_ROLES_FORCE_ROOT_SCOPE:
             for derived_scope in Scope:
-                result = admin_platform_parent_scope_for_seeded_system_role(
-                    role_name, derived_scope, apply_override=True
-                )
+                result = admin_platform_parent_scopes_for_seeded_system_role(role_name, {derived_scope})
                 self.assertEqual(
                     result,
-                    Scope.ROOT,
+                    {Scope.ROOT},
                     f"{role_name!r} with derived scope {derived_scope.name} should be forced to ROOT",
                 )
 
-    def test_admin_default_force_root_does_not_apply_without_override(self):
-        """Test that the ROOT override is skipped when apply_override=False."""
-        for role_name in ADMIN_DEFAULT_SEEDED_ROLES_FORCE_ROOT_SCOPE:
-            for derived_scope in Scope:
-                result = admin_platform_parent_scope_for_seeded_system_role(
-                    role_name, derived_scope, apply_override=False
-                )
-                self.assertEqual(result, derived_scope)
-
     def test_admin_default_force_root_does_not_apply_to_other_roles(self):
         """Test that ordinary admin_default roles are NOT forced to ROOT."""
-        result = admin_platform_parent_scope_for_seeded_system_role(
-            "Some Other Role", Scope.DEFAULT, apply_override=True
-        )
-        self.assertEqual(result, Scope.DEFAULT)
+        result = admin_platform_parent_scopes_for_seeded_system_role("Some Other Role", {Scope.DEFAULT})
+        self.assertEqual(result, {Scope.DEFAULT})
 
 
 @override_settings(ATOMIC_RETRY_DISABLED=True)
@@ -1223,48 +1211,6 @@ class V2RoleSeedingTests(IdentityRequest):
             "Non-default role should have no parents",
         )
 
-    def test_role_without_bindings_does_not_trigger_migration(self):
-        """Test that roles without bindings don't trigger migration.
-
-        Migration is triggered based on whether a role has actual bindings in V1 tenants.
-        Roles without any bindings (whether default or non-default) don't need migration.
-        If a role later gets manual bindings and then changes scope, those bindings WILL
-        be migrated.
-        """
-        seed_group()
-
-        # First seeding with role in DEFAULT scope
-        with self.settings(ROOT_SCOPE_PERMISSIONS="", TENANT_SCOPE_PERMISSIONS=""):
-            seed_roles()
-
-        # Pick a specific non-default role by name from the test seed data
-        # "Cost Administrator Local Test" is a known non-default system role with permissions in test data
-        non_default_role = Role.objects.public_tenant_only().filter(name="Cost Administrator Local Test").first()
-        self.assertIsNotNone(
-            non_default_role,
-            "Expected 'Cost Administrator Local Test' role to exist in seeded roles",
-        )
-
-        # Mock the migration function
-        with patch("management.role.definer._migrate_bindings_for_scope_change") as mock_migrate:
-            # Change the scope for this role's permissions by moving its permissions to ROOT
-            permission_pattern = f"{non_default_role.access.first().permission.application}:*:*"
-
-            # Re-seed with the permission now in ROOT scope
-            with self.settings(ROOT_SCOPE_PERMISSIONS=permission_pattern, TENANT_SCOPE_PERMISSIONS=""):
-                seed_roles()
-
-            # Verify that migration was NOT called for this role
-            # The new _determine_old_scopes checks for actual bindings in V1 tenants.
-            # Since this test doesn't create any bindings for this role,
-            # _determine_old_scopes returns empty set and migration is skipped.
-            migration_called_for_role = any(call[0][0] == non_default_role for call in mock_migrate.call_args_list)
-            self.assertFalse(
-                migration_called_for_role,
-                f"Migration should NOT be called for role {non_default_role.name} "
-                "because it has no bindings to migrate (only roles with actual bindings need migration)",
-            )
-
     def test_v2_role_permissions_updated_when_v1_changes(self):
         """Test that V2 role permissions are updated when V1 role permissions change."""
         seed_group()
@@ -1310,7 +1256,7 @@ class V2RoleSeedingTests(IdentityRequest):
     SYSTEM_ADMIN_TENANT_ROLE_UUID="a7f3c8b2-1d4e-4f9a-8c6d-2b5e7a9f1c3d",
     SYSTEM_ADMIN_ROOT_WORKSPACE_ROLE_UUID="9b4c7e1f-3a5d-4f8c-9e2a-7c1d5b8f3a6e",
 )
-@patch("management.relation_replicator.outbox_replicator.OutboxReplicator.replicate")
+@patch("management.inventory_replicator.outbox_replicator.OutboxReplicator.replicate")
 class SeedMixedScopeTest(IdentityRequest):
     """Test that seeding a mixed-scope system role attaches to multiple platform parents."""
 
@@ -1349,7 +1295,7 @@ class SeedMixedScopeTest(IdentityRequest):
         self.assertEqual(sorted(binding_scopes), sorted([Scope.TENANT, Scope.ROOT]))
 
         # Replicate as new system role via the SeedingHandler
-        handler = SeedingRelationApiDualWriteHandler(role=role, replicator=InMemoryRelationReplicator(tuples))
+        handler = SeedingInventoryApiDualWriteHandler(role=role, replicator=InMemoryRelationReplicator(tuples))
         handler.replicate_new_system_role()
 
         # The handler should generate platform parent relations for BOTH scopes.
@@ -1403,7 +1349,7 @@ class SeedMixedScopeTest(IdentityRequest):
         )
         Access.objects.create(role=role, permission=sub_perm, tenant=self.public_tenant)
 
-        handler = SeedingRelationApiDualWriteHandler(role=role, replicator=InMemoryRelationReplicator(tuples))
+        handler = SeedingInventoryApiDualWriteHandler(role=role, replicator=InMemoryRelationReplicator(tuples))
         handler.replicate_new_system_role()
 
         # Only TENANT parent should exist.
@@ -1431,7 +1377,7 @@ class SeedMixedScopeTest(IdentityRequest):
         )
         Access.objects.create(role=role, permission=adv_perm, tenant=self.public_tenant)
 
-        handler2 = SeedingRelationApiDualWriteHandler(role=role, replicator=InMemoryRelationReplicator(tuples))
+        handler2 = SeedingInventoryApiDualWriteHandler(role=role, replicator=InMemoryRelationReplicator(tuples))
         handler2.prepare_for_update()
         handler2.replicate_update_system_role()
 
